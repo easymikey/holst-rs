@@ -54,22 +54,13 @@ resvg = { version = "0.48", default-features = false, features = ["text", "syste
 # Tests only: pseudo-terminal runs in cargo test.
 expectrl = "0.9"
 
+# The CLI waits on the network, not the CPU: "s" makes the binaries about 20% smaller.
 [profile.release]
-opt-level = 3
+opt-level = "s"
 lto = "fat"
 codegen-units = 1
 strip = true
 # No panic = "abort": with unwinding a panic in one MCP tool kills only its request.
-
-# Run once per process or per request: smaller code over speed.
-[profile.release.package.clap_builder]
-opt-level = "s"
-
-[profile.release.package.rmcp]
-opt-level = "s"
-
-[profile.release.package.schemars]
-opt-level = "s"
 
 [workspace.lints.rust]
 warnings = { level = "deny", priority = -1 }
