@@ -1,0 +1,824 @@
+//! What a change names and asks, checked against the board before writing.
+
+use std::collections::{BTreeSet, HashMap};
+
+use itertools::Itertools as _;
+use serde_json::Value;
+
+use crate::{
+    domain::{
+        area::scene::Scene,
+        board::{Object, ObjectKind},
+        change::value::{
+            BoardChange,
+            NewObject,
+            ObjectEdit,
+            ObjectPatch,
+            Pasted,
+            RemoveRight,
+        },
+        geometry,
+        geometry::{Point, Rectangle, Size},
+    },
+    error::{
+        Error,
+        Result,
+        board_change::{
+            BoardChangeError,
+            GivenPoint,
+            GivenRectangle,
+            GivenSize,
+            OffBoardValue,
+        },
+    },
+    protocol::document::{
+        COLUMN_ID,
+        CREATED,
+        END,
+        HEIGHT,
+        OBJECT_ID,
+        PARENT_ID,
+        POSITION,
+        START,
+        TYPE,
+        WIDTH,
+        X,
+        Y,
+        Z_INDEX,
+    },
+};
+
+/// Written by the web client on a group, a frame or a table that is locked.
+const LOCKED: &str = "locked";
+/// Written on a sticker stuck to another object.
+const STICKY_POSITION: &str = "stickyPosition";
+/// The author's number in an object's `created`.
+const AUTHOR: &str = "a";
+/// Written on a frame whose content is hidden.
+const CONTENT_HIDDEN: &str = "isContentHidden";
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Placement {
+    pub(super) parent: Option<String>,
+}
+
+pub(crate) enum CheckedChange<'a> {
+    AddAll(Vec<(NewObject, Placement)>),
+    EditAll(Vec<CheckedEdit<'a>>),
+    RemoveAll(Vec<String>),
+    Paste(&'a Pasted),
+}
+
+/// An edit of many with the object it names found.
+pub(crate) struct CheckedEdit<'a> {
+    pub(super) id: String,
+    pub(super) kind: ObjectKind,
+    pub(super) edit: &'a ObjectEdit,
+}
+
+pub(crate) fn on_board(at: Option<&Point>, size: Option<&Size>) -> Result<()> {
+    let near = |number: f64| number.abs() <= geometry::MAX_COORDINATE;
+    let far_at = at.filter(|at| !(near(at.x()) && near(at.y()))).map(|at| {
+        OffBoardValue::At(GivenPoint {
+            x: at.x(),
+            y: at.y(),
+        })
+    });
+    let far_size = size
+        .filter(|size| !(near(size.width()) && near(size.height())))
+        .map(|size| {
+            OffBoardValue::Size(GivenSize {
+                width: size.width(),
+                height: size.height(),
+            })
+        });
+    far_at.or(far_size).map_or(Ok(()), |what| {
+        Err(Error::BoardChange(BoardChangeError::OffBoard { what }))
+    })
+}
+
+const fn placed(new: &NewObject) -> (Option<&Point>, Option<&Size>) {
+    match new {
+        NewObject::Sticker { at, size, .. }
+        | NewObject::Shape { at, size, .. }
+        | NewObject::Frame { at, size, .. }
+        | NewObject::Image { at, size, .. } => (Some(at), size.as_ref()),
+        NewObject::Text { at, .. }
+        | NewObject::Link { at, .. }
+        | NewObject::File { at, .. } => (Some(at), None),
+        NewObject::Arrow { .. } => (None, None),
+    }
+}
+
+/// `change` checked against the board; `mine` is the author number of the
+/// user, if the board knows one, for what `right` lets a removal take.
+pub(crate) fn check<'a>(
+    change: &'a BoardChange,
+    states: &HashMap<String, Value>,
+    right: RemoveRight,
+    mine: Option<u32>,
+) -> Result<CheckedChange<'a>> {
+    let on_added = |new: &NewObject| {
+        let (at, size) = placed(new);
+        on_board(at, size)
+    };
+    match change {
+        BoardChange::AddAll(entries) => {
+            entries.iter().try_for_each(|entry| on_added(&entry.new))
+        }
+        BoardChange::EditAll(edits) => edits.iter().try_for_each(|edit| {
+            on_board(edit.patch.at.as_ref(), edit.patch.size.as_ref())
+        }),
+        BoardChange::Paste(pasted) => pasted_on_board(pasted),
+        BoardChange::RemoveAll(_) => Ok(()),
+    }?;
+    match change {
+        BoardChange::AddAll(entries) => entries
+            .iter()
+            .try_fold(Vec::new(), |mut done, entry| {
+                let one =
+                    checked_add(&entry.new, entry.frame.as_deref(), states, &done)?;
+                done.push(one);
+                Ok::<_, Error>(done)
+            })
+            .map(CheckedChange::AddAll),
+        BoardChange::EditAll(edits) => edits
+            .iter()
+            .map(|edit| {
+                let id = find(states, &edit.object)?;
+                unlocked(states, &id, &edit.object)?;
+                let kind = kind_of(states, &id);
+                let held = held_in(states, &id, &kind);
+                changeable_edit(&kind, held, edit).map(|()| CheckedEdit {
+                    id,
+                    kind,
+                    edit,
+                })
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(CheckedChange::EditAll),
+        BoardChange::RemoveAll(objects) => {
+            removable(states, objects, right, mine).map(CheckedChange::RemoveAll)
+        }
+        BoardChange::Paste(pasted) => Ok(CheckedChange::Paste(pasted)),
+    }
+}
+
+/// Whether the web client keeps `id` as it is: a locked frame or table, a cell
+/// of a locked table, or anything in a locked group.
+pub(super) fn locked(states: &HashMap<String, Value>, id: &str) -> bool {
+    let flagged = |object: &str| {
+        states
+            .get(object)
+            .and_then(|fields| fields.get(LOCKED))
+            .and_then(Value::as_bool)
+            .unwrap_or_default()
+    };
+    let own = match kind_of(states, id) {
+        ObjectKind::Frame | ObjectKind::Table => flagged(id),
+        ObjectKind::TableCell => {
+            states.get(id).and_then(parent_of).is_some_and(|table| {
+                kind_of(states, table) == ObjectKind::Table && flagged(table)
+            })
+        }
+        ObjectKind::Sticker
+        | ObjectKind::StickerStack
+        | ObjectKind::Text
+        | ObjectKind::Shape
+        | ObjectKind::Document
+        | ObjectKind::Arrow
+        | ObjectKind::Image
+        | ObjectKind::File
+        | ObjectKind::Stamp
+        | ObjectKind::Group
+        | ObjectKind::Code
+        | ObjectKind::Drawing
+        | ObjectKind::Dice
+        | ObjectKind::Wheel
+        | ObjectKind::Flipcard
+        | ObjectKind::Task
+        | ObjectKind::Link
+        | ObjectKind::Other(_) => false,
+    };
+    own || ancestry(states, id)
+        .iter()
+        .any(|above| kind_of(states, above) == ObjectKind::Group && flagged(above))
+}
+
+fn unlocked(states: &HashMap<String, Value>, id: &str, reference: &str) -> Result<()> {
+    if locked(states, id) {
+        Err(Error::BoardChange(BoardChangeError::Locked {
+            reference: reference.to_owned(),
+        }))
+    } else {
+        Ok(())
+    }
+}
+
+/// The ids named, when none of what their removal takes is locked, and, under
+/// [`RemoveRight::OwnOnly`], all of it is the user's or goes with theirs.
+fn removable<'a>(
+    states: &HashMap<String, Value>,
+    named: impl IntoIterator<Item = &'a String>,
+    right: RemoveRight,
+    mine: Option<u32>,
+) -> Result<Vec<String>> {
+    let named = named
+        .into_iter()
+        .map(|reference| find(states, reference).map(|id| (reference, id)))
+        .collect::<Result<Vec<_>>>()?;
+    let blocked = named.iter().find_map(|(reference, id)| {
+        removal(states, std::slice::from_ref(id))
+            .into_iter()
+            .find(|taken| locked(states, taken))
+            .map(|taken| {
+                if taken == *id {
+                    (*reference).clone()
+                } else {
+                    taken
+                }
+            })
+    });
+    let refusal = blocked
+        .map(|reference| BoardChangeError::Locked { reference })
+        .or_else(|| {
+            (right == RemoveRight::OwnOnly)
+                .then(|| foreign_among(states, &named, mine))
+                .flatten()
+                .map(|reference| BoardChangeError::NotYours { reference })
+        });
+    refusal.map_or_else(
+        || Ok(named.iter().map(|(_, id)| id.clone()).collect()),
+        |error| Err(Error::BoardChange(error)),
+    )
+}
+
+/// The reference of the first of `named` whose removal takes what `mine` did
+/// not make and that does not go with something that is.
+fn foreign_among(
+    states: &HashMap<String, Value>,
+    named: &[(&String, String)],
+    mine: Option<u32>,
+) -> Option<String> {
+    let going: BTreeSet<String> = named
+        .iter()
+        .flat_map(|(_, id)| subtree(states, id))
+        .collect();
+    named.iter().find_map(|(reference, id)| {
+        subtree(states, id)
+            .into_iter()
+            .find(|taken| !may_take(states, taken, &going, mine))
+            .map(|taken| {
+                if taken == *id {
+                    (*reference).clone()
+                } else {
+                    taken
+                }
+            })
+    })
+}
+
+/// Whether the web client lets a user with the author number `mine` remove
+/// `id` among the objects `going`, on a board that keeps removal to its
+/// makers: what they made, a group (its content is checked on its own), and a
+/// sticker stuck to an object that goes too.
+fn may_take(
+    states: &HashMap<String, Value>,
+    id: &str,
+    going: &BTreeSet<String>,
+    mine: Option<u32>,
+) -> bool {
+    states.get(id).is_none_or(|fields| {
+        let made_by_me = mine.is_some_and(|mine| {
+            fields
+                .get(CREATED)
+                .and_then(|created| created.get(AUTHOR))
+                .and_then(Value::as_u64)
+                == Some(u64::from(mine))
+        });
+        let stuck_to_going = fields
+            .get(STICKY_POSITION)
+            .and_then(|sticky| sticky.get(PARENT_ID))
+            .and_then(Value::as_str)
+            .is_some_and(|parent| {
+                going.contains(parent) || !states.contains_key(parent)
+            });
+        made_by_me || stuck_to_going || kind_of(states, id) == ObjectKind::Group
+    })
+}
+
+/// Each object first, then what it holds and the arrows on it.
+pub(super) fn removal(states: &HashMap<String, Value>, ids: &[String]) -> Vec<String> {
+    ids.iter()
+        .flat_map(|id| {
+            let held = subtree(states, id);
+            let arrows: BTreeSet<String> = states
+                .iter()
+                .filter(|(_, fields)| {
+                    ends_in(fields, START, &held) || ends_in(fields, END, &held)
+                })
+                .map(|(arrow, _)| arrow.clone())
+                .collect();
+            let rest: BTreeSet<String> = held
+                .into_iter()
+                .chain(arrows)
+                .filter(|other| other != id)
+                .collect();
+            std::iter::once(id.clone()).chain(rest)
+        })
+        .unique()
+        .collect()
+}
+
+/// Whether the arrow's `side` end is stuck to an object of `held`.
+pub(super) fn ends_in(fields: &Value, side: &str, held: &BTreeSet<String>) -> bool {
+    fields
+        .get(side)
+        .and_then(|end| end.get(OBJECT_ID))
+        .and_then(Value::as_str)
+        .is_some_and(|object| held.contains(object))
+}
+
+/// Whether a frame shows its content, so that objects in it can be seen.
+pub(super) fn shows_content(states: &HashMap<String, Value>, id: &str) -> bool {
+    !states
+        .get(id)
+        .and_then(|fields| fields.get(CONTENT_HIDDEN))
+        .and_then(Value::as_bool)
+        .unwrap_or_default()
+}
+
+/// Every copy that moves stays on the board.
+fn pasted_on_board(pasted: &Pasted) -> Result<()> {
+    pasted
+        .objects
+        .iter()
+        .filter(|object| object.kind != ObjectKind::Arrow)
+        .try_for_each(|object| {
+            let corner = Point::new(object.x, object.y)?
+                .shifted(pasted.shift.x(), pasted.shift.y())?;
+            on_board(Some(&corner), None)
+        })
+}
+
+/// A new object with where it goes; `earlier` are the entries of the same
+/// change before it, which an arrow's `#N` ends name.
+fn checked_add(
+    new: &NewObject,
+    frame: Option<&str>,
+    states: &HashMap<String, Value>,
+    earlier: &[(NewObject, Placement)],
+) -> Result<(NewObject, Placement)> {
+    frame.map_or_else(
+        || {
+            let parent = new_rectangle(new)
+                .and_then(|rect| parent_frame(states, &rect, &BTreeSet::new(), None));
+            check_new(new, states, parent, earlier)
+        },
+        |frame| checked_in(new, frame, states, earlier),
+    )
+}
+
+/// A new object inside `frame`, from its corner; `frame` is an object, or `#N`
+/// for a frame among the `earlier` entries, which stays `#N` for the writer.
+fn checked_in(
+    new: &NewObject,
+    frame: &str,
+    states: &HashMap<String, Value>,
+    earlier: &[(NewObject, Placement)],
+) -> Result<(NewObject, Placement)> {
+    let not_frame = || {
+        Error::BoardChange(BoardChangeError::NotFrame {
+            reference: frame.to_owned(),
+        })
+    };
+    let fresh = earlier_entry(frame);
+    let (id, area) = fresh.map_or_else(
+        || {
+            let id = frame_in(states, frame)?;
+            let area = states
+                .get(&id)
+                .filter(|_| kind_of(states, &id) == ObjectKind::Frame)
+                .and_then(rectangle_of)
+                .ok_or_else(not_frame)?;
+            Ok::<_, Error>((id, area))
+        },
+        |slot| {
+            let area = earlier
+                .get(slot)
+                .map(|(before, _)| before)
+                .filter(|before| matches!(before, NewObject::Frame { .. }))
+                .and_then(new_rectangle)
+                .ok_or_else(not_frame)?;
+            Ok((frame.to_owned(), area))
+        },
+    )?;
+    let placed = new.shifted(area.x, area.y)?;
+    let rect = new_rectangle(&placed);
+    let outside = rect.filter(|rect| !area.contains(rect));
+    outside.map_or(Ok(()), |escaped| {
+        Err(Error::BoardChange(BoardChangeError::OutsideFrame {
+            reference: frame.to_owned(),
+            frame: GivenRectangle {
+                x: area.x,
+                y: area.y,
+                width: area.width,
+                height: area.height,
+            },
+            at: GivenPoint {
+                x: escaped.x,
+                y: escaped.y,
+            },
+        }))
+    })?;
+    let parent = rect
+        .filter(|_| fresh.is_none())
+        .and_then(|rect| parent_frame(states, &rect, &BTreeSet::new(), Some(&id)))
+        .unwrap_or(id);
+    check_new(&placed, states, Some(parent), earlier)
+}
+
+fn check_new(
+    new: &NewObject,
+    states: &HashMap<String, Value>,
+    parent: Option<String>,
+    earlier: &[(NewObject, Placement)],
+) -> Result<(NewObject, Placement)> {
+    // An arrow is kept with the ids its ends were found by.
+    let new = match new {
+        NewObject::Arrow { from, to, color } => NewObject::Arrow {
+            from: end_of(states, earlier, from)?,
+            to: end_of(states, earlier, to)?,
+            color: color.clone(),
+        },
+        NewObject::Sticker { .. }
+        | NewObject::Text { .. }
+        | NewObject::Shape { .. }
+        | NewObject::Frame { .. }
+        | NewObject::Link { .. }
+        | NewObject::Image { .. }
+        | NewObject::File { .. } => new.clone(),
+    };
+    let parent = parent.or_else(|| match &new {
+        NewObject::Arrow { from, to, .. } => common_frame(
+            states,
+            &chain(states, earlier, from),
+            &chain(states, earlier, to),
+        ),
+        NewObject::Sticker { .. }
+        | NewObject::Text { .. }
+        | NewObject::Shape { .. }
+        | NewObject::Frame { .. }
+        | NewObject::Link { .. }
+        | NewObject::Image { .. }
+        | NewObject::File { .. } => None,
+    });
+    sticker_size(&new).map(|()| (new, Placement { parent }))
+}
+
+/// The entry an arrow end `#N` names, counted from 0.
+pub(super) fn earlier_entry(end: &str) -> Option<usize> {
+    end.strip_prefix('#')?.parse::<usize>().ok()?.checked_sub(1)
+}
+
+/// An arrow end as it is kept: `#N` of an earlier entry as it is, an object
+/// by its id.
+fn end_of(
+    states: &HashMap<String, Value>,
+    earlier: &[(NewObject, Placement)],
+    end: &str,
+) -> Result<String> {
+    match earlier_entry(end) {
+        Some(slot) if slot < earlier.len() => Ok(end.to_owned()),
+        Some(_) | None => find(states, end),
+    }
+}
+
+/// The frames around an arrow end, innermost first.
+fn chain(
+    states: &HashMap<String, Value>,
+    earlier: &[(NewObject, Placement)],
+    end: &str,
+) -> Vec<String> {
+    earlier_entry(end).map_or_else(
+        || ancestry(states, end),
+        |slot| {
+            earlier
+                .get(slot)
+                .and_then(|(_, placement)| placement.parent.as_deref())
+                .map(|parent| ancestry(states, parent))
+                .unwrap_or_default()
+        },
+    )
+}
+
+fn new_rectangle(new: &NewObject) -> Option<Rectangle> {
+    let placed = |at: &Point, size: &Option<Size>, kind: &ObjectKind| {
+        let (width, height) = sized(size.as_ref(), kind);
+        Rectangle::new(at.x(), at.y(), width, height)
+    };
+    match new {
+        NewObject::Sticker { at, size, .. } => {
+            Some(placed(at, size, &ObjectKind::Sticker))
+        }
+        NewObject::Text { at, .. }
+        | NewObject::Link { at, .. }
+        | NewObject::File { at, .. } => Some(Rectangle::new(at.x(), at.y(), 0.0, 0.0)),
+        NewObject::Image {
+            upload, at, size, ..
+        } => {
+            let shown = size.unwrap_or(upload.pixels);
+            Some(Rectangle::new(
+                at.x(),
+                at.y(),
+                shown.width(),
+                shown.height(),
+            ))
+        }
+        NewObject::Shape { at, size, .. } => Some(placed(at, size, &ObjectKind::Shape)),
+        NewObject::Frame { at, size, .. } => Some(placed(at, size, &ObjectKind::Frame)),
+        NewObject::Arrow { .. } => None,
+    }
+}
+
+pub(super) fn sized(size: Option<&Size>, kind: &ObjectKind) -> (f64, f64) {
+    size.copied()
+        .or_else(|| kind.default_size())
+        .map_or((0.0, 0.0), |size| (size.width(), size.height()))
+}
+
+pub(super) fn rectangle_of(fields: &Value) -> Option<Rectangle> {
+    let number = |value: Option<&Value>| value.and_then(Value::as_f64);
+    let position = fields.get(POSITION)?;
+    let kind =
+        ObjectKind::of(fields.get(TYPE).and_then(Value::as_str).unwrap_or_default());
+    let (width, height) = number(fields.get(WIDTH))
+        .zip(number(fields.get(HEIGHT)))
+        .or_else(|| {
+            kind.default_size()
+                .map(|size| (size.width(), size.height()))
+        })
+        .unwrap_or_default();
+    Some(Rectangle::new(
+        number(position.get(X))?,
+        number(position.get(Y))?,
+        width,
+        height,
+    ))
+}
+
+pub(super) fn parent_of(fields: &Value) -> Option<&str> {
+    fields.get(PARENT_ID).and_then(Value::as_str)
+}
+
+fn ancestry(states: &HashMap<String, Value>, id: &str) -> Vec<String> {
+    std::iter::successors(Some(id.to_owned()), |id| {
+        states.get(id).and_then(parent_of).map(str::to_owned)
+    })
+    .take(states.len() + 1)
+    .collect()
+}
+
+pub(super) fn parent_frame(
+    states: &HashMap<String, Value>,
+    rect: &Rectangle,
+    held: &BTreeSet<String>,
+    within: Option<&str>,
+) -> Option<String> {
+    let inside = within.map(|frame| subtree(states, frame));
+    let layer = |id: &str| {
+        let z = states
+            .get(id)
+            .and_then(|f| f.get(Z_INDEX))
+            .and_then(Value::as_f64);
+        (ancestry(states, id).len(), z.unwrap_or_default())
+    };
+    states
+        .iter()
+        .filter(|(id, fields)| {
+            kind_of(states, id) == ObjectKind::Frame
+                && shows_content(states, id)
+                && !held.contains(*id)
+                && inside.as_ref().is_none_or(|inside| inside.contains(*id))
+                && rectangle_of(fields).is_some_and(|area| area.contains(rect))
+        })
+        .map(|(id, _)| (layer(id), id))
+        .max_by(|(a, a_id), (b, b_id)| {
+            a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)).then(b_id.cmp(a_id))
+        })
+        .map(|(_, id)| id.clone())
+}
+
+fn common_frame(
+    states: &HashMap<String, Value>,
+    from: &[String],
+    to: &[String],
+) -> Option<String> {
+    from.iter()
+        .filter(|id| kind_of(states, id) == ObjectKind::Frame)
+        .find(|id| to.contains(id))
+        .cloned()
+}
+
+fn sticker_size(new: &NewObject) -> Result<()> {
+    match new {
+        NewObject::Sticker {
+            size: Some(size), ..
+        } => sticker_shape(*size),
+        NewObject::Sticker { size: None, .. }
+        | NewObject::Text { .. }
+        | NewObject::Shape { .. }
+        | NewObject::Frame { .. }
+        | NewObject::Arrow { .. }
+        | NewObject::Link { .. }
+        | NewObject::Image { .. }
+        | NewObject::File { .. } => Ok(()),
+    }
+}
+
+fn sticker_shape(size: Size) -> Result<()> {
+    let near = |a: f64, b: f64| (a - b).abs() < 0.01;
+    if near(size.width(), size.height()) || near(size.width(), 2.0 * size.height()) {
+        Ok(())
+    } else {
+        Err(Error::BoardChange(BoardChangeError::StickerSize {
+            width: size.width(),
+            height: size.height(),
+        }))
+    }
+}
+
+/// An edit of many asks for something, and the object can take all of it.
+fn changeable_edit(
+    kind: &ObjectKind,
+    held: Option<Held>,
+    edit: &ObjectEdit,
+) -> Result<()> {
+    let tags = match (&edit.tags, kind) {
+        (None, _) | (Some(_), ObjectKind::Sticker) => Ok(()),
+        (Some(_), _) => Err(Error::BoardChange(BoardChangeError::NotChangeable {
+            kind: kind.as_str().to_owned(),
+            field: "tags",
+        })),
+    };
+    match (&edit.patch, edit.stacking, &edit.tags) {
+        (
+            ObjectPatch {
+                text: None,
+                at: None,
+                size: None,
+                color: None,
+            },
+            None,
+            None,
+        ) => Err(Error::BoardChange(BoardChangeError::NothingToChange)),
+        (patch, _, _) => fits(kind, held, patch).and(tags),
+    }
+}
+
+/// An object and the container that places it.
+#[derive(Debug, Clone, Copy)]
+struct Held {
+    object: &'static str,
+    container: &'static str,
+}
+
+/// The object as named with the container that places it: a table cell sits
+/// in its table, a task card with a `columnId` in a kanban.
+fn held_in(
+    states: &HashMap<String, Value>,
+    id: &str,
+    kind: &ObjectKind,
+) -> Option<Held> {
+    let in_column = states
+        .get(id)
+        .and_then(|fields| fields.get(COLUMN_ID))
+        .is_some_and(Value::is_string);
+    match kind {
+        ObjectKind::TableCell => Some(Held {
+            object: "table-cell",
+            container: "table",
+        }),
+        ObjectKind::Task if in_column => Some(Held {
+            object: "task-card",
+            container: "kanban",
+        }),
+        ObjectKind::Sticker
+        | ObjectKind::StickerStack
+        | ObjectKind::Text
+        | ObjectKind::Shape
+        | ObjectKind::Document
+        | ObjectKind::Frame
+        | ObjectKind::Arrow
+        | ObjectKind::Image
+        | ObjectKind::File
+        | ObjectKind::Stamp
+        | ObjectKind::Group
+        | ObjectKind::Table
+        | ObjectKind::Code
+        | ObjectKind::Drawing
+        | ObjectKind::Dice
+        | ObjectKind::Wheel
+        | ObjectKind::Flipcard
+        | ObjectKind::Task
+        | ObjectKind::Link
+        | ObjectKind::Other(_) => None,
+    }
+}
+
+/// Whether the kind has what the patch changes.
+fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()> {
+    let refuse = |field| {
+        Err(Error::BoardChange(BoardChangeError::NotChangeable {
+            kind: kind.as_str().to_owned(),
+            field,
+        }))
+    };
+    let text = matches!(
+        kind,
+        ObjectKind::Sticker | ObjectKind::Text | ObjectKind::Shape | ObjectKind::Frame
+    );
+    let place = !matches!(kind, ObjectKind::Arrow);
+    let size = matches!(
+        kind,
+        ObjectKind::Sticker | ObjectKind::Shape | ObjectKind::Frame
+    );
+    let color = matches!(
+        kind,
+        ObjectKind::Sticker | ObjectKind::Shape | ObjectKind::Frame | ObjectKind::Arrow
+    );
+    match (patch, held) {
+        (ObjectPatch { text: Some(_), .. }, _) if !text => refuse("text"),
+        (ObjectPatch { at: Some(_), .. }, _) if !place => refuse("position"),
+        (ObjectPatch { at: Some(_), .. }, Some(Held { object, container })) => {
+            Err(Error::BoardChange(BoardChangeError::PlacedByContainer {
+                held: object,
+                container,
+            }))
+        }
+        (ObjectPatch { size: Some(_), .. }, _) if !size => refuse("size"),
+        (ObjectPatch { color: Some(_), .. }, _) if !color => refuse("color"),
+        (
+            ObjectPatch {
+                size: Some(asked), ..
+            },
+            _,
+        ) if matches!(kind, ObjectKind::Sticker) => sticker_shape(*asked),
+        (ObjectPatch { .. }, _) => Ok(()),
+    }
+}
+
+pub(crate) fn find(states: &HashMap<String, Value>, reference: &str) -> Result<String> {
+    crate::domain::lookup::rules::find_id(states.keys().map(String::as_str), reference)
+}
+
+fn frame_in(states: &HashMap<String, Value>, reference: &str) -> Result<String> {
+    let wanted = crate::domain::id::object_in(reference)
+        .map_or_else(|| reference.trim().to_owned(), String::from);
+    let wanted = wanted.as_str();
+    let exact = states
+        .get_key_value(wanted)
+        .map(|(id, _)| id)
+        .or_else(|| states.keys().find(|id| id.eq_ignore_ascii_case(wanted)));
+    exact.cloned().map_or_else(
+        || {
+            let frames: Vec<Object> = states
+                .iter()
+                .filter(|(id, _)| kind_of(states, id) == ObjectKind::Frame)
+                .filter_map(|(_, fields)| {
+                    crate::domain::board::object_of(fields.clone())
+                })
+                .collect();
+            Scene::new(&frames)
+                .frame(reference)
+                .map(|frame| frame.id.clone())
+        },
+        Ok,
+    )
+}
+
+pub(super) fn kind_of(states: &HashMap<String, Value>, id: &str) -> ObjectKind {
+    ObjectKind::of(
+        states
+            .get(id)
+            .and_then(|fields| fields.get(TYPE))
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+    )
+}
+
+pub(super) fn subtree(states: &HashMap<String, Value>, root: &str) -> BTreeSet<String> {
+    std::iter::successors(Some(BTreeSet::from([root.to_owned()])), |held| {
+        let grown: BTreeSet<String> = states
+            .iter()
+            .filter(|(_, fields)| {
+                parent_of(fields).is_some_and(|parent| held.contains(parent))
+            })
+            .map(|(id, _)| id.clone())
+            .chain(held.iter().cloned())
+            .collect();
+        (grown.len() > held.len()).then_some(grown)
+    })
+    .last()
+    .unwrap_or_default()
+}

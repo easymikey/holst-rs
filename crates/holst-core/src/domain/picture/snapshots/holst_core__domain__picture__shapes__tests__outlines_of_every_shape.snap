@@ -1,0 +1,168 @@
+---
+source: crates/holst-core/src/domain/picture/shapes.rs
+expression: all
+---
+square 100x100
+<rect width="100" height="100" rx="12" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="31.6">A fairly</tspan><tspan x="50" y="55.6">long label</tspan><tspan x="50" y="79.6">to wrap</tspan></text>
+square 200x60
+<rect width="200" height="60" rx="12" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long label to</tspan><tspan x="100" y="47.6">wrap</tspan></text>
+roundedRectangle 100x100
+<rect width="100" height="100" rx="16.67" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="31.6">A fairly</tspan><tspan x="50" y="55.6">long label</tspan><tspan x="50" y="79.6">to wrap</tspan></text>
+roundedRectangle 200x60
+<rect width="200" height="60" rx="10" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long label to</tspan><tspan x="100" y="47.6">wrap</tspan></text>
+ellipse 100x100
+<ellipse cx="50" cy="50" rx="50" ry="50" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="19.6">A fairly</tspan><tspan x="50" y="43.6">long</tspan><tspan x="50" y="67.6">label to</tspan><tspan x="50" y="91.6">wrap</tspan></text>
+ellipse 200x60
+<ellipse cx="100" cy="30" rx="100" ry="30" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long label</tspan><tspan x="100" y="47.6">to wrap</tspan></text>
+flowchart-connector 100x100
+<ellipse cx="50" cy="50" rx="50" ry="50" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="19.6">A fairly</tspan><tspan x="50" y="43.6">long</tspan><tspan x="50" y="67.6">label to</tspan><tspan x="50" y="91.6">wrap</tspan></text>
+flowchart-connector 200x60
+<ellipse cx="100" cy="30" rx="100" ry="30" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long label</tspan><tspan x="100" y="47.6">to wrap</tspan></text>
+bpmn-event-start 100x100
+<ellipse cx="50" cy="50" rx="50" ry="50" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="19.6">A fairly</tspan><tspan x="50" y="43.6">long</tspan><tspan x="50" y="67.6">label to</tspan><tspan x="50" y="91.6">wrap</tspan></text>
+bpmn-event-start 200x60
+<ellipse cx="100" cy="30" rx="100" ry="30" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long label</tspan><tspan x="100" y="47.6">to wrap</tspan></text>
+bpmn-event-intermediate 100x100
+<ellipse cx="50" cy="50" rx="50" ry="50" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="19.6">A fairly</tspan><tspan x="50" y="43.6">long</tspan><tspan x="50" y="67.6">label to</tspan><tspan x="50" y="91.6">wrap</tspan></text>
+bpmn-event-intermediate 200x60
+<ellipse cx="100" cy="30" rx="100" ry="30" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long label</tspan><tspan x="100" y="47.6">to wrap</tspan></text>
+bpmn-event-end 100x100
+<ellipse cx="50" cy="50" rx="50" ry="50" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="19.6">A fairly</tspan><tspan x="50" y="43.6">long</tspan><tspan x="50" y="67.6">label to</tspan><tspan x="50" y="91.6">wrap</tspan></text>
+bpmn-event-end 200x60
+<ellipse cx="100" cy="30" rx="100" ry="30" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long label</tspan><tspan x="100" y="47.6">to wrap</tspan></text>
+flowchart-or 100x100
+<ellipse cx="50" cy="50" rx="50" ry="50" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="19.6">A fairly</tspan><tspan x="50" y="43.6">long</tspan><tspan x="50" y="67.6">label to</tspan><tspan x="50" y="91.6">wrap</tspan></text>
+flowchart-or 200x60
+<ellipse cx="100" cy="30" rx="100" ry="30" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long label</tspan><tspan x="100" y="47.6">to wrap</tspan></text>
+flowchart-summing-junction 100x100
+<ellipse cx="50" cy="50" rx="50" ry="50" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="19.6">A fairly</tspan><tspan x="50" y="43.6">long</tspan><tspan x="50" y="67.6">label to</tspan><tspan x="50" y="91.6">wrap</tspan></text>
+flowchart-summing-junction 200x60
+<ellipse cx="100" cy="30" rx="100" ry="30" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long label</tspan><tspan x="100" y="47.6">to wrap</tspan></text>
+triangle 100x100
+<polygon points="0,100 50,0 100,100" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="8.6">A</tspan><tspan x="50" y="32.6">fairl</tspan><tspan x="50" y="56.6">y</tspan><tspan x="50" y="80.6">long</tspan><tspan x="50" y="104.6">label</tspan><tspan x="50" y="128.6">to</tspan><tspan x="50" y="152.6">wrap</tspan></text>
+triangle 200x60
+<polygon points="0,60 100,0 200,60" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="26.6">A fairly</tspan><tspan x="100" y="50.6">long label</tspan><tspan x="100" y="74.6">to wrap</tspan></text>
+invertedTriangle 100x100
+<polygon points="0,0 100,0 50,100" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="-41.4">A</tspan><tspan x="50" y="-17.4">fairl</tspan><tspan x="50" y="6.6">y</tspan><tspan x="50" y="30.6">long</tspan><tspan x="50" y="54.6">label</tspan><tspan x="50" y="78.6">to</tspan><tspan x="50" y="102.6">wrap</tspan></text>
+invertedTriangle 200x60
+<polygon points="0,0 200,0 100,60" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="-3.4">A fairly</tspan><tspan x="100" y="20.6">long label</tspan><tspan x="100" y="44.6">to wrap</tspan></text>
+flowchart-merge 100x100
+<polygon points="0,0 100,0 50,100" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="-41.4">A</tspan><tspan x="50" y="-17.4">fairl</tspan><tspan x="50" y="6.6">y</tspan><tspan x="50" y="30.6">long</tspan><tspan x="50" y="54.6">label</tspan><tspan x="50" y="78.6">to</tspan><tspan x="50" y="102.6">wrap</tspan></text>
+flowchart-merge 200x60
+<polygon points="0,0 200,0 100,60" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="-3.4">A fairly</tspan><tspan x="100" y="20.6">long label</tspan><tspan x="100" y="44.6">to wrap</tspan></text>
+diamond 100x100
+<polygon points="0,50 50,0 100,50 50,100" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="-16.4">A</tspan><tspan x="50" y="7.6">fairl</tspan><tspan x="50" y="31.6">y</tspan><tspan x="50" y="55.6">long</tspan><tspan x="50" y="79.6">label</tspan><tspan x="50" y="103.6">to</tspan><tspan x="50" y="127.6">wrap</tspan></text>
+diamond 200x60
+<polygon points="0,30 100,0 200,30 100,60" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="11.6">A fairly</tspan><tspan x="100" y="35.6">long label</tspan><tspan x="100" y="59.6">to wrap</tspan></text>
+flowchart-decision 100x100
+<polygon points="0,50 50,0 100,50 50,100" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="-16.4">A</tspan><tspan x="50" y="7.6">fairl</tspan><tspan x="50" y="31.6">y</tspan><tspan x="50" y="55.6">long</tspan><tspan x="50" y="79.6">label</tspan><tspan x="50" y="103.6">to</tspan><tspan x="50" y="127.6">wrap</tspan></text>
+flowchart-decision 200x60
+<polygon points="0,30 100,0 200,30 100,60" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="11.6">A fairly</tspan><tspan x="100" y="35.6">long label</tspan><tspan x="100" y="59.6">to wrap</tspan></text>
+bpmn-gateway 100x100
+<polygon points="0,50 50,0 100,50 50,100" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="-16.4">A</tspan><tspan x="50" y="7.6">fairl</tspan><tspan x="50" y="31.6">y</tspan><tspan x="50" y="55.6">long</tspan><tspan x="50" y="79.6">label</tspan><tspan x="50" y="103.6">to</tspan><tspan x="50" y="127.6">wrap</tspan></text>
+bpmn-gateway 200x60
+<polygon points="0,30 100,0 200,30 100,60" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="11.6">A fairly</tspan><tspan x="100" y="35.6">long label</tspan><tspan x="100" y="59.6">to wrap</tspan></text>
+rightParallelogram 100x100
+<polygon points="18,0 100,0 82,100 0,100" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="-4.4">A</tspan><tspan x="50" y="19.6">fairly</tspan><tspan x="50" y="43.6">long</tspan><tspan x="50" y="67.6">label</tspan><tspan x="50" y="91.6">to</tspan><tspan x="50" y="115.6">wrap</tspan></text>
+rightParallelogram 200x60
+<polygon points="36,0 200,0 164,60 0,60" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long</tspan><tspan x="100" y="47.6">label to wrap</tspan></text>
+flowchart-data 100x100
+<polygon points="18,0 100,0 82,100 0,100" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="-4.4">A</tspan><tspan x="50" y="19.6">fairly</tspan><tspan x="50" y="43.6">long</tspan><tspan x="50" y="67.6">label</tspan><tspan x="50" y="91.6">to</tspan><tspan x="50" y="115.6">wrap</tspan></text>
+flowchart-data 200x60
+<polygon points="36,0 200,0 164,60 0,60" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long</tspan><tspan x="100" y="47.6">label to wrap</tspan></text>
+leftParallelogram 100x100
+<polygon points="0,0 82,0 100,100 18,100" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="-4.4">A</tspan><tspan x="50" y="19.6">fairly</tspan><tspan x="50" y="43.6">long</tspan><tspan x="50" y="67.6">label</tspan><tspan x="50" y="91.6">to</tspan><tspan x="50" y="115.6">wrap</tspan></text>
+leftParallelogram 200x60
+<polygon points="0,0 164,0 200,60 36,60" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long</tspan><tspan x="100" y="47.6">label to wrap</tspan></text>
+basic-trapezoid 100x100
+<polygon points="0,100 18,0 82,0 100,100" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="-4.4">A</tspan><tspan x="50" y="19.6">fairly</tspan><tspan x="50" y="43.6">long</tspan><tspan x="50" y="67.6">label</tspan><tspan x="50" y="91.6">to</tspan><tspan x="50" y="115.6">wrap</tspan></text>
+basic-trapezoid 200x60
+<polygon points="0,60 36,0 164,0 200,60" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long</tspan><tspan x="100" y="47.6">label to wrap</tspan></text>
+flowchart-manual-operation 100x100
+<polygon points="0,100 18,0 82,0 100,100" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="-4.4">A</tspan><tspan x="50" y="19.6">fairly</tspan><tspan x="50" y="43.6">long</tspan><tspan x="50" y="67.6">label</tspan><tspan x="50" y="91.6">to</tspan><tspan x="50" y="115.6">wrap</tspan></text>
+flowchart-manual-operation 200x60
+<polygon points="0,60 36,0 164,0 200,60" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long</tspan><tspan x="100" y="47.6">label to wrap</tspan></text>
+flowchart-manual-input 100x100
+<polygon points="0,20 100,0 100,100 0,100" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="41.6">A fairly</tspan><tspan x="50" y="65.6">long label</tspan><tspan x="50" y="89.6">to wrap</tspan></text>
+flowchart-manual-input 200x60
+<polygon points="0,12 200,0 200,60 0,60" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="29.6">A fairly long label to</tspan><tspan x="100" y="53.6">wrap</tspan></text>
+flowchart-off-page-connector 100x100
+<polygon points="0,0 100,0 100,75 50,100 0,75" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="19.1">A fairly</tspan><tspan x="50" y="43.1">long label</tspan><tspan x="50" y="67.1">to wrap</tspan></text>
+flowchart-off-page-connector 200x60
+<polygon points="0,0 200,0 200,45 100,60 0,45" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="16.1">A fairly long label to</tspan><tspan x="100" y="40.1">wrap</tspan></text>
+basic-pentagon 100x100
+<polygon points="50,0 100,38.2 80.9,100 19.1,100 0,38.2" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="-6.85">A</tspan><tspan x="50" y="17.15">fairl</tspan><tspan x="50" y="41.15">y</tspan><tspan x="50" y="65.15">long</tspan><tspan x="50" y="89.15">label</tspan><tspan x="50" y="113.15">to</tspan><tspan x="50" y="137.15">wrap</tspan></text>
+basic-pentagon 200x60
+<polygon points="100,0 200,22.92 161.8,60 38.2,60 0,22.92" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="17.33">A fairly</tspan><tspan x="100" y="41.33">long label</tspan><tspan x="100" y="65.33">to wrap</tspan></text>
+basic-hexagon 100x100
+<polygon points="25,0 75,0 100,50 75,100 25,100 0,50" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="-16.4">A</tspan><tspan x="50" y="7.6">fairl</tspan><tspan x="50" y="31.6">y</tspan><tspan x="50" y="55.6">long</tspan><tspan x="50" y="79.6">label</tspan><tspan x="50" y="103.6">to</tspan><tspan x="50" y="127.6">wrap</tspan></text>
+basic-hexagon 200x60
+<polygon points="50,0 150,0 200,30 150,60 50,60 0,30" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="11.6">A fairly</tspan><tspan x="100" y="35.6">long label</tspan><tspan x="100" y="59.6">to wrap</tspan></text>
+flowchart-preparation 100x100
+<polygon points="25,0 75,0 100,50 75,100 25,100 0,50" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="-16.4">A</tspan><tspan x="50" y="7.6">fairl</tspan><tspan x="50" y="31.6">y</tspan><tspan x="50" y="55.6">long</tspan><tspan x="50" y="79.6">label</tspan><tspan x="50" y="103.6">to</tspan><tspan x="50" y="127.6">wrap</tspan></text>
+flowchart-preparation 200x60
+<polygon points="50,0 150,0 200,30 150,60 50,60 0,30" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="11.6">A fairly</tspan><tspan x="100" y="35.6">long label</tspan><tspan x="100" y="59.6">to wrap</tspan></text>
+bpmn-conversation 100x100
+<polygon points="25,0 75,0 100,50 75,100 25,100 0,50" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="-16.4">A</tspan><tspan x="50" y="7.6">fairl</tspan><tspan x="50" y="31.6">y</tspan><tspan x="50" y="55.6">long</tspan><tspan x="50" y="79.6">label</tspan><tspan x="50" y="103.6">to</tspan><tspan x="50" y="127.6">wrap</tspan></text>
+bpmn-conversation 200x60
+<polygon points="50,0 150,0 200,30 150,60 50,60 0,30" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="11.6">A fairly</tspan><tspan x="100" y="35.6">long label</tspan><tspan x="100" y="59.6">to wrap</tspan></text>
+basic-octagon 100x100
+<polygon points="29.3,0 70.7,0 100,29.3 100,70.7 70.7,100 29.3,100 0,70.7 0,29.3" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="-16.4">A</tspan><tspan x="50" y="7.6">fairl</tspan><tspan x="50" y="31.6">y</tspan><tspan x="50" y="55.6">long</tspan><tspan x="50" y="79.6">label</tspan><tspan x="50" y="103.6">to</tspan><tspan x="50" y="127.6">wrap</tspan></text>
+basic-octagon 200x60
+<polygon points="58.6,0 141.4,0 200,17.58 200,42.42 141.4,60 58.6,60 0,42.42 0,17.58" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="11.6">A fairly</tspan><tspan x="100" y="35.6">long label</tspan><tspan x="100" y="59.6">to wrap</tspan></text>
+basic-star 100x100
+<polygon points="50,0 35,32 0,37 26,60 21,100 50,78 79,100 74,60 100,37 65,32" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="-22.4">A</tspan><tspan x="50" y="1.6">fairl</tspan><tspan x="50" y="25.6">y</tspan><tspan x="50" y="49.6">long</tspan><tspan x="50" y="73.6">label</tspan><tspan x="50" y="97.6">to</tspan><tspan x="50" y="121.6">wra</tspan><tspan x="50" y="145.6">p</tspan></text>
+basic-star 200x60
+<polygon points="100,0 70,19.2 0,22.2 52,36 42,60 100,46.8 158,60 148,36 200,22.2 130,19.2" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="15.2">A fairly</tspan><tspan x="100" y="39.2">long label</tspan><tspan x="100" y="63.2">to wrap</tspan></text>
+basic-cross 100x100
+<polygon points="0,25 0,75 25,75 25,100 75,100 75,75 100,75 100,25 75,25 75,0 25,0 25,25" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="-16.4">A</tspan><tspan x="50" y="7.6">fairl</tspan><tspan x="50" y="31.6">y</tspan><tspan x="50" y="55.6">long</tspan><tspan x="50" y="79.6">label</tspan><tspan x="50" y="103.6">to</tspan><tspan x="50" y="127.6">wrap</tspan></text>
+basic-cross 200x60
+<polygon points="0,15 0,45 50,45 50,60 150,60 150,45 200,45 200,15 150,15 150,0 50,0 50,15" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="11.6">A fairly</tspan><tspan x="100" y="35.6">long label</tspan><tspan x="100" y="59.6">to wrap</tspan></text>
+basic-arrow-right 100x100
+<polygon points="0,22 0,78 70,78 70,100 100,50 70,0 70,22" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="42.5" y="19.6">A fairly</tspan><tspan x="42.5" y="43.6">long</tspan><tspan x="42.5" y="67.6">label to</tspan><tspan x="42.5" y="91.6">wrap</tspan></text>
+basic-arrow-right 200x60
+<polygon points="0,13.2 0,46.8 140,46.8 140,60 200,30 140,0 140,13.2" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="85" y="23.6">A fairly long label to</tspan><tspan x="85" y="47.6">wrap</tspan></text>
+basic-arrow-left 100x100
+<polygon points="100,22 30,22 30,0 0,50 30,100 30,78 100,78" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="57.5" y="19.6">A fairly</tspan><tspan x="57.5" y="43.6">long</tspan><tspan x="57.5" y="67.6">label to</tspan><tspan x="57.5" y="91.6">wrap</tspan></text>
+basic-arrow-left 200x60
+<polygon points="200,13.2 60,13.2 60,0 0,30 60,60 60,46.8 200,46.8" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="115" y="23.6">A fairly long label to</tspan><tspan x="115" y="47.6">wrap</tspan></text>
+basic-arrow-left-right 100x100
+<polygon points="70,22 30,22 30,0 0,50 30,100 30,78 70,78 70,100 100,50 70,0" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="7.6">A fairly</tspan><tspan x="50" y="31.6">long</tspan><tspan x="50" y="55.6">label</tspan><tspan x="50" y="79.6">to</tspan><tspan x="50" y="103.6">wrap</tspan></text>
+basic-arrow-left-right 200x60
+<polygon points="140,13.2 60,13.2 60,0 0,30 60,60 60,46.8 140,46.8 140,60 200,30 140,0" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long</tspan><tspan x="100" y="47.6">label to wrap</tspan></text>
+basic-speech-bubble 100x100
+<path d="M25 75 L25 100 L41 75 L87.5 75 Q100 75 100 62.5 L100 12.5 Q100 0 87.5 0 L12.5 0 Q0 0 0 12.5 L0 62.5 Q0 75 12.5 75 Z" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="19.1">A fairly</tspan><tspan x="50" y="43.1">long label</tspan><tspan x="50" y="67.1">to wrap</tspan></text>
+basic-speech-bubble 200x60
+<path d="M50 45 L50 60 L82 45 L192.5 45 Q200 45 200 37.5 L200 7.5 Q200 0 192.5 0 L7.5 0 Q0 0 0 7.5 L0 37.5 Q0 45 7.5 45 Z" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="16.1">A fairly long label to</tspan><tspan x="100" y="40.1">wrap</tspan></text>
+flowchart-terminator 100x100
+<rect width="100" height="100" rx="50" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="31.6">A fairly</tspan><tspan x="50" y="55.6">long label</tspan><tspan x="50" y="79.6">to wrap</tspan></text>
+flowchart-terminator 200x60
+<rect width="200" height="60" rx="30" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long label to</tspan><tspan x="100" y="47.6">wrap</tspan></text>
+flowchart-process 100x100
+<rect width="100" height="100" rx="8" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="31.6">A fairly</tspan><tspan x="50" y="55.6">long label</tspan><tspan x="50" y="79.6">to wrap</tspan></text>
+flowchart-process 200x60
+<rect width="200" height="60" rx="8" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long label to</tspan><tspan x="100" y="47.6">wrap</tspan></text>
+bpmn-task 100x100
+<rect width="100" height="100" rx="10" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="31.6">A fairly</tspan><tspan x="50" y="55.6">long label</tspan><tspan x="50" y="79.6">to wrap</tspan></text>
+bpmn-task 200x60
+<rect width="200" height="60" rx="10" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long label to</tspan><tspan x="100" y="47.6">wrap</tspan></text>
+bpmn-data-store 100x100
+<path d="M100 12 L100 88 A50 12 0 0 1 0 88 L0 12 Z" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><ellipse cx="50" cy="12" rx="50" ry="12" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="37.6">A fairly</tspan><tspan x="50" y="61.6">long label</tspan><tspan x="50" y="85.6">to wrap</tspan></text>
+bpmn-data-store 200x60
+<path d="M200 12 L200 48 A100 12 0 0 1 0 48 L0 12 Z" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><ellipse cx="100" cy="12" rx="100" ry="12" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="29.6">A fairly long label to</tspan><tspan x="100" y="53.6">wrap</tspan></text>
+flowchart-predefined-process 100x100
+<rect width="100" height="100" rx="8" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><path d="M20 0V100M80 0V100" fill="none" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="-4.4">A</tspan><tspan x="50" y="19.6">fairly</tspan><tspan x="50" y="43.6">long</tspan><tspan x="50" y="67.6">label</tspan><tspan x="50" y="91.6">to</tspan><tspan x="50" y="115.6">wrap</tspan></text>
+flowchart-predefined-process 200x60
+<rect width="200" height="60" rx="8" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><path d="M20 0V60M180 0V60" fill="none" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long label</tspan><tspan x="100" y="47.6">to wrap</tspan></text>
+flowchart-document 100x100
+<path d="M0 80 L0 0 L100 0 L100 100 C60 50 40 130 0 80 Z" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="21.6">A fairly</tspan><tspan x="50" y="45.6">long label</tspan><tspan x="50" y="69.6">to wrap</tspan></text>
+flowchart-document 200x60
+<path d="M0 48 L0 0 L200 0 L200 60 C120 30 80 78 0 48 Z" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="17.6">A fairly long label to</tspan><tspan x="100" y="41.6">wrap</tspan></text>
+flowchart-database 100x100
+<path d="M100 12 L100 88 A50 12 0 0 1 0 88 L0 12 Z" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><ellipse cx="50" cy="12" rx="50" ry="12" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="37.6">A fairly</tspan><tspan x="50" y="61.6">long label</tspan><tspan x="50" y="85.6">to wrap</tspan></text>
+flowchart-database 200x60
+<path d="M200 12 L200 48 A100 12 0 0 1 0 48 L0 12 Z" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><ellipse cx="100" cy="12" rx="100" ry="12" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="29.6">A fairly long label to</tspan><tspan x="100" y="53.6">wrap</tspan></text>
+mystery 100x100
+<rect width="100" height="100" rx="12" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="50" y="31.6">A fairly</tspan><tspan x="50" y="55.6">long label</tspan><tspan x="50" y="79.6">to wrap</tspan></text>
+mystery 200x60
+<rect width="200" height="60" rx="12" fill="#fdd8d8" stroke="#202020" stroke-width="3" stroke-dasharray="10 10" stroke-linejoin="round"/><text font-size="16" fill="#202020" text-anchor="middle"><tspan x="100" y="23.6">A fairly long label to</tspan><tspan x="100" y="47.6">wrap</tspan></text>

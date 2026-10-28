@@ -1,0 +1,27 @@
+---
+source: crates/holst-core/src/content/search.rs
+expression: report
+---
+"план": 9 of 9
+1000  planning/s0 sticker: [План]
+ 850  planning/s8 sticker: [ПЛАН] В КАПСЕ
+ 850  planning/s1 sticker: [План] релиза Q4
+ 800  mixed/f0 frame: [План]ы
+ 800  planning/s3 sticker: [План]ирование спринта
+ 650  planning/s2 sticker: Новый [план]
+ 650  planning/s9 sticker: релиз и [план] после
+ 650  planning/s5 sticker: Релиз: итоговый [план]
+ 450  planning/s4 sticker: С[план] команды
+"релиз план": 3 of 3
+ 250  planning/s9 sticker: [релиз] и план после
+ 250  planning/s5 sticker: [Релиз]: итоговый план
+ 200  planning/s1 sticker: План [релиз]а Q4
+"ЕЖИК": 2 of 2
+ 850  planning/s7 sticker: [Ёжик] сказка
+ 850  planning/s6 sticker: [Ёжик] в тумане
+"проверка": 3 of 3
+ 850  mixed/t0 simple-text: [Проверка] клиента
+ 550~ mixed/t2 simple-text: [Пробверка] статуса
+ 550~ mixed/t1 simple-text: [Провекра] документов
+"провекра": 1 of 1
+ 850  mixed/t1 simple-text: [Провекра] документов
