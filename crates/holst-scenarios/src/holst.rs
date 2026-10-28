@@ -124,6 +124,7 @@ impl Holst {
                     .any(|kept| name.eq_ignore_ascii_case(kept))
             }))
             .env("HOME", self.directory.join("home"))
+            .env("USERPROFILE", self.directory.join("home"))
             .env("HOLST_HOME", self.directory.join("holst"))
             .env("HOLST_CACHE_DIR", self.directory.join("cache"))
             .env("HOLST_BASE_URL", self.fake.base_url())

@@ -46,6 +46,7 @@ async fn the_tools_are_listed_over_the_wire() -> Result<(), WireError> {
                 .any(|kept| name.eq_ignore_ascii_case(kept))
         }))
         .env("HOME", root.join("home"))
+        .env("USERPROFILE", root.join("home"))
         .env("HOLST_HOME", root.join("holst"))
         .env("HOLST_CACHE_DIR", root.join("cache"));
     let client = ()

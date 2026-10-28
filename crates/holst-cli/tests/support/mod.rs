@@ -34,6 +34,7 @@ pub(crate) fn isolated_from(
                 .any(|kept| name.eq_ignore_ascii_case(kept))
         }))
         .env("HOME", holst_home.with_extension("home"))
+        .env("USERPROFILE", holst_home.with_extension("home"))
         .env("HOLST_HOME", holst_home)
         .env("HOLST_CACHE_DIR", holst_home.with_extension("cache"));
     command

@@ -93,6 +93,7 @@ pub(crate) fn holst_at(
     fake::isolated(env!("CARGO_BIN_EXE_holst"), dir)
         .args(flags)
         .env("HOME", fake_home)
+        .env("USERPROFILE", fake_home)
         .env("HOLST_BASE_URL", "http://127.0.0.1:9")
         .env("NO_COLOR", "1")
         .stdin(Stdio::null())

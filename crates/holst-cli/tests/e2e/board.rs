@@ -171,6 +171,7 @@ fn a_bad_cache_variable_is_a_warning(
         fake::isolated(env!("CARGO_BIN_EXE_holst"), &dir)
             .args(args)
             .env("HOME", &fake_home)
+            .env("USERPROFILE", &fake_home)
             .env("HOLST_BASE_URL", "http://127.0.0.1:9")
             .env("NO_COLOR", "1")
             .env(name, value)
