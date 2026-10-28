@@ -10,7 +10,7 @@ use crate::{
         board::show::{Loading, account_cache, board_id},
         board_load::{self, CacheUse, RemoteBoard},
         board_write::{WriteRequest, write_cached},
-        object::{AddArgs, AddItem, AddKind, NewShape},
+        object::{AddArgs, AddItem, AddKind},
         table::not_value,
     },
     domain::{
@@ -20,7 +20,7 @@ use crate::{
             Object,
             ObjectKind,
             objects as board_objects,
-            shape::ShapeKind,
+            shape_type::ShapeType,
         },
         change::{
             receipt::ChangeReport,
@@ -270,7 +270,7 @@ enum What {
         text: String,
         at: Option<Point>,
         size: Option<Size>,
-        kind: ShapeKind,
+        kind: ShapeType,
     },
     Frame {
         title: String,
@@ -489,8 +489,8 @@ impl Reader {
             AddKind::Shape => What::Shape {
                 text: text.clone().unwrap_or_default(),
                 at,
-                size,
-                kind: item.shape.map_or_else(ShapeKind::default, shape_kind),
+                size: size.or_else(|| item.shape.and_then(ShapeType::default_size)),
+                kind: item.shape.unwrap_or(ShapeType::Square),
             },
             AddKind::Frame => What::Frame {
                 title: text.clone().unwrap_or_default(),
@@ -617,16 +617,6 @@ const fn word(kind: AddKind) -> &'static str {
         AddKind::Link => "a link",
         AddKind::Image => "an image",
         AddKind::File => "a file",
-    }
-}
-
-const fn shape_kind(shape: NewShape) -> ShapeKind {
-    match shape {
-        NewShape::Square => ShapeKind::Square,
-        NewShape::RoundedRectangle => ShapeKind::RoundedRectangle,
-        NewShape::Ellipse => ShapeKind::Ellipse,
-        NewShape::Triangle => ShapeKind::Triangle,
-        NewShape::Diamond => ShapeKind::Diamond,
     }
 }
 

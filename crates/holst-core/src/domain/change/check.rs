@@ -866,10 +866,13 @@ fn changeable_edit(
                 size: None,
                 color: None,
                 format: _,
+                shape,
             },
             None,
             None,
-        ) => Err(Error::BoardChange(BoardChangeError::NothingToChange)),
+        ) if shape.first_field().is_none() => {
+            Err(Error::BoardChange(BoardChangeError::NothingToChange))
+        }
         (patch, _, _) => fits(kind, held, patch).and(tags),
     }
 }
@@ -968,6 +971,11 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
         }
         (ObjectPatch { size: Some(_), .. }, _) if !size => refuse("size"),
         (ObjectPatch { color: Some(_), .. }, _) if !color => refuse("color"),
+        (ObjectPatch { shape, .. }, _)
+            if *kind != ObjectKind::Shape && shape.first_field().is_some() =>
+        {
+            shape.first_field().map_or(Ok(()), refuse)
+        }
         (
             ObjectPatch {
                 size: Some(asked), ..

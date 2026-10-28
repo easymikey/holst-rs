@@ -15,7 +15,11 @@ use crate::{
         board::{AreaArgs, Caching},
         table::{Command, CommandArgs, Confirmation, EnumArgument, Items, NewFile},
     },
-    domain::{change::value::LayerOrder, rich_text::TextFormat},
+    domain::{
+        board::shape_type::{ShapeType, StrokeStyle},
+        change::value::LayerOrder,
+        rich_text::TextFormat,
+    },
     effect::board_write::WriteMode,
 };
 
@@ -130,19 +134,9 @@ pub enum AddKind {
 
 impl EnumArgument for AddKind {}
 
-/// The outline of a new shape.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, strum::VariantNames)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum NewShape {
-    Square,
-    RoundedRectangle,
-    Ellipse,
-    Triangle,
-    Diamond,
-}
+impl EnumArgument for ShapeType {}
 
-impl EnumArgument for NewShape {}
+impl EnumArgument for StrokeStyle {}
 
 #[derive(Debug, Deserialize, CommandArgs)]
 #[holst_command(
@@ -209,10 +203,11 @@ pub struct AddArgs {
     pub workspace: Option<String>,
     #[argument(
         value_name = "shape",
-        help = "The outline: square, rounded-rectangle, ellipse, triangle or diamond; square by default",
+        help = "The kind of shape, e.g. ellipse, flowchart_decision or bpmn_gateway; square by default",
+        tool_doc = "Shape kind.",
         kinds = [shape]
     )]
-    pub shape: Option<NewShape>,
+    pub shape: Option<ShapeType>,
     #[argument(
         value_name = "x,y",
         help = "The top-left corner in board units, from the frame's corner with --frame; a free corner by default",
@@ -276,7 +271,7 @@ pub struct AddArgs {
 pub struct AddItem {
     pub kind: Option<AddKind>,
     pub text: Option<String>,
-    pub shape: Option<NewShape>,
+    pub shape: Option<ShapeType>,
     pub at: Option<String>,
     pub size: Option<String>,
     pub color: Option<String>,
@@ -351,6 +346,42 @@ pub struct EditArgs {
     )]
     pub color: Option<String>,
     #[argument(
+        value_name = "shape",
+        help = "Change a shape's kind, e.g. ellipse, flowchart_decision or bpmn_gateway; unchanged by default",
+        tool_doc = "Shape kind."
+    )]
+    pub shape: Option<ShapeType>,
+    #[argument(
+        value_name = "color",
+        help = "A shape's outline color: a palette token, e.g. gray12; unchanged by default",
+        tool_doc = "Outline color."
+    )]
+    pub stroke: Option<String>,
+    #[argument(
+        value_name = "n",
+        help = "A shape's outline width, 0 to 10; unchanged by default",
+        tool_doc = "0..10."
+    )]
+    pub stroke_width: Option<u32>,
+    #[argument(
+        value_name = "style",
+        help = "A shape's outline: solid, dashed or dotted; unchanged by default",
+        tool_doc = "Outline style."
+    )]
+    pub stroke_style: Option<StrokeStyle>,
+    #[argument(
+        value_name = "n",
+        help = "A shape's corner radius, at most as the shape's size allows; unchanged by default",
+        tool_doc = "Corner radius."
+    )]
+    pub radius: Option<u32>,
+    #[argument(
+        value_name = "n",
+        help = "A shape's fill opacity, 0.1 to 1; unchanged by default",
+        tool_doc = "0.1..1."
+    )]
+    pub opacity: Option<f64>,
+    #[argument(
         value_name = "order",
         help = "Where it stands among the objects: front or back; unchanged by default"
     )]
@@ -372,7 +403,7 @@ pub struct EditArgs {
 }
 
 /// One object of `--items` of `object edit`: the arguments of one call.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EditItem {
     pub object: Option<String>,
@@ -380,6 +411,12 @@ pub struct EditItem {
     pub at: Option<String>,
     pub size: Option<String>,
     pub color: Option<String>,
+    pub shape: Option<ShapeType>,
+    pub stroke: Option<String>,
+    pub stroke_width: Option<u32>,
+    pub stroke_style: Option<StrokeStyle>,
+    pub radius: Option<u32>,
+    pub opacity: Option<f64>,
     pub order: Option<LayerOrder>,
     #[serde(default)]
     pub tag: Vec<String>,
@@ -637,8 +674,21 @@ mod tests {
             "kind", "text", "shape", "at", "size", "color", "frame", "from", "to",
             "url", "path", "no_embed",
         ];
-        const EDIT_KEYS: [&str; 7] =
-            ["object", "text", "at", "size", "color", "order", "tag"];
+        const EDIT_KEYS: [&str; 13] = [
+            "object",
+            "text",
+            "at",
+            "size",
+            "color",
+            "shape",
+            "stroke",
+            "stroke_width",
+            "stroke_style",
+            "radius",
+            "opacity",
+            "order",
+            "tag",
+        ];
         let strays: Vec<_> = [
             (AddArgs::COMMAND.arguments, &ADD_KEYS[..]),
             (EditArgs::COMMAND.arguments, &EDIT_KEYS[..]),

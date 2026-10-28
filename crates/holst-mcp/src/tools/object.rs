@@ -319,6 +319,11 @@ impl McpServer {
             .as_deref()
             .map(|color| format!("  {color}"))
             .unwrap_or_default();
+        let look = object
+            .look
+            .as_ref()
+            .map(|look| format!("  {}", look.words()))
+            .unwrap_or_default();
         let ends = object
             .ends
             .as_ref()
@@ -341,7 +346,7 @@ impl McpServer {
             format!("  \"{}\"", printable(&text))
         };
         format!(
-            "{} {:<7} {corner}{size}{inside}{color}{ends}{tags}{quoted}",
+            "{} {:<7} {corner}{size}{inside}{color}{look}{ends}{tags}{quoted}",
             alias(&object.id),
             object.kind.short_name(),
         )

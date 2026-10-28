@@ -127,6 +127,7 @@ fn plain_object(
         color: ["yellow4", "orange6", "purple6"]
             .get(index % 3)
             .map(|&color| color.into()),
+        look: None,
         ends: None,
         author: Some(id_of_author()),
         file: None,

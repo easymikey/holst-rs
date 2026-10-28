@@ -91,6 +91,7 @@ fn board(board: usize, objects: usize, words: &[String]) -> BoardIndex {
             color: ["yellow4", "orange6", "purple6"]
                 .get(n % 3)
                 .map(|&c| c.into()),
+            look: None,
             ends: None,
             author: Some("a0000000-0000-4000-8000-000000000000".into()),
             file: None,

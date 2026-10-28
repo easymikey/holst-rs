@@ -64,6 +64,11 @@ fn object_line(listed: &ListedObject) -> String {
         .as_deref()
         .map(|color| format!("  {color}"))
         .unwrap_or_default();
+    let look = object
+        .look
+        .as_ref()
+        .map(|look| format!("  {}", look.words()))
+        .unwrap_or_default();
     let ends = object
         .ends
         .as_ref()
@@ -85,7 +90,7 @@ fn object_line(listed: &ListedObject) -> String {
         format!("  \"{text}\"")
     };
     format!(
-        "@{} {:<7} {corner}{size}{inside}{color}{ends}{tags}{quoted}  {}",
+        "@{} {:<7} {corner}{size}{inside}{color}{look}{ends}{tags}{quoted}  {}",
         short(&object.id),
         object.kind.short_name(),
         listed.link
@@ -163,6 +168,7 @@ mod tests {
             z_index: 0.0,
             text: text.into(),
             color: Some("yellow4".into()),
+            look: None,
             ends: None,
             author: None,
             file: None,

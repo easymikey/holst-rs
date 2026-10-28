@@ -177,6 +177,7 @@ async fn a_saved_original_is_linked_by_its_percent_encoded_name() -> Result<()> 
         z_index: 0.0,
         text: String::new(),
         color: None,
+        look: None,
         ends: None,
         author: None,
         file: Some(StoredFile {

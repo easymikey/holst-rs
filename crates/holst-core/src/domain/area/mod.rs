@@ -161,6 +161,7 @@ mod tests {
                 .pointer("/fillColor/color")
                 .and_then(Value::as_str)
                 .map(str::to_owned),
+            look: None,
             ends: None,
             author: None,
             file: crate::domain::board::stored_file(

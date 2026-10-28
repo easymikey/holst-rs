@@ -6,7 +6,7 @@ use yrs::{Doc, Map as _, MapPrelim, Transact as _};
 use super::{add, add_in, edit, remove};
 use crate::{
     domain::{
-        board::{ObjectKind, any, shape::ShapeKind},
+        board::{ObjectKind, any, shape_type::ShapeType},
         change::{
             build::build,
             tests::{ME, fields_of},
@@ -552,7 +552,7 @@ fn new_objects_take_the_kind_default_size() -> Result<()> {
                 at,
                 size: None,
                 color: None,
-                kind: ShapeKind::Square,
+                kind: ShapeType::Square,
             },
         ),
         (

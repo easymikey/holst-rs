@@ -10,6 +10,7 @@ mod markdown;
 mod new_kinds;
 mod objects;
 mod remove;
+mod shape_edit;
 
 use std::collections::HashMap;
 

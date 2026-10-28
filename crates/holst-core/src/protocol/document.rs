@@ -59,6 +59,8 @@ pub(crate) const SHAPE_TYPE: &str = "shapeType";
 pub(crate) const STROKE_COLOR: &str = "strokeColor";
 pub(crate) const STROKE_STYLE: &str = "strokeStyle";
 pub(crate) const STROKE_WIDTH: &str = "strokeWidth";
+pub(crate) const FIXED_SIZE: &str = "fixedSize";
+pub(crate) const BPMN_RESOURCES: &str = "bpmnResources";
 
 // PROTOCOL: arrows, their ends and their heads.
 pub(crate) const START: &str = "start";

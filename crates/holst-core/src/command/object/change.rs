@@ -16,7 +16,7 @@ use crate::{
         board::LoadedBoard,
         change::{
             receipt::ChangeReport,
-            value::{BoardChange, ObjectEdit, ObjectPatch},
+            value::{BoardChange, ObjectEdit, ObjectPatch, ShapeEdit},
         },
         id,
         rich_text::TextFormat,
@@ -46,6 +46,11 @@ use crate::{
 
 const EDIT: &str = "object edit";
 const REMOVE: &str = "object rm";
+/// BUNDLE: the outline slider goes to 10 (main.a33651a4.js 183120-183140).
+const MAX_STROKE_WIDTH: u8 = 10;
+/// BUNDLE: the opacity slider's first point is 0.1 (main.a33651a4.js
+/// 182790-182806).
+const MIN_OPACITY: f64 = 0.1;
 
 /// A removal: what it took, or would take, and what it waits for.
 #[derive(Debug, Serialize)]
@@ -199,11 +204,22 @@ fn read_edits(args: &EditArgs) -> Result<Vec<ObjectEdit>> {
     let linked = id::object_in(&args.board).map(|linked| linked.as_str().to_owned());
     if args.items.0.is_empty() {
         let patch = patch_of(
-            args.text.clone(),
+            &EditItem {
+                object: None,
+                text: args.text.clone(),
+                at: args.at.clone(),
+                size: args.size.clone(),
+                color: args.color.clone(),
+                shape: args.shape,
+                stroke: args.stroke.clone(),
+                stroke_width: args.stroke_width,
+                stroke_style: args.stroke_style,
+                radius: args.radius,
+                opacity: args.opacity,
+                order: None,
+                tag: Vec::new(),
+            },
             args.text_format.unwrap_or_default(),
-            args.at.as_deref(),
-            args.size.as_deref(),
-            args.color.as_deref(),
         )?;
         named(&args.board, &args.object, EDIT)?
             .into_iter()
@@ -242,6 +258,12 @@ fn refuse_with_items(args: &EditArgs) -> Result<()> {
         ("at", args.at.is_some()),
         ("size", args.size.is_some()),
         ("color", args.color.is_some()),
+        ("shape", args.shape.is_some()),
+        ("stroke", args.stroke.is_some()),
+        ("stroke-width", args.stroke_width.is_some()),
+        ("stroke-style", args.stroke_style.is_some()),
+        ("radius", args.radius.is_some()),
+        ("opacity", args.opacity.is_some()),
         ("order", args.order.is_some()),
         ("tag", !args.tag.is_empty()),
     ]
@@ -264,31 +286,47 @@ fn item_edit(
     })?;
     Ok(ObjectEdit {
         object: object.to_owned(),
-        patch: patch_of(
-            item.text.clone(),
-            format,
-            item.at.as_deref(),
-            item.size.as_deref(),
-            item.color.as_deref(),
-        )?,
+        patch: patch_of(item, format)?,
         stacking: item.order,
         tags: tags_of(&item.tag),
     })
 }
 
-fn patch_of(
-    text: Option<String>,
-    format: TextFormat,
-    at: Option<&str>,
-    size: Option<&str>,
-    color: Option<&str>,
-) -> Result<ObjectPatch> {
+fn patch_of(item: &EditItem, format: TextFormat) -> Result<ObjectPatch> {
+    let stroke_width = item
+        .stroke_width
+        .map(|width| {
+            u8::try_from(width)
+                .ok()
+                .filter(|width| *width <= MAX_STROKE_WIDTH)
+                .ok_or_else(|| {
+                    not_value(EDIT, "stroke-width", "a whole number 0 to 10")
+                })
+        })
+        .transpose()?;
+    let opacity = item
+        .opacity
+        .map(|opacity| {
+            (MIN_OPACITY..=1.0)
+                .contains(&opacity)
+                .then_some(opacity)
+                .ok_or_else(|| not_value(EDIT, "opacity", "a number 0.1 to 1"))
+        })
+        .transpose()?;
     Ok(ObjectPatch {
-        text,
+        text: item.text.clone(),
         format,
-        at: at.map(str::parse).transpose()?,
-        size: size.map(str::parse).transpose()?,
-        color: color.map(str::parse).transpose()?,
+        at: item.at.as_deref().map(str::parse).transpose()?,
+        size: item.size.as_deref().map(str::parse).transpose()?,
+        color: item.color.as_deref().map(str::parse).transpose()?,
+        shape: ShapeEdit {
+            kind: item.shape,
+            stroke: item.stroke.as_deref().map(str::parse).transpose()?,
+            stroke_width,
+            stroke_style: item.stroke_style,
+            radius: item.radius,
+            opacity,
+        },
     })
 }
 

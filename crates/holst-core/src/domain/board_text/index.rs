@@ -356,6 +356,7 @@ impl BoardIndex {
             z_index: *body.z_indexes.get(at)?,
             text: self.text(at).to_owned(),
             color: name(*body.colors.get(at)?),
+            look: None,
             ends: arrow.map(
                 |IndexedArrow {
                      start,

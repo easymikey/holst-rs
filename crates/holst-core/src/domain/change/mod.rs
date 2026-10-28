@@ -10,3 +10,4 @@ pub mod value;
 mod write;
 mod write_group;
 mod write_many;
+mod write_shape;

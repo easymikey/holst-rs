@@ -9,7 +9,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     domain::{
-        board::{Object, ObjectKind, shape::ShapeKind},
+        board::{
+            Object,
+            ObjectKind,
+            shape_type::{ShapeType, StrokeStyle},
+        },
         change::receipt::Delivery,
         geometry::{Point, Size},
         id_source::IdSource,
@@ -59,7 +63,7 @@ pub enum NewObject {
         at: Point,
         size: Option<Size>,
         color: Option<Color>,
-        kind: ShapeKind,
+        kind: ShapeType,
     },
     Frame {
         title: String,
@@ -173,6 +177,45 @@ pub struct ObjectPatch {
     pub at: Option<Point>,
     pub size: Option<Size>,
     pub color: Option<Color>,
+    pub shape: ShapeEdit,
+}
+
+/// What an edit changes of a shape: its kind, outline, corners and fill
+/// opacity.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ShapeEdit {
+    pub kind: Option<ShapeType>,
+    pub stroke: Option<Color>,
+    /// 0 to 10, checked by the caller.
+    pub stroke_width: Option<u8>,
+    pub stroke_style: Option<StrokeStyle>,
+    pub radius: Option<u32>,
+    /// 0.1 to 1, checked by the caller.
+    pub opacity: Option<f64>,
+}
+
+impl ShapeEdit {
+    /// The name of the first field asked for, as `object edit` words it.
+    #[must_use]
+    pub fn first_field(&self) -> Option<&'static str> {
+        self.fields().first().copied()
+    }
+
+    /// The names of the fields asked for, as `object edit` words them.
+    #[must_use]
+    pub fn fields(&self) -> Vec<&'static str> {
+        [
+            ("shape", self.kind.is_some()),
+            ("stroke", self.stroke.is_some()),
+            ("stroke-width", self.stroke_width.is_some()),
+            ("stroke-style", self.stroke_style.is_some()),
+            ("radius", self.radius.is_some()),
+            ("opacity", self.opacity.is_some()),
+        ]
+        .into_iter()
+        .filter_map(|(name, given)| given.then_some(name))
+        .collect()
+    }
 }
 
 /// Where an object stands among the others.
@@ -335,7 +378,7 @@ mod tests {
 
     use crate::{
         domain::{
-            board::shape::ShapeKind,
+            board::shape_type::ShapeType,
             change::value::{ImageUpload, NewObject, Upload},
             geometry::{Point, Size},
             response::LinkPreview,
@@ -365,7 +408,7 @@ mod tests {
         at,
         size: Some(Size::SHAPE),
         color: "green4".parse().ok(),
-        kind: ShapeKind::Ellipse,
+        kind: ShapeType::Ellipse,
     })]
     #[case::frame(|at| NewObject::Frame {
         title: "a".into(),

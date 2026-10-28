@@ -4,6 +4,7 @@ pub mod comment;
 pub mod detail;
 pub mod query;
 pub mod shape;
+pub mod shape_type;
 pub mod state_vector;
 #[cfg(test)] pub(crate) mod tests;
 
@@ -272,6 +273,9 @@ pub struct Object {
     pub z_index: f64,
     pub text: String,
     pub color: Option<String>,
+    /// A shape's kind and outline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub look: Option<shape_type::ShapeLook>,
     pub ends: Option<ArrowEnds>,
     pub author: Option<String>,
     #[serde(skip)]
@@ -514,6 +518,9 @@ fn object(
             .and_then(|fill| fill.get(document::COLOR))
             .and_then(Value::as_str)
             .map(str::to_owned),
+        look: (kind == ObjectKind::Shape)
+            .then(|| shape_type::ShapeLook::of(&fields))
+            .flatten(),
         ends: matches!(kind, ObjectKind::Arrow).then(|| ArrowEnds {
             start: end_object(&fields, document::START),
             end: end_object(&fields, document::END),

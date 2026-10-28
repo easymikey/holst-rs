@@ -281,6 +281,7 @@ mod tests {
             z_index: 0.0,
             text: String::new(),
             color: None,
+            look: None,
             ends: None,
             author: None,
             file: Some(StoredFile {

@@ -53,6 +53,7 @@ use crate::{
             },
             write_group::{dissolve_after_removal, group, ungroup},
             write_many::{edit_all, paste},
+            write_shape::shape_changes,
         },
         geometry::{Point, Rectangle, Size},
         id_source::IdSource,
@@ -636,6 +637,7 @@ fn content_changes(
         })
         .unwrap_or_default();
     text.into_iter()
+        .chain(shape_changes(&patch.shape, fields, patch.size, patch.color.is_some()))
         .chain(patch.at.map(|at| (POSITION, json!(at))))
         .chain(
             patch.size.into_iter().flat_map(|size| {
@@ -645,7 +647,7 @@ fn content_changes(
         .chain(patch.color.as_ref().map(|color| {
             (
                 color_field(kind),
-                json!({ (COLOR): color.as_str(), (OPACITY): 1 }),
+                json!({ (COLOR): color.as_str(), (OPACITY): patch.shape.opacity.map_or_else(|| json!(1), |opacity| json!(opacity)) }),
             )
         }))
         .collect()
@@ -753,6 +755,7 @@ fn changed_names(
     ]
     .into_iter()
     .flatten()
+    .chain(patch.shape.fields())
     .collect()
 }
 

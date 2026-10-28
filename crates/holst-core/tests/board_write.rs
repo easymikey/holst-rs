@@ -137,7 +137,7 @@ async fn a_sticker_is_added_moved_retexted_and_removed() -> holst_core::Result<(
                 at,
                 size: None,
                 color: None,
-                format: holst_core::domain::rich_text::TextFormat::Plain,
+                ..ObjectPatch::default()
             },
             stacking: None,
             tags: None,
