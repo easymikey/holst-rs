@@ -463,6 +463,82 @@ async fn a_shape_edit_with_a_wrong_outline_is_refused(
 
 #[rstest]
 #[tokio::test]
+async fn an_arrow_is_added_with_its_line_heads_dash_and_width(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = two_notes().start().await?;
+    let call = ObjectCall::add("arrow")
+        .with("from", holst.fixture_object("Plans", 1)?)
+        .with("to", holst.fixture_object("Plans", 2)?)
+        .with("line", "curved")
+        .with("heads", "none,triangle-filled")
+        .with("stroke_style", "dashed")
+        .with("stroke_width", "4");
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
+    let observation = holst.on(surface).objects("Plans").await?;
+    then(&observation).lists_arrow_looking(
+        "curved heads none,triangle-filled stroke gray12 4px dashed",
+    );
+    Ok(())
+}
+
+fn one_arrow() -> Given {
+    given().saved_login().workspace("Team").board_with_objects(
+        "Plans",
+        "Team",
+        vec![
+            FixtureObject::Sticker("Buy milk".into()),
+            FixtureObject::FreeText("Roadmap".into()),
+            FixtureObject::Arrow(1, 2),
+        ],
+    )
+}
+
+#[rstest]
+#[tokio::test]
+async fn an_arrow_edit_changes_its_line_one_head_dash_and_width(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = one_arrow().start().await?;
+    let arrow = holst.fixture_object("Plans", 3)?;
+    let call = ObjectCall::edit()
+        .with("object", arrow)
+        .with("line", "straight")
+        .with("heads", ",slash")
+        .with("stroke_style", "dotted")
+        .with("stroke_width", "1.5");
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
+    let observation = holst.on(surface).objects("Plans").await?;
+    then(&observation)
+        .lists_arrow_looking("straight heads none,slash stroke gray8 1.5px dotted");
+    Ok(())
+}
+
+#[rstest]
+#[case::head("heads", "none,pointy", "is not start,end heads")]
+#[case::width("stroke_width", "3", "an arrow stroke width")]
+#[tokio::test]
+async fn an_arrow_edit_with_a_wrong_look_is_refused(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+    #[case] flag: &'static str,
+    #[case] value: &str,
+    #[case] saying: &str,
+) -> Result<(), ScenarioError> {
+    let holst = one_arrow().start().await?;
+    let arrow = holst.fixture_object("Plans", 3)?;
+    let call = ObjectCall::edit().with("object", arrow).with(flag, value);
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying(saying)
+        .signalled_as(surface.usage());
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
 async fn an_arrow_joins_two_objects(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {

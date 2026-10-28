@@ -17,7 +17,10 @@ use crate::{
         table::{Command, CommandArgs, Confirmation, EnumArgument, Items, NewFile},
     },
     domain::{
-        board::shape_type::{ShapeType, StrokeStyle},
+        board::{
+            arrow_look::ArrowType,
+            shape_type::{ShapeType, StrokeStyle},
+        },
         change::value::LayerOrder,
         rich_text::TextFormat,
     },
@@ -143,6 +146,8 @@ impl EnumArgument for ShapeType {}
 
 impl EnumArgument for StrokeStyle {}
 
+impl EnumArgument for ArrowType {}
+
 #[derive(Debug, Deserialize, CommandArgs)]
 #[holst_command(
     group = Object,
@@ -261,6 +266,34 @@ pub struct AddArgs {
     )]
     pub to: Option<String>,
     #[argument(
+        value_name = "line",
+        help = "An arrow's line: straight, elbow or curved; elbow by default",
+        tool_doc = "Arrow line.",
+        kinds = [arrow]
+    )]
+    pub line: Option<ArrowType>,
+    #[argument(
+        value_name = "start,end",
+        help = "An arrow's heads, e.g. none,triangle-filled: none, figma, miro, arc, triangle-filled, triangle, circle-filled, circle, rhombus-filled, rhombus, stick, stick-stick, triadius, triadius-stick, triadius-circle, stick-circle or slash; an empty side keeps that end; none,miro by default",
+        tool_doc = "start,end heads, an empty side keeps that end: none, figma, miro, arc, triangle[-filled], circle[-filled], rhombus[-filled], stick, stick-stick, triadius[-stick|-circle], stick-circle, slash.",
+        kinds = [arrow]
+    )]
+    pub heads: Option<String>,
+    #[argument(
+        value_name = "style",
+        help = "An arrow's line: solid, dashed or dotted; solid by default",
+        tool_doc = "Outline style.",
+        kinds = [arrow]
+    )]
+    pub stroke_style: Option<StrokeStyle>,
+    #[argument(
+        value_name = "n",
+        help = "An arrow's line width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17; 2 by default",
+        tool_doc = "Shape 0..10; arrow 1, 1.5, 2, 4, 5, 6, 9, 13, 17.",
+        kinds = [arrow]
+    )]
+    pub stroke_width: Option<f64>,
+    #[argument(
         value_name = "file",
         help = "Many in one write: a JSON array or JSON lines file, - for stdin; its keys are the flags of one call",
         tool_doc = "Many at once, each with the arguments of one; at most 100 per call."
@@ -271,7 +304,7 @@ pub struct AddArgs {
 }
 
 /// One object of `--items` of `object add`: the arguments of one call.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AddItem {
     pub kind: Option<AddKind>,
@@ -283,6 +316,10 @@ pub struct AddItem {
     pub frame: Option<String>,
     pub from: Option<String>,
     pub to: Option<String>,
+    pub line: Option<ArrowType>,
+    pub heads: Option<String>,
+    pub stroke_style: Option<StrokeStyle>,
+    pub stroke_width: Option<f64>,
     pub url: Option<String>,
     pub path: Option<String>,
     pub no_embed: Option<bool>,
@@ -364,13 +401,13 @@ pub struct EditArgs {
     pub stroke: Option<String>,
     #[argument(
         value_name = "n",
-        help = "A shape's outline width, 0 to 10; unchanged by default",
-        tool_doc = "0..10."
+        help = "A shape's outline width, 0 to 10, or an arrow's line width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17; unchanged by default",
+        tool_doc = "Shape 0..10; arrow 1, 1.5, 2, 4, 5, 6, 9, 13, 17."
     )]
-    pub stroke_width: Option<u32>,
+    pub stroke_width: Option<f64>,
     #[argument(
         value_name = "style",
-        help = "A shape's outline: solid, dashed or dotted; unchanged by default",
+        help = "A shape's outline or an arrow's line: solid, dashed or dotted; unchanged by default",
         tool_doc = "Outline style."
     )]
     pub stroke_style: Option<StrokeStyle>,
@@ -386,6 +423,18 @@ pub struct EditArgs {
         tool_doc = "0.1..1."
     )]
     pub opacity: Option<f64>,
+    #[argument(
+        value_name = "line",
+        help = "An arrow's line: straight, elbow or curved; unchanged by default",
+        tool_doc = "Arrow line."
+    )]
+    pub line: Option<ArrowType>,
+    #[argument(
+        value_name = "start,end",
+        help = "An arrow's heads, e.g. none,triangle-filled: none, figma, miro, arc, triangle-filled, triangle, circle-filled, circle, rhombus-filled, rhombus, stick, stick-stick, triadius, triadius-stick, triadius-circle, stick-circle or slash; an empty side keeps that end; unchanged by default",
+        tool_doc = "start,end heads, an empty side keeps that end: none, figma, miro, arc, triangle[-filled], circle[-filled], rhombus[-filled], stick, stick-stick, triadius[-stick|-circle], stick-circle, slash."
+    )]
+    pub heads: Option<String>,
     #[argument(
         value_name = "order",
         help = "Where it stands among the objects: front or back; unchanged by default"
@@ -418,10 +467,12 @@ pub struct EditItem {
     pub color: Option<String>,
     pub shape: Option<ShapeType>,
     pub stroke: Option<String>,
-    pub stroke_width: Option<u32>,
+    pub stroke_width: Option<f64>,
     pub stroke_style: Option<StrokeStyle>,
     pub radius: Option<u32>,
     pub opacity: Option<f64>,
+    pub line: Option<ArrowType>,
+    pub heads: Option<String>,
     pub order: Option<LayerOrder>,
     #[serde(default)]
     pub tag: Vec<String>,
@@ -732,6 +783,10 @@ mod tests {
                     ("no_embed", &["link"][..]),
                     ("from", &["arrow"][..]),
                     ("to", &["arrow"][..]),
+                    ("line", &["arrow"][..]),
+                    ("heads", &["arrow"][..]),
+                    ("stroke_style", &["arrow"][..]),
+                    ("stroke_width", &["arrow"][..]),
                 ]
             )
         );
@@ -739,11 +794,25 @@ mod tests {
 
     #[test]
     fn the_keys_of_an_item_are_flags_of_one_call() {
-        const ADD_KEYS: [&str; 12] = [
-            "kind", "text", "shape", "at", "size", "color", "frame", "from", "to",
-            "url", "path", "no_embed",
+        const ADD_KEYS: [&str; 16] = [
+            "kind",
+            "text",
+            "shape",
+            "at",
+            "size",
+            "color",
+            "frame",
+            "from",
+            "to",
+            "line",
+            "heads",
+            "stroke_style",
+            "stroke_width",
+            "url",
+            "path",
+            "no_embed",
         ];
-        const EDIT_KEYS: [&str; 13] = [
+        const EDIT_KEYS: [&str; 15] = [
             "object",
             "text",
             "at",
@@ -755,6 +824,8 @@ mod tests {
             "stroke_style",
             "radius",
             "opacity",
+            "line",
+            "heads",
             "order",
             "tag",
         ];

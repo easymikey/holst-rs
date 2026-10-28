@@ -1,6 +1,7 @@
 #![expect(clippy::panic_in_result_fn, reason = "assert — the point of a test")]
 
 mod add_all;
+mod arrow_edit;
 mod frame;
 mod group;
 mod journal;
@@ -39,6 +40,7 @@ use crate::{
             build::{author_number, build, client_id},
             check::{check, on_board},
             value::{
+                ArrowLook,
                 BoardChange,
                 ChangeSources,
                 ChangedObject,
@@ -358,6 +360,7 @@ fn loaded_with_history(deleted: u32) -> Result<Doc> {
         from: "h-2".into(),
         to: "h-6".into(),
         color: None,
+        look: ArrowLook::default(),
     };
     build(&server, &add(arrow), ME, &context)?;
     churn_scratch(&server, deleted);

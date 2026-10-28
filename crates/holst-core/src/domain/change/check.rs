@@ -8,14 +8,16 @@ use serde_json::Value;
 use crate::{
     domain::{
         area::scene::Scene,
-        board::{Object, ObjectKind},
+        board::{Object, ObjectKind, arrow_look::ARROW_WIDTHS},
         change::value::{
+            ArrowEdit,
             BoardChange,
             NewObject,
             ObjectEdit,
             ObjectPatch,
             Pasted,
             RemoveRight,
+            ShapeEdit,
         },
         geometry,
         geometry::{Point, Rectangle, Size},
@@ -783,11 +785,22 @@ fn check_new(
 ) -> Result<(NewObject, Placement)> {
     // An arrow is kept with the ids its ends were found by.
     let new = match new {
-        NewObject::Arrow { from, to, color } => NewObject::Arrow {
-            from: end_of(states, earlier, from)?,
-            to: end_of(states, earlier, to)?,
-            color: color.clone(),
-        },
+        NewObject::Arrow {
+            from,
+            to,
+            color,
+            look,
+        } => {
+            look.outline
+                .stroke_width
+                .map_or(Ok(()), |width| stroke_width_fits(&ObjectKind::Arrow, width))?;
+            NewObject::Arrow {
+                from: end_of(states, earlier, from)?,
+                to: end_of(states, earlier, to)?,
+                color: color.clone(),
+                look: look.clone(),
+            }
+        }
         NewObject::Sticker { .. }
         | NewObject::Text { .. }
         | NewObject::Shape { .. }
@@ -1015,10 +1028,11 @@ fn changeable_edit(
                 color: None,
                 format: _,
                 shape,
+                arrow,
             },
             None,
             None,
-        ) if shape.first_field().is_none() => {
+        ) if shape.first_field().is_none() && arrow.fields().is_empty() => {
             Err(Error::BoardChange(BoardChangeError::NothingToChange))
         }
         (patch, _, _) => fits(kind, held, patch).and(tags),
@@ -1119,11 +1133,22 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
         }
         (ObjectPatch { size: Some(_), .. }, _) if !size => refuse("size"),
         (ObjectPatch { color: Some(_), .. }, _) if !color => refuse("color"),
-        (ObjectPatch { shape, .. }, _)
-            if *kind != ObjectKind::Shape && shape.first_field().is_some() =>
+        (ObjectPatch { shape, arrow, .. }, _)
+            if unfit_field(kind, shape, arrow).is_some() =>
         {
-            shape.first_field().map_or(Ok(()), refuse)
+            unfit_field(kind, shape, arrow).map_or(Ok(()), refuse)
         }
+        (
+            ObjectPatch {
+                shape:
+                    ShapeEdit {
+                        stroke_width: Some(width),
+                        ..
+                    },
+                ..
+            },
+            _,
+        ) => stroke_width_fits(kind, *width),
         (
             ObjectPatch {
                 size: Some(asked), ..
@@ -1132,6 +1157,46 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
         ) if matches!(kind, ObjectKind::Sticker) => sticker_shape(*asked),
         (ObjectPatch { .. }, _) => Ok(()),
     }
+}
+
+/// The first field of an edit that only other kinds have: a shape has no
+/// arrow line, an arrow has only a dash and a width of the outline.
+fn unfit_field(
+    kind: &ObjectKind,
+    shape: &ShapeEdit,
+    arrow: &ArrowEdit,
+) -> Option<&'static str> {
+    let line = arrow.fields().first().copied();
+    let outline_only = shape
+        .fields()
+        .into_iter()
+        .find(|field| !matches!(*field, "stroke-style" | "stroke-width"));
+    match (*kind == ObjectKind::Shape, *kind == ObjectKind::Arrow) {
+        (true, _) => line,
+        (_, true) => outline_only,
+        _ => shape.first_field().or(line),
+    }
+}
+
+/// Whether the width is one the web client offers a shape (a whole 0 to 10)
+/// or an arrow (its nine widths).
+fn stroke_width_fits(kind: &ObjectKind, width: f64) -> Result<()> {
+    let arrow = *kind == ObjectKind::Arrow;
+    let shape = width.fract() == 0.0 && (0.0..=10.0).contains(&width);
+    let (fits, expected) = if arrow {
+        (
+            ARROW_WIDTHS.contains(&width),
+            "an arrow stroke width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17",
+        )
+    } else {
+        (shape, "a shape stroke width: a whole number 0 to 10")
+    };
+    let raw = format!("{width}");
+    fits.then_some(())
+        .ok_or(Error::BoardChange(BoardChangeError::NotArrowLook {
+            raw,
+            expected,
+        }))
 }
 
 pub(crate) fn find(states: &HashMap<String, Value>, reference: &str) -> Result<String> {

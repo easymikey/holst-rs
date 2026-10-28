@@ -1,5 +1,6 @@
 //! Board objects from the `objects`, `documents` and `usersIds` Yjs maps.
 
+pub mod arrow_look;
 pub mod comment;
 pub mod detail;
 pub mod query;
@@ -273,7 +274,7 @@ pub struct Object {
     pub z_index: f64,
     pub text: String,
     pub color: Option<String>,
-    /// A shape's kind and outline.
+    /// A shape's kind and outline, an arrow's line and heads.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub look: Option<shape_type::ShapeLook>,
     pub ends: Option<ArrowEnds>,
@@ -521,7 +522,7 @@ fn object(
             .and_then(|fill| fill.get(document::COLOR))
             .and_then(Value::as_str)
             .map(str::to_owned),
-        look: (kind == ObjectKind::Shape)
+        look: matches!(kind, ObjectKind::Shape | ObjectKind::Arrow)
             .then(|| shape_type::ShapeLook::of(&fields))
             .flatten(),
         ends: matches!(kind, ObjectKind::Arrow).then(|| ArrowEnds {

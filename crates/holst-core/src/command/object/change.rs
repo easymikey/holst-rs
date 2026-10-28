@@ -13,10 +13,10 @@ use crate::{
         table::{Confirmation, not_value},
     },
     domain::{
-        board::LoadedBoard,
+        board::{LoadedBoard, arrow_look::ARROW_WIDTHS},
         change::{
             receipt::ChangeReport,
-            value::{BoardChange, ObjectEdit, ObjectPatch, ShapeEdit},
+            value::{ArrowEdit, BoardChange, ObjectEdit, ObjectPatch, ShapeEdit},
         },
         id,
         rich_text::TextFormat,
@@ -47,9 +47,8 @@ use crate::{
 const EDIT: &str = "object edit";
 const REMOVE: &str = "object rm";
 /// BUNDLE: the outline slider goes to 10 (main.a33651a4.js 183120-183140).
-const MAX_STROKE_WIDTH: u8 = 10;
-/// BUNDLE: the opacity slider's first point is 0.1 (main.a33651a4.js
-/// 182790-182806).
+const MAX_STROKE_WIDTH: f64 = 10.0;
+/// BUNDLE: the opacity slider starts at 0.1 (main.a33651a4.js 182790).
 const MIN_OPACITY: f64 = 0.1;
 
 /// A removal: what it took, or would take, and what it waits for.
@@ -216,6 +215,8 @@ fn read_edits(args: &EditArgs) -> Result<Vec<ObjectEdit>> {
                 stroke_style: args.stroke_style,
                 radius: args.radius,
                 opacity: args.opacity,
+                line: args.line,
+                heads: args.heads.clone(),
                 order: None,
                 tag: Vec::new(),
             },
@@ -264,6 +265,8 @@ fn refuse_with_items(args: &EditArgs) -> Result<()> {
         ("stroke-style", args.stroke_style.is_some()),
         ("radius", args.radius.is_some()),
         ("opacity", args.opacity.is_some()),
+        ("line", args.line.is_some()),
+        ("heads", args.heads.is_some()),
         ("order", args.order.is_some()),
         ("tag", !args.tag.is_empty()),
     ]
@@ -293,15 +296,18 @@ fn item_edit(
 }
 
 fn patch_of(item: &EditItem, format: TextFormat) -> Result<ObjectPatch> {
+    // The kind decides later: a shape takes 0 to 10, an arrow its nine widths.
     let stroke_width = item
         .stroke_width
         .map(|width| {
-            u8::try_from(width)
-                .ok()
-                .filter(|width| *width <= MAX_STROKE_WIDTH)
-                .ok_or_else(|| {
-                    not_value(EDIT, "stroke-width", "a whole number 0 to 10")
-                })
+            let shape = width.fract() == 0.0 && (0.0..=MAX_STROKE_WIDTH).contains(&width);
+            (shape || ARROW_WIDTHS.contains(&width)).then_some(width).ok_or_else(|| {
+                not_value(
+                    EDIT,
+                    "stroke-width",
+                    "a whole number 0 to 10, or for an arrow 1, 1.5, 2, 4, 5, 6, 9, 13 or 17",
+                )
+            })
         })
         .transpose()?;
     let opacity = item
@@ -326,6 +332,15 @@ fn patch_of(item: &EditItem, format: TextFormat) -> Result<ObjectPatch> {
             stroke_style: item.stroke_style,
             radius: item.radius,
             opacity,
+        },
+        arrow: ArrowEdit {
+            line: item.line,
+            heads: item
+                .heads
+                .as_deref()
+                .map(str::parse)
+                .transpose()?
+                .unwrap_or_default(),
         },
     })
 }

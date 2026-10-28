@@ -43,6 +43,7 @@ use crate::{
             journal,
             rich::fill_blocks,
             value::{
+                ArrowLook,
                 ChangeSources,
                 ChangedObject,
                 ImageUpload,
@@ -54,7 +55,7 @@ use crate::{
             },
             write_group::{dissolve_after_removal, group, lock_only, ungroup, unlock},
             write_many::{edit_all, paste},
-            write_shape::shape_changes,
+            write_shape::{arrow_changes, shape_changes},
         },
         geometry::{Point, Rectangle, Size},
         id_source::IdSource,
@@ -227,10 +228,16 @@ fn id_of(reference: &str, made: &[ChangedObject]) -> String {
 /// `new` with an arrow's `#N` ends turned into the ids of the entries made.
 fn with_ids(new: &NewObject, made: &[ChangedObject]) -> NewObject {
     match new {
-        NewObject::Arrow { from, to, color } => NewObject::Arrow {
+        NewObject::Arrow {
+            from,
+            to,
+            color,
+            look,
+        } => NewObject::Arrow {
             from: id_of(from, made),
             to: id_of(to, made),
             color: color.clone(),
+            look: look.clone(),
         },
         NewObject::Sticker { .. }
         | NewObject::Text { .. }
@@ -388,9 +395,12 @@ fn stored_fields<'a>(
             size,
             color,
         } => frame_fields(label, at, size.as_ref(), color.as_ref()),
-        NewObject::Arrow { from, to, color } => {
-            arrow_fields(states, (from, to), color.as_ref())
-        }
+        NewObject::Arrow {
+            from,
+            to,
+            color,
+            look,
+        } => arrow_fields(states, (from, to), color.as_ref(), look),
         NewObject::Link {
             url,
             at,
@@ -503,6 +513,7 @@ fn arrow_fields<'a>(
     states: &HashMap<String, Value>,
     (from, to): (&str, &str),
     color: Option<&Color>,
+    look: &ArrowLook,
 ) -> (ObjectKind, Value, Option<&'a str>) {
     let rectangle = |object: &str| states.get(object).and_then(rectangle_of);
     let point = |x: f64, y: f64| json!({ (X): x, (Y): y });
@@ -520,15 +531,21 @@ fn arrow_fields<'a>(
             point(middle.x, middle.y)
         }),
     });
-    (
-        ObjectKind::Arrow,
-        json!({
-            (POSITION): point(0.0, 0.0), (START): start, (END): end,
-            (ARROW_TYPE): "elbow",
-            (STROKE_COLOR): { (COLOR): color.map_or("gray12", Color::as_str) },
-        }),
+    let mut fields = json!({
+        (POSITION): point(0.0, 0.0), (START): start, (END): end,
+        (ARROW_TYPE): "elbow",
+        (STROKE_COLOR): { (COLOR): color.map_or("gray12", Color::as_str) },
+    });
+    let looks = arrow_changes(&look.arrow).into_iter().chain(shape_changes(
+        &look.outline,
+        &json!({}),
         None,
-    )
+        false,
+    ));
+    if let Some(map) = fields.as_object_mut() {
+        map.extend(looks.map(|(name, value)| (name.to_owned(), value)));
+    }
+    (ObjectKind::Arrow, fields, None)
 }
 
 /// `text` as lines, or as the blocks of the markdown it holds for `kind`.
@@ -646,6 +663,7 @@ fn content_changes(
         .unwrap_or_default();
     text.into_iter()
         .chain(shape_changes(&patch.shape, fields, patch.size, patch.color.is_some()))
+        .chain(arrow_changes(&patch.arrow))
         .chain(patch.at.map(|at| (POSITION, json!(at))))
         .chain(
             patch.size.into_iter().flat_map(|size| {
@@ -764,6 +782,7 @@ fn changed_names(
     .into_iter()
     .flatten()
     .chain(patch.shape.fields())
+    .chain(patch.arrow.fields())
     .collect()
 }
 

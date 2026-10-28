@@ -193,6 +193,9 @@ pub enum BoardChangeError {
     )]
     NotColor { raw: String },
 
+    #[error("\"{raw}\" is not {expected}")]
+    NotArrowLook { raw: String, expected: &'static str },
+
     #[error("\"{raw}\" is not a shape kind: expected {known}")]
     NotShapeKind { raw: String, known: &'static str },
 
@@ -294,6 +297,7 @@ impl BoardChangeError {
             | BoardChangeError::NotSize { .. }
             | BoardChangeError::NotColor { .. }
             | BoardChangeError::NotShapeKind { .. }
+            | BoardChangeError::NotArrowLook { .. }
             | BoardChangeError::StickerSize { .. }
             | BoardChangeError::TooFewToGroup { .. }
             | BoardChangeError::NotGroupable { .. }
@@ -337,6 +341,7 @@ impl BoardChangeError {
             | BoardChangeError::NotSize { .. }
             | BoardChangeError::NotColor { .. }
             | BoardChangeError::NotShapeKind { .. }
+            | BoardChangeError::NotArrowLook { .. }
             | BoardChangeError::StickerSize { .. }
             | BoardChangeError::NotFrame { .. }
             | BoardChangeError::TooFewToGroup { .. }
@@ -425,6 +430,13 @@ pub(super) mod tests {
             ),
             (BoardChangeError::NotSize { raw: text() }, None),
             (BoardChangeError::NotColor { raw: text() }, None),
+            (
+                BoardChangeError::NotArrowLook {
+                    raw: text(),
+                    expected: "x",
+                },
+                None,
+            ),
             (
                 BoardChangeError::NotShapeKind {
                     raw: text(),

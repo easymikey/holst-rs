@@ -24,7 +24,16 @@ use crate::{
         },
         change::{
             receipt::ChangeReport,
-            value::{BoardChange, ImageUpload, NewEntry, NewObject, Upload},
+            value::{
+                ArrowEdit,
+                ArrowLook,
+                BoardChange,
+                ImageUpload,
+                NewEntry,
+                NewObject,
+                ShapeEdit,
+                Upload,
+            },
         },
         geometry::{Point, Rectangle, Size},
         id,
@@ -281,6 +290,7 @@ enum What {
     Arrow {
         from: String,
         to: String,
+        look: ArrowLook,
     },
     Link {
         url: String,
@@ -359,6 +369,10 @@ fn read_items(args: &AddArgs) -> Result<Vec<Item>> {
         ("color", args.color.is_some()),
         ("from", args.from.is_some()),
         ("to", args.to.is_some()),
+        ("line", args.line.is_some()),
+        ("heads", args.heads.is_some()),
+        ("stroke_style", args.stroke_style.is_some()),
+        ("stroke_width", args.stroke_width.is_some()),
         ("url", args.url.is_some()),
         ("path", args.path.is_some()),
         ("no_embed", args.no_embed),
@@ -379,6 +393,10 @@ fn read_items(args: &AddArgs) -> Result<Vec<Item>> {
         frame: None,
         from: args.from.clone(),
         to: args.to.clone(),
+        line: args.line,
+        heads: args.heads.clone(),
+        stroke_style: args.stroke_style,
+        stroke_width: args.stroke_width,
         url: args.url.clone(),
         path: args.path.clone(),
         no_embed: args.no_embed.then_some(true),
@@ -427,6 +445,23 @@ impl Reader {
             .map_or(Ok(rich), Err)
     }
 
+    /// Refuses the keys only an arrow takes on another kind.
+    fn refuse_arrow_keys(&self, item: &AddItem, kind: AddKind) -> Result<()> {
+        [
+            ("from", item.from.is_some()),
+            ("to", item.to.is_some()),
+            ("line", item.line.is_some()),
+            ("heads", item.heads.is_some()),
+            ("stroke_style", item.stroke_style.is_some()),
+            ("stroke_width", item.stroke_width.is_some()),
+        ]
+        .into_iter()
+        .find_map(|(name, given)| (given && kind != AddKind::Arrow).then_some(name))
+        .map_or(Ok(()), |name| {
+            Err(self.bad(name, &format!("left out for {}", word(kind))))
+        })
+    }
+
     fn missing(&self, name: &'static str) -> Error {
         if self.many {
             self.bad(name, "given")
@@ -453,8 +488,7 @@ impl Reader {
                 .map_or(Ok(()), Err)
         };
         let arrow = kind == AddKind::Arrow;
-        refuse("from", !arrow && item.from.is_some())?;
-        refuse("to", !arrow && item.to.is_some())?;
+        self.refuse_arrow_keys(item, kind)?;
         let linked = kind == AddKind::Link;
         let uploaded = matches!(kind, AddKind::Image | AddKind::File);
         refuse("text", (arrow || linked || uploaded) && item.text.is_some())?;
@@ -500,6 +534,7 @@ impl Reader {
             AddKind::Arrow => What::Arrow {
                 from: self.end("from", item.from.as_deref(), earlier)?,
                 to: self.end("to", item.to.as_deref(), earlier)?,
+                look: arrow_look(item)?,
             },
             AddKind::Link => What::Link {
                 url: item.url.clone().ok_or_else(|| self.missing("url"))?,
@@ -620,6 +655,26 @@ const fn word(kind: AddKind) -> &'static str {
     }
 }
 
+/// How the item draws an arrow: its line, heads, dash and width.
+fn arrow_look(item: &AddItem) -> Result<ArrowLook> {
+    Ok(ArrowLook {
+        arrow: ArrowEdit {
+            line: item.line,
+            heads: item
+                .heads
+                .as_deref()
+                .map(str::parse)
+                .transpose()?
+                .unwrap_or_default(),
+        },
+        outline: ShapeEdit {
+            stroke_width: item.stroke_width,
+            stroke_style: item.stroke_style,
+            ..ShapeEdit::default()
+        },
+    })
+}
+
 /// The frame a link to the board names, or the one the linked object sits in.
 fn linked_frame<'a>(scene: &Scene<'a>, link: &str) -> Option<&'a Object> {
     let linked = id::object_in(link).and_then(|object| scene.get(object.as_str()))?;
@@ -695,10 +750,11 @@ fn entries(
                     size: *size,
                     color,
                 },
-                What::Arrow { from, to } => NewObject::Arrow {
+                What::Arrow { from, to, look } => NewObject::Arrow {
                     from: from.clone(),
                     to: to.clone(),
                     color,
+                    look: look.clone(),
                 },
                 What::Link { url, at, embed } => NewObject::Link {
                     url: url.clone(),

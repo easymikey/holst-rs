@@ -8,7 +8,7 @@ use crate::{
         change::{
             build::build,
             tests::{ME, fields_of},
-            value::{BoardChange, ChangeSources, NewEntry, NewObject},
+            value::{ArrowLook, BoardChange, ChangeSources, NewEntry, NewObject},
         },
         geometry::Point,
         id_source::SequentialIds,
@@ -39,6 +39,7 @@ fn arrow(from: &str, to: &str) -> NewEntry {
         from: from.into(),
         to: to.into(),
         color: None,
+        look: ArrowLook::default(),
     })
 }
 

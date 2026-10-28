@@ -576,6 +576,28 @@ impl Then<'_> {
         );
     }
 
+    /// Expects an arrow listing this line, heads and stroke, in the words of
+    /// a listing line.
+    ///
+    /// # Panics
+    /// When there is none, or it differs.
+    pub fn lists_arrow_looking(&self, look: &str) {
+        let words = |row: &ListedObject| {
+            [row.color.as_deref(), row.look.as_deref()]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        assert!(
+            self.objects()
+                .iter()
+                .any(|row| row.ends.is_some() && words(row) == look),
+            "expected an arrow looking {look:?}, got {:?}",
+            self.observation
+        );
+    }
+
     /// Expects the object with this text to carry exactly these tags.
     ///
     /// # Panics

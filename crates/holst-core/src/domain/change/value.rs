@@ -12,6 +12,7 @@ use crate::{
         board::{
             Object,
             ObjectKind,
+            arrow_look::{ArrowHeads, ArrowType},
             shape_type::{ShapeType, StrokeStyle},
         },
         change::receipt::Delivery,
@@ -75,6 +76,7 @@ pub enum NewObject {
         from: String,
         to: String,
         color: Option<Color>,
+        look: ArrowLook,
     },
     /// A link card; an embedded one when `embed` and the preview offers it.
     Link {
@@ -178,16 +180,47 @@ pub struct ObjectPatch {
     pub size: Option<Size>,
     pub color: Option<Color>,
     pub shape: ShapeEdit,
+    pub arrow: ArrowEdit,
 }
 
-/// What an edit changes of a shape: its kind, outline, corners and fill
-/// opacity.
+/// How a new arrow is drawn: its line and heads, its dash and width.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ArrowLook {
+    pub arrow: ArrowEdit,
+    pub outline: ShapeEdit,
+}
+
+/// What an edit changes of an arrow's line and heads.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ArrowEdit {
+    pub line: Option<ArrowType>,
+    pub heads: ArrowHeads,
+}
+
+impl ArrowEdit {
+    /// The names of the fields asked for, as `object edit` words them.
+    #[must_use]
+    pub fn fields(&self) -> Vec<&'static str> {
+        [
+            ("line", self.line.is_some()),
+            (
+                "heads",
+                self.heads.start.is_some() || self.heads.end.is_some(),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(name, given)| given.then_some(name))
+        .collect()
+    }
+}
+
+/// What an edit changes of a shape: its kind and look.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ShapeEdit {
     pub kind: Option<ShapeType>,
     pub stroke: Option<Color>,
-    /// 0 to 10, checked by the caller.
-    pub stroke_width: Option<u8>,
+    /// A whole 0 to 10 for a shape, one of the arrow widths for an arrow.
+    pub stroke_width: Option<f64>,
     pub stroke_style: Option<StrokeStyle>,
     pub radius: Option<u32>,
     /// 0.1 to 1, checked by the caller.
@@ -387,7 +420,7 @@ mod tests {
     use crate::{
         domain::{
             board::shape_type::ShapeType,
-            change::value::{ImageUpload, NewObject, Upload},
+            change::value::{ArrowLook, ImageUpload, NewObject, Upload},
             geometry::{Point, Size},
             response::LinkPreview,
         },
@@ -428,6 +461,7 @@ mod tests {
         from: "a".into(),
         to: "b".into(),
         color: "gray8".parse().ok(),
+        look: ArrowLook::default(),
     })]
     #[case::link(|at| NewObject::Link {
         url: "https://example.com".into(),

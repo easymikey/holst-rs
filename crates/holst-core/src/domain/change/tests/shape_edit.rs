@@ -130,7 +130,7 @@ fn the_outline_corners_and_fill_opacity_are_written_and_the_radius_clamped()
             id.clone(),
             shape_edit(ShapeEdit {
                 stroke: Some("blue4".parse()?),
-                stroke_width: Some(4),
+                stroke_width: Some(4.0),
                 stroke_style: Some(StrokeStyle::Dashed),
                 radius: Some(500),
                 opacity: Some(0.5),
@@ -169,7 +169,7 @@ fn only_a_shape_has_an_outline() -> Result<()> {
         &edit(
             "seed-2".into(),
             shape_edit(ShapeEdit {
-                stroke_width: Some(3),
+                stroke_width: Some(3.0),
                 ..ShapeEdit::default()
             }),
         ),

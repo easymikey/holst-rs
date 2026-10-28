@@ -6,11 +6,16 @@ use serde_json::Value;
 use crate::{
     domain::geometry::Size,
     protocol::document::{
+        ARROW_TYPE,
+        ARROWHEAD_END,
+        ARROWHEAD_START,
         BORDER_RADIUS,
         COLOR,
+        END,
         FILL_COLOR,
         OPACITY,
         SHAPE_TYPE,
+        START,
         STROKE_COLOR,
         STROKE_STYLE,
         STROKE_WIDTH,
@@ -182,7 +187,7 @@ impl StrokeStyle {
     }
 }
 
-/// What a listing shows of a shape: kind, outline, corners and fill opacity.
+/// What a listing shows of a shape or an arrow: its kind and look.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ShapeLook {
     pub shape: Option<String>,
@@ -191,6 +196,12 @@ pub struct ShapeLook {
     pub stroke_style: Option<String>,
     pub radius: Option<f64>,
     pub opacity: Option<f64>,
+    /// An arrow's line: `straight`, `elbow` or `curved`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<String>,
+    /// An arrow's heads as `start,end`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heads: Option<String>,
 }
 
 impl ShapeLook {
@@ -211,6 +222,8 @@ impl ShapeLook {
             stroke_style: text(STROKE_STYLE),
             radius: number(BORDER_RADIUS),
             opacity: inside(FILL_COLOR, OPACITY).and_then(Value::as_f64),
+            line: text(ARROW_TYPE),
+            heads: heads_of(fields),
         };
         (look.shape.is_some() || look.stroke.is_some()).then_some(look)
     }
@@ -220,6 +233,8 @@ impl ShapeLook {
     pub fn words(&self) -> String {
         [
             self.shape.clone(),
+            self.line.clone(),
+            self.heads.as_ref().map(|heads| format!("heads {heads}")),
             self.stroke
                 .as_ref()
                 .map(|stroke| format!("stroke {stroke}")),
@@ -240,6 +255,32 @@ impl ShapeLook {
         .collect::<Vec<_>>()
         .join(" ")
     }
+}
+
+/// An arrow's heads as `start,end`, the web client's defaults where the
+/// document is silent; none for a document that names no head.
+fn heads_of(fields: &Value) -> Option<String> {
+    let head = |name: &str, side: &str, default: &'static str| {
+        fields
+            .get(name)
+            .and_then(Value::as_str)
+            .or_else(|| {
+                fields
+                    .get(side)
+                    .and_then(|end| end.get("arrowhead"))
+                    .and_then(Value::as_str)
+            })
+            .unwrap_or(default)
+    };
+    let named =
+        fields.get(ARROWHEAD_START).is_some() || fields.get(ARROWHEAD_END).is_some();
+    named.then(|| {
+        format!(
+            "{},{}",
+            head(ARROWHEAD_START, START, "none"),
+            head(ARROWHEAD_END, END, "miro")
+        )
+    })
 }
 
 #[cfg(test)]

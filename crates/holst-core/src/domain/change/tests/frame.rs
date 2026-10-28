@@ -10,7 +10,14 @@ use crate::{
         change::{
             build::build,
             tests::{ME, fields_of},
-            value::{BoardChange, ChangeSources, ChangeUpdate, NewObject, ObjectPatch},
+            value::{
+                ArrowLook,
+                BoardChange,
+                ChangeSources,
+                ChangeUpdate,
+                NewObject,
+                ObjectPatch,
+            },
             write::object_map,
         },
         geometry::{Point, Size},
@@ -146,6 +153,7 @@ fn a_carried_arrow_moves_its_ends() -> Result<()> {
         from: "r-3".into(),
         to: "r-7".into(),
         color: None,
+        look: ArrowLook::default(),
     };
     build(&document, &add(new_arrow), ME, &context)?;
     let arrow = "r-11";

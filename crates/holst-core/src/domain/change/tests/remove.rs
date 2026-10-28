@@ -25,6 +25,7 @@ use crate::{
             check::{check, find},
             tests::{ME, board, copy, loaded_with_history},
             value::{
+                ArrowLook,
                 BoardChange,
                 ChangeSources,
                 NewObject,
@@ -60,6 +61,7 @@ fn removing_takes_attached_arrows_along() -> Result<()> {
             from: "seed-2".into(),
             to: "seed-6".into(),
             color: None,
+            look: ArrowLook::default(),
         }),
         ME,
         &context,
@@ -181,6 +183,7 @@ fn arrows_refuse_text(#[case] patch: ObjectPatch, #[case] message: &str) -> Resu
             from: "seed-2".into(),
             to: "seed-6".into(),
             color: None,
+            look: ArrowLook::default(),
         }),
         ME,
         &context,

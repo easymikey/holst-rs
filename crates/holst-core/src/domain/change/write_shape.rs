@@ -1,14 +1,20 @@
-//! The fields an edit writes for a shape: kind, outline, corners, opacity.
+//! The fields an edit writes for a shape's look and an arrow's line.
 
 use serde_json::{Value, json};
 
 use crate::{
     domain::{
         board::shape_type::ShapeType,
-        change::{check::rectangle_of, value::ShapeEdit},
+        change::{
+            check::rectangle_of,
+            value::{ArrowEdit, ShapeEdit},
+        },
         geometry::Size,
     },
     protocol::document::{
+        ARROW_TYPE,
+        ARROWHEAD_END,
+        ARROWHEAD_START,
         BORDER_RADIUS,
         BPMN_RESOURCES,
         COLOR,
@@ -73,6 +79,23 @@ pub(super) fn shape_changes(
                 .flatten(),
         )
         .collect()
+}
+
+/// The fields `edit` sets on an arrow: its line and its heads.
+pub(super) fn arrow_changes(edit: &ArrowEdit) -> Changes {
+    [
+        edit.line
+            .map(|line| (ARROW_TYPE, json!(line.stored_name()))),
+        edit.heads
+            .start
+            .map(|head| (ARROWHEAD_START, json!(head.stored_name()))),
+        edit.heads
+            .end
+            .map(|head| (ARROWHEAD_END, json!(head.stored_name()))),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 /// The kind and what follows from it: BPMN kinds drop their markers and keep

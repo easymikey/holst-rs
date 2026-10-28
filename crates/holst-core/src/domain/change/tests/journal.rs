@@ -22,7 +22,7 @@ use crate::{
         change::{
             build::{author_number, build},
             tests::{ME, board, copy, fields_of, loaded_with_history},
-            value::{ChangeSources, NewObject},
+            value::{ArrowLook, ChangeSources, NewObject},
         },
         id_source::SequentialIds,
         time::Timestamp,
@@ -213,6 +213,7 @@ fn a_cascade_is_one_entry_of_mixed_kinds() -> Result<()> {
         from: "seed-2".into(),
         to: "seed-6".into(),
         color: None,
+        look: ArrowLook::default(),
     };
     build(&document, &add(arrow), ME, &context)?;
     let built = build(&document, &remove("seed-1".into()), ME, &context)?;
@@ -245,6 +246,7 @@ fn a_journaled_removal_restores_as_the_web_client_does() -> Result<()> {
         from: "seed-2".into(),
         to: "seed-6".into(),
         color: None,
+        look: ArrowLook::default(),
     };
     build(&document, &add(arrow), ME, &context)?;
     let sorted = |target: &Doc| {

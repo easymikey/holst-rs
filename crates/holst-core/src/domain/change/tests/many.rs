@@ -14,6 +14,7 @@ use crate::{
             build::build,
             tests::{ME, board as seeded, fields_of},
             value::{
+                ArrowLook,
                 BoardChange,
                 ChangeSources,
                 ChangeUpdate,
@@ -354,6 +355,7 @@ fn a_pasted_arrow_is_bound_to_the_copies() -> Result<()> {
             from: "seed-2".into(),
             to: "seed-6".into(),
             color: None,
+            look: ArrowLook::default(),
         }),
     )?;
     let arrow = board::objects(&document)

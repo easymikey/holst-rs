@@ -678,6 +678,10 @@ expression: "*holst.tools"
           "description": "Or #N: an earlier item.",
           "type": "string"
         },
+        "heads": {
+          "description": "start,end heads, an empty side keeps that end: none, figma, miro, arc, triangle[-filled], circle[-filled], rhombus[-filled], stick, stick-stick, triadius[-stick|-circle], stick-circle, slash.",
+          "type": "string"
+        },
         "items": {
           "description": "Many at once, each with the arguments of one; at most 100 per call.",
           "items": {
@@ -696,6 +700,15 @@ expression: "*holst.tools"
             "link",
             "image",
             "file"
+          ],
+          "type": "string"
+        },
+        "line": {
+          "description": "Arrow line.",
+          "enum": [
+            "straight",
+            "elbow",
+            "curved"
           ],
           "type": "string"
         },
@@ -820,8 +833,8 @@ expression: "*holst.tools"
           "type": "string"
         },
         "stroke_width": {
-          "description": "0..10.",
-          "type": "integer"
+          "description": "Shape 0..10; arrow 1, 1.5, 2, 4, 5, 6, 9, 13, 17.",
+          "type": "number"
         },
         "tag": {
           "items": {
