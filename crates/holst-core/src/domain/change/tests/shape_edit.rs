@@ -32,7 +32,7 @@ fn apply(document: &Doc, change: &BoardChange) -> Result<Vec<String>> {
     Ok(built.objects.into_iter().map(|object| object.id).collect())
 }
 
-/// A 200x120 shape at (100, 100) on the seeded board; its id.
+/// A `200x120` shape at (100, 100) on the seeded board; its id.
 fn shape(document: &Doc) -> Result<String> {
     let made = apply(
         document,

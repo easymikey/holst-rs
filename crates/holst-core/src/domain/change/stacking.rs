@@ -125,7 +125,7 @@ fn step(states: &HashMap<String, Value>, id: &str, forward: bool) -> Option<f64>
 
 /// The layer of an object put last among the objects of `parent`, the board
 /// for none: past the last by the web client's `zH(last, null)`, which adds
-/// 0x10000000000 and a random up to 10 000. BUNDLE: main.a33651a4.js
+/// `0x10000000000` and a random up to 10 000. BUNDLE: main.a33651a4.js
 /// 223458-223472; the last of the others as in 128.8f630629.js 2125-2133.
 pub(super) fn appended(
     states: &HashMap<String, Value>,
