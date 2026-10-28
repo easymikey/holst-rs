@@ -1,6 +1,7 @@
 //! The `object` group: the objects on a board.
 
 pub mod add;
+pub mod align;
 pub mod change;
 pub mod copy;
 pub mod get;
@@ -22,7 +23,7 @@ use crate::{
             frame_look::{FrameBackground, FrameRatio},
             shape_type::{ShapeType, StrokeStyle},
         },
-        change::value::LayerOrder,
+        change::value::{Axis, LayerOrder},
         rich_text::TextFormat,
     },
     effect::board_write::WriteMode,
@@ -39,6 +40,7 @@ pub enum ObjectVerb {
     Ungroup,
     Lock,
     Unlock,
+    Align,
     Rm,
     Get,
 }
@@ -55,6 +57,7 @@ impl ObjectVerb {
             ObjectVerb::Ungroup => &UngroupArgs::COMMAND,
             ObjectVerb::Lock => &LockArgs::COMMAND,
             ObjectVerb::Unlock => &UnlockArgs::COMMAND,
+            ObjectVerb::Align => &AlignArgs::COMMAND,
             ObjectVerb::Rm => &RemoveArgs::COMMAND,
             ObjectVerb::Get => &GetArgs::COMMAND,
         }
@@ -371,6 +374,8 @@ pub struct AddItem {
 }
 
 impl EnumArgument for LayerOrder {}
+
+impl EnumArgument for Axis {}
 
 impl EnumArgument for TextFormat {}
 
@@ -792,6 +797,48 @@ pub struct UnlockArgs {
     pub object: Vec<String>,
     #[argument(help = "Unlock everything locked on the board")]
     pub all: bool,
+    #[argument(
+        letter = 'w',
+        value_name = "ws",
+        help = "Where names are looked up and new things go: a workspace id or part of its name; all of yours by default"
+    )]
+    pub workspace: Option<String>,
+    #[argument(letter = 'n', help = "Show what would change; change nothing")]
+    pub dry_run: WriteMode,
+}
+
+#[derive(Debug, Deserialize, CommandArgs)]
+#[holst_command(
+    group = Object,
+    verb = "align",
+    risk = Write,
+    block = Commands,
+    about = "Align objects to a side or spread them evenly",
+    help = "Align objects to one side of the box they cover together, or spread them so that the gaps between are equal and the outer two stay. The objects are the linked object and every --object: at least two to align, three to spread.\n\
+            Each moves with what it holds. A locked object, a table cell, a mind-map node or a card in a kanban column refuses the whole call; an arrow stuck to an object follows it. It prints one line per changed object with @N and its link.",
+    example = "holst o align \"Roadmap\" --object a1b2c3d4 --object e5f6a7b8 --to left",
+    example = "holst o align \"Roadmap\" --object a1b2c3d4 --object e5f6a7b8 --object 9f8e7d6c --distribute horizontal -n"
+)]
+pub struct AlignArgs {
+    #[argument(positional, help = "The board: id, link or part of its name")]
+    pub board: String,
+    #[argument(
+        value_name = "object",
+        help = "An object, repeat for several: id, link, @N or the first 8 characters of its id"
+    )]
+    pub object: Vec<String>,
+    #[argument(
+        value_name = "side",
+        help = "Line the objects up against this side of the box they cover together: left, center, right, top, middle or bottom; center is between left and right, middle between top and bottom",
+        tool_doc = "Arrow end; cp: the target board. On edit object:side or x,y."
+    )]
+    pub to: Option<String>,
+    #[argument(
+        value_name = "axis",
+        help = "Spread the objects so that the gaps between them are equal: horizontal or vertical; use instead of --to",
+        tool_doc = "Spread evenly: horizontal or vertical. Align instead with to: left, center, right, top, middle or bottom."
+    )]
+    pub distribute: Option<Axis>,
     #[argument(
         letter = 'w',
         value_name = "ws",

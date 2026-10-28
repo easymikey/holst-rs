@@ -352,6 +352,48 @@ pub enum LayerOrder {
     Backward,
 }
 
+/// Where aligned objects meet in the box they cover together.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Deserialize,
+    strum::VariantNames,
+    strum::EnumString,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum Alignment {
+    Left,
+    /// Centred between the left and right edges.
+    Center,
+    Right,
+    Top,
+    /// Centred between the top and bottom edges.
+    Middle,
+    Bottom,
+}
+
+/// The direction objects are spread along.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, strum::VariantNames)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum Axis {
+    Horizontal,
+    Vertical,
+}
+
+/// How objects are laid out against each other.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Arrangement {
+    /// Every object to one side of the box they cover together.
+    Align(Alignment),
+    /// The gaps between the objects made equal, the outer two staying.
+    Distribute(Axis),
+}
+
 /// One object of an edit of many: the patch and what it cannot hold.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObjectEdit {
@@ -402,6 +444,11 @@ pub enum BoardChange {
     Unlock(Vec<String>),
     /// Everything locked on the board, unlocked.
     UnlockAll,
+    /// The named objects, each with what it holds, moved against each other.
+    Arrange {
+        objects: Vec<String>,
+        how: Arrangement,
+    },
 }
 
 /// What happened to an object.

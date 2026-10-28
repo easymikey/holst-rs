@@ -1,6 +1,7 @@
 #![expect(clippy::panic_in_result_fn, reason = "assert — the point of a test")]
 
 mod add_all;
+mod arrange;
 mod arrow_edit;
 mod frame;
 mod frame_look;

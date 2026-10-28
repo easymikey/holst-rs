@@ -15,6 +15,7 @@ use crate::{
         },
         change::{
             value::{
+                Arrangement,
                 ArrowEdit,
                 BoardChange,
                 LinkTo,
@@ -109,7 +110,8 @@ impl CheckedChange<'_> {
             | CheckedChange::Lock(_)
             | CheckedChange::Ungroup(_)
             | CheckedChange::LockOnly(_)
-            | CheckedChange::Unlock(_) => BTreeSet::new(),
+            | CheckedChange::Unlock(_)
+            | CheckedChange::Arrange(..) => BTreeSet::new(),
         }
     }
 }
@@ -142,6 +144,8 @@ pub(crate) enum CheckedChange<'a> {
     LockOnly(Vec<String>),
     /// Locked groups to dissolve and locked frames and tables to unlock.
     Unlock(Vec<String>),
+    /// The top objects to move against each other, once each.
+    Arrange(Vec<String>, Arrangement),
 }
 
 /// What a new group is for.
@@ -222,7 +226,8 @@ pub(crate) fn check<'a>(
         | BoardChange::Lock(_)
         | BoardChange::LockOnly(_)
         | BoardChange::Unlock(_)
-        | BoardChange::UnlockAll => Ok(()),
+        | BoardChange::UnlockAll
+        | BoardChange::Arrange { .. } => Ok(()),
     }?;
     match change {
         BoardChange::AddAll(entries) => entries
@@ -284,7 +289,68 @@ pub(crate) fn check<'a>(
             unlockable(states, objects).map(CheckedChange::Unlock)
         }
         BoardChange::UnlockAll => all_locked(states).map(CheckedChange::Unlock),
+        BoardChange::Arrange { objects, how } => {
+            arrangeable(states, objects).map(|ids| CheckedChange::Arrange(ids, *how))
+        }
     }
+}
+
+/// The ids of the objects named that an alignment or a spread moves: the top
+/// ones, once each. As the web client does, it refuses the whole selection if
+/// one is locked, a table cell, a mind-map node or a card in a kanban column;
+/// an arrow stuck to an object follows it and is left out.
+// BUNDLE: main.a33651a4.js 209325-209330, 209412-209415, 209481-209487.
+fn arrangeable(
+    states: &HashMap<String, Value>,
+    named: &[String],
+) -> Result<Vec<String>> {
+    let found = named
+        .iter()
+        .map(|reference| find(states, reference).map(|id| (reference, id)))
+        .collect::<Result<Vec<_>>>()?;
+    let refused = found.iter().find_map(|(reference, id)| {
+        let kept = refusal_to_group(states, id, Grouping::Locked).filter(|why| {
+            matches!(
+                why,
+                GroupRefusal::TableCell
+                    | GroupRefusal::MindMapNode
+                    | GroupRefusal::InColumn
+            )
+        });
+        kept.map(|why| BoardChangeError::NotArrangeable {
+            reference: (*reference).clone(),
+            why,
+        })
+        .or_else(|| {
+            locked(states, id).then(|| BoardChangeError::Locked {
+                reference: (*reference).clone(),
+            })
+        })
+    });
+    refused.map_or_else(
+        || {
+            top_named(states, named).map(|top| {
+                top.into_iter()
+                    .map(|(_, id)| id)
+                    .filter(|id| !joined_arrow(states, id))
+                    .collect()
+            })
+        },
+        |error| Err(Error::BoardChange(error)),
+    )
+}
+
+/// Whether the object is an arrow with an end stuck to an object.
+fn joined_arrow(states: &HashMap<String, Value>, id: &str) -> bool {
+    kind_of(states, id) == ObjectKind::Arrow
+        && [START, END].iter().any(|side| {
+            states
+                .get(id)
+                .and_then(|fields| fields.get(*side))
+                .and_then(|end| end.get(OBJECT_ID))
+                .and_then(Value::as_str)
+                .is_some()
+        })
 }
 
 /// Whether the object itself carries the lock flag.

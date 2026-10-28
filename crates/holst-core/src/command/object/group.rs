@@ -103,7 +103,7 @@ async fn ungrouped<I: WriteInterpreter + ?Sized>(
 }
 
 /// Writes `change` to the board `(name, workspace)` names.
-async fn sent<I: WriteInterpreter + ?Sized>(
+pub(super) async fn sent<I: WriteInterpreter + ?Sized>(
     client: &Client,
     cache: Option<&dyn CachePort>,
     interpreter: &I,

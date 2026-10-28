@@ -254,6 +254,18 @@ pub enum BoardChangeError {
     #[error("nothing is locked on the board: nothing was changed")]
     NothingToUnlock,
 
+    #[error("\"{reference}\" cannot be aligned or spread: {why}")]
+    NotArrangeable {
+        reference: String,
+        why: GroupRefusal,
+    },
+
+    #[error(
+        "arranging needs at least {needs} objects that can be moved, not {given}: nothing \
+         was changed"
+    )]
+    TooFewToArrange { needs: usize, given: usize },
+
     #[error(
         "the server did not accept the change within {seconds} s — it may or may not be on \
          the board"
@@ -314,6 +326,8 @@ impl BoardChangeError {
             | BoardChangeError::NotGroupable { .. }
             | BoardChangeError::NotLockable { .. }
             | BoardChangeError::NothingToUnlock
+            | BoardChangeError::NotArrangeable { .. }
+            | BoardChangeError::TooFewToArrange { .. }
             | BoardChangeError::ContentHidden { .. } => None,
         }
     }
@@ -363,6 +377,8 @@ impl BoardChangeError {
             | BoardChangeError::NotLockable { .. }
             | BoardChangeError::NotLocked { .. }
             | BoardChangeError::NothingToUnlock
+            | BoardChangeError::NotArrangeable { .. }
+            | BoardChangeError::TooFewToArrange { .. }
             | BoardChangeError::ContentHidden { .. }
             | BoardChangeError::AcceptTimeout { .. }
             | BoardChangeError::ClosedBeforeAccept
@@ -514,6 +530,17 @@ pub(super) mod tests {
                 Some(Hint::ListObjects),
             ),
             (BoardChangeError::NothingToUnlock, None),
+            (
+                BoardChangeError::NotArrangeable {
+                    reference: text(),
+                    why: GroupRefusal::TableCell,
+                },
+                None,
+            ),
+            (
+                BoardChangeError::TooFewToArrange { needs: 2, given: 1 },
+                None,
+            ),
             (
                 BoardChangeError::OutsideFrame {
                     reference: text(),

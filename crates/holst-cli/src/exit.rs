@@ -375,6 +375,8 @@ fn board_write_code(error: &BoardChangeError) -> u8 {
         | BoardChangeError::NotLockable { .. }
         | BoardChangeError::NotLocked { .. }
         | BoardChangeError::NothingToUnlock
+        | BoardChangeError::NotArrangeable { .. }
+        | BoardChangeError::TooFewToArrange { .. }
         | BoardChangeError::OutsideFrame { .. } => EX_USAGE,
         BoardChangeError::AcceptTimeout { .. }
         | BoardChangeError::ClosedBeforeAccept

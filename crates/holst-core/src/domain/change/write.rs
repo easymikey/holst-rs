@@ -55,6 +55,7 @@ use crate::{
                 TextWidth,
                 Upload,
             },
+            write_arrange::arrange,
             write_group::{dissolve_after_removal, group, lock_only, ungroup, unlock},
             write_many::{edit_all, paste},
             write_shape::{arrow_changes, shape_changes},
@@ -184,6 +185,7 @@ pub(super) fn write_change(
         CheckedChange::Ungroup(groups) => ungroup(transaction, scope, &groups),
         CheckedChange::LockOnly(ids) => lock_only(transaction, scope, &ids),
         CheckedChange::Unlock(ids) => unlock(transaction, scope, &ids),
+        CheckedChange::Arrange(ids, how) => arrange(transaction, scope, &ids, how),
     }
 }
 
@@ -1117,12 +1119,7 @@ fn carry(
     scope: &WriteTransaction<'_>,
     moved: &MovedFrame<'_>,
 ) -> Result<Vec<ChangedObject>> {
-    let WriteTransaction {
-        roots,
-        states,
-        stamp,
-        ..
-    } = *scope;
+    let states = scope.states;
     let (frame, to) = (moved.frame, moved.to);
     let from = states.get(frame).and_then(|fields| fields.get(POSITION));
     let delta = |axis: &str, target: f64| {
@@ -1133,15 +1130,38 @@ fn carry(
                 .unwrap_or(target)
     };
     let shift = (delta(X, to.x()), delta(Y, to.y()));
-    let moving = moving_with(states, frame);
+    shift_objects(
+        transaction,
+        scope,
+        &moving_with(states, frame),
+        Some(frame),
+        shift,
+    )
+}
+
+/// Moves the objects by `shift`, but `except`: the position of each, the points
+/// of an arrow that ride with them.
+pub(super) fn shift_objects(
+    transaction: &mut TransactionMut<'_>,
+    scope: &WriteTransaction<'_>,
+    moving: &BTreeSet<String>,
+    except: Option<&str>,
+    shift: (f64, f64),
+) -> Result<Vec<ChangedObject>> {
+    let WriteTransaction {
+        roots,
+        states,
+        stamp,
+        ..
+    } = *scope;
     moving
         .iter()
-        .filter(|id| *id != frame)
+        .filter(|id| Some(id.as_str()) != except)
         .filter_map(|id| {
             let stored = states.get(id)?;
             let kind = kind_of(states, id);
             let changes = if kind == ObjectKind::Arrow {
-                arrow_moved(stored, &moving, shift)
+                arrow_moved(stored, moving, shift)
             } else {
                 vec![(POSITION, shifted(stored.get(POSITION)?, shift))]
             };
@@ -1170,7 +1190,12 @@ fn moved_field(kind: &ObjectKind) -> &'static str {
     }
 }
 
-fn moving_with(states: &HashMap<String, Value>, frame: &str) -> BTreeSet<String> {
+/// What moves with `frame`: what it holds, the arrows between those and the
+/// stamps stuck to them.
+pub(super) fn moving_with(
+    states: &HashMap<String, Value>,
+    frame: &str,
+) -> BTreeSet<String> {
     let held = subtree(states, frame);
     let arrows: Vec<String> = states
         .iter()

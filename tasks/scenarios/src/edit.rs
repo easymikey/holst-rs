@@ -106,6 +106,12 @@ impl ObjectCall {
         Self::new("unlock", None)
     }
 
+    /// Aligns objects to a side or spreads them.
+    #[must_use]
+    pub const fn align() -> Self {
+        Self::new("align", None)
+    }
+
     /// Removes objects.
     #[must_use]
     pub const fn remove() -> Self {

@@ -638,7 +638,7 @@ expression: "*holst.tools"
   },
   {
     "name": "object_write",
-    "description": "Objects on a board: add or edit many in one call, copy, group, lock, remove, download.",
+    "description": "Objects on a board: add or edit many in one call, copy, group, lock, align, remove, download.",
     "inputSchema": {
       "properties": {
         "action": {
@@ -650,6 +650,7 @@ expression: "*holst.tools"
             "ungroup",
             "lock",
             "unlock",
+            "align",
             "rm",
             "get"
           ],
@@ -690,6 +691,14 @@ expression: "*holst.tools"
           "type": "boolean"
         },
         "dir": {
+          "type": "string"
+        },
+        "distribute": {
+          "description": "Spread evenly: horizontal or vertical. Align instead with to: left, center, right, top, middle or bottom.",
+          "enum": [
+            "horizontal",
+            "vertical"
+          ],
           "type": "string"
         },
         "dry_run": {

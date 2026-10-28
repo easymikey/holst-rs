@@ -1,3 +1,4 @@
+mod aligning;
 mod boards;
 mod comments;
 mod copying;

@@ -16,6 +16,7 @@ COMMANDS
   ungroup:     Dissolve groups; their objects stay
   lock:        Lock objects so that they cannot be changed
   unlock:      Unlock locked groups, frames and tables
+  align:       Align objects to a side or spread them evenly
   rm:          Remove objects with what a frame holds and their arrows
   get:         Download the original of an image or file object
 

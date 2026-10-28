@@ -7,6 +7,7 @@ use holst_core::{
         board::picture::Delivery,
         object::{
             AddArgs,
+            AlignArgs,
             CopyArgs,
             EditArgs,
             GetArgs,
@@ -18,6 +19,7 @@ use holst_core::{
             UngroupArgs,
             UnlockArgs,
             add,
+            align,
             change::{self, Removed},
             copy,
             get::{self, Downloaded},
@@ -163,6 +165,10 @@ impl McpServer {
             ObjectVerb::Unlock => {
                 let dry = |args: &UnlockArgs| args.dry_run;
                 self.change_objects(arguments, dry, lock::unlock).await
+            }
+            ObjectVerb::Align => {
+                let dry = |args: &AlignArgs| args.dry_run;
+                self.change_objects(arguments, dry, align::align).await
             }
             ObjectVerb::Rm => self.remove_objects(arguments).await,
             ObjectVerb::Get => self.download_objects(arguments).await,

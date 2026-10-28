@@ -502,6 +502,7 @@ mod tests {
             ObjectVerb::Ungroup => parse::<object::UngroupArgs>(arguments).map(drop),
             ObjectVerb::Lock => parse::<object::LockArgs>(arguments).map(drop),
             ObjectVerb::Unlock => parse::<object::UnlockArgs>(arguments).map(drop),
+            ObjectVerb::Align => parse::<object::AlignArgs>(arguments).map(drop),
             ObjectVerb::Rm => parse::<object::RemoveArgs>(arguments).map(drop),
             ObjectVerb::Get => parse::<object::GetArgs>(arguments).map(drop),
         }
