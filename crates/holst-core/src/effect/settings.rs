@@ -331,6 +331,12 @@ mod tests {
 
     use rstest::rstest;
 
+    /// An absolute cache directory on every system.
+    #[cfg(windows)]
+    const C: &str = r"C:\c";
+    #[cfg(not(windows))]
+    const C: &str = "/c";
+
     use crate::{
         effect::settings::{
             BASE_URL_VAR,
@@ -405,10 +411,10 @@ mod tests {
 
     #[rstest]
     #[case::beside_home(&[(HOME_VAR, "/h")], Some("/h/cache"))]
-    #[case::named(&[(HOME_VAR, "/h"), (CACHE_DIR_VAR, "/c")], Some("/c"))]
+    #[case::named(&[(HOME_VAR, "/h"), (CACHE_DIR_VAR, C)], Some(C))]
     #[case::off(&[(HOME_VAR, "/h"), (CACHE_VAR, "off")], None)]
-    #[case::off_in_capitals(&[(CACHE_DIR_VAR, "/c"), (CACHE_VAR, "OFF")], None)]
-    #[case::on(&[(CACHE_DIR_VAR, "/c"), (CACHE_VAR, "on")], Some("/c"))]
+    #[case::off_in_capitals(&[(CACHE_DIR_VAR, C), (CACHE_VAR, "OFF")], None)]
+    #[case::on(&[(CACHE_DIR_VAR, C), (CACHE_VAR, "on")], Some(C))]
     fn the_cache_directory_is_chosen(
         #[case] pairs: &[(&'static str, &'static str)],
         #[case] expected: Option<&str>,
@@ -450,13 +456,13 @@ mod tests {
         #[case] name: &'static str,
         #[case] value: &'static str,
     ) -> Result<()> {
-        let pairs = [(HOME_VAR, "/h"), (CACHE_DIR_VAR, "/c"), (name, value)];
+        let pairs = [(HOME_VAR, "/h"), (CACHE_DIR_VAR, C), (name, value)];
         let (settings, refused) = Settings::checked(variables(&pairs))?;
         assert!(refused.is_some(), "the bad value was not reported");
         assert_eq!(settings.cache.root, None);
         assert_eq!(
             settings.cache.roots,
-            [PathBuf::from("/h/cache"), PathBuf::from("/c")]
+            [PathBuf::from("/h/cache"), PathBuf::from(C)]
         );
         assert!(Settings::from_variables(variables(&pairs)).is_ok());
         Ok(())
@@ -466,13 +472,13 @@ mod tests {
     fn every_known_root_stays_listed_when_the_cache_is_off() -> Result<()> {
         let off = Settings::from_variables(variables(&[
             (HOME_VAR, "/h"),
-            (CACHE_DIR_VAR, "/c"),
+            (CACHE_DIR_VAR, C),
             (CACHE_VAR, "off"),
         ]))?;
         assert_eq!(off.cache.root, None);
         assert_eq!(
             off.cache.roots,
-            [PathBuf::from("/h/cache"), PathBuf::from("/c")]
+            [PathBuf::from("/h/cache"), PathBuf::from(C)]
         );
         assert_eq!(off.cache.clone().off().roots, off.cache.roots);
         let same = Settings::from_variables(variables(&[

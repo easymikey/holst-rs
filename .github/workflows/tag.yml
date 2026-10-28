@@ -1,0 +1,40 @@
+name: Tag
+
+# After a green CI on main: if the Cargo version has no tag yet, tag that commit
+# and start the release. A tag pushed with GITHUB_TOKEN starts no workflow, so the
+# release is started by hand through its workflow_dispatch.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  tag:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: tag a new version and start its release
+        shell: bash
+        run: |
+          pkgid=$(cargo pkgid -p holst-cli)
+          tag="v${pkgid##*[#@]}"
+          if gh api "repos/$REPO/git/ref/tags/$tag" >/dev/null 2>&1; then
+            echo "$tag exists; nothing to release"
+            exit 0
+          fi
+          gh api "repos/$REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$SHA" >/dev/null
+          echo "tagged $SHA as $tag"
+          gh workflow run release.yml --repo "$REPO" -f tag="$tag"
