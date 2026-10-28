@@ -109,7 +109,7 @@ keyring = { version = "3", features = ["async-secret-service", "async-io", "cryp
 secret-service = { version = "4", default-features = false }
 zbus = { version = "4", default-features = false }
 
-[package.metadata.cargo-shear]
+[package.metadata.cargo-machete]
 # Pinned only to pick the IDNA backend of `url`; never imported.
 ignored = ["idna_adapter"]
 

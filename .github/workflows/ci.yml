@@ -59,10 +59,13 @@ jobs:
 
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-deny
+          tool: cargo-deny,cargo-machete
 
       - name: cargo-deny
         run: cargo deny check
+
+      - name: cargo-machete
+        run: cargo machete
 
   check:
     needs: lint
