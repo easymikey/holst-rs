@@ -360,7 +360,6 @@ fn joined_arrow(states: &HashMap<String, Value>, id: &str) -> bool {
         })
 }
 
-/// Whether the object itself carries the lock flag.
 pub(super) fn flagged(states: &HashMap<String, Value>, object: &str) -> bool {
     states
         .get(object)
@@ -500,7 +499,6 @@ fn unlockable(
         .collect()
 }
 
-/// The ids of everything locked on the board.
 fn all_locked(states: &HashMap<String, Value>) -> Result<Vec<String>> {
     let ids: Vec<String> = states
         .keys()
@@ -850,7 +848,6 @@ fn open_frame(states: &HashMap<String, Value>, reference: &str) -> Result<String
     }
 }
 
-/// The nearest frame above an object.
 pub(super) fn frame_above(states: &HashMap<String, Value>, id: &str) -> Option<String> {
     ancestry(states, id)
         .into_iter()
@@ -1357,7 +1354,6 @@ fn spins(kind: &ObjectKind, patch: &ObjectPatch) -> Result<()> {
     })
 }
 
-/// Whether the kind has a rotation.
 fn turns(kind: &ObjectKind) -> bool {
     // BUNDLE: no rotation for these (main.a33651a4.js 204237, 206092, 171083).
     !matches!(

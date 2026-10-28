@@ -414,7 +414,6 @@ impl Reader<'_> {
         Block::new(BlockKind::Paragraph, self.inline())
     }
 
-    /// Moves past the end of the tag being read.
     fn end(&mut self) {
         let at_end = matches!(self.events.get(self.at), Some((Event::End(_), _)));
         self.at += usize::from(at_end);

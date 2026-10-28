@@ -67,7 +67,6 @@ use crate::{
     error::{Error, Result, board_change::BoardChangeError},
 };
 
-/// A change of one new object on the board.
 fn add(new: NewObject) -> BoardChange {
     BoardChange::AddAll(vec![NewEntry {
         new,
@@ -76,7 +75,6 @@ fn add(new: NewObject) -> BoardChange {
     }])
 }
 
-/// A change of one new object inside `frame`.
 fn add_in(new: NewObject, frame: String) -> BoardChange {
     BoardChange::AddAll(vec![NewEntry {
         new,
@@ -85,7 +83,6 @@ fn add_in(new: NewObject, frame: String) -> BoardChange {
     }])
 }
 
-/// A change of one object.
 fn edit(object: String, patch: ObjectPatch) -> BoardChange {
     BoardChange::EditAll(vec![ObjectEdit {
         object,
@@ -95,7 +92,6 @@ fn edit(object: String, patch: ObjectPatch) -> BoardChange {
     }])
 }
 
-/// A change removing one object.
 fn remove(object: String) -> BoardChange {
     BoardChange::RemoveAll(vec![object])
 }
