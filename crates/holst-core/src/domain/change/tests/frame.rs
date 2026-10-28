@@ -26,7 +26,7 @@ use crate::{
     },
 };
 
-fn nested_frames() -> Result<(Doc, SequentialIds)> {
+pub(super) fn nested_frames() -> Result<(Doc, SequentialIds)> {
     let document = Doc::new();
     let ids = SequentialIds::new("r");
     let frame = |x, y, width, height| -> Result<BoardChange> {
@@ -46,7 +46,7 @@ fn nested_frames() -> Result<(Doc, SequentialIds)> {
     Ok((document, ids))
 }
 
-fn move_to(
+pub(super) fn move_to(
     document: &Doc,
     ids: &SequentialIds,
     object: &str,
@@ -584,7 +584,7 @@ fn new_objects_take_the_kind_default_size() -> Result<()> {
 }
 
 /// Put an object with exactly these stored fields on the board.
-fn seed(document: &Doc, fields: &Value) -> Result<()> {
+pub(super) fn seed(document: &Doc, fields: &Value) -> Result<()> {
     let id = fields.get("id").and_then(Value::as_str).unwrap_or_default();
     let pairs = fields
         .as_object()
@@ -683,14 +683,14 @@ fn a_move_refuses_what_a_container_places(
     Ok(())
 }
 
-fn hidden_frame() -> Value {
+pub(super) fn hidden_frame() -> Value {
     json!({
         "id": "h", "type": "frame", "isContentHidden": true,
         "position": { "x": 2000, "y": 0 }, "width": 400, "height": 300,
     })
 }
 
-fn free(id: &str, x: u32, y: u32) -> Value {
+pub(super) fn free(id: &str, x: u32, y: u32) -> Value {
     json!({
         "id": id, "type": "sticker",
         "position": { "x": x, "y": y }, "width": 100, "height": 100,

@@ -307,7 +307,8 @@ fn may_take(
     })
 }
 
-/// Each object first, then what it holds and the arrows on it.
+/// Each object first, then what it holds, the arrows on it and the stamps
+/// stuck to it.
 pub(super) fn removal(states: &HashMap<String, Value>, ids: &[String]) -> Vec<String> {
     ids.iter()
         .flat_map(|id| {
@@ -319,15 +320,30 @@ pub(super) fn removal(states: &HashMap<String, Value>, ids: &[String]) -> Vec<St
                 })
                 .map(|(arrow, _)| arrow.clone())
                 .collect();
+            let stamps: BTreeSet<String> = states
+                .iter()
+                .filter(|(_, fields)| stuck_to(fields, &held))
+                .map(|(stamp, _)| stamp.clone())
+                .collect();
             let rest: BTreeSet<String> = held
                 .into_iter()
                 .chain(arrows)
+                .chain(stamps)
                 .filter(|other| other != id)
                 .collect();
             std::iter::once(id.clone()).chain(rest)
         })
         .unique()
         .collect()
+}
+
+/// Whether the object is stuck to one of `held`, as a reaction stamp is.
+pub(super) fn stuck_to(fields: &Value, held: &BTreeSet<String>) -> bool {
+    fields
+        .get(STICKY_POSITION)
+        .and_then(|sticky| sticky.get(PARENT_ID))
+        .and_then(Value::as_str)
+        .is_some_and(|parent| held.contains(parent))
 }
 
 /// Whether the arrow's `side` end is stuck to an object of `held`.
@@ -401,6 +417,11 @@ fn checked_in(
                 .filter(|_| kind_of(states, &id) == ObjectKind::Frame)
                 .and_then(rectangle_of)
                 .ok_or_else(not_frame)?;
+            shows_content(states, &id).then_some(()).ok_or_else(|| {
+                Error::BoardChange(BoardChangeError::ContentHidden {
+                    reference: frame.to_owned(),
+                })
+            })?;
             Ok::<_, Error>((id, area))
         },
         |slot| {
@@ -741,7 +762,11 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
     let place = !matches!(kind, ObjectKind::Arrow);
     let size = matches!(
         kind,
-        ObjectKind::Sticker | ObjectKind::Shape | ObjectKind::Frame
+        ObjectKind::Sticker
+            | ObjectKind::StickerStack
+            | ObjectKind::Text
+            | ObjectKind::Shape
+            | ObjectKind::Frame
     );
     let color = matches!(
         kind,

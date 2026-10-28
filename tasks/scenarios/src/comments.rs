@@ -21,6 +21,8 @@ pub enum ThreadPin<'a> {
     At(&'a str),
     /// The object with this number on the board, counting from 1.
     Object(u32),
+    /// The same object, named as `o ls` prints it.
+    Listed(u32),
     /// A point and an object together, which the surfaces refuse.
     Both(&'a str, u32),
 }
@@ -68,6 +70,10 @@ impl On<'_> {
             ThreadPin::Free => (None, None),
             ThreadPin::At(at) => (Some(at.to_owned()), None),
             ThreadPin::Object(number) => (None, Some(object(number))),
+            ThreadPin::Listed(number) => {
+                let id = object(number);
+                (None, Some(format!("@{}", id.get(..8).unwrap_or(&id))))
+            }
             ThreadPin::Both(at, number) => (Some(at.to_owned()), Some(object(number))),
         };
         let words = Words {

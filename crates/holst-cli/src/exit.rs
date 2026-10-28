@@ -364,6 +364,7 @@ fn board_write_code(error: &BoardChangeError) -> u8 {
         | BoardChangeError::NotShapeKind { .. }
         | BoardChangeError::StickerSize { .. }
         | BoardChangeError::NotFrame { .. }
+        | BoardChangeError::ContentHidden { .. }
         | BoardChangeError::OutsideFrame { .. } => EX_USAGE,
         BoardChangeError::AcceptTimeout { .. }
         | BoardChangeError::ClosedBeforeAccept

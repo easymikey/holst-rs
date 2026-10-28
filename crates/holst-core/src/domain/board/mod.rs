@@ -458,6 +458,15 @@ pub(crate) fn object_of(fields: Value) -> Option<Object> {
     object(fields, |_| String::new(), &HashMap::new())
 }
 
+/// `fields` as an object, its text read from the `documents` map.
+pub(crate) fn object_with_text<T: ReadTxn>(
+    fields: Value,
+    txn: &T,
+    documents: &yrs::MapRef,
+) -> Option<Object> {
+    object(fields, |id| text_of(txn, documents, id), &HashMap::new())
+}
+
 /// Whether `fields` is an object a listing shows: a string `id` and `type`,
 /// the two fields `object` cannot do without.
 pub(crate) fn is_listed(fields: &Value) -> bool {

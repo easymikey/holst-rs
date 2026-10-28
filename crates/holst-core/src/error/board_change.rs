@@ -155,6 +155,12 @@ pub enum BoardChangeError {
     NotFrame { reference: String },
 
     #[error(
+        "frame \"{reference}\" hides its content: objects put in it would vanish for viewers; \
+         show its content in the web client first"
+    )]
+    ContentHidden { reference: String },
+
+    #[error(
         "the object at {at} would stick out of frame \"{reference}\" ({frame}): --at counts from \
          the frame's corner"
     )]
@@ -214,7 +220,8 @@ impl BoardChangeError {
             | BoardChangeError::NotSize { .. }
             | BoardChangeError::NotColor { .. }
             | BoardChangeError::NotShapeKind { .. }
-            | BoardChangeError::StickerSize { .. } => None,
+            | BoardChangeError::StickerSize { .. }
+            | BoardChangeError::ContentHidden { .. } => None,
         }
     }
 }
@@ -253,6 +260,7 @@ impl BoardChangeError {
             | BoardChangeError::NotShapeKind { .. }
             | BoardChangeError::StickerSize { .. }
             | BoardChangeError::NotFrame { .. }
+            | BoardChangeError::ContentHidden { .. }
             | BoardChangeError::AcceptTimeout { .. }
             | BoardChangeError::ClosedBeforeAccept
             | BoardChangeError::NotAccepted { .. } => None,
@@ -354,6 +362,7 @@ pub(super) mod tests {
                 BoardChangeError::NotFrame { reference: text() },
                 Some(Hint::ListObjects),
             ),
+            (BoardChangeError::ContentHidden { reference: text() }, None),
             (
                 BoardChangeError::OutsideFrame {
                     reference: text(),

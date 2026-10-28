@@ -128,6 +128,24 @@ async fn a_thread_starts_on_an_object(
 
 #[rstest]
 #[tokio::test]
+async fn a_thread_starts_on_an_object_named_as_the_listing_prints_it(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_board()
+        .board_with_objects(BOARD, "Team", vec![FixtureObject::Sticker("Idea".into())])
+        .start()
+        .await?;
+    let started = holst
+        .on(surface)
+        .add_comment(BOARD, "Why?", ThreadPin::Listed(1))
+        .await?;
+    then(&started).succeeded();
+    comments_of(&holst, BOARD).is_pinned_at(1, &ThreadAnchor::Object(1));
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
 async fn a_point_and_an_object_are_not_both_taken(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {

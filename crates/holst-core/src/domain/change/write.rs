@@ -20,7 +20,8 @@ use yrs::{
 
 use crate::{
     domain::{
-        board::{ObjectKind, any},
+        area::scene::{Scene, text_scale},
+        board::{ObjectKind, any, object_with_text},
         change::{
             build::author_number,
             check::{
@@ -35,6 +36,7 @@ use crate::{
                 removal,
                 shows_content,
                 sized,
+                stuck_to,
                 subtree,
             },
             journal,
@@ -96,6 +98,8 @@ use crate::{
 };
 
 const LAYER_STEP: f64 = 1000.0;
+/// The short side of a sticker before `textScale`; the long one is twice it.
+const STICKER_SIDE: f64 = 192.0;
 
 pub(super) struct DocumentRoots {
     pub(super) objects: MapRef,
@@ -602,15 +606,85 @@ fn content_changes(
         .unwrap_or_default();
     text.into_iter()
         .chain(patch.at.map(|at| (POSITION, json!(at))))
-        .chain(patch.size.into_iter().flat_map(|size| {
-            [(WIDTH, json!(size.width())), (HEIGHT, json!(size.height()))]
-        }))
+        .chain(
+            patch.size.into_iter().flat_map(|size| {
+                size_changes(&*transaction, scope, kind, fields, size)
+            }),
+        )
         .chain(patch.color.as_ref().map(|color| {
             (
                 color_field(kind),
                 json!({ (COLOR): color.as_str(), (OPACITY): 1 }),
             )
         }))
+        .collect()
+}
+
+/// A sticker, a stack and a text grow by `textScale` (the web client's corner
+/// handle: new height over the height at scale 1); a sticker's width snaps to
+/// the nearer of its two sides. Other kinds take free sides.
+fn size_changes(
+    transaction: &TransactionMut<'_>,
+    scope: &WriteTransaction<'_>,
+    kind: &ObjectKind,
+    fields: &Value,
+    size: Size,
+) -> Vec<(&'static str, Value)> {
+    match kind {
+        ObjectKind::Sticker | ObjectKind::StickerStack | ObjectKind::Text => {
+            scaled_size(transaction, scope, kind, fields, size)
+        }
+        ObjectKind::Shape
+        | ObjectKind::Document
+        | ObjectKind::Frame
+        | ObjectKind::Arrow
+        | ObjectKind::Image
+        | ObjectKind::File
+        | ObjectKind::Stamp
+        | ObjectKind::Group
+        | ObjectKind::Table
+        | ObjectKind::TableCell
+        | ObjectKind::Code
+        | ObjectKind::Drawing
+        | ObjectKind::Dice
+        | ObjectKind::Wheel
+        | ObjectKind::Flipcard
+        | ObjectKind::Task
+        | ObjectKind::Link
+        | ObjectKind::Other(_) => {
+            vec![(WIDTH, json!(size.width())), (HEIGHT, json!(size.height()))]
+        }
+    }
+}
+
+fn scaled_size(
+    transaction: &TransactionMut<'_>,
+    scope: &WriteTransaction<'_>,
+    kind: &ObjectKind,
+    fields: &Value,
+    size: Size,
+) -> Vec<(&'static str, Value)> {
+    let object = object_with_text(fields.clone(), transaction, &scope.roots.documents);
+    let scale = object.as_ref().map_or(1.0, text_scale);
+    let base = object
+        .as_ref()
+        .and_then(|object| {
+            Scene::new(std::slice::from_ref(object)).rectangle_of(object)
+        })
+        .map(|rectangle| rectangle.height / scale)
+        .filter(|height| *height > 0.0)
+        .unwrap_or(STICKER_SIDE);
+    let grown = size.height() / base;
+    let seen = size.width() / grown;
+    let snapped = if (STICKER_SIDE - seen).abs() > (2.0 * STICKER_SIDE - seen).abs() {
+        2.0 * STICKER_SIDE
+    } else {
+        STICKER_SIDE
+    };
+    let width = (*kind == ObjectKind::Sticker).then(|| (WIDTH, json!(snapped)));
+    [(TEXT_SCALE, json!(grown))]
+        .into_iter()
+        .chain(width)
         .collect()
 }
 
@@ -843,7 +917,12 @@ fn moving_with(states: &HashMap<String, Value>, frame: &str) -> BTreeSet<String>
         })
         .map(|(id, _)| id.clone())
         .collect();
-    held.iter().cloned().chain(arrows).collect()
+    let stamps: Vec<String> = states
+        .iter()
+        .filter(|(_, fields)| stuck_to(fields, &held))
+        .map(|(id, _)| id.clone())
+        .collect();
+    held.iter().cloned().chain(arrows).chain(stamps).collect()
 }
 
 pub(super) fn shifted(point: &Value, (dx, dy): (f64, f64)) -> Value {

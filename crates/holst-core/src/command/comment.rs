@@ -26,7 +26,7 @@ use crate::{
             },
             objects,
         },
-        id::object_in,
+        lookup::rules::find_id,
         text::one_line,
     },
     effect::{board_write::WriteMode, confirmation::unless_confirmed},
@@ -710,45 +710,23 @@ fn placement(args: &AddArgs) -> Result<Placement<'_>> {
 }
 
 /// The object the reference names on the board: its whole id, a link to it or
-/// the first 8 characters of its id; the thread sits at the middle of it.
+/// the first 8 characters of its id, with the `@` that `o ls` prints; the
+/// thread sits at the middle of it.
 async fn object_anchor(
     client: &Client,
     board: &str,
     reference: &str,
 ) -> Result<ThreadAnchor> {
-    let wanted =
-        object_in(reference).map_or_else(|| reference.trim().to_owned(), String::from);
     let loaded = load(client, board).await?;
     let ids: Vec<String> = objects(&loaded.document)
         .into_iter()
         .map(|object| object.id)
-        .filter(|id| *id == wanted || (wanted.len() >= 8 && id.starts_with(&wanted)))
         .collect();
-    match ids.as_slice() {
-        [id] => Ok(ThreadAnchor::Object {
-            id: id.clone(),
-            x: 0.5,
-            y: 0.5,
-        }),
-        found => Err(Error::Lookup(LookupError {
-            kind: LookupKind::Object,
-            reference: reference.to_owned(),
-            miss: if found.is_empty() {
-                LookupMiss::not_found()
-            } else {
-                LookupMiss::ambiguous(
-                    found
-                        .iter()
-                        .map(|id| Candidate {
-                            name: id.clone(),
-                            id: Some(id.clone()),
-                            ..Candidate::default()
-                        })
-                        .collect(),
-                )
-            },
-        })),
-    }
+    find_id(ids.iter().map(String::as_str), reference).map(|id| ThreadAnchor::Object {
+        id,
+        x: 0.5,
+        y: 0.5,
+    })
 }
 
 /// The first point on the diagonal of the board that no thread holds.

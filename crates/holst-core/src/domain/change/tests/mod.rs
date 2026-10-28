@@ -6,6 +6,7 @@ mod journal;
 mod locked;
 mod many;
 mod new_kinds;
+mod objects;
 mod remove;
 
 use std::collections::HashMap;
@@ -408,7 +409,8 @@ fn edit_verdict(
 #[case::three_to_one_sticker("sticker", "300x100", Verdict::WrongStickerShape)]
 #[case::any_shape_size("shape", "300x100", Verdict::Allowed)]
 #[case::any_frame_size("frame", "300x100", Verdict::Allowed)]
-#[case::text_has_no_size("simple-text", "192x192", Verdict::NoSuchField("size"))]
+#[case::text_grows_by_scale("simple-text", "192x192", Verdict::Allowed)]
+#[case::stack_grows_by_scale("sticker-stack", "192x192", Verdict::Allowed)]
 #[case::arrow_has_no_size("arrow", "192x192", Verdict::NoSuchField("size"))]
 fn an_edit_resizes_only_what_has_a_size(
     #[case] kind: &str,
