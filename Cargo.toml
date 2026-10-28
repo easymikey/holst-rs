@@ -8,16 +8,19 @@ edition = "2024"
 # Project policy: the target toolchain is Rust 1.96; new std features come from it.
 rust-version = "1.96"
 license = "MIT OR Apache-2.0"
-publish = false
+repository = "https://github.com/easymikey/holst-rs"
+homepage = "https://github.com/easymikey/holst-rs"
+readme = "readme.md"
+authors = ["Mikhail Avdeev"]
 
 [workspace.dependencies]
 # Iterator adaptors std lacks: sorted, partition_map, join, chunk_by.
 itertools = "0.15"
-holst-macros = { path = "crates/holst-macros" }
+holst-macros = { path = "crates/holst-macros", version = "0.1.0" }
 # Endpoint attributes; syn, quote and proc-macro2 are already built for derives.
 proc-macro2 = "1"
 quote = "1"
-syn = { version = "2", default-features = false, features = ["full", "parsing", "printing", "proc-macro"] }
+syn = { version = "2", default-features = false, features = ["full", "parsing", "printing", "proc-macro", "clone-impls"] }
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

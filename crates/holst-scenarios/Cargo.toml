@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-publish.workspace = true
+publish = false
 description = "Behaviour scenarios run through the holst and holst-mcp binaries against one fake Holst server"
 # One test binary: `tests/main.rs` holds a module per area.
 autotests = false

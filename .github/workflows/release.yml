@@ -167,6 +167,37 @@ jobs:
           gh release create "$TAG" dist/holst-*.tar.gz dist/holst-*.zip dist/checksums.txt \
             --verify-tag --title "$TAG" --notes-file release-notes.md --latest
 
+  crates:
+    needs: release
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: rustup
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: toolchain
+        run: rustup toolchain install
+
+      - name: publish to crates.io
+        run: |
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "::notice::CARGO_REGISTRY_TOKEN is not set, skipping the crates.io publish"
+            exit 0
+          fi
+          cargo publish --workspace --locked
+
   homebrew:
     needs: release
     runs-on: ubuntu-latest

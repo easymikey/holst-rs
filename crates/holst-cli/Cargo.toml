@@ -4,7 +4,12 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-publish.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+authors.workspace = true
+keywords = ["holst", "whiteboard", "cli"]
+categories = ["command-line-utilities"]
 description = "Unofficial command-line client for Holst (app.holst.so)"
 
 [[bin]]
@@ -12,7 +17,7 @@ name = "holst"
 path = "src/main.rs"
 
 [dependencies]
-holst-core = { path = "../holst-core", features = ["logging"] }
+holst-core = { path = "../holst-core", version = "0.1.0", features = ["logging"] }
 thiserror.workspace = true
 secrecy.workspace = true
 zeroize.workspace = true

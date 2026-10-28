@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-publish.workspace = true
+publish = false
 description = "A stateful fake Holst server on 127.0.0.1 for scenarios and integration tests"
 
 [dependencies]
