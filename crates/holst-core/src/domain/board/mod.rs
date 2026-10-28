@@ -3,6 +3,7 @@
 pub mod arrow_look;
 pub mod comment;
 pub mod detail;
+pub mod frame_look;
 pub mod query;
 pub mod shape;
 pub mod shape_type;
@@ -537,9 +538,12 @@ fn object(
             .and_then(|fill| fill.get(document::COLOR))
             .and_then(Value::as_str)
             .map(str::to_owned),
-        look: matches!(kind, ObjectKind::Shape | ObjectKind::Arrow)
-            .then(|| shape_type::ShapeLook::of(&fields))
-            .flatten(),
+        look: matches!(
+            kind,
+            ObjectKind::Shape | ObjectKind::Arrow | ObjectKind::Frame
+        )
+        .then(|| shape_type::ShapeLook::of(&fields))
+        .flatten(),
         ends: matches!(kind, ObjectKind::Arrow).then(|| ArrowEnds {
             start: end_object(&fields, document::START),
             end: end_object(&fields, document::END),

@@ -3,6 +3,7 @@
 mod add_all;
 mod arrow_edit;
 mod frame;
+mod frame_look;
 mod group;
 mod journal;
 mod link;
@@ -110,6 +111,7 @@ fn board() -> Result<Doc> {
         at: Point::ORIGIN,
         size: None,
         color: None,
+        look: crate::domain::change::value::FrameEdit::default(),
     })?;
     put(NewObject::Sticker {
         text: "a".into(),
@@ -344,6 +346,7 @@ fn loaded_with_history(deleted: u32) -> Result<Doc> {
             at: Point::ORIGIN,
             size: None,
             color: None,
+            look: crate::domain::change::value::FrameEdit::default(),
         }),
         ME,
         &context,

@@ -61,6 +61,7 @@ pub use crate::{
         sharing_of,
         withhold_copying,
         withhold_deleting,
+        withhold_hiding,
         withhold_locking,
     },
     storage::{Cleaning, kept_in},

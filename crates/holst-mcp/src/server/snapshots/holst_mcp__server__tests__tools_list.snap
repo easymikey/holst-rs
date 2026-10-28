@@ -662,6 +662,15 @@ expression: "*holst.tools"
           "description": "x,y; add, cp: a free corner by default; edit: unchanged.",
           "type": "string"
         },
+        "background": {
+          "description": "Frame background fill, border, outline.",
+          "enum": [
+            "fill",
+            "border",
+            "outline"
+          ],
+          "type": "string"
+        },
         "bend": {
           "description": "Arrow bend: x,y; an elbow x, or ,y.",
           "type": "string"
@@ -700,6 +709,10 @@ expression: "*holst.tools"
         "heads": {
           "description": "start,end heads, an empty side keeps that end: none, figma, miro, arc, triangle[-filled], circle[-filled], rhombus[-filled], stick, stick-stick, triadius[-stick|-circle], stick-circle, slash.",
           "type": "string"
+        },
+        "hide_content": {
+          "description": "Hide frame content.",
+          "type": "boolean"
         },
         "items": {
           "description": "Many at once, each with the arguments of one; at most 100 per call.",
@@ -780,6 +793,17 @@ expression: "*holst.tools"
           "description": "Corner radius.",
           "type": "integer"
         },
+        "ratio": {
+          "description": "Frame ratio 16:9, 4:3, 1:1, a4, a4_landscape.",
+          "enum": [
+            "16:9",
+            "4:3",
+            "1:1",
+            "a4",
+            "a4_landscape"
+          ],
+          "type": "string"
+        },
         "refresh": {
           "type": "boolean"
         },
@@ -854,6 +878,10 @@ expression: "*holst.tools"
             "bpmn_message"
           ],
           "type": "string"
+        },
+        "show_content": {
+          "description": "Show frame content.",
+          "type": "boolean"
         },
         "size": {
           "description": "WxH.",

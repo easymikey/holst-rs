@@ -141,6 +141,12 @@ pub enum BoardChangeError {
     LockWithheld { needs: String, holds: &'static str },
 
     #[error(
+        "hiding and showing frame content on this board is held to {needs} and above: your \
+         right here is {holds}; nothing was changed"
+    )]
+    HideWithheld { needs: String, holds: &'static str },
+
+    #[error(
         "the target board already has {objects} objects: import only into an empty board, or \
          merge with --merge; nothing was changed"
     )]
@@ -280,7 +286,8 @@ impl BoardChangeError {
         match self {
             BoardChangeError::ReadOnly
             | BoardChangeError::CopyWithheld { .. }
-            | BoardChangeError::LockWithheld { .. } => Some(Hint::AskOwner),
+            | BoardChangeError::LockWithheld { .. }
+            | BoardChangeError::HideWithheld { .. } => Some(Hint::AskOwner),
             BoardChangeError::NoObject { .. }
             | BoardChangeError::NotFrame { .. }
             | BoardChangeError::NotGroup { .. }
@@ -335,6 +342,7 @@ impl BoardChangeError {
             BoardChangeError::ReadOnly
             | BoardChangeError::CopyWithheld { .. }
             | BoardChangeError::LockWithheld { .. }
+            | BoardChangeError::HideWithheld { .. }
             | BoardChangeError::NotChangeable { .. }
             | BoardChangeError::PlacedByContainer { .. }
             | BoardChangeError::Locked { .. }
@@ -482,6 +490,13 @@ pub(super) mod tests {
             ),
             (
                 BoardChangeError::LockWithheld {
+                    needs: text(),
+                    holds: "editor",
+                },
+                Some(Hint::AskOwner),
+            ),
+            (
+                BoardChangeError::HideWithheld {
                     needs: text(),
                     holds: "editor",
                 },

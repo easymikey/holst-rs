@@ -47,6 +47,7 @@ use crate::{
                 Backdrop,
                 ChangeSources,
                 ChangedObject,
+                FrameEdit,
                 ImageUpload,
                 NewObject,
                 ObjectChangeKind,
@@ -68,7 +69,9 @@ use crate::{
     error::{Error, Result, board_change::BoardChangeError},
     protocol::document::{
         ARROW_TYPE,
+        BACKGROUND_STYLE,
         COLOR,
+        CONTENT_HIDDEN,
         CONTROL,
         CREATED,
         DISPLAY_FILE_NAME,
@@ -90,6 +93,7 @@ use crate::{
         PARENT_ID,
         POINT,
         POSITION,
+        RATIO,
         RELATIVE_POINT,
         ROTATION,
         SHAPE_TYPE,
@@ -406,7 +410,8 @@ fn stored_fields<'a>(
             at,
             size,
             color,
-        } => frame_fields(label, at, size.as_ref(), color.as_ref()),
+            look,
+        } => frame_fields(label, at, (size.as_ref(), color.as_ref()), *look),
         NewObject::Arrow {
             from,
             to,
@@ -504,18 +509,52 @@ fn fill(color: Option<&Color>, default: &str) -> Value {
 fn frame_fields<'a>(
     label: &'a str,
     at: &Point,
-    size: Option<&Size>,
-    color: Option<&Color>,
+    (size, color): (Option<&Size>, Option<&Color>),
+    look: FrameEdit,
 ) -> (ObjectKind, Value, Option<&'a str>) {
     let (width, height) = sized(size, &ObjectKind::Frame);
-    (
-        ObjectKind::Frame,
-        json!({
-            (POSITION): at, (WIDTH): width, (HEIGHT): height,
-            (FILL_COLOR): fill(color, "white3"), (LABEL_TEXT): label,
-        }),
-        None,
-    )
+    let mut fields = json!({
+        (POSITION): at, (WIDTH): width, (HEIGHT): height,
+        (FILL_COLOR): fill(color, "white3"), (LABEL_TEXT): label,
+    });
+    if let Some(map) = fields.as_object_mut() {
+        map.extend(
+            frame_look_fields(look)
+                .into_iter()
+                .map(|(name, value)| (name.to_owned(), value)),
+        );
+    }
+    (ObjectKind::Frame, fields, None)
+}
+
+/// The ratio, background style and hidden flag a frame is given or changed to.
+fn frame_look_fields(look: FrameEdit) -> Vec<(&'static str, Value)> {
+    [
+        look.ratio.map(|ratio| (RATIO, json!(ratio.stored()))),
+        look.background
+            .map(|style| (BACKGROUND_STYLE, json!(style.stored()))),
+        look.hidden.map(|hidden| (CONTENT_HIDDEN, json!(hidden))),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+/// A frame's look; a new ratio reshapes it keeping its area, as the web client
+/// does (children are not re-fitted, as with `--size`).
+fn frame_changes(patch: &ObjectPatch, fields: &Value) -> Vec<(&'static str, Value)> {
+    let refit = patch.frame.ratio.and_then(|ratio| {
+        let (width, height) = patch
+            .size
+            .map(|size| (size.width(), size.height()))
+            .or_else(|| rectangle_of(fields).map(|rect| (rect.width, rect.height)))?;
+        ratio.fitted(width, height).ok()
+    });
+    refit
+        .into_iter()
+        .flat_map(|size| [(WIDTH, json!(size.width())), (HEIGHT, json!(size.height()))])
+        .chain(frame_look_fields(patch.frame))
+        .collect()
 }
 
 /// An arrow as the web client draws one by dragging from a side handle of
@@ -683,6 +722,7 @@ fn content_changes(
     text.into_iter()
         .chain(shape_changes(&patch.shape, fields, patch.size, patch.color.is_some()))
         .chain(arrow_changes(&patch.arrow, fields, scope.states, scope.context.ids))
+        .chain(frame_changes(patch, fields))
         .chain(
             patch
                 .at
@@ -695,9 +735,11 @@ fn content_changes(
             }),
         )
         .chain(
-            patch.size.into_iter().flat_map(|size| {
-                size_changes(&*transaction, scope, kind, fields, size)
-            }),
+            patch
+                .size
+                .filter(|_| patch.frame.ratio.is_none())
+                .into_iter()
+                .flat_map(|size| size_changes(&*transaction, scope, kind, fields, size)),
         )
         .chain(patch.width.into_iter().flat_map(|width| width_changes(width, fields)))
         .chain(patch.color.as_ref().map(|color| {
@@ -942,6 +984,7 @@ fn changed_names(
     .flatten()
     .chain(patch.shape.fields())
     .chain(patch.arrow.fields())
+    .chain(patch.frame.fields())
     .collect()
 }
 

@@ -153,6 +153,12 @@ impl Access {
         self.withhold(board, "who_can_manage_lock_content", needs, role);
     }
 
+    /// Keeps hiding and showing frame content on `board` to the role `needs`
+    /// and up, and gives the user the role `role` there.
+    pub(crate) fn withhold_hiding(&mut self, board: &str, needs: &str, role: &str) {
+        self.withhold(board, "who_can_manage_frame_hide_content", needs, role);
+    }
+
     fn withhold(&mut self, board: &str, setting: &str, needs: &str, role: &str) {
         self.patch(board, Map::from_iter([(setting.to_owned(), json!(needs))]));
         let user = self.user.clone();

@@ -14,6 +14,7 @@ use crate::{
             Object,
             ObjectKind,
             arrow_look::{ArrowEndEdit, ArrowHeads, ArrowType, Bend, Label},
+            frame_look::{FrameBackground, FrameRatio},
             shape_type::{ShapeType, StrokeStyle},
         },
         change::receipt::Delivery,
@@ -72,6 +73,7 @@ pub enum NewObject {
         at: Point,
         size: Option<Size>,
         color: Option<Color>,
+        look: FrameEdit,
     },
     Arrow {
         from: String,
@@ -140,11 +142,13 @@ impl NewObject {
                 at,
                 size,
                 color,
+                look,
             } => NewObject::Frame {
                 title: label.clone(),
                 at: moved(at)?,
                 size: *size,
                 color: color.clone(),
+                look: *look,
             },
             NewObject::Arrow { .. } => self.clone(),
             NewObject::Link {
@@ -188,6 +192,7 @@ pub struct ObjectPatch {
     pub look: TextLook,
     pub shape: ShapeEdit,
     pub arrow: ArrowEdit,
+    pub frame: FrameEdit,
 }
 
 /// How a text wraps its lines.
@@ -267,6 +272,29 @@ impl ArrowEdit {
             ("from", self.from.is_some()),
             ("to", self.to.is_some()),
             ("label", !self.labels.is_empty()),
+        ]
+        .into_iter()
+        .filter_map(|(name, given)| given.then_some(name))
+        .collect()
+    }
+}
+
+/// A frame's ratio, background and hidden content, given or changed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FrameEdit {
+    pub ratio: Option<FrameRatio>,
+    pub background: Option<FrameBackground>,
+    pub hidden: Option<bool>,
+}
+
+impl FrameEdit {
+    /// The names of the fields asked for, as `object edit` words them.
+    #[must_use]
+    pub fn fields(&self) -> Vec<&'static str> {
+        [
+            ("ratio", self.ratio.is_some()),
+            ("background", self.background.is_some()),
+            ("content", self.hidden.is_some()),
         ]
         .into_iter()
         .filter_map(|(name, given)| given.then_some(name))
@@ -484,7 +512,7 @@ mod tests {
     use crate::{
         domain::{
             board::shape_type::ShapeType,
-            change::value::{ArrowLook, ImageUpload, NewObject, Upload},
+            change::value::{ArrowLook, FrameEdit, ImageUpload, NewObject, Upload},
             geometry::{Point, Size},
             response::LinkPreview,
         },
@@ -520,6 +548,7 @@ mod tests {
         at,
         size: Some(Size::FRAME),
         color: "blue3".parse().ok(),
+        look: FrameEdit::default(),
     })]
     #[case::arrow(|_| NewObject::Arrow {
         from: "a".into(),

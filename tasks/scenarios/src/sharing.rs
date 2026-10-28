@@ -175,6 +175,11 @@ pub fn withhold_locking(holst: &Holst, board: &str, needs: &str, role: &str) {
     holst.fake().withhold_locking(board, needs, role);
 }
 
+/// Keeps hiding and showing frame content on the board called `board` to the
+/// role `needs` and up, and gives the user the role `role` there.
+pub fn withhold_hiding(holst: &Holst, board: &str, needs: &str, role: &str) {
+    holst.fake().withhold_hiding(board, needs, role);
+}
 /// Keeps removing other people's objects on the board called `board` to the
 /// role `needs` and up, and gives the user the role `role` there.
 pub fn withhold_deleting(holst: &Holst, board: &str, needs: &str, role: &str) {

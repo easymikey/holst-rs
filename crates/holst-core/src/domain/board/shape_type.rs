@@ -4,13 +4,21 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    domain::{board::arrow_look::Bend, geometry::Size},
+    domain::{
+        board::{
+            arrow_look::Bend,
+            frame_look::{FrameBackground, FrameRatio},
+        },
+        geometry::Size,
+    },
     protocol::document::{
         ARROW_TYPE,
         ARROWHEAD_END,
         ARROWHEAD_START,
+        BACKGROUND_STYLE,
         BORDER_RADIUS,
         COLOR,
+        CONTENT_HIDDEN,
         CONTROL,
         ELBOW_MIDWAY_CONTROLS,
         END,
@@ -19,6 +27,7 @@ use crate::{
         OBJECT_ID,
         OPACITY,
         POSITION,
+        RATIO,
         SHAPE_TYPE,
         START,
         STROKE_COLOR,
@@ -218,6 +227,15 @@ pub struct ShapeLook {
     /// An arrow's labels as `text@position`, the place from 0 to 1.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels: Vec<String>,
+    /// A frame's ratio: `16:9`, `4:3`, `1:1`, `a4` or `a4_landscape`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ratio: Option<String>,
+    /// A frame's background: `fill`, `border` or `outline`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<String>,
+    /// Whether a frame hides its content.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
 }
 
 impl ShapeLook {
@@ -243,8 +261,27 @@ impl ShapeLook {
             bend: bend_of(fields),
             sides: sides_of(fields),
             labels: labels_of(fields),
+            ratio: fields
+                .get(RATIO)
+                .and_then(Value::as_u64)
+                .and_then(FrameRatio::of_stored)
+                .map(|ratio| ratio.name().to_owned()),
+            background: fields
+                .get(BACKGROUND_STYLE)
+                .and_then(Value::as_u64)
+                .and_then(FrameBackground::name_of_stored)
+                .map(str::to_owned),
+            hidden: fields
+                .get(CONTENT_HIDDEN)
+                .and_then(Value::as_bool)
+                .unwrap_or_default(),
         };
-        (look.shape.is_some() || look.stroke.is_some()).then_some(look)
+        (look.shape.is_some()
+            || look.stroke.is_some()
+            || look.ratio.is_some()
+            || look.background.is_some()
+            || look.hidden)
+            .then_some(look)
     }
 
     /// The look in a few words for a line of a listing.
@@ -258,6 +295,11 @@ impl ShapeLook {
             self.sides.as_ref().map(|sides| format!("sides {sides}")),
             (!self.labels.is_empty())
                 .then(|| format!("labels {}", self.labels.join(" "))),
+            self.ratio.as_ref().map(|ratio| format!("ratio {ratio}")),
+            self.background
+                .as_ref()
+                .map(|background| format!("background {background}")),
+            self.hidden.then(|| "hidden".to_owned()),
             self.stroke
                 .as_ref()
                 .map(|stroke| format!("stroke {stroke}")),

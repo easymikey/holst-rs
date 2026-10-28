@@ -10,7 +10,12 @@ use crate::{
         board::show::{Loading, account_cache, board_id},
         board_load::{self, CacheUse, RemoteBoard},
         board_write::{WriteRequest, write_cached},
-        object::{AddArgs, AddItem, AddKind},
+        object::{
+            AddArgs,
+            AddItem,
+            AddKind,
+            change::{hidden_of, refuse_hiding},
+        },
         table::not_value,
     },
     domain::{
@@ -19,6 +24,7 @@ use crate::{
             EditRight,
             Object,
             ObjectKind,
+            frame_look::FrameRatio,
             objects as board_objects,
             shape_type::ShapeType,
         },
@@ -28,6 +34,7 @@ use crate::{
                 ArrowEdit,
                 ArrowLook,
                 BoardChange,
+                FrameEdit,
                 ImageUpload,
                 NewEntry,
                 NewObject,
@@ -130,6 +137,12 @@ async fn added<I: WriteInterpreter + ?Sized>(
     matches!(loaded.right, EditRight::Editable)
         .then_some(())
         .ok_or(Error::BoardChange(BoardChangeError::ReadOnly))?;
+    let hides = items.iter().any(
+        |item| matches!(&item.what, What::Frame { look, .. } if look.hidden.is_some()),
+    );
+    if hides {
+        refuse_hiding(client, &board).await?;
+    }
     let got = fetched(
         client,
         &board,
@@ -285,6 +298,7 @@ enum What {
         title: String,
         at: Option<Point>,
         size: Option<Size>,
+        look: FrameEdit,
     },
     /// The ends are objects as given, or `#N`.
     Arrow {
@@ -377,6 +391,10 @@ fn read_items(args: &AddArgs) -> Result<Vec<Item>> {
         ("url", args.url.is_some()),
         ("path", args.path.is_some()),
         ("no_embed", args.no_embed),
+        ("ratio", args.ratio.is_some()),
+        ("background", args.background.is_some()),
+        ("hide_content", args.hide_content),
+        ("show_content", args.show_content),
     ];
     given
         .into_iter()
@@ -402,6 +420,10 @@ fn read_items(args: &AddArgs) -> Result<Vec<Item>> {
         url: args.url.clone(),
         path: args.path.clone(),
         no_embed: args.no_embed.then_some(true),
+        ratio: args.ratio,
+        background: args.background,
+        hide_content: args.hide_content.then_some(true),
+        show_content: args.show_content.then_some(true),
     }];
     let asked: &[AddItem] = listed.unwrap_or(&own);
     let format = args.text_format.unwrap_or_default();
@@ -465,6 +487,21 @@ impl Reader {
         })
     }
 
+    /// Refuses the keys only a frame takes on another kind.
+    fn refuse_frame_keys(&self, item: &AddItem, kind: AddKind) -> Result<()> {
+        [
+            ("ratio", item.ratio.is_some()),
+            ("background", item.background.is_some()),
+            ("hide_content", item.hide_content.is_some()),
+            ("show_content", item.show_content.is_some()),
+        ]
+        .into_iter()
+        .find_map(|(name, given)| (given && kind != AddKind::Frame).then_some(name))
+        .map_or(Ok(()), |name| {
+            Err(self.bad(name, &format!("left out for {}", word(kind))))
+        })
+    }
+
     fn missing(&self, name: &'static str) -> Error {
         if self.many {
             self.bad(name, "given")
@@ -509,6 +546,7 @@ impl Reader {
         refuse("path", !uploaded && item.path.is_some())?;
         let rich = self.rich(kind, word)?;
         refuse("no_embed", !linked && item.no_embed.is_some())?;
+        self.refuse_frame_keys(item, kind)?;
         let at = item.at.as_deref().map(str::parse).transpose()?;
         let size = item.size.as_deref().map(str::parse).transpose()?;
         let text = item.text.clone();
@@ -529,11 +567,7 @@ impl Reader {
                 size: size.or_else(|| item.shape.and_then(ShapeType::default_size)),
                 kind: item.shape.unwrap_or(ShapeType::Square),
             },
-            AddKind::Frame => What::Frame {
-                title: text.clone().unwrap_or_default(),
-                at,
-                size,
-            },
+            AddKind::Frame => frame_of(item, (at, size))?,
             AddKind::Arrow => What::Arrow {
                 from: self.end("from", item.from.as_deref(), earlier)?,
                 to: self.end("to", item.to.as_deref(), earlier)?,
@@ -634,6 +668,33 @@ impl Reader {
             Some(_) | None => Ok(end.to_owned()),
         }
     }
+}
+
+/// A frame with the ratio, background and hidden content the item asks for.
+fn frame_of(item: &AddItem, (at, size): (Option<Point>, Option<Size>)) -> Result<What> {
+    let look = FrameEdit {
+        ratio: item.ratio,
+        background: item.background,
+        hidden: hidden_of(COMMAND, item.hide_content, item.show_content)?,
+    };
+    Ok(What::Frame {
+        title: item.text.clone().unwrap_or_default(),
+        at,
+        size: reshaped(look.ratio, size)?,
+        look,
+    })
+}
+
+/// The size a frame of `ratio` gets: the one asked for reshaped keeping its
+/// area, else the ratio's own; the size asked for when there is no ratio.
+fn reshaped(ratio: Option<FrameRatio>, size: Option<Size>) -> Result<Option<Size>> {
+    ratio.map_or(Ok(size), |ratio| {
+        size.map_or_else(
+            || ratio.default_size(),
+            |asked| ratio.fitted(asked.width(), asked.height()),
+        )
+        .map(Some)
+    })
 }
 
 /// The item `#N` names, counted from 0.
@@ -753,11 +814,17 @@ fn entries(
                     color,
                     kind: *kind,
                 },
-                What::Frame { title, at, size } => NewObject::Frame {
+                What::Frame {
+                    title,
+                    at,
+                    size,
+                    look,
+                } => NewObject::Frame {
                     title: title.clone(),
                     at: spot(*at, *size, &ObjectKind::Frame)?,
                     size: *size,
                     color,
+                    look: *look,
                 },
                 What::Arrow { from, to, look } => NewObject::Arrow {
                     from: from.clone(),
@@ -789,17 +856,10 @@ fn entries(
                     at: spot(*at, None, &ObjectKind::File)?,
                 },
             };
-            frames.push(
-                matches!(item.what, What::Frame { .. })
-                    .then(|| placed.last().copied())
-                    .flatten(),
-            );
+            frames.push(made_frame(item, &placed));
             // An arrow goes into a frame only when asked, else where its ends are.
-            let frame = if matches!(item.what, What::Arrow { .. }) {
-                named
-            } else {
-                named.or(linked)
-            };
+            let frame =
+                named.or(linked.filter(|_| !matches!(item.what, What::Arrow { .. })));
             Ok(NewEntry {
                 new,
                 frame: fresh
@@ -809,6 +869,13 @@ fn entries(
             })
         })
         .collect()
+}
+
+/// The rectangle of the frame the item made, as the last one placed.
+fn made_frame(item: &Item, placed: &[Rectangle]) -> Option<Rectangle> {
+    matches!(item.what, What::Frame { .. })
+        .then(|| placed.last().copied())
+        .flatten()
 }
 
 /// The frame an item sits in: the rectangle of one made earlier in the list

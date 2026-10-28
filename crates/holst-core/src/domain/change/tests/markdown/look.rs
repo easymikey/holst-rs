@@ -173,6 +173,7 @@ fn a_frame_has_no_text_marks() -> Result<()> {
                 at: Point::new(0.0, 0.0)?,
                 size: None,
                 color: None,
+                look: crate::domain::change::value::FrameEdit::default(),
             },
             frame: None,
             format: TextFormat::Plain,

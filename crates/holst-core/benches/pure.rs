@@ -168,6 +168,7 @@ fn board_doc(n: usize) -> holst_core::Result<yrs::Doc> {
                 at: grid(f, 10, 2000.0)?,
                 size: Some(Size::new(1800.0, 1800.0)?),
                 color: None,
+                look: holst_core::domain::change::value::FrameEdit::default(),
             },
             frame: None,
             format: holst_core::domain::rich_text::TextFormat::Plain,

@@ -42,6 +42,7 @@ pub(super) fn nested_frames() -> Result<(Doc, SequentialIds)> {
             at: Point::new(x, y)?,
             size: Some(Size::new(width, height)?),
             color: None,
+            look: crate::domain::change::value::FrameEdit::default(),
         }))
     };
     let context = ChangeSources {
@@ -207,6 +208,7 @@ fn a_moved_frame_takes_what_it_covers() -> Result<()> {
         at: Point::ORIGIN,
         size: Some(Size::new(400.0, 400.0)?),
         color: None,
+        look: crate::domain::change::value::FrameEdit::default(),
     };
     build(&document, &add(frame), ME, &context)?;
     let note = NewObject::Sticker {
@@ -294,6 +296,7 @@ fn moving_a_frame_carries_what_it_holds() -> Result<()> {
             at: Point::ORIGIN,
             size: None,
             color: None,
+            look: crate::domain::change::value::FrameEdit::default(),
         }),
         ME,
         &context,
@@ -354,6 +357,7 @@ fn an_object_added_in_a_frame_counts_from_its_corner() -> Result<()> {
         at: Point::new(100.0, 50.0)?,
         size: None,
         color: None,
+        look: crate::domain::change::value::FrameEdit::default(),
     };
     build(&document, &add(frame), ME, &context)?;
     let sticker = NewObject::Sticker {
@@ -398,6 +402,7 @@ fn a_frame_is_named_by_title_as_a_snapshot_names_it() -> Result<()> {
             at: Point::new(x, 0.0)?,
             size: None,
             color: None,
+            look: crate::domain::change::value::FrameEdit::default(),
         })
     };
     build(&document, &add(frame("Retro plan", 0.0)?), ME, &context)?;
@@ -446,6 +451,7 @@ fn a_short_id_start_names_no_frame_to_add_into() -> Result<()> {
             at: Point::ORIGIN,
             size: None,
             color: None,
+            look: crate::domain::change::value::FrameEdit::default(),
         })
     };
     build(
@@ -504,6 +510,7 @@ fn a_frame_without_a_stored_size_takes_its_drawn_size() -> Result<()> {
         at: Point::ORIGIN,
         size: None,
         color: None,
+        look: crate::domain::change::value::FrameEdit::default(),
     };
     build(&document, &add(frame), ME, &context)?;
     {
@@ -570,6 +577,7 @@ fn new_objects_take_the_kind_default_size() -> Result<()> {
                 at,
                 size: None,
                 color: None,
+                look: crate::domain::change::value::FrameEdit::default(),
             },
         ),
     ];

@@ -13,6 +13,7 @@ use holst_scenarios::{
     given,
     then,
     withhold_deleting,
+    withhold_hiding,
 };
 use rstest::rstest;
 use serde_json::{Value, json};
@@ -1491,6 +1492,104 @@ async fn a_link_to_an_object_that_is_not_there_changes_nothing(
     then(&observation)
         .failed_saying("not found on the board")
         .signalled_as(surface.not_found());
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_frame_is_added_with_a_ratio_a_background_and_hidden_content(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = two_notes().start().await?;
+    let call = ObjectCall::add("frame")
+        .text("Deck")
+        .with("ratio", "4:3")
+        .with("background", "outline")
+        .switched("hide_content");
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
+    let observation = holst.on(surface).objects("Plans").await?;
+    then(&observation)
+        .lists_shape_looking("Deck", "ratio 4:3 background outline hidden");
+    then(&observation).lists_object_sized("Deck", "1024x768");
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_frame_edit_reshapes_and_shows_its_content_again(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = frame_and_note().start().await?;
+    let frame = holst.fixture_object("Plans", 1)?;
+    let hide = ObjectCall::edit()
+        .with("object", frame.clone())
+        .with("ratio", "1:1")
+        .with("background", "fill")
+        .switched("hide_content");
+    then(&holst.on(surface).object("Plans", hide).await?).succeeded();
+    let show = ObjectCall::edit()
+        .with("object", frame)
+        .switched("show_content");
+    then(&holst.on(surface).object("Plans", show).await?).succeeded();
+    let observation = holst.on(surface).objects("Plans").await?;
+    then(&observation).lists_shape_looking("Q4", "ratio 1:1 background fill");
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn hiding_frame_content_needs_the_board_right(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = frame_and_note().start().await?;
+    withhold_hiding(&holst, "Plans", "co_owner", "editor");
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .switched("hide_content");
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("held to co_owner")
+        .signalled_as(surface.permission_denied());
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[case::ratio("ratio", "2:1")]
+#[case::background("background", "dotted")]
+#[tokio::test]
+async fn a_frame_look_with_a_wrong_value_is_refused(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+    #[case] flag: &'static str,
+    #[case] value: &str,
+) -> Result<(), ScenarioError> {
+    let holst = frame_and_note().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with(flag, value);
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying(flag)
+        .signalled_as(surface.usage());
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_frame_look_on_a_sticker_is_refused(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = frame_and_note().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 2)?)
+        .with("ratio", "1:1");
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("ratio")
+        .signalled_as(surface.usage());
     board_of(&holst).got_no_update();
     Ok(())
 }

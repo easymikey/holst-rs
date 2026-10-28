@@ -351,6 +351,7 @@ fn board_write_code(error: &BoardChangeError) -> u8 {
         BoardChangeError::ReadOnly
         | BoardChangeError::CopyWithheld { .. }
         | BoardChangeError::LockWithheld { .. }
+        | BoardChangeError::HideWithheld { .. }
         | BoardChangeError::NotEmpty { .. }
         | BoardChangeError::Locked { .. }
         | BoardChangeError::NotYours { .. } => EX_NOPERM,

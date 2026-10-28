@@ -19,6 +19,7 @@ use crate::{
     domain::{
         board::{
             arrow_look::ArrowType,
+            frame_look::{FrameBackground, FrameRatio},
             shape_type::{ShapeType, StrokeStyle},
         },
         change::value::LayerOrder,
@@ -145,6 +146,10 @@ impl EnumArgument for AddKind {}
 impl EnumArgument for ShapeType {}
 
 impl EnumArgument for StrokeStyle {}
+
+impl EnumArgument for FrameRatio {}
+
+impl EnumArgument for FrameBackground {}
 
 impl EnumArgument for ArrowType {}
 
@@ -302,6 +307,32 @@ pub struct AddArgs {
     #[serde(default)]
     pub label: Vec<String>,
     #[argument(
+        value_name = "ratio",
+        help = "A frame's ratio: 16:9, 4:3, 1:1, a4 or a4-landscape; with --size the area is kept; 16:9 at 1920x1080 and the like by default",
+        tool_doc = "Frame ratio 16:9, 4:3, 1:1, a4, a4_landscape.",
+        kinds = [frame]
+    )]
+    pub ratio: Option<FrameRatio>,
+    #[argument(
+        value_name = "style",
+        help = "A frame's background: fill, border or outline; border by default",
+        tool_doc = "Frame background fill, border, outline.",
+        kinds = [frame]
+    )]
+    pub background: Option<FrameBackground>,
+    #[argument(
+        help = "Hide the content of a frame; needs the board's right to hide frame content",
+        tool_doc = "Hide frame content.",
+        kinds = [frame]
+    )]
+    pub hide_content: bool,
+    #[argument(
+        help = "Show the content of a frame again",
+        tool_doc = "Show frame content.",
+        kinds = [frame]
+    )]
+    pub show_content: bool,
+    #[argument(
         value_name = "file",
         help = "Many in one write: a JSON array or JSON lines file, - for stdin; its keys are the flags of one call",
         tool_doc = "Many at once, each with the arguments of one; at most 100 per call."
@@ -333,6 +364,10 @@ pub struct AddItem {
     pub url: Option<String>,
     pub path: Option<String>,
     pub no_embed: Option<bool>,
+    pub ratio: Option<FrameRatio>,
+    pub background: Option<FrameBackground>,
+    pub hide_content: Option<bool>,
+    pub show_content: Option<bool>,
 }
 
 impl EnumArgument for LayerOrder {}
@@ -489,6 +524,28 @@ pub struct EditArgs {
     #[serde(default)]
     pub label: Vec<String>,
     #[argument(
+        value_name = "ratio",
+        help = "A frame's ratio: 16:9, 4:3, 1:1, a4 or a4-landscape; the area is kept; unchanged by default",
+        tool_doc = "Frame ratio 16:9, 4:3, 1:1, a4, a4_landscape."
+    )]
+    pub ratio: Option<FrameRatio>,
+    #[argument(
+        value_name = "style",
+        help = "A frame's background: fill, border or outline; unchanged by default",
+        tool_doc = "Frame background fill, border, outline."
+    )]
+    pub background: Option<FrameBackground>,
+    #[argument(
+        help = "Hide the content of a frame; needs the board's right to hide frame content",
+        tool_doc = "Hide frame content."
+    )]
+    pub hide_content: bool,
+    #[argument(
+        help = "Show the content of a frame again",
+        tool_doc = "Show frame content."
+    )]
+    pub show_content: bool,
+    #[argument(
         value_name = "deg",
         help = "Turn to this angle in clockwise degrees, any number taken modulo 360; the corner moves so that the object turns about its centre; not for a frame, a table, a table cell, a group or an arrow; unchanged by default",
         tool_doc = "Degrees clockwise; not frame, table, group, arrow."
@@ -564,6 +621,10 @@ pub struct EditItem {
     pub to: Option<String>,
     #[serde(default)]
     pub label: Vec<String>,
+    pub ratio: Option<FrameRatio>,
+    pub background: Option<FrameBackground>,
+    pub hide_content: Option<bool>,
+    pub show_content: Option<bool>,
     pub rotate: Option<f64>,
     pub link_to: Option<String>,
     pub width: Option<String>,
@@ -884,6 +945,10 @@ mod tests {
                     ("stroke_style", &["arrow"][..]),
                     ("stroke_width", &["arrow"][..]),
                     ("label", &["arrow"][..]),
+                    ("ratio", &["frame"][..]),
+                    ("background", &["frame"][..]),
+                    ("hide_content", &["frame"][..]),
+                    ("show_content", &["frame"][..]),
                 ]
             )
         );
@@ -891,7 +956,7 @@ mod tests {
 
     #[test]
     fn the_keys_of_an_item_are_flags_of_one_call() {
-        const ADD_KEYS: [&str; 17] = [
+        const ADD_KEYS: [&str; 21] = [
             "kind",
             "text",
             "shape",
@@ -909,8 +974,12 @@ mod tests {
             "url",
             "path",
             "no_embed",
+            "ratio",
+            "background",
+            "hide_content",
+            "show_content",
         ];
-        const EDIT_KEYS: [&str; 21] = [
+        const EDIT_KEYS: [&str; 25] = [
             "object",
             "text",
             "at",
@@ -925,6 +994,10 @@ mod tests {
             "line",
             "heads",
             "label",
+            "ratio",
+            "background",
+            "hide_content",
+            "show_content",
             "rotate",
             "link_to",
             "width",

@@ -9,7 +9,7 @@ use crate::{
     command::{
         account,
         board::show::{Loading, account_cache, board_id},
-        board_load::{self, CacheUse, RemoteBoard},
+        board_load::{self, CacheUse, RemoteBoard, withheld},
         board_write::{WriteRequest, write_cached},
         object::{EditArgs, EditItem, RemoveArgs},
         table::{Confirmation, not_value},
@@ -22,6 +22,7 @@ use crate::{
                 ArrowEdit,
                 Backdrop,
                 BoardChange,
+                FrameEdit,
                 LinkTo,
                 ObjectEdit,
                 ObjectPatch,
@@ -50,10 +51,11 @@ use crate::{
     error::{
         Error,
         Result,
+        board_change::BoardChangeError,
         confirmation::{ChangeRisk, Unconfirmed},
         input::InputError,
     },
-    remote::{client::Client, socket::write::interpreter},
+    remote::{api, client::Client, socket::write::interpreter},
     storage::cache::Cache,
 };
 
@@ -196,8 +198,11 @@ async fn edited<I: WriteInterpreter + ?Sized>(
         CacheUse::Use,
     )
     .await?;
-    let change =
-        BoardChange::EditAll(read_edits(args, &client.base_url().share_link(&board))?);
+    let edits = read_edits(args, &client.base_url().share_link(&board))?;
+    if edits.iter().any(|edit| edit.patch.frame.hidden.is_some()) {
+        refuse_hiding(client, &board).await?;
+    }
+    let change = BoardChange::EditAll(edits);
     let written = send(
         client,
         cache,
@@ -239,6 +244,10 @@ fn read_edits(args: &EditArgs, share: &str) -> Result<Vec<ObjectEdit>> {
                 from: args.from.clone(),
                 to: args.to.clone(),
                 label: args.label.clone(),
+                ratio: args.ratio,
+                background: args.background,
+                hide_content: args.hide_content.then_some(true),
+                show_content: args.show_content.then_some(true),
                 rotate: args.rotate,
                 link_to: args.link_to.clone(),
                 width: args.width.clone(),
@@ -302,6 +311,10 @@ fn refuse_with_items(args: &EditArgs) -> Result<()> {
         ("from", args.from.is_some()),
         ("to", args.to.is_some()),
         ("label", !args.label.is_empty()),
+        ("ratio", args.ratio.is_some()),
+        ("background", args.background.is_some()),
+        ("hide_content", args.hide_content),
+        ("show_content", args.show_content),
         ("rotate", args.rotate.is_some()),
         ("link_to", args.link_to.is_some()),
         ("width", args.width.is_some()),
@@ -407,7 +420,45 @@ fn patch_of(item: &EditItem, format: TextFormat, address: &str) -> Result<Object
                 .map(|raw| raw.parse())
                 .collect::<Result<_>>()?,
         },
+        frame: FrameEdit {
+            ratio: item.ratio,
+            background: item.background,
+            hidden: hidden_of(EDIT, item.hide_content, item.show_content)?,
+        },
     })
+}
+
+/// Whether the flags hide the content of a frame, show it, or leave it.
+pub(super) fn hidden_of(
+    command: &str,
+    hide: Option<bool>,
+    show: Option<bool>,
+) -> Result<Option<bool>> {
+    match (hide == Some(true), show == Some(true)) {
+        (true, true) => Err(not_value(
+            command,
+            "show_content",
+            "left out with hide_content",
+        )),
+        (true, false) => Ok(Some(true)),
+        (false, true) => Ok(Some(false)),
+        (false, false) => Ok(None),
+    }
+}
+
+/// Refuses hiding or showing frame content on `board` when its
+/// `who_can_manage_frame_hide_content` stands above the caller's role.
+pub(super) async fn refuse_hiding(client: &Client, board: &str) -> Result<()> {
+    let channel = api::channel::get(client, board).await?;
+    withheld(&channel, "who_can_manage_frame_hide_content").map_or(
+        Ok(()),
+        |(needs, holds)| {
+            Err(Error::BoardChange(BoardChangeError::HideWithheld {
+                needs,
+                holds,
+            }))
+        },
+    )
 }
 
 /// What `--width` says: `auto`, or a width above 0. The width is read as

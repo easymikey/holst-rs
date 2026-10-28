@@ -152,6 +152,7 @@ fn an_arrow_between_items_of_a_frame_sits_in_the_frame() -> Result<()> {
             at: Point::new(0.0, 0.0)?,
             size: None,
             color: None,
+            look: crate::domain::change::value::FrameEdit::default(),
         })],
     )?;
     let frame_id = made.first().cloned().unwrap_or_default();
@@ -181,6 +182,7 @@ fn an_item_in_a_frame_of_the_same_list_gets_the_new_frame_as_parent() -> Result<
         at: Point::new(100.0, 100.0)?,
         size: None,
         color: None,
+        look: crate::domain::change::value::FrameEdit::default(),
     });
     let inside = |at: Point, parent: &str| NewEntry {
         frame: Some(parent.to_owned()),
@@ -209,6 +211,7 @@ fn an_item_in_a_frame_of_the_same_list_gets_the_new_frame_as_parent() -> Result<
                 at: Point::new(0.0, 0.0)?,
                 size: None,
                 color: None,
+                look: crate::domain::change::value::FrameEdit::default(),
             }),
             inside(Point::new(9000.0, 0.0)?, "#1"),
         ],

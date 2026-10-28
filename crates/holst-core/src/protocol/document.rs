@@ -34,6 +34,9 @@ pub(crate) const ADDITIONAL_POSITION_INFO: &str = "additionalPositionInfo";
 pub(crate) const DOCUMENT_ID: &str = "documentId";
 pub(crate) const TEXTS: &str = "texts";
 pub(crate) const LABEL_TEXT: &str = "labelText";
+// PROTOCOL: a frame's aspect ratio preset, background style and hidden content.
+pub(crate) const RATIO: &str = "ratio";
+pub(crate) const CONTENT_HIDDEN: &str = "isContentHidden";
 pub(crate) const TITLE: &str = "title";
 pub(crate) const EDITOR: &str = "editor";
 pub(crate) const TEXT: &str = "text";

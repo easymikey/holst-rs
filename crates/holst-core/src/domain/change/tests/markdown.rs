@@ -253,6 +253,7 @@ fn a_frame_title_takes_no_markdown() -> Result<()> {
         at: Point::new(0.0, 0.0)?,
         size: None,
         color: None,
+        look: crate::domain::change::value::FrameEdit::default(),
     };
     build(
         &document,

@@ -47,6 +47,7 @@ use crate::{
     },
     protocol::document::{
         COLUMN_ID,
+        CONTENT_HIDDEN,
         CREATED,
         END,
         HEIGHT,
@@ -67,8 +68,6 @@ use crate::{
 const STICKY_POSITION: &str = "stickyPosition";
 /// The author's number in an object's `created`.
 const AUTHOR: &str = "a";
-/// Written on a frame whose content is hidden.
-const CONTENT_HIDDEN: &str = "isContentHidden";
 /// The type of a node of a mind map, which the web client never groups.
 const MIND_MAP_NODE: &str = "mind-map-node";
 
@@ -1059,13 +1058,20 @@ fn changeable_edit(
                     },
                 shape,
                 arrow,
+                frame,
             },
             None,
             None,
-        ) if shape.first_field().is_none() && arrow.fields().is_empty() => {
+        ) if shape.first_field().is_none()
+            && arrow.fields().is_empty()
+            && frame.fields().is_empty() =>
+        {
             Err(Error::BoardChange(BoardChangeError::NothingToChange))
         }
-        (patch, _, _) => fits(kind, held, patch).and(spins(kind, patch)).and(tags),
+        (patch, _, _) => fits(kind, held, patch)
+            .and(spins(kind, patch))
+            .and(framed(kind, patch))
+            .and(tags),
     }
 }
 
@@ -1160,6 +1166,20 @@ fn held_in(
         | ObjectKind::Link
         | ObjectKind::Other(_) => None,
     }
+}
+
+/// Whether the kind is a frame, if the patch asks for a ratio, background or
+/// hidden content.
+fn framed(kind: &ObjectKind, patch: &ObjectPatch) -> Result<()> {
+    let field = patch.frame.fields().first().copied();
+    field
+        .filter(|_| *kind != ObjectKind::Frame)
+        .map_or(Ok(()), |field| {
+            Err(Error::BoardChange(BoardChangeError::NotChangeable {
+                kind: kind.as_str().to_owned(),
+                field,
+            }))
+        })
 }
 
 /// Whether the kind takes the rotation the patch asks for.

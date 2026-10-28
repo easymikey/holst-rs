@@ -34,6 +34,10 @@ FLAGS
       --from end             Move an arrow's start: object:side (top, right, bottom or left) or x,y; unchanged by default
       --to end               Move an arrow's end: object:side (top, right, bottom or left) or x,y; unchanged by default
       --label text[@pos]     An arrow's labels, repeat for several; they replace the ones it has; text@0.25 puts one a quarter of the way from the start, in the middle by default; unchanged by default
+      --ratio ratio          A frame's ratio: 16:9, 4:3, 1:1, a4 or a4-landscape; the area is kept; unchanged by default
+      --background style     A frame's background: fill, border or outline; unchanged by default
+      --hide-content         Hide the content of a frame; needs the board's right to hide frame content
+      --show-content         Show the content of a frame again
       --rotate deg           Turn to this angle in clockwise degrees, any number taken modulo 360; the corner moves so that the object turns about its centre; not for a frame, a table, a table cell, a group or an arrow; unchanged by default
       --link-to link         What the object opens on click: a web address (http:// is added without a scheme), another object of the board by id, or none to take the link away; unchanged by default
       --width auto|n         A text's width: auto wraps it by its content, a number fixes it in board units; unchanged by default
