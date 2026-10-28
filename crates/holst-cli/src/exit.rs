@@ -357,6 +357,7 @@ fn board_write_code(error: &BoardChangeError) -> u8 {
         | BoardChangeError::NotYours { .. } => EX_NOPERM,
         BoardChangeError::NoObject { .. }
         | BoardChangeError::NotChangeable { .. }
+        | BoardChangeError::NotMovable { .. }
         | BoardChangeError::PlacedByContainer { .. }
         | BoardChangeError::NothingToChange
         | BoardChangeError::NoCheckItem { .. }

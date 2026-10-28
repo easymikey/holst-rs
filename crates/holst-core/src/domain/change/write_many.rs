@@ -1,6 +1,9 @@
 //! Edits of many objects and copies of objects, written as one change.
 
-use std::collections::{BTreeSet, HashMap};
+use std::{
+    borrow::Cow,
+    collections::{BTreeSet, HashMap},
+};
 
 use itertools::Itertools as _;
 use serde_json::{Value, json};
@@ -17,9 +20,16 @@ use crate::{
     domain::{
         board::{Object, ObjectKind, any, json as stored_json},
         change::{
-            check::{CheckedEdit, parent_frame, rectangle_of},
+            check::{
+                CheckedEdit,
+                corner_of,
+                frame_above,
+                on_board,
+                parent_frame,
+                rectangle_of,
+            },
             stacking,
-            value::{ChangedObject, ObjectChangeKind, Pasted},
+            value::{ChangedObject, ObjectChangeKind, ObjectPatch, Pasted, Reparent},
             write::{
                 Alongside,
                 Edge,
@@ -32,6 +42,7 @@ use crate::{
                 shifted,
             },
         },
+        geometry::Point,
         tree::name_index::build::normalized,
     },
     error::{Error, Result, board_change::BoardChangeError},
@@ -118,10 +129,21 @@ fn edited(
         kind,
         edit: asked,
         link_to,
+        reparent,
     } = checked;
-    let layer = asked
-        .stacking
-        .and_then(|order| stacking::layer(&running.states, id, order, ends));
+    let layer = match (asked.stacking, reparent) {
+        (Some(order), _) => stacking::layer(&running.states, id, order, ends),
+        (None, Some(into)) => {
+            Some(stacking::appended(&running.states, id, into.frame()))
+        }
+        (None, None) => None,
+    };
+    let patch = match reparent {
+        Some(into) => {
+            Cow::Owned(kept_in_frame(&running.states, id, into, &asked.patch)?)
+        }
+        None => Cow::Borrowed(&asked.patch),
+    };
     let tag_ids = asked
         .tags
         .as_ref()
@@ -129,6 +151,7 @@ fn edited(
         .transpose()?;
     let also = Alongside {
         layer,
+        reparent: reparent.clone(),
         tag_ids,
         link_to: link_to.clone(),
     };
@@ -144,7 +167,7 @@ fn edited(
         &EditedObject {
             id,
             kind,
-            patch: &asked.patch,
+            patch: &patch,
             also: &also,
         },
     )?;
@@ -160,6 +183,32 @@ fn edited(
         })
         .collect();
     Ok(running.after(read, touched))
+}
+
+/// The patch with the corner the object keeps relative to its frame: from one
+/// frame to another it moves by the difference of their corners, an explicit
+/// corner stays as given. BUNDLE: 128.8f630629.js 2123-2137, where a shift
+/// of 0.5 or less is not made (2027).
+fn kept_in_frame(
+    states: &HashMap<String, Value>,
+    id: &str,
+    into: &Reparent,
+    patch: &ObjectPatch,
+) -> Result<ObjectPatch> {
+    let from = corner_of(states, frame_above(states, id).as_deref());
+    let to = corner_of(states, into.frame());
+    let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+    let at = states
+        .get(id)
+        .and_then(rectangle_of)
+        .filter(|_| patch.at.is_none() && (dx.abs() > 0.5 || dy.abs() > 0.5))
+        .map(|area| Point::new(area.x + dx, area.y + dy))
+        .transpose()?;
+    at.as_ref().map_or(Ok(()), |at| on_board(Some(at), None))?;
+    Ok(ObjectPatch {
+        at: patch.at.or(at),
+        ..patch.clone()
+    })
 }
 
 /// The ids of the tags with these titles, in order: a title nobody has yet

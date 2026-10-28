@@ -128,6 +128,27 @@ fn step(states: &HashMap<String, Value>, id: &str, forward: bool) -> Option<f64>
     Some(low + (high - low) / 3.0)
 }
 
+/// The layer of an object put last among the objects of `parent`, the board
+/// for none: past the last by the web client's `zH(last, null)`, which adds
+/// 0x10000000000 and a random up to 10 000. BUNDLE: main.a33651a4.js
+/// 223458-223472; the last of the others as in 128.8f630629.js 2125-2133.
+pub(super) fn appended(
+    states: &HashMap<String, Value>,
+    id: &str,
+    parent: Option<&str>,
+) -> f64 {
+    let last = states
+        .iter()
+        .filter(|(other, fields)| {
+            other.as_str() != id
+                && parent_of(fields) == parent
+                && kind_of(states, other) != ObjectKind::TableCell
+        })
+        .map(|(_, fields)| z_of(fields))
+        .max_by(f64::total_cmp);
+    last.unwrap_or_default() + 1_099_511_627_776.0 + 10_000.0 * jitter(id)
+}
+
 /// A group whose members ignore the layers of the board.
 fn ignores_layers(fields: &Value) -> bool {
     fields.get(IGNORE_Z_INDEX).and_then(Value::as_bool) == Some(true)

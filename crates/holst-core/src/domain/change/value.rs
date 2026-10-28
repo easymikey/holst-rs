@@ -193,6 +193,27 @@ pub struct ObjectPatch {
     pub shape: ShapeEdit,
     pub arrow: ArrowEdit,
     pub frame: FrameEdit,
+    pub reparent: Option<Reparent>,
+}
+
+/// Where an edit puts an object: into a frame, or out of its frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reparent {
+    /// Onto the board.
+    Board,
+    /// A frame: id, link, title or part of a title; the id once checked.
+    Frame(String),
+}
+
+impl Reparent {
+    /// The id of the frame once checked; none for the board.
+    #[must_use]
+    pub fn frame(&self) -> Option<&str> {
+        match self {
+            Reparent::Board => None,
+            Reparent::Frame(frame) => Some(frame),
+        }
+    }
 }
 
 /// How a text wraps its lines.

@@ -52,6 +52,7 @@ use crate::{
                 NewObject,
                 ObjectChangeKind,
                 ObjectPatch,
+                Reparent,
                 TextWidth,
                 Upload,
             },
@@ -149,10 +150,12 @@ pub(super) struct WriteTransaction<'a> {
     pub(super) context: &'a ChangeSources<'a>,
 }
 
-/// What an edit of many sets beside the patch: layer, tag ids, link.
+/// What an edit of many sets beside the patch: layer, tag ids, link, parent.
 #[derive(Debug, Default)]
 pub(super) struct Alongside {
     pub(super) layer: Option<f64>,
+    /// The frame, checked, or the board, to put the object in.
+    pub(super) reparent: Option<Reparent>,
     pub(super) tag_ids: Option<Vec<String>>,
     /// The text of `linkTo`, empty to take the link away.
     pub(super) link_to: Option<String>,
@@ -655,9 +658,14 @@ pub(super) fn edit(
     let placed = placed_rectangle(patch, &fields);
     let framed = parent_of(&fields)
         .is_none_or(|parent| kind_of(states, parent) == ObjectKind::Frame);
-    let parent = placed
-        .filter(|_| framed)
-        .map(|rect| parent_frame(states, &rect, &held, None));
+    let parent = also.reparent.as_ref().map_or_else(
+        || {
+            placed
+                .filter(|_| framed)
+                .map(|rect| parent_frame(states, &rect, &held, None))
+        },
+        |into| Some(into.frame().map(str::to_owned)),
+    );
     let reparented = parent
         .clone()
         .filter(|candidate| candidate.as_deref() != parent_of(&fields));

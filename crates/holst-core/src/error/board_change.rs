@@ -161,6 +161,9 @@ pub enum BoardChangeError {
     #[error("{kind} objects have no {field} to change")]
     NotChangeable { kind: String, field: &'static str },
 
+    #[error("{kind} objects cannot move into or out of a frame: {why}")]
+    NotMovable { kind: String, why: String },
+
     #[error(
         "a {held} in a {container} has no position to change: the {container} places it"
     )]
@@ -310,6 +313,7 @@ impl BoardChangeError {
             BoardChangeError::NotAccepted { .. } => Some(Hint::ReadBeforeRetry),
             BoardChangeError::NotEmpty { .. }
             | BoardChangeError::NotChangeable { .. }
+            | BoardChangeError::NotMovable { .. }
             | BoardChangeError::PlacedByContainer { .. }
             | BoardChangeError::Locked { .. }
             | BoardChangeError::NotYours { .. }
@@ -358,6 +362,7 @@ impl BoardChangeError {
             | BoardChangeError::LockWithheld { .. }
             | BoardChangeError::HideWithheld { .. }
             | BoardChangeError::NotChangeable { .. }
+            | BoardChangeError::NotMovable { .. }
             | BoardChangeError::PlacedByContainer { .. }
             | BoardChangeError::Locked { .. }
             | BoardChangeError::NotYours { .. }
@@ -437,6 +442,13 @@ pub(super) mod tests {
                 BoardChangeError::NotChangeable {
                     kind: text(),
                     field: "text",
+                },
+                None,
+            ),
+            (
+                BoardChangeError::NotMovable {
+                    kind: text(),
+                    why: text(),
                 },
                 None,
             ),

@@ -15,6 +15,7 @@ mod markdown;
 mod new_kinds;
 mod objects;
 mod remove;
+mod reparent;
 mod rotation;
 mod shape_edit;
 mod text_width;

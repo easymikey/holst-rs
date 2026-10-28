@@ -1693,3 +1693,85 @@ async fn a_sticker_has_no_width_to_set(
         .signalled_as(surface.usage());
     Ok(())
 }
+
+#[rstest]
+#[tokio::test]
+async fn an_object_is_moved_into_a_frame_and_back_to_the_board(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = frame_and_note().start().await?;
+    let sticker = holst.fixture_object("Plans", 2)?;
+    let put = |frame: &'static str| {
+        ObjectCall::edit()
+            .with("object", sticker.clone())
+            .with("frame", frame)
+    };
+    then(&holst.on(surface).object("Plans", put("Q4")).await?).succeeded();
+    let inside = holst.on(surface).objects("Plans").await?;
+    then(&inside).lists_object_in_a_frame("sticker", "Buy milk");
+    then(&holst.on(surface).object("Plans", put("none")).await?).succeeded();
+    let outside = holst.on(surface).objects("Plans").await?;
+    then(&outside).lists_no_object_in_a_frame();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_frame_that_hides_its_content_takes_no_object(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = given()
+        .saved_login()
+        .workspace("Team")
+        .board_with_objects(
+            "Plans",
+            "Team",
+            vec![
+                FixtureObject::Frame("Q4".into()).set("isContentHidden", json!(true)),
+                FixtureObject::Sticker("Buy milk".into()),
+            ],
+        )
+        .start()
+        .await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 2)?)
+        .with("frame", "Q4");
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("hides its content")
+        .signalled_as(surface.usage());
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn an_object_in_a_group_stays_out_of_frames(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = given()
+        .saved_login()
+        .workspace("Team")
+        .board_with_objects(
+            "Plans",
+            "Team",
+            vec![
+                FixtureObject::Frame("Q4".into()),
+                FixtureObject::Shape("Group".into()).set("type", json!("group")),
+                FixtureObject::Sticker("Buy milk".into()).inside(2),
+            ],
+        )
+        .start()
+        .await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 3)?)
+        .with("frame", "Q4");
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying(
+            "sticker objects cannot move into or out of a frame: it is held by a group",
+        )
+        .signalled_as(surface.usage());
+    board_of(&holst).got_no_update();
+    Ok(())
+}

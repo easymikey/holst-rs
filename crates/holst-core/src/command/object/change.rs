@@ -26,6 +26,7 @@ use crate::{
                 LinkTo,
                 ObjectEdit,
                 ObjectPatch,
+                Reparent,
                 ShapeEdit,
                 TextLook,
                 TextWidth,
@@ -248,6 +249,7 @@ fn read_edits(args: &EditArgs, share: &str) -> Result<Vec<ObjectEdit>> {
                 background: args.background,
                 hide_content: args.hide_content.then_some(true),
                 show_content: args.show_content.then_some(true),
+                frame: args.frame.clone(),
                 rotate: args.rotate,
                 link_to: args.link_to.clone(),
                 width: args.width.clone(),
@@ -315,6 +317,7 @@ fn refuse_with_items(args: &EditArgs) -> Result<()> {
         ("background", args.background.is_some()),
         ("hide_content", args.hide_content),
         ("show_content", args.show_content),
+        ("frame", args.frame.is_some()),
         ("rotate", args.rotate.is_some()),
         ("link_to", args.link_to.is_some()),
         ("width", args.width.is_some()),
@@ -425,7 +428,18 @@ fn patch_of(item: &EditItem, format: TextFormat, address: &str) -> Result<Object
             background: item.background,
             hidden: hidden_of(EDIT, item.hide_content, item.show_content)?,
         },
+        reparent: item.frame.as_deref().map(reparent_of).transpose()?,
     })
+}
+
+/// What `--frame` says: `none` for the board, else a frame.
+fn reparent_of(raw: &str) -> Result<Reparent> {
+    let raw = raw.trim();
+    match raw {
+        "" => Err(not_value(EDIT, "frame", "a frame or none")),
+        "none" => Ok(Reparent::Board),
+        _ => Ok(Reparent::Frame(raw.to_owned())),
+    }
 }
 
 /// Whether the flags hide the content of a frame, show it, or leave it.

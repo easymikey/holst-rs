@@ -24,6 +24,7 @@ use crate::{
                 ObjectPatch,
                 Pasted,
                 RemoveRight,
+                Reparent,
                 ShapeEdit,
                 TextLook,
             },
@@ -164,6 +165,8 @@ pub(crate) struct CheckedEdit<'a> {
     pub(super) edit: &'a ObjectEdit,
     /// The `linkTo` to store, the object it names found.
     pub(super) link_to: Option<String>,
+    /// Where the object goes, the frame found.
+    pub(super) reparent: Option<Reparent>,
 }
 
 pub(crate) fn on_board(at: Option<&Point>, size: Option<&Size>) -> Result<()> {
@@ -260,11 +263,14 @@ pub(crate) fn check<'a>(
                     .as_ref()
                     .map(|link| link_text(states, link))
                     .transpose()?;
+                let reparent =
+                    reparented(states, (&id, &kind), edit.patch.reparent.as_ref())?;
                 Ok(CheckedEdit {
                     id,
                     kind,
                     edit,
                     link_to,
+                    reparent,
                 })
             })
             .collect::<Result<Vec<_>>>()
@@ -767,6 +773,100 @@ pub(super) fn shows_content(states: &HashMap<String, Value>, id: &str) -> bool {
         .unwrap_or_default()
 }
 
+/// Where an edit puts the object, checked: a frame that shows its content and
+/// does not lie inside the object, for an object that a frame or the board
+/// holds. BUNDLE: main.a33651a4.js 171095-171097; 128.8f630629.js 2109-2121.
+fn reparented(
+    states: &HashMap<String, Value>,
+    (id, kind): (&str, &ObjectKind),
+    asked: Option<&Reparent>,
+) -> Result<Option<Reparent>> {
+    asked
+        .map(|into| {
+            movable(states, (id, kind))?;
+            match into {
+                Reparent::Board => Ok(Reparent::Board),
+                Reparent::Frame(reference) => {
+                    frame_taking(states, (id, kind), reference).map(Reparent::Frame)
+                }
+            }
+        })
+        .transpose()
+}
+
+fn not_movable(kind: &ObjectKind, why: String) -> Error {
+    Error::BoardChange(BoardChangeError::NotMovable {
+        kind: kind.as_str().to_owned(),
+        why,
+    })
+}
+
+/// The object is held by a frame or by the board only.
+fn movable(
+    states: &HashMap<String, Value>,
+    (id, kind): (&str, &ObjectKind),
+) -> Result<()> {
+    let holder = states
+        .get(id)
+        .and_then(parent_of)
+        .map(|up| kind_of(states, up))
+        .filter(|up| *up != ObjectKind::Frame);
+    match (kind, holder) {
+        (ObjectKind::Arrow, _) => {
+            Err(not_movable(kind, "it follows the objects it joins".into()))
+        }
+        (ObjectKind::Group, _) => {
+            Err(not_movable(kind, "it stands where its members do".into()))
+        }
+        (_, Some(up)) => Err(not_movable(
+            kind,
+            format!("it is held by a {}", up.as_str()),
+        )),
+        (_, None) => Ok(()),
+    }
+}
+
+/// The id of the frame named, once it is a frame that shows its content and
+/// does not lie inside the object.
+fn frame_taking(
+    states: &HashMap<String, Value>,
+    (id, kind): (&str, &ObjectKind),
+    reference: &str,
+) -> Result<String> {
+    let frame = frame_in(states, reference)?;
+    let named = || reference.to_owned();
+    (kind_of(states, &frame) == ObjectKind::Frame)
+        .then_some(())
+        .ok_or_else(|| {
+            Error::BoardChange(BoardChangeError::NotFrame { reference: named() })
+        })?;
+    shows_content(states, &frame).then_some(()).ok_or_else(|| {
+        Error::BoardChange(BoardChangeError::ContentHidden { reference: named() })
+    })?;
+    (!subtree(states, id).contains(&frame))
+        .then_some(frame)
+        .ok_or_else(|| not_movable(kind, "the frame lies inside it".into()))
+}
+
+/// The nearest frame above an object.
+pub(super) fn frame_above(states: &HashMap<String, Value>, id: &str) -> Option<String> {
+    ancestry(states, id)
+        .into_iter()
+        .skip(1)
+        .find(|up| kind_of(states, up) == ObjectKind::Frame)
+}
+
+/// The top-left corner of a frame; the board's for none.
+pub(super) fn corner_of(
+    states: &HashMap<String, Value>,
+    frame: Option<&str>,
+) -> (f64, f64) {
+    frame
+        .and_then(|frame| states.get(frame))
+        .and_then(rectangle_of)
+        .map_or((0.0, 0.0), |area| (area.x, area.y))
+}
+
 /// Every copy that moves stays on the board.
 fn pasted_on_board(pasted: &Pasted) -> Result<()> {
     pasted
@@ -1125,6 +1225,7 @@ fn changeable_edit(
                 shape,
                 arrow,
                 frame,
+                reparent: None,
             },
             None,
             None,

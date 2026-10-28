@@ -551,6 +551,11 @@ pub struct EditArgs {
     )]
     pub show_content: bool,
     #[argument(
+        value_name = "frame|none",
+        help = "Move it into this frame: id, link, title or part of a title; none takes it out onto the board. It keeps its place relative to the frame and goes to the front there; unchanged by default"
+    )]
+    pub frame: Option<String>,
+    #[argument(
         value_name = "deg",
         help = "Turn to this angle in clockwise degrees, any number taken modulo 360; the corner moves so that the object turns about its centre; not for a frame, a table, a table cell, a group or an arrow; unchanged by default",
         tool_doc = "Degrees clockwise; not frame, table, group, arrow."
@@ -630,6 +635,7 @@ pub struct EditItem {
     pub background: Option<FrameBackground>,
     pub hide_content: Option<bool>,
     pub show_content: Option<bool>,
+    pub frame: Option<String>,
     pub rotate: Option<f64>,
     pub link_to: Option<String>,
     pub width: Option<String>,
@@ -1026,7 +1032,7 @@ mod tests {
             "hide_content",
             "show_content",
         ];
-        const EDIT_KEYS: [&str; 25] = [
+        const EDIT_KEYS: [&str; 26] = [
             "object",
             "text",
             "at",
@@ -1045,6 +1051,7 @@ mod tests {
             "background",
             "hide_content",
             "show_content",
+            "frame",
             "rotate",
             "link_to",
             "width",
