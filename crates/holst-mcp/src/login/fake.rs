@@ -326,4 +326,22 @@ impl Backend for Memory {
         )?
         .with_transport(Arc::clone(&self.network)))
     }
+
+    fn save_new(&self, session: &Session) -> holst_core::Result<LoginSaveReport> {
+        self.store(Some(session.clone()));
+        Ok(LoginSaveReport {
+            store: self.kind,
+            stale: None,
+        })
+    }
+
+    fn anonymous(&self) -> holst_core::Result<Client> {
+        Ok(holst_core::command::login::connect(
+            None,
+            "http://127.0.0.1:1".parse()?,
+            holst_core::system::clock::SystemClock,
+            holst_core::system::id::RandomIds,
+        )?
+        .with_transport(Arc::clone(&self.network)))
+    }
 }

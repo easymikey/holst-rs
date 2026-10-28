@@ -19,7 +19,7 @@ use serde_json::{Map, Value};
 
 use crate::{
     error::{Error, Result},
-    login::HandedClient,
+    login::{HandedClient, page},
     reply,
     server::McpServer,
 };
@@ -31,10 +31,8 @@ impl McpServer {
         arguments: Map<String, Value>,
     ) -> CallToolResult {
         match verb {
-            // `login` and `logout` are for the CLI; the table gives them no tool.
-            AuthVerb::Login => self.fail(&Error::CliOnly {
-                command: "auth login".to_owned(),
-            }),
+            AuthVerb::Login => self.auth_login().await,
+            // `logout` is for the CLI; the table gives it no tool.
             AuthVerb::Logout => self.fail(&Error::CliOnly {
                 command: "auth logout".to_owned(),
             }),
@@ -45,11 +43,21 @@ impl McpServer {
         }
     }
 
+    /// A link to a page on this computer where the user logs in.
+    async fn auth_login(&self) -> CallToolResult {
+        match page::open(&self.login).await {
+            Ok(link) => reply::text(format!(
+                "{link}\nOpen it in a browser to log in, then call auth (action status).\n"
+            )),
+            Err(err) => self.fail(&err),
+        }
+    }
+
     async fn auth_status(&self, args: &StatusArgs) -> CallToolResult {
         match self.store_kind().await {
             Err(err) => self.fail(&err),
             Ok(None) => reply::text(
-                "no login: the user has to run `holst auth login` in a terminal",
+                "no login: call auth with action login, or the user runs `holst auth login` in a terminal",
             ),
             Ok(Some(source)) => {
                 self.run(async |client| {

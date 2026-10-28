@@ -128,7 +128,7 @@ impl Hint {
 
 const SIGN_IN: SurfaceText = SurfaceText::Each {
     cli: "run `holst auth login` to log in again",
-    mcp: "ask the user to log in again in a terminal, then call auth",
+    mcp: "call auth with action login, ask the user to open its link to log in again, then call auth",
 };
 const CHECK_ID: SurfaceText =
     SurfaceText::Same("check the id or link — it may be deleted or in the trash");
@@ -205,8 +205,8 @@ const REPLACE_STALE: SurfaceText = SurfaceText::Each {
 };
 const FULL_LOGIN: SurfaceText = SurfaceText::Each {
     cli: "run `holst auth login` to get a full session — a bare token has no cookies",
-    mcp: "ask the user to log in again in a terminal — a bare token has no \
-          cookies",
+    mcp: "call auth with action login and ask the user to open its link to log in \
+          again — a bare token has no cookies",
 };
 const CONFIRM_FIRST: SurfaceText = SurfaceText::Each {
     cli: "check the target, then run the command again with `--yes`",

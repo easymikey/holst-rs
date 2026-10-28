@@ -78,7 +78,7 @@ impl On<'_> {
         self.reading(
             &["auth", "status", "--with", "tokens"],
             "auth",
-            json!({ "with": ["tokens"] }),
+            json!({ "action": "status", "with": ["tokens"] }),
         )
         .await
     }
@@ -99,7 +99,7 @@ impl On<'_> {
                 mcp::call(
                     self.holst.command("holst-mcp")?,
                     "auth",
-                    Map::new(),
+                    Map::from_iter([("action".to_owned(), "status".into())]),
                     mcp_status,
                 )
                 .await?

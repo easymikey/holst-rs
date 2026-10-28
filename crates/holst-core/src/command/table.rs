@@ -341,7 +341,7 @@ const AUTH: GroupHelp = GroupHelp {
     about: "Log in, log out and check the saved login",
     section: RootSection::More,
     tools: GroupTools::One {
-        description: "The account and its workspaces. Start here.",
+        description: "The account and its workspaces. Start here. login: a link for the user to open.",
     },
     flags: &[],
     arguments: None,

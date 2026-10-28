@@ -1,5 +1,6 @@
 //! The server: login, cache, aliases; store access on the blocking pool.
 
+#[cfg(test)] mod login_tests;
 pub(crate) mod table;
 #[cfg(test)] mod tests;
 
@@ -53,6 +54,7 @@ use crate::{
         LoginPlan,
         LoginState,
         LoginStep,
+        NewLogin,
         ReadyLogin,
         SharedLogin,
         hand_out,
@@ -75,7 +77,7 @@ that part of a board; so do frame, object and rectangle \"x,y,width,height\" in 
 board units. Rights: none, viewer, commentator, editor, full. confirm: true \
 only after the user agreed; a risky action without it replies with what it \
 would do. dry_run: true sends nothing. output: json (board, object only) gives \
-full JSON. User login: `holst auth login`.";
+full JSON. No login: `auth` action login.";
 
 /// The tools as `tools/list` shows them.
 fn listed(table: &[TableTool], raw_write: RawWrite) -> Arc<[Tool]> {
@@ -111,7 +113,7 @@ fn only_on_mcp(
 pub(crate) struct McpServer {
     table: Arc<[TableTool]>,
     tools: Arc<[Tool]>,
-    login: Arc<SharedLogin>,
+    pub(crate) login: Arc<SharedLogin>,
     pub(crate) state: Arc<McpMemory>,
     pub(crate) raw_write: RawWrite,
     pub(crate) secrets: SecretPaths,
@@ -278,6 +280,10 @@ impl McpServer {
     }
 
     async fn client(&self) -> crate::error::Result<HandedClient> {
+        // A login the page saved replaces the one in use at once.
+        if let Some(arrived) = self.login.arrived.swap(None) {
+            self.install_arrived(&arrived).await?;
+        }
         // Generation before link: a login change stores the client first.
         let generation = self.state.generation();
         let seen = self.login.state.load_full();
@@ -289,6 +295,12 @@ impl McpServer {
             .into()),
             LoginStep::Reload => self.reload(&seen).await,
         }
+    }
+
+    async fn install_arrived(&self, arrived: &NewLogin) -> crate::error::Result<()> {
+        let _one_at_a_time = self.login.gate.lock().await;
+        self.install(arrived.session.clone(), arrived.store, self.login.now())
+            .map(drop)
     }
 
     async fn reload(

@@ -5,9 +5,16 @@ expression: "*holst.tools"
 [
   {
     "name": "auth",
-    "description": "The account and its workspaces. Start here.",
+    "description": "The account and its workspaces. Start here. login: a link for the user to open.",
     "inputSchema": {
       "properties": {
+        "action": {
+          "enum": [
+            "login",
+            "status"
+          ],
+          "type": "string"
+        },
         "with": {
           "items": {
             "enum": [
@@ -18,10 +25,14 @@ expression: "*holst.tools"
           "type": "array"
         }
       },
+      "required": [
+        "action"
+      ],
       "type": "object"
     },
     "annotations": {
-      "readOnlyHint": true,
+      "readOnlyHint": false,
+      "destructiveHint": true,
       "openWorldHint": false
     }
   },

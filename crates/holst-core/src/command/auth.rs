@@ -43,8 +43,7 @@ impl AuthVerb {
     group = Auth,
     verb = "login",
     risk = Write,
-    surfaces = [Cli],
-    no_dry_run,
+    local_files,
     about = "Log in and save the login",
     help = "Log in with your email address and a login code or password, and save the login.\n\
             It prints the account and its workspaces. The login goes to the keychain, or to --home.",
@@ -55,10 +54,14 @@ impl AuthVerb {
 pub struct LoginArgs {
     #[argument(
         value_name = "address",
-        help = "The email address to log in with; asked for when missing"
+        help = "The email address to log in with; asked for when missing",
+        surfaces = [Cli]
     )]
     pub email: Option<Email>,
-    #[argument(help = "Only check that the login works; do not save the login")]
+    #[argument(
+        help = "Only check that the login works; do not save the login",
+        surfaces = [Cli]
+    )]
     pub no_save: SaveLogin,
 }
 

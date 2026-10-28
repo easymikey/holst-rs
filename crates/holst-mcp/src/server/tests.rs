@@ -231,6 +231,25 @@ impl Backend for OnFake {
             holst_core::system::id::RandomIds,
         )
     }
+
+    fn save_new(
+        &self,
+        _: &Session,
+    ) -> holst_core::Result<holst_core::storage::session_store::LoginSaveReport> {
+        Ok(holst_core::storage::session_store::LoginSaveReport {
+            store: SessionStoreKind::File,
+            stale: None,
+        })
+    }
+
+    fn anonymous(&self) -> holst_core::Result<holst_core::remote::client::Client> {
+        holst_core::command::login::connect(
+            None,
+            self.base_url.parse()?,
+            holst_core::system::clock::SystemClock,
+            holst_core::system::id::RandomIds,
+        )
+    }
 }
 
 /// A fake server with the board `Plans` of one sticker, and a client on it.
@@ -701,7 +720,7 @@ const TREE: &str = r#"{"channels":[
     {"id":"00000001-0000-4000-8000-000000000003","type":"board","name":"Old","in_trash":true}]}"#;
 
 /// What a call to a table tool replies, and whether it is a tool error.
-async fn table_call(
+pub(super) async fn table_call(
     holst: &McpServer,
     tool: &str,
     arguments: serde_json::Value,
@@ -726,7 +745,8 @@ async fn table_call(
 #[tokio::test]
 async fn auth_status_counts_the_boards_and_folders_of_each_workspace() {
     let (holst, ..) = with_a([CannedResponse::ok(ME), CannedResponse::ok(TREE)]);
-    let (failed, text) = table_call(&holst, "auth", serde_json::json!({})).await;
+    let (failed, text) =
+        table_call(&holst, "auth", serde_json::json!({ "action": "status" })).await;
     assert!(!failed, "{text}");
     assert!(text.starts_with("logged in: Ann @"), "{text}");
     assert!(text.contains("easy @"), "{text}");
@@ -740,8 +760,12 @@ async fn auth_status_with_tokens_lists_them() {
         CannedResponse::ok(TREE),
         CannedResponse::ok(r#"[{"id":"p1","name":"ci"}]"#),
     ]);
-    let (failed, text) =
-        table_call(&holst, "auth", serde_json::json!({ "with": ["tokens"] })).await;
+    let (failed, text) = table_call(
+        &holst,
+        "auth",
+        serde_json::json!({ "action": "status", "with": ["tokens"] }),
+    )
+    .await;
     assert!(!failed, "{text}");
     assert!(text.contains("tokens:\n"), "{text}");
     assert_eq!(network.seen().len(), 3, "{:?}", network.seen());
@@ -750,8 +774,12 @@ async fn auth_status_with_tokens_lists_them() {
 #[tokio::test]
 async fn an_argument_the_command_does_not_take_is_a_tool_error_in_our_words() {
     let (holst, network) = McpServer::scripted([]);
-    let (failed, text) =
-        table_call(&holst, "auth", serde_json::json!({ "cover": "x.png" })).await;
+    let (failed, text) = table_call(
+        &holst,
+        "auth",
+        serde_json::json!({ "action": "status", "cover": "x.png" }),
+    )
+    .await;
     assert!(failed);
     assert_eq!(
         text,
@@ -761,13 +789,13 @@ async fn an_argument_the_command_does_not_take_is_a_tool_error_in_our_words() {
 }
 
 #[tokio::test]
-async fn an_action_other_than_the_verb_of_a_tool_of_one_command_is_refused() {
+async fn an_action_the_tool_does_not_have_is_refused() {
     let (holst, ..) = with_a([]);
     let (failed, text) =
-        table_call(&holst, "auth", serde_json::json!({ "action": "login" })).await;
+        table_call(&holst, "auth", serde_json::json!({ "action": "logout" })).await;
     assert!(failed);
     assert!(
-        text.contains("`auth` has no action \"login\"; it has: status"),
+        text.contains("`auth` has no action \"logout\"; it has: login, status"),
         "{text}"
     );
 }
@@ -827,7 +855,7 @@ fn instructions_explain_the_tools_and_the_login() {
     let wanted = [
         "object_write",
         "x,y,width,height",
-        "holst auth login",
+        "action login",
         "@N",
         "output: json (board, object only)",
     ];

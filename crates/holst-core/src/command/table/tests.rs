@@ -377,12 +377,7 @@ const VERBS: [&str; 35] = [
 ];
 
 // Commands on one surface only, each with its reason.
-const ONE_SURFACE: [(&str, Surface, &str); 4] = [
-    (
-        "auth login",
-        Surface::Cli,
-        "asks the person for a code or a password",
-    ),
+const ONE_SURFACE: [(&str, Surface, &str); 3] = [
     (
         "auth logout",
         Surface::Cli,
