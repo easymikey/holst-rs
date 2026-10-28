@@ -14,7 +14,7 @@ use crate::{
         table::{Command, CommandArgs, Confirmation, NewFile},
     },
     domain::{
-        backup::{Backup, Backups, DEFAULT_PROVIDER, ListedBackup},
+        backup::{Backup, Backups, DEFAULT_PROVIDER, ListedBackup, OTHER_PROVIDER},
         board_file::{
             compression::{self, Compression},
             document,
@@ -32,6 +32,7 @@ use crate::{
         board_socket::BoardSocketError,
         confirmation::{ChangeRisk, Unconfirmed},
         http::{HTML_BODY, HttpError},
+        input::InputError,
         lookup::{LookupError, LookupKind, LookupMiss},
     },
     remote::{api, client::Client, socket::write::connector},
@@ -190,7 +191,10 @@ pub async fn get(
         .as_ref()
         .map(|file| compression::file_name(&file.0, packing))
         .transpose()?;
-    let provider = args.provider.as_deref().unwrap_or(DEFAULT_PROVIDER);
+    let provider = match args.provider.as_deref() {
+        Some(given) => known_provider("backup get", given)?,
+        None => DEFAULT_PROVIDER,
+    };
     let backup = download(client, &args.key, provider, packing).await?;
     let delivery = match (file, downloads) {
         (Some(file), _) => {
@@ -292,6 +296,11 @@ async fn restored(
     socket: &dyn SocketConnector,
     args: &RestoreArgs,
 ) -> Result<Restored> {
+    let given = args
+        .provider
+        .as_deref()
+        .map(|given| known_provider("backup restore", given))
+        .transpose()?;
     let target =
         lookup::exact_board(client, &args.board, args.workspace.as_deref()).await?;
     let listed = api::backup::list(client, &target.id).await?;
@@ -301,10 +310,7 @@ async fn restored(
         .find(|each| each.key.as_deref() == Some(args.key.as_str()))
         .cloned()
         .ok_or_else(|| missing(&args.key))?;
-    let provider = args
-        .provider
-        .as_deref()
-        .unwrap_or_else(|| backup.download_provider());
+    let provider = listed_provider(given, backup.download_provider())?;
     only_v2(provider)?;
     let snapshot = fetch(client, &args.key, provider).await?;
     let state = compression::uncompressed(snapshot.as_bytes())?;
@@ -351,6 +357,38 @@ async fn restored(
         receipt: Some(done.receipt()),
         outcome,
     })
+}
+
+/// The provider as the server names them: `hud`, or `hocuspocus` for the
+/// older boards.
+fn known_provider<'a>(command: &str, given: &'a str) -> Result<&'a str> {
+    match given {
+        DEFAULT_PROVIDER | OTHER_PROVIDER => Ok(given),
+        _ => Err(provider_error(
+            command,
+            format!("{DEFAULT_PROVIDER} or {OTHER_PROVIDER}"),
+        )),
+    }
+}
+
+/// The list says where the server keeps the backup; a flag can only agree.
+fn listed_provider(given: Option<&str>, listed: &'static str) -> Result<&'static str> {
+    match given {
+        Some(given) if given != listed => Err(provider_error(
+            "backup restore",
+            format!("{listed}, where `backup ls` puts this backup"),
+        )),
+        Some(_) | None => Ok(listed),
+    }
+}
+
+fn provider_error(command: &str, expected: String) -> Error {
+    InputError::NotArgumentValue {
+        command: command.to_owned(),
+        name: "provider",
+        expected,
+    }
+    .into()
 }
 
 /// Only `hud` keeps Yjs v2, the format this version reads and writes.
@@ -451,7 +489,7 @@ mod tests {
         Error,
         Result,
         command::{
-            backup::{RestoreArgs, restored},
+            backup::{GetArgs, RestoreArgs, get, restored},
             fixture::{arguments, client, json_reply},
         },
         domain::{
@@ -459,7 +497,7 @@ mod tests {
             board_file::{compression, document},
         },
         effect::http::HttpResponse,
-        error::board_socket::BoardSocketError,
+        error::{board_socket::BoardSocketError, input::InputError},
         protocol::hud::{DocumentResponse, OutgoingUpdate, UpdatePayload},
         remote::{
             client::fake::reply,
@@ -557,12 +595,51 @@ mod tests {
         Ok(())
     }
 
+    /// Tells whether the error is a `provider` that cannot be used.
+    fn wrong_provider(error: Option<&Error>) -> bool {
+        matches!(
+            error,
+            Some(Error::Input(InputError::NotArgumentValue {
+                name: "provider",
+                ..
+            }))
+        )
+    }
+
     #[tokio::test]
-    async fn a_given_provider_wins_over_the_listed_one() -> Result<()> {
-        assert_eq!(
-            downloaded_from("s3", Some("hud")).await?.as_deref(),
-            Some("hud")
+    async fn a_provider_other_than_the_listed_one_is_a_usage_error() -> Result<()> {
+        let (fake, client) =
+            client([channel(), account(), listing_by("hocuspocus"), body()?])?;
+        let args = json!({
+            "board": BOARD, "key": "k1", "dry_run": true, "provider": "hud",
+        });
+        let error = restored(&client, &empty(), &arguments::<RestoreArgs>(args)?)
+            .await
+            .err();
+        assert!(wrong_provider(error.as_ref()));
+        assert!(
+            fake.requests()
+                .iter()
+                .all(|sent| !sent.url.path().ends_with("backup/download"))
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn an_unknown_provider_is_a_usage_error_before_any_request() -> Result<()> {
+        let (fake, client) = client([channel()])?;
+        let restore = json!({ "board": BOARD, "key": "k1", "provider": "s3" });
+        let restoring =
+            restored(&client, &empty(), &arguments::<RestoreArgs>(restore)?)
+                .await
+                .err();
+        assert!(wrong_provider(restoring.as_ref()));
+        let fetch = json!({ "key": "k1", "provider": "s3" });
+        let getting = get(&client, None, &arguments::<GetArgs>(fetch)?)
+            .await
+            .err();
+        assert!(wrong_provider(getting.as_ref()));
+        assert!(fake.requests().is_empty());
         Ok(())
     }
 
@@ -601,7 +678,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_given_provider_other_than_hud_is_refused() -> Result<()> {
-        refused("hud", Some("hocuspocus")).await
+        refused("hocuspocus", Some("hocuspocus")).await
     }
 
     /// The saved state of a board with a sticker whose text is `text`.

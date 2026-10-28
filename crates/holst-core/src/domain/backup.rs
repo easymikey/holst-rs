@@ -11,7 +11,7 @@ use crate::{
 pub const DEFAULT_PROVIDER: &str = "hud";
 
 /// Where the server keeps every backup that the list does not put in `hud`.
-const OTHER_PROVIDER: &str = "hocuspocus";
+pub const OTHER_PROVIDER: &str = "hocuspocus";
 
 const JSON_HEAD: usize = 300;
 

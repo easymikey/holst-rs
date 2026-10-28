@@ -21,11 +21,12 @@ use crate::{
             ShowPart,
             create,
             list,
+            log,
             members_of,
             show,
         },
     },
-    effect::board_write::WriteMode,
+    effect::{board_write::WriteMode, request::QueryParameter},
     remote::client::{
         Client,
         fake::{Fake, on_fake, stored},
@@ -273,6 +274,35 @@ async fn create_posts_the_trimmed_name_and_refuses_a_blank_one() -> Result<()> {
             vec!["Post /gapi/workspace/create".to_owned()],
             true
         )
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn log_asks_for_the_workspace_given() -> Result<()> {
+    let (fake, client) = served(&[me(), json!({ "events": [] })])?;
+    let args = LogArgs {
+        workspace: Some("Team".to_owned()),
+        query: vec![QueryParameter {
+            name: "limit".to_owned(),
+            value: "5".to_owned(),
+        }],
+    };
+    log(&client, &args).await?;
+    let requests = fake.requests();
+    let query: Vec<_> = requests.last().map_or_else(Vec::new, |request| {
+        request
+            .url
+            .query_pairs()
+            .map(|(name, value)| (name.into_owned(), value.into_owned()))
+            .collect()
+    });
+    assert_eq!(
+        query,
+        [
+            ("workspaceId".to_owned(), "w2".to_owned()),
+            ("limit".to_owned(), "5".to_owned())
+        ]
     );
     Ok(())
 }

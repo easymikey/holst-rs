@@ -16,7 +16,7 @@ use crate::{
         },
         change::{ChangeReport, settle},
         lookup::{self, NodeLookup},
-        node::{self, Carrying, Copying},
+        node::{self, Copying},
         table::Confirmation,
     },
     domain::{
@@ -72,7 +72,7 @@ pub struct ChangedNode {
     pub kind: Option<&'static str>,
     /// Where a board opens.
     pub link: Option<String>,
-    /// The live boards a folder takes along when it moves or goes to the trash.
+    /// The live boards a folder takes along when it moves.
     pub boards_along: usize,
     /// What a folder deleted for good left behind (moved up, not deleted).
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -166,7 +166,7 @@ impl ChangedNode {
                 Some(_) => format!("{verb} the board as {name}"),
                 None => format!("{verb} the board"),
             },
-            Action::Trash => format!("{verb} {subject} to the trash{boards_along}"),
+            Action::Trash => format!("{verb} {subject} to the trash"),
             Action::DeleteForever => {
                 format!("{verb} {subject} for good{}", self.left_words(would))
             }
@@ -303,7 +303,7 @@ pub async fn mv(client: &Client, args: &MoveArgs) -> Result<Changed> {
     let plan = Plan {
         request: located.plan_move(&parent)?,
         node,
-        unconfirmed: located.contents_unconfirmed(Carrying::Move),
+        unconfirmed: located.contents_unconfirmed(),
     };
     carry(client, plan, (args.dry_run, args.confirm)).await
 }
@@ -338,16 +338,19 @@ pub async fn cp(client: &Client, args: &CopyArgs) -> Result<Changed> {
     .await
 }
 
-/// Moves a board or a folder to the trash, or with `permanently` deletes it
-/// for good. A folder with boards and a deletion for good stay undone without
-/// their confirmation.
+/// Moves a board to the trash, or with `permanently` deletes it for good. A
+/// folder is always deleted for good, as the web does: its boards and folders
+/// move up one level. A deletion for good stays undone without its
+/// confirmation.
 ///
 /// # Errors
 /// A node that is not found (for good, a board must be named whole), and
 /// errors of the requests.
 pub async fn rm(client: &Client, args: &RemoveArgs) -> Result<Changed> {
     let plan = if args.permanently {
-        delete_forever(client, args).await?
+        let id = lookup::exact_board_id(client, &args.board, args.workspace.as_deref())
+            .await?;
+        delete_forever(client, id).await?
     } else {
         trash(client, args).await?
     };
@@ -359,21 +362,18 @@ async fn trash(client: &Client, args: &RemoveArgs) -> Result<Plan> {
         .await?
         .parse()?;
     let located = node::locate(client, &id).await?;
-    let node = ChangedNode {
-        name: Some(located.name.clone()),
-        boards_along: located.boards_along,
-        ..node_of(Action::Trash, Some(id.to_string()), Some(located.kind))
-    };
-    Ok(Plan {
-        request: located.plan_trash()?,
-        node,
-        unconfirmed: located.contents_unconfirmed(Carrying::Trash),
-    })
+    if located.kind == NodeKind::Folder {
+        delete_forever(client, id.to_string()).await
+    } else {
+        let node = ChangedNode {
+            name: Some(located.name.clone()),
+            ..node_of(Action::Trash, Some(id.to_string()), Some(located.kind))
+        };
+        Ok(Plan::plain(located.plan_trash()?, node))
+    }
 }
 
-async fn delete_forever(client: &Client, args: &RemoveArgs) -> Result<Plan> {
-    let id =
-        lookup::exact_board_id(client, &args.board, args.workspace.as_deref()).await?;
+async fn delete_forever(client: &Client, id: String) -> Result<Plan> {
     let reply = api::channel::get(client, &id).await?;
     let brief = NodeBrief::of(&reply)?;
     let name = brief.name().to_owned();

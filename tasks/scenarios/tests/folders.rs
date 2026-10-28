@@ -285,7 +285,7 @@ async fn a_dry_run_deletes_nothing(
 
 #[rstest]
 #[tokio::test]
-async fn a_folder_with_boards_is_not_deleted_unconfirmed(
+async fn a_folder_is_not_deleted_unconfirmed(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = given()
@@ -297,9 +297,7 @@ async fn a_folder_with_boards_is_not_deleted_unconfirmed(
         .await?;
     let observation = holst.on(surface).delete_node("Plans", "Team").await?;
     then(&observation)
-        .failed_saying(
-            "moving a folder with 1 board to the trash takes everything inside along",
-        )
+        .failed_saying("deleting Plans for good cannot be undone")
         .signalled_as(surface.permission_denied());
     tree_of(&holst, "Team").has_folder("Plans", None);
     tree_of(&holst, "Team").has_board("Roadmap", Some("Plans"));
@@ -308,7 +306,7 @@ async fn a_folder_with_boards_is_not_deleted_unconfirmed(
 
 #[rstest]
 #[tokio::test]
-async fn a_confirmed_delete_takes_a_folder_and_its_boards_to_the_trash(
+async fn a_confirmed_folder_delete_is_for_good_and_leaves_its_boards_up(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = given()
@@ -324,8 +322,9 @@ async fn a_confirmed_delete_takes_a_folder_and_its_boards_to_the_trash(
         .delete_node("Plans", "Team")
         .await?;
     tree_of(&holst, "Team").has_nothing_named("Plans");
-    trash_of(&holst, "Team").has_folder("Plans", None);
-    trash_of(&holst, "Team").has_board("Roadmap", Some("Plans"));
+    tree_of(&holst, "Team").has_board("Roadmap", None);
+    trash_of(&holst, "Team").has_nothing_named("Plans");
+    trash_of(&holst, "Team").has_nothing_named("Roadmap");
     Ok(())
 }
 
@@ -620,7 +619,7 @@ async fn a_folder_deleted_for_good_leaves_its_board_at_the_root(
 
 #[rstest]
 #[tokio::test]
-async fn a_restored_folder_brings_its_boards_back(
+async fn a_deleted_folder_is_gone_and_its_boards_stay_at_the_parent_level(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = work_with_plan().start().await?;
@@ -629,10 +628,9 @@ async fn a_restored_folder_brings_its_boards_back(
         .confirming()
         .delete_node("Work", "Team")
         .await?;
-    trash_of(&holst, "Team").has_folder("Work", None);
-    holst.on(surface).restore_node("Work", "Team").await?;
-    tree_of(&holst, "Team").has_folder("Work", None);
-    tree_of(&holst, "Team").has_board("Plan", Some("Work"));
+    tree_of(&holst, "Team").has_nothing_named("Work");
+    trash_of(&holst, "Team").has_nothing_named("Work");
+    tree_of(&holst, "Team").has_board("Plan", None);
     Ok(())
 }
 

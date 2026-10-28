@@ -154,6 +154,52 @@ async fn a_confirmed_or_dry_move_of_a_folder_goes_on() -> Result<()> {
     Ok(())
 }
 
+/// The folder Plans as the channel reply shows it.
+fn plans_folder() -> HttpResponse {
+    json_reply(&json!({
+        "id": uuid(11),
+        "type": "folder",
+        "name": "Plans",
+        "workspace_id": uuid(1),
+    }))
+}
+
+#[tokio::test]
+async fn a_folder_removed_without_permanently_is_deleted_for_good_as_the_web_does()
+-> Result<()> {
+    let moved = json_reply(&json!({ "updatedChannelIds": [uuid(12)] }));
+    let (fake, client) =
+        client([plans_folder(), tree(), plans_folder(), tree(), moved])?;
+    let sent = rm(
+        &client,
+        &arguments(json!({ "board": uuid(11), "confirm": true }))?,
+    )
+    .await?;
+    let asked = asked(&fake);
+    assert_eq!(
+        (sent.node.phrase(false), asked.last().cloned()),
+        (
+            String::from(
+                "deleted Plans for good; Roadmap (board) is now at the workspace root"
+            ),
+            Some(format!("POST /gapi/channel/{}/delete", uuid(11)))
+        ),
+        "{asked:?}"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_folder_removed_without_confirmation_stays_undeleted() -> Result<()> {
+    let (fake, client) = client([plans_folder(), tree(), plans_folder(), tree()])?;
+    let held = rm(&client, &arguments(json!({ "board": uuid(11) }))?).await?;
+    assert_eq!(
+        (status_of(&held.outcome), writes(&asked(&fake))),
+        (String::from("held"), 0)
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn a_folder_deleted_for_good_names_what_it_leaves_and_where() -> Result<()> {
     let folder = || {

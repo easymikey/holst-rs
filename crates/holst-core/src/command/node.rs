@@ -231,13 +231,6 @@ fn located(
     })
 }
 
-/// What a change does to the boards inside a folder.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Carrying {
-    Trash,
-    Move,
-}
-
 impl LocatedNode {
     /// The folder `reference` names in this node's workspace, as
     /// [`look_up_parent`].
@@ -270,22 +263,16 @@ impl LocatedNode {
             .any(|up| Some(up) == this)
     }
 
-    /// The refusal to take the boards of a folder along unasked; none for a
+    /// The refusal to move the boards of a folder along unasked; none for a
     /// board or an empty folder.
     #[must_use]
-    pub fn contents_unconfirmed(&self, change: Carrying) -> Option<Unconfirmed> {
+    pub fn contents_unconfirmed(&self) -> Option<Unconfirmed> {
         Some(self.boards_along)
             .filter(|&boards| boards > 0)
             .map(|boards| {
                 let counted = counted(boards);
                 Unconfirmed {
-                    change: match change {
-                        Carrying::Trash => {
-                            format!("moving a folder with {counted} to the trash")
-                        }
-                        Carrying::Move => format!("moving a folder with {counted}"),
-                    }
-                    .into(),
+                    change: format!("moving a folder with {counted}").into(),
                     risk: ChangeRisk::Contents,
                 }
             })
@@ -468,22 +455,16 @@ mod tests {
     }
 
     #[rstest]
-    #[case::folder_to_trash(
-        PLANS,
-        Carrying::Trash,
-        Some("moving a folder with 1 board to the trash")
-    )]
-    #[case::folder_moved(PLANS, Carrying::Move, Some("moving a folder with 1 board"))]
-    #[case::empty_folder(SUB, Carrying::Trash, None)]
-    #[case::board(BOARD, Carrying::Move, None)]
+    #[case::folder_moved(PLANS, Some("moving a folder with 1 board"))]
+    #[case::empty_folder(SUB, None)]
+    #[case::board(BOARD, None)]
     fn a_folder_with_boards_is_not_taken_along_unasked(
         #[case] id: &str,
-        #[case] change: Carrying,
         #[case] action: Option<&str>,
     ) -> Result<()> {
         let node = located(&id.parse()?, workspace()?, index()?)?;
         let refusal = node
-            .contents_unconfirmed(change)
+            .contents_unconfirmed()
             .map(|unconfirmed| unconfirmed.change.into_owned());
         assert_eq!(refusal.as_deref(), action);
         Ok(())

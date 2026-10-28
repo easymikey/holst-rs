@@ -595,19 +595,22 @@ pub async fn rename(client: &Client, args: &RenameArgs) -> Result<WorkspaceChang
     })
 }
 
-/// A page of the event log, filtered by the server from `query`. The wire has
-/// no workspace parameter: a given workspace is only checked to be yours.
+/// A page of the event log of the workspace, filtered by the server from
+/// `query`; a `workspaceId` of the query is left as given.
 ///
 /// # Errors
 /// Errors of the workspace lookup and of the request.
 pub async fn log(client: &Client, args: &LogArgs) -> Result<EventLog> {
-    if let Some(reference) = args.workspace.as_deref() {
-        lookup::workspace(client, Some(reference)).await?;
-    }
-    let query: Vec<(&str, String)> = args
-        .query
-        .iter()
-        .map(|each| (each.name.as_str(), each.value.clone()))
+    let workspace = lookup::workspace(client, args.workspace.as_deref()).await?;
+    let own = args.query.iter().any(|each| each.name == "workspaceId");
+    let query: Vec<(&str, String)> = (!own)
+        .then(|| ("workspaceId", workspace.id.clone()))
+        .into_iter()
+        .chain(
+            args.query
+                .iter()
+                .map(|each| (each.name.as_str(), each.value.clone())),
+        )
         .collect();
     let reply: EventsReply =
         serde_json::from_value(api::workspace::audit_events(client, &query).await?)?;

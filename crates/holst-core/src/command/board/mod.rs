@@ -618,8 +618,8 @@ pub struct CopyArgs {
     risk = Destroy,
     block = Change,
     about = "Move a board to the trash, or delete it for good",
-    help = "Move a board to the trash, or with --permanently delete it for good. A folder in the trash takes its boards along; a folder deleted for good leaves them in the folder it was in (or the root).\n\
-            One board to the trash needs no -y. A folder with boards, and --permanently, need -y, since other people lose the boards; without it only the dry run is shown.",
+    help = "Move a board to the trash, or with --permanently delete it for good. A folder is always deleted for good, as in the web: the boards and folders inside move up one level, into the folder it was in (or the root).\n\
+            One board to the trash needs no -y. A folder and --permanently need -y, since they cannot be undone; without it only the dry run is shown.",
     example = "holst b rm \"Old draft\"",
     example = "holst b rm \"Old draft\" --permanently -y",
     example = "holst b rm \"Old draft\" -n"

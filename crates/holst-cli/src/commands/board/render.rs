@@ -290,8 +290,7 @@ mod tests {
 
     #[test]
     fn a_dry_run_says_would_and_shows_the_request() {
-        let planned =
-            change(Action::Trash, ChangeReport::DryRun { request: request() });
+        let planned = change(Action::Move, ChangeReport::DryRun { request: request() });
         let dry = Changed {
             node: ChangedNode {
                 boards_along: 2,
@@ -301,7 +300,7 @@ mod tests {
         };
         assert_eq!(
             changed_text(&dry),
-            "would move Plan to the trash, with 2 boards\nPOST /gapi/channel/b1/trash?a=1\n{\"x\":1}"
+            "would move Plan, with 2 boards\nPOST /gapi/channel/b1/trash?a=1\n{\"x\":1}"
         );
     }
 }

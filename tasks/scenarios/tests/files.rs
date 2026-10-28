@@ -199,28 +199,45 @@ async fn a_backup_is_taken_from_the_named_provider(
         .backup_made(
             "Roadmap",
             "snap-2",
-            "FROM-DRIVE",
-            ("2026-10-02T00:00:00Z", "drive"),
+            "FROM-OLD-STORE",
+            ("2026-10-02T00:00:00Z", "hocuspocus"),
         )
         .start()
         .await?;
     let on = holst.on(surface);
     then(
-        &on.download_backup("snap-2", "from-drive.ydoc", Some("drive"), false)
+        &on.download_backup("snap-2", "from-old.ydoc", Some("hocuspocus"), false)
             .await?,
     )
     .succeeded();
     assert_eq!(
-        downloaded(&holst, "from-drive.ydoc").as_deref(),
-        Some("FROM-DRIVE")
+        downloaded(&holst, "from-old.ydoc").as_deref(),
+        Some("FROM-OLD-STORE")
     );
     let observation = on
-        .download_backup("snap-1", "from-elsewhere.ydoc", Some("elsewhere"), false)
+        .download_backup("snap-1", "wrong-store.ydoc", Some("hocuspocus"), false)
         .await?;
     then(&observation)
         .failed_saying("not found")
         .signalled_as(surface.not_found());
-    assert_eq!(downloaded(&holst, "from-elsewhere.ydoc"), None);
+    assert_eq!(downloaded(&holst, "wrong-store.ydoc"), None);
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn an_unknown_backup_provider_is_a_usage_error(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_a_backup().start().await?;
+    let observation = holst
+        .on(surface)
+        .download_backup("snap-1", "elsewhere.ydoc", Some("elsewhere"), false)
+        .await?;
+    then(&observation)
+        .failed_saying("provider of `backup get` must be hud or hocuspocus")
+        .signalled_as(surface.usage());
+    assert_eq!(downloaded(&holst, "elsewhere.ydoc"), None);
     Ok(())
 }
 
