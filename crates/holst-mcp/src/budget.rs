@@ -3,6 +3,10 @@
 // The table shows with BUDGET_TABLE=1.
 
 #![expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests hand the real environment to the program under test"
+)]
 
 use std::io::Write as _;
 

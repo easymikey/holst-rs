@@ -1,5 +1,10 @@
 //! Tool calls against a scripted network.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests build and read real files in temp directories"
+)]
+
 use holst_core::command::{
     backup::BackupVerb,
     board::BoardVerb,

@@ -1,5 +1,10 @@
 //! Scenarios that run on the CLI and the MCP server against one fake Holst.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "the scenarios drive the real binary against real temp directories and the real environment"
+)]
+
 mod cli;
 mod comments;
 mod directory;

@@ -48,6 +48,10 @@ fn system_fonts(mut fonts: Database) -> Database {
     fonts
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the system layer cannot reach storage; this reads installed font files"
+)]
 fn keep_named_in_memory(fonts: &mut Database) {
     let named: BTreeSet<PathBuf> = fonts
         .faces()

@@ -2,6 +2,10 @@
 
 #![cfg(unix)]
 #![expect(clippy::panic_in_result_fn, reason = "assert is the point of a test")]
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests build and read real files in temp directories"
+)]
 
 mod support;
 

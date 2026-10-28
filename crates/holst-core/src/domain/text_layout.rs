@@ -196,6 +196,11 @@ pub fn count(length: usize) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::disallowed_methods,
+        reason = "tests measure and wait on real time"
+    )]
+
     use crate::domain::text_layout::{sticker_font_size, width, wrap};
 
     #[test]

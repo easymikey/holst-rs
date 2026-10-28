@@ -1,4 +1,8 @@
 #![expect(clippy::panic_in_result_fn, reason = "assert — the point of a test")]
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests measure and wait on real time"
+)]
 
 use std::{sync::PoisonError, time::Duration};
 

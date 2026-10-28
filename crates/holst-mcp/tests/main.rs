@@ -1,5 +1,9 @@
 //! The built `holst-mcp`; its test also makes cargo build it for scenarios.
 #![expect(clippy::panic_in_result_fn, reason = "assert is the point of a test")]
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests hand the real environment to the program under test"
+)]
 
 use std::process::Command;
 

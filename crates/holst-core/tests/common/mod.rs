@@ -1,5 +1,9 @@
 //! A local HTTP mock for the tests and the `resolve` bench (no Holst).
 #![expect(dead_code, reason = "every test crate takes its own part of the mock")]
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests measure and wait on real time"
+)]
 
 use std::{
     io,

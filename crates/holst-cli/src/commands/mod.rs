@@ -86,6 +86,10 @@ fn text_of(given: &str, stdin: &mut impl Read) -> Result<String> {
 }
 
 /// Returns the text of the file, or of stdin for `-`.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "reads the user-named body file; its error is the CLI's BodyFile, not a storage one"
+)]
 pub(crate) fn read_source(source: &str, stdin: &mut impl Read) -> Result<String> {
     if source == "-" {
         let mut text = String::new();

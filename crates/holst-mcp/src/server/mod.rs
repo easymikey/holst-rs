@@ -127,6 +127,10 @@ struct MonotonicClock(Instant);
 
 impl MonotonicClock {
     #[must_use]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "this is the server's clock: the one place that reads the monotonic time"
+    )]
     fn start() -> Self {
         Self(Instant::now())
     }

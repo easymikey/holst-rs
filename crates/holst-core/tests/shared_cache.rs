@@ -1,4 +1,9 @@
 //! Two handles on one cache directory, as two processes would hold it.
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests build and read real files in temp directories"
+)]
+
 use std::{fs, thread};
 
 use holst_core::{

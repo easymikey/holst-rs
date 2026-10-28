@@ -1,5 +1,10 @@
 //! The board cache with a synthetic 4000-object board, never real content.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "benches build and clear real cache directories"
+)]
+
 use std::{fs, io, path::PathBuf};
 
 use divan::{Bencher, black_box};

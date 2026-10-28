@@ -1,5 +1,10 @@
 //! State between calls: workspaces, trees and boards (dropped narrowly), `@N`.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "entries are stamped with Instant::now(); a clock threaded through every store and get is not worth it yet"
+)]
+
 pub(crate) mod alias;
 pub(crate) mod board_memory;
 pub(crate) mod invalidation;

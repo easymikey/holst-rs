@@ -156,6 +156,11 @@ undocumented_unsafe_blocks = "deny"
 missing_errors_doc = "deny"
 missing_panics_doc = "deny"
 
+# layer rules (clippy.toml)
+disallowed_macros = "deny"
+disallowed_methods = "deny"
+disallowed_types = "deny"
+
 # escape hatches
 allow_attributes = "deny"
 allow_attributes_without_reason = "deny"

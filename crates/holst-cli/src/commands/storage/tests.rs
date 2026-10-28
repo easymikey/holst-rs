@@ -1,4 +1,8 @@
 #![expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests build and read real files in temp directories"
+)]
 
 use std::path::PathBuf;
 

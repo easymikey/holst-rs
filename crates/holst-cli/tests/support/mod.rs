@@ -1,5 +1,10 @@
 //! The test environment of `holst` and a fake server.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests hand the real environment to the program under test"
+)]
+
 use std::{
     ffi::{OsStr, OsString},
     path::Path,

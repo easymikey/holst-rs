@@ -167,6 +167,10 @@ impl<T: Terminal> Form<T> {
         }
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the spinner paces frames on the tokio timer; there is no clock in the form"
+    )]
     async fn turn(&self, label: &str) -> Infallible {
         let origin = tokio::time::Instant::now();
         let frames = std::cell::Cell::new(1_u32);

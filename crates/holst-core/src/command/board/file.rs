@@ -39,10 +39,9 @@ use crate::{
         Result,
         confirmation::{ChangeRisk, Unconfirmed},
         input::InputError,
-        local_data::LocalDataError,
     },
     remote::{api, client::Client, socket::write::connector},
-    storage::file::write_new,
+    storage::file::{read, write_new},
 };
 
 const EXPORT: &str = "board export";
@@ -210,12 +209,7 @@ async fn imported(
     args: &ImportArgs,
 ) -> Result<Imported> {
     refuse_stray(args)?;
-    let file = std::fs::read(&args.file).map_err(|error| {
-        Error::LocalData(LocalDataError::FileRead {
-            path: PathBuf::from(&args.file),
-            error,
-        })
-    })?;
+    let file = read(&args.file)?;
     let state = compression::uncompressed(&file)?;
     let saved = document::saved_objects(&state)?;
     match &args.into {

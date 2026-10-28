@@ -335,6 +335,20 @@ fn already_exists(path: &Path) -> Error {
     })
 }
 
+/// The bytes of the local file `path`.
+///
+/// # Errors
+/// [`crate::error::local_data::LocalDataError::FileRead`].
+pub fn read(path: impl AsRef<Path>) -> Result<Vec<u8>> {
+    let path = path.as_ref();
+    fs::read(path).map_err(|error| {
+        Error::LocalData(LocalDataError::FileRead {
+            path: path.to_path_buf(),
+            error,
+        })
+    })
+}
+
 pub(crate) fn write_error(path: &Path, error: io::Error) -> Error {
     Error::LocalData(LocalDataError::FileWrite {
         path: path.to_path_buf(),

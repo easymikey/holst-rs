@@ -97,8 +97,11 @@ pub(crate) fn stopped_fallback() -> impl Future<Output = Signal> {
 /// Whether a command's own stop has taken a signal, so it is saving its login.
 static SIGNAL_TAKEN: AtomicBool = AtomicBool::new(false);
 
-/// Resolves after the first signal and the grace. When the command took that
-/// signal it is left to finish, and only a second signal resolves.
+/// Resolves after the first signal and grace; a taken one waits for a second.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the grace period is a real wait on the tokio timer, not a time reading"
+)]
 async fn deferred<S, Again: Future<Output = S>>(
     first: impl Future<Output = S>,
     again: impl FnOnce() -> Again,
@@ -318,6 +321,11 @@ pub(crate) async fn or_stopped<T>(
 
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::disallowed_methods,
+        reason = "tests measure and wait on real time"
+    )]
+
     use std::{
         future::{pending, ready},
         sync::atomic::{AtomicBool, Ordering},

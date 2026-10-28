@@ -29,6 +29,10 @@ async fn main() -> ExitCode {
     }
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "main.rs is the one place that reads the environment"
+)]
 async fn run(cli: Cli) -> ExitCode {
     // The one place the run's settings are built: flags, else the environment.
     let read_variable = |name: &str| std::env::var_os(name);

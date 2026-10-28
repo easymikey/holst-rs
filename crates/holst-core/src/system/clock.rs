@@ -1,3 +1,8 @@
+#![expect(
+    clippy::disallowed_methods,
+    reason = "the system clock is the one place that reads wall time and sleeps"
+)]
+
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::effect::{clock::Clock, http::BoxFuture};

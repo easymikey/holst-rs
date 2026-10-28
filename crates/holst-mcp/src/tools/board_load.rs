@@ -1,5 +1,10 @@
 //! Boards kept between calls: memory, then the disk cache, then the server.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "turns a cache age into an Instant; the loader holds no clock"
+)]
+
 use std::{
     sync::Arc,
     time::{Duration, Instant},

@@ -1,6 +1,6 @@
 //! `object add`: stickers, texts, shapes, frames, arrows, links, images, files.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use futures_util::{StreamExt as _, TryStreamExt as _, stream};
 
@@ -45,7 +45,6 @@ use crate::{
         board_change::BoardChangeError,
         http::HttpError,
         input::InputError,
-        local_data::LocalDataError,
     },
     remote::{
         api::{
@@ -55,7 +54,7 @@ use crate::{
         client::Client,
         socket::write::{connector, interpreter},
     },
-    storage::cache::Cache,
+    storage::{cache::Cache, file},
 };
 
 const COMMAND: &str = "object add";
@@ -532,12 +531,7 @@ impl Reader {
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .ok_or_else(|| self.bad("path", "a file"))?;
-        let bytes = std::fs::read(path).map_err(|error| {
-            Error::LocalData(LocalDataError::FileRead {
-                path: PathBuf::from(path),
-                error,
-            })
-        })?;
+        let bytes = file::read(path)?;
         Ok((name, bytes))
     }
 
@@ -840,6 +834,10 @@ impl Placement<'_> {
 
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::disallowed_methods,
+        reason = "tests build and read real files in temp directories"
+    )]
     #![expect(clippy::panic_in_result_fn, reason = "assert is the point of a test")]
 
     use std::sync::Arc;

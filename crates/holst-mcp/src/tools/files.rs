@@ -1,5 +1,10 @@
 //! Local files: the check of a file to upload and of a place to write to.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "the secret-place guard canonicalizes and probes the real file system"
+)]
+
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};

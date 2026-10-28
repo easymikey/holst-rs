@@ -24,12 +24,7 @@ use crate::{
         image::{ImageFormat, image_format},
     },
     effect::{board_write::WriteMode, settings::CacheSettings},
-    error::{
-        Error,
-        Result,
-        board_change::BoardChangeError,
-        local_data::LocalDataError,
-    },
+    error::{Error, Result, board_change::BoardChangeError},
     remote::{
         api::{
             self,
@@ -38,7 +33,7 @@ use crate::{
         client::Client,
         socket::write::{connector, open_with},
     },
-    storage::cache::Cache,
+    storage::{cache::Cache, file},
 };
 
 const EDIT: &str = "board edit";
@@ -151,12 +146,7 @@ fn cover_of(given: &str) -> Result<Cover> {
     match given {
         "reset" => Ok(Cover::Auto),
         path => {
-            let bytes = std::fs::read(path).map_err(|error| {
-                Error::LocalData(LocalDataError::FileRead {
-                    path: PathBuf::from(path),
-                    error,
-                })
-            })?;
+            let bytes = file::read(path)?;
             image_format(&bytes)
                 .filter(|format| *format != ImageFormat::Svg)
                 .map(|format| Cover::File {
@@ -322,6 +312,10 @@ async fn preview(client: &Client, loading: Loading<'_>, id: &str) -> Result<Vec<
 
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::disallowed_methods,
+        reason = "tests build and read real files in temp directories"
+    )]
     #![expect(clippy::panic_in_result_fn, reason = "assert is the point of a test")]
 
     use std::{path::PathBuf, sync::Arc};

@@ -241,6 +241,10 @@ async fn kept(
 
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::disallowed_methods,
+        reason = "tests build and read real files in temp directories"
+    )]
     #![expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
 
     use crate::{

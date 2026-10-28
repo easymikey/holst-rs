@@ -64,6 +64,10 @@ fn usage(arg: &str) -> Result<String, StartError> {
     }
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "main.rs is the one place that reads the environment"
+)]
 async fn serve() -> Result<(), StartError> {
     let (settings, refused) =
         holst_core::effect::settings::Settings::checked(|name| std::env::var_os(name))
