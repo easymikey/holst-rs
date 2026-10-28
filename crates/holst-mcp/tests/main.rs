@@ -40,10 +40,11 @@ async fn the_tools_are_listed_over_the_wire() -> Result<(), WireError> {
     let mut command = Command::new(env!("CARGO_BIN_EXE_holst-mcp"));
     command
         .env_clear()
-        .envs(
-            std::env::vars_os()
-                .filter(|(name, _)| name == "PATH" || name == "LLVM_PROFILE_FILE"),
-        )
+        .envs(std::env::vars_os().filter(|(name, _)| {
+            ["PATH", "SystemRoot", "LLVM_PROFILE_FILE"]
+                .iter()
+                .any(|kept| name.eq_ignore_ascii_case(kept))
+        }))
         .env("HOME", root.join("home"))
         .env("HOLST_HOME", root.join("holst"))
         .env("HOLST_CACHE_DIR", root.join("cache"));

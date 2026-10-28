@@ -119,7 +119,9 @@ impl Holst {
         command
             .env_clear()
             .envs(std::env::vars_os().filter(|(name, _)| {
-                name == "PATH" || name == "SystemRoot" || name == "LLVM_PROFILE_FILE"
+                ["PATH", "SystemRoot", "LLVM_PROFILE_FILE"]
+                    .iter()
+                    .any(|kept| name.eq_ignore_ascii_case(kept))
             }))
             .env("HOME", self.directory.join("home"))
             .env("HOLST_HOME", self.directory.join("holst"))

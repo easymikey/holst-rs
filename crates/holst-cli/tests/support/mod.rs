@@ -28,11 +28,11 @@ pub(crate) fn isolated_from(
     let mut command = Command::new(program);
     command
         .env_clear()
-        .envs(
-            parent
-                .into_iter()
-                .filter(|(name, _)| KEPT_VARIABLES.iter().any(|kept| name == kept)),
-        )
+        .envs(parent.into_iter().filter(|(name, _)| {
+            KEPT_VARIABLES
+                .iter()
+                .any(|kept| name.eq_ignore_ascii_case(kept))
+        }))
         .env("HOME", holst_home.with_extension("home"))
         .env("HOLST_HOME", holst_home)
         .env("HOLST_CACHE_DIR", holst_home.with_extension("cache"));
