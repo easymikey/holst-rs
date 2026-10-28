@@ -35,7 +35,7 @@ use crate::{
     error::{Error, Result},
     login::HandedClient,
     memory::alias::expand_json,
-    reply::change::written,
+    reply::{change::written, compact::Output},
     server::McpServer,
     tools::{
         files::{LocalFile, checked_download},
@@ -45,8 +45,10 @@ use crate::{
 
 /// The most items one call holds.
 const ITEMS_MAX: usize = 100;
-/// The objects a listing shows when the call gives no limit.
+/// The objects a text listing shows when the call gives no limit.
 const LIST_DEFAULT: u32 = 100;
+/// The same for `output: json`: 100 objects are 39 kB, over the reply limit.
+const LIST_DEFAULT_JSON: u32 = 25;
 /// The most objects a listing shows, also for a limit of 0, which asks for all.
 const LIST_MAX: u32 = 1_000;
 const TEXT_MAX_CHARS: usize = 120;
@@ -144,7 +146,7 @@ impl McpServer {
         match read {
             Ok((output, args)) => {
                 let args = LsArgs {
-                    limit: Some(listed_limit(args.limit)),
+                    limit: Some(listed_limit(args.limit, output)),
                     ..args
                 };
                 self.run(async |client| {
@@ -335,10 +337,13 @@ impl McpServer {
     }
 }
 
-/// The limit of a listing: 100 by default, never more than 1 000.
-fn listed_limit(given: Option<u32>) -> u32 {
+/// The limit of a listing: 100 by default (25 as JSON), never more than 1 000.
+fn listed_limit(given: Option<u32>, output: Output) -> u32 {
     match given {
-        None => LIST_DEFAULT,
+        None => match output {
+            Output::Text => LIST_DEFAULT,
+            Output::Json => LIST_DEFAULT_JSON,
+        },
         Some(0) => LIST_MAX,
         Some(limit) => limit.min(LIST_MAX),
     }
@@ -355,15 +360,28 @@ fn shorten(text: &str) -> String {
 mod tests {
     use rstest::rstest;
 
-    use super::{LIST_DEFAULT, LIST_MAX, TEXT_MAX_CHARS, listed_limit, shorten};
+    use super::{
+        LIST_DEFAULT,
+        LIST_DEFAULT_JSON,
+        LIST_MAX,
+        TEXT_MAX_CHARS,
+        listed_limit,
+        shorten,
+    };
+    use crate::reply::compact::Output;
 
     #[rstest]
-    #[case::none(None, LIST_DEFAULT)]
-    #[case::all(Some(0), LIST_MAX)]
-    #[case::some(Some(20), 20)]
-    #[case::too_many(Some(5_000), LIST_MAX)]
-    fn a_listing_has_a_limit(#[case] given: Option<u32>, #[case] shown: u32) {
-        assert_eq!(listed_limit(given), shown);
+    #[case::none(None, Output::Text, LIST_DEFAULT)]
+    #[case::none_json(None, Output::Json, LIST_DEFAULT_JSON)]
+    #[case::all(Some(0), Output::Text, LIST_MAX)]
+    #[case::some(Some(20), Output::Json, 20)]
+    #[case::too_many(Some(5_000), Output::Text, LIST_MAX)]
+    fn a_listing_has_a_limit(
+        #[case] given: Option<u32>,
+        #[case] output: Output,
+        #[case] shown: u32,
+    ) {
+        assert_eq!(listed_limit(given, output), shown);
     }
 
     #[test]

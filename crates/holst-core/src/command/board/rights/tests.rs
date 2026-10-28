@@ -195,3 +195,58 @@ async fn a_share_needs_a_setting_and_each_flag_takes_its_own_rights() -> Result<
     assert_eq!(fake.requests().len(), 0);
     Ok(())
 }
+
+/// A board the link does not open, whose members co-own it.
+fn closed_channel() -> HttpResponse {
+    json_reply(&json!({
+        "id": uuid(13),
+        "name": "Retro",
+        "workspace_id": uuid(1),
+        "public": false,
+        "public_access": null,
+        "workspace_member_access": "co_owner",
+        "who_can_copy_content": "viewer",
+    }))
+}
+
+#[tokio::test]
+async fn a_dry_run_share_tells_what_each_setting_was_and_becomes() -> Result<()> {
+    let (fake, client) = client([closed_channel()])?;
+    let shared = share(
+        &client,
+        &arguments(json!({
+            "board": uuid(13), "link": "viewer", "copy": "editor", "dry_run": true
+        }))?,
+    )
+    .await?;
+    assert_eq!(
+        shared.plan_lines(),
+        ["link: none \u{2192} viewer", "copy: viewer \u{2192} editor"]
+    );
+    assert_eq!(
+        serde_json::to_value(&shared)?.get("changes"),
+        Some(&json!([
+            { "setting": "link", "was": "none", "becomes": "viewer" },
+            { "setting": "copy", "was": "viewer", "becomes": "editor" },
+        ]))
+    );
+    assert!(written(&fake).is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_dry_run_share_of_a_setting_as_it_is_says_unchanged() -> Result<()> {
+    let (_fake, client) = client([closed_channel()])?;
+    let shared = share(
+        &client,
+        &arguments(json!({
+            "board": uuid(13), "members": "full", "copy": "viewer", "dry_run": true
+        }))?,
+    )
+    .await?;
+    assert_eq!(
+        shared.plan_lines(),
+        ["members: full (unchanged)", "copy: viewer (unchanged)"]
+    );
+    Ok(())
+}

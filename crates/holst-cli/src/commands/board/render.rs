@@ -131,7 +131,7 @@ fn shared_text(shared: &Shared) -> String {
     joined(
         [shared.phrase()]
             .into_iter()
-            .chain(shared.plans().flat_map(PlannedRequest::lines))
+            .chain(shared.plan_lines())
             .chain(place),
         "\n",
     )

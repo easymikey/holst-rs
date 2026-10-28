@@ -93,7 +93,15 @@ fn one_of(rights: &[Right]) -> String {
 
 /// A switch with words, for `--template`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::VariantNames,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    strum::VariantNames,
+    strum::Display,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
@@ -169,6 +177,9 @@ pub struct Shared {
     pub right: Option<Right>,
     /// The sharing settings a share set.
     pub settings: Option<Settings>,
+    /// What each setting a share names was, and becomes.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub changes: Vec<SettingChange>,
     /// The first request's report, or why nothing was sent.
     pub outcome: Settled,
     /// The reports of the requests after the first, in the order they go out.
@@ -195,7 +206,111 @@ pub struct Settings {
     pub template: Option<OnOff>,
 }
 
+/// One sharing setting: what it is now, and what the share makes it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SettingChange {
+    pub setting: &'static str,
+    pub was: String,
+    pub becomes: String,
+}
+
+impl SettingChange {
+    fn line(&self) -> String {
+        let Self {
+            setting,
+            was,
+            becomes,
+        } = self;
+        if was == becomes {
+            format!("{setting}: {was} (unchanged)")
+        } else {
+            format!("{setting}: {was} \u{2192} {becomes}")
+        }
+    }
+}
+
+/// The right the board's reply holds under `key`, in the words of the flags.
+fn right_was(channel: &Value, key: &str) -> String {
+    channel.get(key).map_or_else(
+        || "unknown".to_owned(),
+        |value| {
+            let wire = value.as_str();
+            BY_MEMBERS
+                .iter()
+                .find(|right| right.wire() == wire)
+                .map_or_else(|| value.to_string(), ToString::to_string)
+        },
+    )
+}
+
+/// Who opens the board by its link: none when it is not public.
+fn link_was(channel: &Value) -> String {
+    if channel.get("public").and_then(Value::as_bool) == Some(false) {
+        Right::None.to_string()
+    } else {
+        right_was(channel, "public_access")
+    }
+}
+
+fn template_was(channel: &Value) -> String {
+    channel
+        .get("share_as_template")
+        .and_then(Value::as_bool)
+        .map_or_else(
+            || "unknown".to_owned(),
+            |on| if on { OnOff::On } else { OnOff::Off }.to_string(),
+        )
+}
+
 impl Settings {
+    /// Each named setting with its value in `channel` (the board's reply) and
+    /// the one these settings give it.
+    fn changes(&self, channel: &Value) -> Vec<SettingChange> {
+        let rights = [
+            ("link", self.link, link_was(channel)),
+            (
+                "members",
+                self.members,
+                right_was(channel, "workspace_member_access"),
+            ),
+            (
+                "copy",
+                self.copy,
+                right_was(channel, "who_can_copy_content"),
+            ),
+            (
+                "delete",
+                self.delete,
+                right_was(channel, "who_can_delete_content"),
+            ),
+            (
+                "tools",
+                self.tools,
+                right_was(channel, "who_can_manage_collaboration_tools"),
+            ),
+            (
+                "lock",
+                self.lock,
+                right_was(channel, "who_can_manage_lock_content"),
+            ),
+        ];
+        rights
+            .into_iter()
+            .filter_map(|(setting, becomes, was)| {
+                becomes.map(|right| SettingChange {
+                    setting,
+                    was,
+                    becomes: right.to_string(),
+                })
+            })
+            .chain(self.template.map(|template| SettingChange {
+                setting: "template",
+                was: template_was(channel),
+                becomes: template.to_string(),
+            }))
+            .collect()
+    }
+
     /// The server's patches for these settings: the keys of the channel patch
     /// (who sees the board), and the `who_can_*` keys of `sharing_settings`.
     /// A patch with no key set is left out.
@@ -279,6 +394,17 @@ impl Shared {
             (_, RightsAction::Share, true) => {
                 format!("would change the sharing of {board}")
             }
+        }
+    }
+
+    /// What a change not sent would do, as lines: a share's settings with what
+    /// they were, else the requests as they would go out.
+    #[must_use]
+    pub fn plan_lines(&self) -> Vec<String> {
+        if self.changes.is_empty() {
+            self.plans().flat_map(PlannedRequest::lines).collect()
+        } else {
+            self.changes.iter().map(SettingChange::line).collect()
         }
     }
 
@@ -448,6 +574,7 @@ pub async fn share(client: &Client, args: &ShareArgs) -> Result<Shared> {
         || Err(no_setting()),
         |first| {
             Ok(Shared {
+                changes: settings.changes(&board.channel),
                 settings: Some(settings),
                 then: reports.collect(),
                 ..board.shared(client, RightsAction::Share, Settled::Carried(first))
@@ -616,6 +743,7 @@ impl Board {
             user: None,
             right: None,
             settings: None,
+            changes: Vec::new(),
             outcome,
             then: Vec::new(),
         }

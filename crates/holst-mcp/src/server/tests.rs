@@ -235,19 +235,24 @@ impl Backend for OnFake {
 
 /// A fake server with the board `Plans` of one sticker, and a client on it.
 async fn plans() -> holst_core::Result<(holst_core::fake::Fake, HandedClient, String)> {
+    plans_of(vec![holst_core::fake::FixtureObject::Sticker(
+        "Roadmap".into(),
+    )])
+    .await
+}
+
+/// A fake server with the board `Plans` of `objects`, and a client on it.
+async fn plans_of(
+    objects: Vec<holst_core::fake::FixtureObject>,
+) -> holst_core::Result<(holst_core::fake::Fake, HandedClient, String)> {
     use holst_core::{
         command::{login::connect, lookup},
-        fake::FixtureObject,
         system::{clock::SystemClock, id::RandomIds},
     };
 
     let seed = holst_core::fake::Fixture::default()
         .workspace("Team")
-        .board_with_objects(
-            "Plans",
-            "Team",
-            vec![FixtureObject::Sticker("Roadmap".into())],
-        );
+        .board_with_objects("Plans", "Team", objects);
     let fake = holst_core::fake::Fake::start(seed).await?;
     let client = connect(
         Some(fake_session()),
@@ -872,7 +877,16 @@ fn given(arguments: serde_json::Value) -> serde_json::Map<String, serde_json::Va
 /// A server on the fake of `plans`, and a client of the command line's on it.
 async fn on_fake()
 -> holst_core::Result<(holst_core::fake::Fake, McpServer, HandedClient)> {
-    let (fake, client, _) = plans().await?;
+    on_fake_of(vec![holst_core::fake::FixtureObject::Sticker(
+        "Roadmap".into(),
+    )])
+    .await
+}
+
+async fn on_fake_of(
+    objects: Vec<holst_core::fake::FixtureObject>,
+) -> holst_core::Result<(holst_core::fake::Fake, McpServer, HandedClient)> {
+    let (fake, client, _) = plans_of(objects).await?;
     let base_url = fake.base_url().to_owned();
     let holst =
         McpServer::with(Arc::new(OnFake { base_url }), Arc::new(Manual::default()));
@@ -885,7 +899,7 @@ async fn object_json_is_what_the_command_line_prints() -> holst_core::Result<()>
 
     let (_fake, holst, client) = on_fake().await?;
     let args = parse::<object::LsArgs>(given(
-        serde_json::json!({ "board": "Plans", "limit": 100 }),
+        serde_json::json!({ "board": "Plans", "limit": 25 }),
     ))?;
     let listing = object::list::ls(&client, &CacheSettings::default(), &args).await?;
     let call = serde_json::json!({ "board": "Plans", "output": "json" });
@@ -973,4 +987,40 @@ async fn a_file_for_a_picture_is_the_command_lines() {
         table_call(&holst, "board", given).await.0
     };
     assert!(refused(("file", "x.png".into())).await);
+}
+
+/// Stickers with a sentence each inside frames, arrows between them, shapes and
+/// free text: the richest kinds, `count` of them.
+fn rich_objects(count: u32) -> Vec<holst_core::fake::FixtureObject> {
+    use holst_core::fake::FixtureObject;
+
+    (1..=count)
+        .map(|n| match n % 5 {
+            0 => FixtureObject::Frame(format!("Quarter {n} roadmap")),
+            1 | 2 => FixtureObject::Sticker(format!(
+                "Retro note {n}: ship the sync fix before the quarter closes and tell the team"
+            ))
+            .inside((n / 5 + 1) * 5),
+            3 => FixtureObject::Arrow(n - 2, n - 1),
+            _ => FixtureObject::Shape(format!("Decision {n}")).inside((n / 5 + 1) * 5),
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn a_default_json_page_of_the_richest_kinds_fits_the_limit()
+-> holst_core::Result<()> {
+    let (_fake, holst, _) = on_fake_of(rich_objects(300)).await?;
+    let default = serde_json::json!({ "board": "Plans", "output": "json" });
+    let (failed, page) = table_call(&holst, "object", default).await;
+    // 100 of these objects are 39 111 bytes of JSON, 25 are about a quarter.
+    assert!(!failed && page.len() < 16_000, "{failed} {}", page.len());
+    let hundred =
+        serde_json::json!({ "board": "Plans", "output": "json", "limit": 100 });
+    let (refused, refusal) = table_call(&holst, "object", hundred).await;
+    assert!(
+        refused && refusal.contains("pass a lower `limit`"),
+        "{refusal}"
+    );
+    Ok(())
 }

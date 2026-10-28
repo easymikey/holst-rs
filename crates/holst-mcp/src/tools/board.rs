@@ -28,7 +28,7 @@ use holst_core::{
             tree::{ListedNode, Listing, ls},
             tree_change::{self, Changed},
         },
-        change::{ChangeReport, PlannedRequest},
+        change::ChangeReport,
         table::{CommandArgs, CommandName, parse},
     },
     domain::{
@@ -306,11 +306,7 @@ impl McpServer {
             Settled::Carried(
                 ChangeReport::DryRun { .. } | ChangeReport::Held { .. },
             ) => {
-                let lines = shared
-                    .plans()
-                    .flat_map(PlannedRequest::lines)
-                    .collect::<Vec<_>>()
-                    .join("\n");
+                let lines = shared.plan_lines().join("\n");
                 self.state.alias_text(&format!("{phrase}\n{lines}\n"))
             }
         }

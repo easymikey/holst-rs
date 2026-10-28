@@ -69,7 +69,7 @@ pub(crate) enum Error {
     SecretPlace { path: PathBuf },
 
     #[error(
-        "the JSON reply is {bytes} bytes, over the {max} byte limit: ask for a smaller limit"
+        "the JSON reply is {bytes} bytes, over the {max} byte limit: ask for a smaller page: pass a lower `limit`, or use output text"
     )]
     JsonTooLong { bytes: usize, max: usize },
 

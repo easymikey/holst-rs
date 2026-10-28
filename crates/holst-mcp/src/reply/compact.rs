@@ -388,7 +388,7 @@ mod tests {
         let err = render_json(&big).err().map(|err| err.to_string());
         assert!(
             err.as_deref()
-                .is_some_and(|text| text.contains("ask for a smaller limit")),
+                .is_some_and(|text| text.contains("pass a lower `limit`")),
             "{err:?}"
         );
         let small =
