@@ -424,6 +424,24 @@ pub struct EditArgs {
     )]
     pub opacity: Option<f64>,
     #[argument(
+        value_name = "marks",
+        help = "The marks of the whole text of a sticker, text or shape, and no others: any of bold, italic, underline, strikethrough, code, comma apart, or none; unchanged by default",
+        tool_doc = "Whole text: bold,italic,underline,strikethrough,code or none."
+    )]
+    pub mark: Option<String>,
+    #[argument(
+        value_name = "color",
+        help = "The color of the whole text of a sticker, text or shape: a palette token, e.g. red6; unchanged by default",
+        tool_doc = "Whole text, e.g. red6."
+    )]
+    pub text_color: Option<String>,
+    #[argument(
+        value_name = "color",
+        help = "The background of the whole text of a sticker, text or shape: a palette token, e.g. yellow4, or none; unchanged by default",
+        tool_doc = "Whole text, e.g. yellow4 or none."
+    )]
+    pub text_bg: Option<String>,
+    #[argument(
         value_name = "line",
         help = "An arrow's line: straight, elbow or curved; unchanged by default",
         tool_doc = "Arrow line."
@@ -471,6 +489,9 @@ pub struct EditItem {
     pub stroke_style: Option<StrokeStyle>,
     pub radius: Option<u32>,
     pub opacity: Option<f64>,
+    pub mark: Option<String>,
+    pub text_color: Option<String>,
+    pub text_bg: Option<String>,
     pub line: Option<ArrowType>,
     pub heads: Option<String>,
     pub order: Option<LayerOrder>,

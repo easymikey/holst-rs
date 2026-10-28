@@ -31,7 +31,7 @@ use crate::{
     domain::{
         area::scene::Scene,
         geometry::{Point, Size},
-        rich_text::read::markdown,
+        rich_text::{Mark, read::markdown},
     },
     error::{Error, Result, input::InputError},
     protocol::document,
@@ -709,6 +709,62 @@ fn slate_children<T: ReadTxn>(txn: &T, element: &XmlTextRef) -> Vec<Value> {
                 );
                 Value::Object(marks.chain(Some(text)).collect())
             }
+        })
+        .collect()
+}
+
+/// The marks every piece of the text of an object carries, in the editor's
+/// order; none for an object with no text.
+#[must_use]
+pub fn text_marks(document: &Doc, object: &Object) -> Vec<&'static str> {
+    let name = object
+        .fields
+        .get(document::DOCUMENT_ID)
+        .and_then(Value::as_str);
+    let documents = document.get_or_insert_map(document::DOCUMENTS);
+    let txn = document.transact();
+    let leaves = name
+        .and_then(|name| match documents.get(&txn, name) {
+            Some(Out::YXmlText(root)) => Some(leaf_marks(&slate_children(&txn, &root))),
+            _ => None,
+        })
+        .unwrap_or_default();
+    Mark::ALL
+        .into_iter()
+        .map(Mark::name)
+        .filter(|mark| {
+            !leaves.is_empty() && leaves.iter().all(|got| got.contains(mark))
+        })
+        .collect()
+}
+
+/// The marks of each non-empty piece of text under `nodes`.
+fn leaf_marks(nodes: &[Value]) -> Vec<Vec<&'static str>> {
+    nodes
+        .iter()
+        .flat_map(|node| {
+            node.get(document::CHILDREN)
+                .and_then(Value::as_array)
+                .map_or_else(
+                    || {
+                        node.get(document::TEXT)
+                            .and_then(Value::as_str)
+                            .filter(|text| !text.is_empty())
+                            .map(|_| {
+                                Mark::ALL
+                                    .into_iter()
+                                    .filter(|mark| {
+                                        node.get(mark.name())
+                                            == Some(&Value::Bool(true))
+                                    })
+                                    .map(Mark::name)
+                                    .collect()
+                            })
+                            .into_iter()
+                            .collect()
+                    },
+                    |children| leaf_marks(children),
+                )
         })
         .collect()
 }

@@ -4,17 +4,22 @@ use std::sync::Arc;
 
 use yrs::{
     Any,
+    Out,
     Text as _,
     TransactionMut,
     Xml as _,
     XmlTextPrelim,
     XmlTextRef,
-    types::Attrs,
+    types::{Attrs, text::YChange},
 };
 
-use crate::domain::{
-    id_source::IdSource,
-    rich_text::{Block, BlockKind, Run},
+use crate::{
+    domain::{
+        change::value::{Backdrop, TextLook},
+        id_source::IdSource,
+        rich_text::{Block, BlockKind, Mark, Run},
+    },
+    protocol::document::{BACKGROUND_COLOR_MARK, COLOR},
 };
 
 /// The colour token the editor sets on a link's text (bundle line 234938).
@@ -115,4 +120,72 @@ fn marks_of(run: &Run, linked: bool) -> Attrs {
         .map(|mark| (Arc::from(mark.name()), Any::Bool(true)))
         .chain(linked.then(|| (Arc::from("color"), Any::from(LINK_COLOR))))
         .collect()
+}
+
+/// The marks and colours of `look` on every leaf of the text under `root`.
+pub(super) fn restyle(
+    transaction: &mut TransactionMut<'_>,
+    root: &XmlTextRef,
+    look: &TextLook,
+) {
+    let marks = look.marks.iter().flat_map(|kept| {
+        Mark::ALL.map(|mark| {
+            let on = kept.contains(&mark);
+            (
+                mark.name(),
+                Some(if on { Any::Bool(true) } else { Any::Null }),
+            )
+        })
+    });
+    let colors = [
+        (
+            COLOR,
+            look.color.as_ref().map(|color| Any::from(color.as_str())),
+        ),
+        (
+            BACKGROUND_COLOR_MARK,
+            look.background.as_ref().map(|background| match background {
+                Backdrop::Clear => Any::Null,
+                Backdrop::Color(color) => Any::from(color.as_str()),
+            }),
+        ),
+    ];
+    let attrs: Attrs = marks
+        .chain(colors)
+        .filter_map(|(name, value)| Some((Arc::from(name), value?)))
+        .collect();
+    if !attrs.is_empty() {
+        format_leaves(transaction, root, &attrs);
+    }
+}
+
+/// `attrs` on the text of `element` and of the elements inside it.
+fn format_leaves(
+    transaction: &mut TransactionMut<'_>,
+    element: &XmlTextRef,
+    attrs: &Attrs,
+) {
+    let chunks = element.diff(&*transaction, YChange::identity);
+    // a leaf is formatted at the place the earlier chunks end
+    chunks.into_iter().fold(0_u32, |at, chunk| {
+        at + match chunk.insert {
+            Out::YXmlText(child) => {
+                format_leaves(transaction, &child, attrs);
+                1
+            }
+            Out::Any(Any::String(text)) => {
+                let len = u32::try_from(text.len()).unwrap_or(u32::MAX);
+                element.format(transaction, at, len, attrs.clone());
+                len
+            }
+            Out::Any(_)
+            | Out::YText(_)
+            | Out::YArray(_)
+            | Out::YMap(_)
+            | Out::YXmlElement(_)
+            | Out::YXmlFragment(_)
+            | Out::YDoc(_)
+            | Out::UndefinedRef(_) => 1,
+        }
+    });
 }

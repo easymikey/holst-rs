@@ -20,7 +20,7 @@ use crate::{
         id_source::IdSource,
         palette::Color,
         response::LinkPreview,
-        rich_text::{Kept, TextFormat},
+        rich_text::{Kept, Mark, TextFormat},
         text::joined,
         time::Timestamp,
     },
@@ -179,8 +179,25 @@ pub struct ObjectPatch {
     pub at: Option<Point>,
     pub size: Option<Size>,
     pub color: Option<Color>,
+    pub look: TextLook,
     pub shape: ShapeEdit,
     pub arrow: ArrowEdit,
+}
+
+/// What stands behind the text of an object.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Backdrop {
+    Clear,
+    Color(Color),
+}
+
+/// How the whole text of an object looks; a field left out stays as it is.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TextLook {
+    /// The marks the text carries and no others; empty clears them.
+    pub marks: Option<Vec<Mark>>,
+    pub color: Option<Color>,
+    pub background: Option<Backdrop>,
 }
 
 /// How a new arrow is drawn: its line and heads, its dash and width.

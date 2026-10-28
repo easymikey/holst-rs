@@ -16,10 +16,18 @@ use crate::{
         board::{LoadedBoard, arrow_look::ARROW_WIDTHS},
         change::{
             receipt::ChangeReport,
-            value::{ArrowEdit, BoardChange, ObjectEdit, ObjectPatch, ShapeEdit},
+            value::{
+                ArrowEdit,
+                Backdrop,
+                BoardChange,
+                ObjectEdit,
+                ObjectPatch,
+                ShapeEdit,
+                TextLook,
+            },
         },
         id,
-        rich_text::TextFormat,
+        rich_text::{Mark, TextFormat},
     },
     effect::{
         board_write::WriteInterpreter,
@@ -215,6 +223,9 @@ fn read_edits(args: &EditArgs) -> Result<Vec<ObjectEdit>> {
                 stroke_style: args.stroke_style,
                 radius: args.radius,
                 opacity: args.opacity,
+                mark: args.mark.clone(),
+                text_color: args.text_color.clone(),
+                text_bg: args.text_bg.clone(),
                 line: args.line,
                 heads: args.heads.clone(),
                 order: None,
@@ -265,6 +276,9 @@ fn refuse_with_items(args: &EditArgs) -> Result<()> {
         ("stroke-style", args.stroke_style.is_some()),
         ("radius", args.radius.is_some()),
         ("opacity", args.opacity.is_some()),
+        ("mark", args.mark.is_some()),
+        ("text_color", args.text_color.is_some()),
+        ("text_bg", args.text_bg.is_some()),
         ("line", args.line.is_some()),
         ("heads", args.heads.is_some()),
         ("order", args.order.is_some()),
@@ -322,6 +336,7 @@ fn patch_of(item: &EditItem, format: TextFormat) -> Result<ObjectPatch> {
     Ok(ObjectPatch {
         text: item.text.clone(),
         format,
+        look: look_of(item)?,
         at: item.at.as_deref().map(str::parse).transpose()?,
         size: item.size.as_deref().map(str::parse).transpose()?,
         color: item.color.as_deref().map(str::parse).transpose()?,
@@ -343,6 +358,39 @@ fn patch_of(item: &EditItem, format: TextFormat) -> Result<ObjectPatch> {
                 .unwrap_or_default(),
         },
     })
+}
+
+/// The marks and colors of the whole text the flags ask for.
+fn look_of(item: &EditItem) -> Result<TextLook> {
+    Ok(TextLook {
+        marks: item.mark.as_deref().map(marks_of).transpose()?,
+        color: item.text_color.as_deref().map(str::parse).transpose()?,
+        background: item
+            .text_bg
+            .as_deref()
+            .map(|raw| match raw.trim() {
+                "none" => Ok(Backdrop::Clear),
+                token => token.parse().map(Backdrop::Color),
+            })
+            .transpose()?,
+    })
+}
+
+/// The marks of a comma-apart list; `none` is no marks.
+fn marks_of(raw: &str) -> Result<Vec<Mark>> {
+    let listed = raw.split(',').map(str::trim).filter(|name| *name != "none");
+    listed
+        .filter(|name| !name.is_empty())
+        .map(|name| {
+            Mark::of(name).ok_or_else(|| {
+                not_value(
+                    EDIT,
+                    "mark",
+                    "bold, italic, underline, strikethrough, code or none",
+                )
+            })
+        })
+        .collect()
 }
 
 /// The tags asked for by title; a blank one asks for none.

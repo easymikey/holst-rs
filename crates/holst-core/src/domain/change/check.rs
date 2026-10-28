@@ -18,6 +18,7 @@ use crate::{
             Pasted,
             RemoveRight,
             ShapeEdit,
+            TextLook,
         },
         geometry,
         geometry::{Point, Rectangle, Size},
@@ -1027,6 +1028,12 @@ fn changeable_edit(
                 size: None,
                 color: None,
                 format: _,
+                look:
+                    TextLook {
+                        marks: None,
+                        color: None,
+                        background: None,
+                    },
                 shape,
                 arrow,
             },
@@ -1101,6 +1108,10 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
         kind,
         ObjectKind::Sticker | ObjectKind::Text | ObjectKind::Shape | ObjectKind::Frame
     );
+    let rich = matches!(
+        kind,
+        ObjectKind::Sticker | ObjectKind::Text | ObjectKind::Shape
+    );
     let place = !matches!(kind, ObjectKind::Arrow);
     let size = matches!(
         kind,
@@ -1138,6 +1149,31 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
         {
             unfit_field(kind, shape, arrow).map_or(Ok(()), refuse)
         }
+        (
+            ObjectPatch {
+                look: TextLook { marks: Some(_), .. },
+                ..
+            },
+            _,
+        ) if !rich => refuse("marks"),
+        (
+            ObjectPatch {
+                look: TextLook { color: Some(_), .. },
+                ..
+            },
+            _,
+        ) if !rich => refuse("text color"),
+        (
+            ObjectPatch {
+                look:
+                    TextLook {
+                        background: Some(_),
+                        ..
+                    },
+                ..
+            },
+            _,
+        ) if !rich => refuse("text background"),
         (
             ObjectPatch {
                 shape:

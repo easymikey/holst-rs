@@ -37,6 +37,10 @@ struct Listed {
     locked: bool,
     #[serde(default)]
     tags: Vec<String>,
+    #[serde(default)]
+    marks: Vec<String>,
+    text_color: Option<String>,
+    text_background: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -302,6 +306,12 @@ pub(crate) fn cli_objects(stdout: &[u8]) -> Result<Observation, ScenarioError> {
                 look: listed.look.map(|look| look.words()),
                 tags: listed.tags,
                 ends: listed.ends.map(|ends| (ends.start, ends.end)),
+                text_look: listed
+                    .marks
+                    .into_iter()
+                    .chain(listed.text_color.map(|color| format!("text:{color}")))
+                    .chain(listed.text_background.map(|color| format!("bg:{color}")))
+                    .collect(),
             })
             .collect(),
     ))
@@ -355,7 +365,9 @@ fn listed_object(line: &str) -> Option<ListedObject> {
         .iter()
         .enumerate()
         .filter(|(at, word)| {
-            !spoken_for.contains(at) && !word.contains('×') && !word.starts_with('#')
+            !spoken_for.contains(at)
+                && !word.contains('×')
+                && !word.starts_with(['#', '{'])
         })
         .skip(1)
         .map(|(_, word)| *word)
@@ -378,7 +390,7 @@ fn listed_object(line: &str) -> Option<ListedObject> {
             .find(|(at, word)| {
                 !spoken_for.contains(at)
                     && !word.contains('×')
-                    && !word.starts_with('#')
+                    && !word.starts_with(['#', '{'])
                     && **word != "locked"
             })
             .map(|(_, word)| (*word).to_owned()),
@@ -386,6 +398,13 @@ fn listed_object(line: &str) -> Option<ListedObject> {
         tags: rest
             .iter()
             .filter_map(|word| word.strip_prefix('#'))
+            .map(str::to_owned)
+            .collect(),
+        text_look: rest
+            .iter()
+            .find_map(|word| word.strip_prefix('{')?.strip_suffix('}'))
+            .into_iter()
+            .flat_map(|inner| inner.split(','))
             .map(str::to_owned)
             .collect(),
         ends: arrow.map(|at| {
@@ -557,6 +576,21 @@ impl Then<'_> {
                 .iter()
                 .any(|row| row.text == text && row.color.as_deref() == Some(color)),
             "expected {text:?} coloured {color}, got {:?}",
+            self.observation
+        );
+    }
+
+    /// Expects the object with this text to show exactly these marks and
+    /// colors of its whole text, e.g. `bold`, `text:red6`, `bg:yellow4`.
+    ///
+    /// # Panics
+    /// When there is none, or it differs.
+    pub fn lists_object_styled(&self, text: &str, look: &[&str]) {
+        assert!(
+            self.objects()
+                .iter()
+                .any(|row| row.text == text && row.text_look == look),
+            "expected {text:?} styled {look:?}, got {:?}",
             self.observation
         );
     }

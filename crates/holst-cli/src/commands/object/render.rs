@@ -69,6 +69,7 @@ fn object_line(listed: &ListedObject) -> String {
         .as_ref()
         .map(|look| format!("  {}", look.words()))
         .unwrap_or_default();
+    let style = listed.style.line();
     let ends = object
         .ends
         .as_ref()
@@ -91,7 +92,7 @@ fn object_line(listed: &ListedObject) -> String {
         format!("  \"{text}\"")
     };
     format!(
-        "@{} {:<7} {corner}{size}{inside}{color}{look}{ends}{padlock}{tags}{quoted}  {}",
+        "@{} {:<7} {corner}{size}{inside}{color}{look}{style}{ends}{padlock}{tags}{quoted}  {}",
         short(&object.id),
         object.kind.short_name(),
         listed.link
@@ -144,7 +145,7 @@ mod tests {
             board::picture::Delivery,
             object::{
                 get::{Downloaded, DownloadedObject},
-                list::{ListedObject, Listing},
+                list::{ListedObject, Listing, TextStyle},
             },
         },
         domain::board::{ArrowEnds, EditRight, Object, ObjectKind},
@@ -186,6 +187,7 @@ mod tests {
             file: None,
             card: None,
             tags: Vec::new(),
+            style: TextStyle::default(),
         }
     }
 

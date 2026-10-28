@@ -12,7 +12,7 @@ use std::{collections::BTreeSet, io::Write as _};
 
 use holst_core::{
     command::{
-        object::list::{ListedObject, Listing},
+        object::list::{ListedObject, Listing, TextStyle},
         search::{Found, SearchHit, SkippedBoard as SkippedBoardText, TextMatch},
     },
     domain::{
@@ -248,6 +248,7 @@ fn listed(holst: &McpServer, objects: &[Object]) -> String {
             file: None,
             card: None,
             tags: Vec::new(),
+            style: TextStyle::default(),
         })
         .collect();
     holst.object_listing_text(&Listing {

@@ -36,9 +36,26 @@ pub enum Mark {
     Italic,
     Strikethrough,
     Code,
+    /// Has no markdown form.
+    Underline,
 }
 
 impl Mark {
+    /// Every mark the editor knows.
+    pub const ALL: [Mark; 5] = [
+        Mark::Bold,
+        Mark::Italic,
+        Mark::Underline,
+        Mark::Strikethrough,
+        Mark::Code,
+    ];
+
+    /// The mark of an attribute name.
+    #[must_use]
+    pub fn of(name: &str) -> Option<Mark> {
+        Mark::ALL.into_iter().find(|mark| mark.name() == name)
+    }
+
     /// The name of the attribute.
     #[must_use]
     pub const fn name(self) -> &'static str {
@@ -47,6 +64,7 @@ impl Mark {
             Mark::Italic => "italic",
             Mark::Strikethrough => "strikethrough",
             Mark::Code => "code",
+            Mark::Underline => "underline",
         }
     }
 }

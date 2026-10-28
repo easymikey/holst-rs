@@ -145,6 +145,8 @@ pub struct ListedObject {
     /// A shape's kind and outline in the words of a listing line.
     pub look: Option<String>,
     pub tags: Vec<String>,
+    /// Marks and colors of the whole text: `bold`, `text:red6`, `bg:yellow4`.
+    pub text_look: Vec<String>,
     /// Where an arrow starts and ends, when attached.
     pub ends: Option<(Option<String>, Option<String>)>,
 }

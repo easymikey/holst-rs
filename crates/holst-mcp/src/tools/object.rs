@@ -335,6 +335,7 @@ impl McpServer {
             .as_ref()
             .map(|look| format!("  {}", look.words()))
             .unwrap_or_default();
+        let style = listed.style.line();
         let ends = object
             .ends
             .as_ref()
@@ -358,7 +359,7 @@ impl McpServer {
             format!("  \"{}\"", printable(&text))
         };
         format!(
-            "{} {:<7} {corner}{size}{inside}{color}{look}{ends}{padlock}{tags}{quoted}",
+            "{} {:<7} {corner}{size}{inside}{color}{look}{style}{ends}{padlock}{tags}{quoted}",
             alias(&object.id),
             object.kind.short_name(),
         )

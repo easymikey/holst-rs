@@ -1,6 +1,7 @@
 //! `object ls`: the objects of a board or a part of it.
 
 use serde::Serialize;
+use yrs::Doc;
 
 use crate::{
     command::{
@@ -26,6 +27,7 @@ use crate::{
             markdown_text,
             objects as board_objects,
             query::ObjectQuery,
+            text_marks,
         },
         geometry::Rectangle,
         id,
@@ -36,6 +38,7 @@ use crate::{
     },
     effect::settings::CacheSettings,
     error::Result,
+    protocol::document::{COLOR, TEXT_BACKGROUND_COLOR, TEXT_COLOR},
     remote::{client::Client, socket::write::connector},
     storage::cache::Cache,
 };
@@ -75,6 +78,55 @@ pub struct ListedObject {
     pub card: Option<LinkCard>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    #[serde(flatten)]
+    pub style: TextStyle,
+}
+
+/// The marks all of the text carries and the colors set on the object.
+#[derive(Debug, Default, Serialize)]
+pub struct TextStyle {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub marks: Vec<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_background: Option<String>,
+}
+
+impl TextStyle {
+    fn of(document: &Doc, object: &Object) -> Self {
+        let color = |name: &str| {
+            object
+                .fields
+                .get(name)
+                .and_then(|paint| paint.get(COLOR))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        };
+        Self {
+            marks: text_marks(document, object),
+            text_color: color(TEXT_COLOR),
+            text_background: color(TEXT_BACKGROUND_COLOR),
+        }
+    }
+
+    /// The word of a listing line, e.g. `{bold,text:red6,bg:yellow4}`; empty
+    /// for a plain text.
+    #[must_use]
+    pub fn line(&self) -> String {
+        let marks = self.marks.iter().map(|mark| (*mark).to_owned());
+        let text = self.text_color.as_ref().map(|name| format!("text:{name}"));
+        let background = self
+            .text_background
+            .as_ref()
+            .map(|name| format!("bg:{name}"));
+        let words: Vec<String> = marks.chain(text).chain(background).collect();
+        if words.is_empty() {
+            String::new()
+        } else {
+            format!("  {{{}}}", words.join(","))
+        }
+    }
 }
 
 /// The stored file of an image or a file object, with its address.
@@ -177,6 +229,7 @@ async fn listing(
                 }),
                 card: LinkCard::of(object),
                 tags: tags.of_object(object),
+                style: TextStyle::of(&loaded.document, object),
                 object: Object {
                     fields: serde_json::Value::Null,
                     text: markdown

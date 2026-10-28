@@ -25,6 +25,9 @@ FLAGS
       --stroke-style style   A shape's outline or an arrow's line: solid, dashed or dotted; unchanged by default
       --radius n             A shape's corner radius, at most as the shape's size allows; unchanged by default
       --opacity n            A shape's fill opacity, 0.1 to 1; unchanged by default
+      --mark marks           The marks of the whole text of a sticker, text or shape, and no others: any of bold, italic, underline, strikethrough, code, comma apart, or none; unchanged by default
+      --text-color color     The color of the whole text of a sticker, text or shape: a palette token, e.g. red6; unchanged by default
+      --text-bg color        The background of the whole text of a sticker, text or shape: a palette token, e.g. yellow4, or none; unchanged by default
       --line line            An arrow's line: straight, elbow or curved; unchanged by default
       --heads start,end      An arrow's heads, e.g. none,triangle-filled: none, figma, miro, arc, triangle-filled, triangle, circle-filled, circle, rhombus-filled, rhombus, stick, stick-stick, triadius, triadius-stick, triadius-circle, stick-circle or slash; an empty side keeps that end; unchanged by default
       --order order          Where it stands among the objects: front or back; unchanged by default

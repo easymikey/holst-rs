@@ -41,9 +41,10 @@ use crate::{
                 subtree,
             },
             journal,
-            rich::fill_blocks,
+            rich::{fill_blocks, restyle},
             value::{
                 ArrowLook,
+                Backdrop,
                 ChangeSources,
                 ChangedObject,
                 ImageUpload,
@@ -51,6 +52,7 @@ use crate::{
                 NewObject,
                 ObjectChangeKind,
                 ObjectPatch,
+                TextLook,
                 Upload,
             },
             write_group::{dissolve_after_removal, group, lock_only, ungroup, unlock},
@@ -94,6 +96,8 @@ use crate::{
         STROKE_COLOR,
         STROKE_WIDTH,
         TAG_IDS,
+        TEXT_BACKGROUND_COLOR,
+        TEXT_COLOR,
         TEXT_SCALE,
         TYPE,
         WIDTH,
@@ -598,6 +602,7 @@ pub(super) fn edit(
     let fields = states.get(id).cloned().unwrap_or_default();
     let map = object_map(transaction, &scope.roots.objects, id, kind)?;
     let content = content_changes(transaction, scope, edited, &fields);
+    restyle_text(transaction, scope, &fields, &content, &patch.look);
     // A moved object with no parent or a frame for one goes into the deepest frame.
     let held = subtree(states, id);
     let placed = placed_rectangle(patch, &fields);
@@ -676,7 +681,54 @@ fn content_changes(
                 json!({ (COLOR): color.as_str(), (OPACITY): patch.shape.opacity.map_or_else(|| json!(1), |opacity| json!(opacity)) }),
             )
         }))
+        .chain(
+            patch
+                .look
+                .color
+                .as_ref()
+                .map(|color| (TEXT_COLOR, painted(Some(color)))),
+        )
+        .chain(patch.look.background.as_ref().map(|background| {
+            let color = match background {
+                Backdrop::Clear => None,
+                Backdrop::Color(color) => Some(color),
+            };
+            (TEXT_BACKGROUND_COLOR, painted(color))
+        }))
         .collect()
+}
+
+/// A colour field as the web client stores it; none is transparent.
+fn painted(color: Option<&Color>) -> Value {
+    json!({
+        (COLOR): color.map(Color::as_str),
+        (OPACITY): u8::from(color.is_some()),
+    })
+}
+
+/// The marks and colours of the whole text, on the document the text is in.
+fn restyle_text(
+    transaction: &mut TransactionMut<'_>,
+    scope: &WriteTransaction<'_>,
+    fields: &Value,
+    written: &[(&'static str, Value)],
+    look: &TextLook,
+) {
+    let document = written
+        .iter()
+        .find(|(name, _)| *name == DOCUMENT_ID)
+        .map(|(_, value)| value)
+        .or_else(|| fields.get(DOCUMENT_ID))
+        .and_then(Value::as_str);
+    let root = document.and_then(|document| {
+        match scope.roots.documents.get(transaction, document) {
+            Some(Out::YXmlText(root)) => Some(root),
+            _ => None,
+        }
+    });
+    if let Some(root) = &root {
+        restyle(transaction, root, look);
+    }
 }
 
 /// A sticker, a stack and a text grow by `textScale` (the web client's corner
@@ -775,6 +827,9 @@ fn changed_names(
         patch.at.map(|_| "position"),
         patch.size.map(|_| "size"),
         patch.color.as_ref().map(|_| "color"),
+        patch.look.marks.as_ref().map(|_| "marks"),
+        patch.look.color.as_ref().map(|_| "text color"),
+        patch.look.background.as_ref().map(|_| "text background"),
         also.layer.map(|_| "order"),
         also.tag_ids.as_ref().map(|_| "tags"),
         reparented,

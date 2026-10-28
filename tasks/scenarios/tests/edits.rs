@@ -353,6 +353,28 @@ async fn each_object_kind_can_be_added(
     Ok(())
 }
 
+// Marks and colors of the whole text are written by an edit and listed.
+#[rstest]
+#[tokio::test]
+async fn marks_and_colours_of_the_whole_text_are_written_and_read_back(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = two_notes().start().await?;
+    let sticker = holst.fixture_object("Plans", 1)?;
+    let call = ObjectCall::edit()
+        .with("object", sticker)
+        .with("mark", "bold,underline")
+        .with("text_color", "red6")
+        .with("text_bg", "yellow4");
+    holst.on(surface).object("Plans", call).await?;
+    let shown = holst.on(surface).objects("Plans").await?;
+    then(&shown).lists_object_styled(
+        "Buy milk",
+        &["bold", "underline", "text:red6", "bg:yellow4"],
+    );
+    Ok(())
+}
+
 // Written as markdown, shown plain by default and as markdown on request.
 #[rstest]
 #[tokio::test]

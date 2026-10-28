@@ -712,6 +712,10 @@ expression: "*holst.tools"
           ],
           "type": "string"
         },
+        "mark": {
+          "description": "Whole text: bold,italic,underline,strikethrough,code or none.",
+          "type": "string"
+        },
         "no_embed": {
           "description": "Plain card.",
           "type": "boolean"
@@ -844,6 +848,14 @@ expression: "*holst.tools"
         },
         "text": {
           "description": "Lines are paragraphs.",
+          "type": "string"
+        },
+        "text_bg": {
+          "description": "Whole text, e.g. yellow4 or none.",
+          "type": "string"
+        },
+        "text_color": {
+          "description": "Whole text, e.g. red6.",
           "type": "string"
         },
         "text_format": {
