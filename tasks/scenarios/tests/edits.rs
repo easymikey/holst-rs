@@ -1341,6 +1341,79 @@ async fn a_table_is_not_rotated(
     Ok(())
 }
 
+fn one_of_kind(kind: &str) -> Given {
+    given().saved_login().workspace("Team").board_with_objects(
+        "Plans",
+        "Team",
+        vec![FixtureObject::Set(
+            Box::new(FixtureObject::Set(
+                Box::new(FixtureObject::Sticker("Roll".into())),
+                "type".into(),
+                json!(kind),
+            )),
+            "scale".into(),
+            json!(1),
+        )],
+    )
+}
+
+#[rstest]
+#[case::size("size", "384x384", "384x384")]
+#[case::scale("scale", "0.5", "96x96")]
+#[tokio::test]
+async fn a_die_is_resized_by_scale_and_read_back(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+    #[case] flag: &'static str,
+    #[case] value: &str,
+    #[case] drawn: &str,
+) -> Result<(), ScenarioError> {
+    let holst = one_of_kind("dice").start().await?;
+    let die = holst.fixture_object("Plans", 1)?;
+    let call = ObjectCall::edit().with("object", die).with(flag, value);
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
+    let observation = holst.on(surface).objects("Plans").await?;
+    then(&observation).lists_object_sized("Roll", drawn);
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_kanban_is_scaled_but_has_no_size(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = one_of_kind("kanban").start().await?;
+    let kanban = holst.fixture_object("Plans", 1)?;
+    let call = ObjectCall::edit()
+        .with("object", kanban)
+        .with("size", "400x300");
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("kanban objects have no size to change")
+        .signalled_as(surface.usage());
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_size_and_a_scale_together_are_refused(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = one_of_kind("dice").start().await?;
+    let die = holst.fixture_object("Plans", 1)?;
+    let call = ObjectCall::edit()
+        .with("object", die)
+        .with("size", "100x100")
+        .with("scale", "2");
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("left out with --size")
+        .signalled_as(surface.usage());
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
 fn three_overlapping_notes() -> Given {
     given().saved_login().workspace("Team").board_with_objects(
         "Plans",

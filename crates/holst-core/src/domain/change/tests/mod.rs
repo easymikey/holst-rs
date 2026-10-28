@@ -17,6 +17,7 @@ mod note;
 mod objects;
 mod remove;
 mod reparent;
+mod resize;
 mod rotation;
 mod shape_edit;
 mod text_width;

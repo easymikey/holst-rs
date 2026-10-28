@@ -20,7 +20,7 @@ use yrs::{
 
 use crate::{
     domain::{
-        area::scene::{Scene, text_scale},
+        area::scene::{Scene, drawn_scale, table_size, text_scale},
         board::{ObjectKind, any, object_with_text},
         change::{
             build::author_number,
@@ -67,6 +67,7 @@ use crate::{
         palette::Color,
         response::LinkPreview,
         rich_text::{Editor, TextFormat, parse},
+        text_layout,
         time::Timestamp,
     },
     error::{Error, Result, board_change::BoardChangeError},
@@ -74,6 +75,7 @@ use crate::{
         ARROW_TYPE,
         BACKGROUND_STYLE,
         COLOR,
+        COLUMN_PREFIX,
         CONTENT_HIDDEN,
         CONTROL,
         CREATED,
@@ -99,6 +101,8 @@ use crate::{
         RATIO,
         RELATIVE_POINT,
         ROTATION,
+        ROW_PREFIX,
+        SCALE,
         SHAPE_TYPE,
         SHOW_AUTHOR,
         START,
@@ -119,6 +123,8 @@ use crate::{
 pub(super) const LAYER_STEP: f64 = 1000.0;
 /// The short side of a sticker before `textScale`; the long one is twice it.
 const STICKER_SIDE: f64 = 192.0;
+/// The least a table row or column is resized to (main.a33651a4.js 206216).
+const MIN_TRACK: f64 = 32.0;
 
 pub(super) struct DocumentRoots {
     pub(super) objects: MapRef,
@@ -703,6 +709,13 @@ pub(super) fn edit(
             map.remove(transaction, name);
         }
     }
+    if let Some(size) = patch.size.filter(|_| *kind == ObjectKind::Table) {
+        // imperative: each track is a write to the transaction
+        for (name, value) in table_tracks(&fields, size) {
+            map.insert(transaction, name, any(&value)?);
+        }
+    }
+    let resized = frame_resized(transaction, scope, edited, &fields)?;
     let moved = match (patch.at, placed) {
         (Some(to), Some(rect)) => Some(MovedFrame {
             frame: id,
@@ -726,7 +739,112 @@ pub(super) fn edit(
     }]
     .into_iter()
     .chain(carried)
+    .chain(resized)
     .collect())
+}
+
+/// A table resized: the change in size is spread evenly over its rows and
+/// columns, none below 32 (main.a33651a4.js 206204-206227; the web also keeps
+/// a row as tall as its text, which is not measured here).
+fn table_tracks(fields: &Value, size: Size) -> Vec<(String, Value)> {
+    let now = table_size(fields);
+    let spread = |prefix: &str, side: &'static str, by: f64| {
+        let tracks: Vec<(&String, &Value)> = fields
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter(|(name, track)| name.starts_with(prefix) && track.is_object())
+            .collect();
+        let each = by / text_layout::count(tracks.len());
+        tracks
+            .into_iter()
+            .sorted_unstable_by_key(|(name, _)| name.as_str())
+            .map(|(name, track)| {
+                let before = track.get(side).and_then(Value::as_f64);
+                let grown = before.unwrap_or(if side == HEIGHT { 60.0 } else { 240.0 });
+                let length = (grown + each).max(MIN_TRACK);
+                let mut written = track.clone();
+                if let Some(entries) = written.as_object_mut() {
+                    entries.insert(side.to_owned(), json!(length));
+                    if side == HEIGHT {
+                        entries.insert("minHeight".to_owned(), json!(length));
+                    }
+                }
+                (name.clone(), written)
+            })
+            .collect::<Vec<_>>()
+    };
+    spread(COLUMN_PREFIX, WIDTH, size.width() - now.width)
+        .into_iter()
+        .chain(spread(ROW_PREFIX, HEIGHT, size.height() - now.height))
+        .collect()
+}
+
+/// A frame resized: what no longer meets it goes to its parent, what it now
+/// holds joins it (main.a33651a4.js 214966-215010); a moved frame does this
+/// with the move.
+fn frame_resized(
+    transaction: &mut TransactionMut<'_>,
+    scope: &WriteTransaction<'_>,
+    edited: &EditedObject<'_>,
+    fields: &Value,
+) -> Result<Vec<ChangedObject>> {
+    let EditedObject {
+        id, kind, patch, ..
+    } = *edited;
+    let states = scope.states;
+    let resized = patch
+        .size
+        .filter(|_| *kind == ObjectKind::Frame && patch.at.is_none())
+        .filter(|_| patch.frame.ratio.is_none())
+        .zip(rectangle_of(fields))
+        .map(|(size, now)| Rectangle::new(now.x, now.y, size.width(), size.height()));
+    resized.map_or(Ok(Vec::new()), |rectangle| {
+        let parent = parent_of(fields).map(str::to_owned);
+        let freed: Vec<String> = states
+            .iter()
+            .filter(|(_, stored)| {
+                parent_of(stored) == Some(id)
+                    && rectangle_of(stored)
+                        .is_some_and(|rect| !rectangle.intersects(&rect))
+            })
+            .map(|(child, _)| child.clone())
+            .sorted_unstable()
+            .collect();
+        let WriteTransaction { roots, stamp, .. } = *scope;
+        let released = freed
+            .into_iter()
+            .map(|child| {
+                let child_kind = kind_of(states, &child);
+                let map = object_map(transaction, &roots.objects, &child, &child_kind)?;
+                map.insert(transaction, PARENT_ID, any(&json!(parent))?);
+                map.insert(transaction, "updated", any(&stamp.json())?);
+                Ok(ChangedObject {
+                    id: child,
+                    kind: child_kind,
+                    change: ObjectChangeKind::Changed,
+                    fields: vec!["parent"],
+                    link: None,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let taken = if shows_content(states, id) {
+            adopt(
+                transaction,
+                scope,
+                &MovedFrame {
+                    frame: id,
+                    rectangle,
+                    parent,
+                    to: Point::ORIGIN,
+                    adopts: true,
+                },
+            )?
+        } else {
+            Vec::new()
+        };
+        Ok(released.into_iter().chain(taken).collect())
+    })
 }
 
 fn content_changes(
@@ -769,6 +887,17 @@ fn content_changes(
                 .into_iter()
                 .flat_map(|size| size_changes(&*transaction, scope, kind, fields, size)),
         )
+        .chain(patch.scale.map(|scale| {
+            let field = if matches!(
+                kind,
+                ObjectKind::Sticker | ObjectKind::StickerStack | ObjectKind::Text
+            ) {
+                TEXT_SCALE
+            } else {
+                SCALE
+            };
+            (field, json!(scale))
+        }))
         .chain(patch.width.into_iter().flat_map(|width| width_changes(width, fields)))
         .chain(patch.color.as_ref().map(|color| {
             (
@@ -915,27 +1044,71 @@ fn size_changes(
         ObjectKind::Sticker | ObjectKind::StickerStack | ObjectKind::Text => {
             scaled_size(transaction, scope, kind, fields, size)
         }
+        ObjectKind::Code
+        | ObjectKind::Dice
+        | ObjectKind::Wheel
+        | ObjectKind::Flipcard
+        | ObjectKind::File => rescaled(
+            transaction,
+            scope,
+            fields,
+            (size.height(), |rect| rect.height),
+        ),
+        ObjectKind::Drawing | ObjectKind::Task | ObjectKind::Link => rescaled(
+            transaction,
+            scope,
+            fields,
+            (size.width(), |rect| rect.width),
+        ),
         ObjectKind::Shape
         | ObjectKind::Document
         | ObjectKind::Frame
         | ObjectKind::Arrow
         | ObjectKind::Image
-        | ObjectKind::File
         | ObjectKind::Stamp
         | ObjectKind::Group
-        | ObjectKind::Table
         | ObjectKind::TableCell
-        | ObjectKind::Code
-        | ObjectKind::Drawing
-        | ObjectKind::Dice
-        | ObjectKind::Wheel
-        | ObjectKind::Flipcard
-        | ObjectKind::Task
-        | ObjectKind::Link
         | ObjectKind::Other(_) => {
             vec![(WIDTH, json!(size.width())), (HEIGHT, json!(size.height()))]
         }
+        // the rows and columns carry the size, written by `table_tracks`
+        ObjectKind::Table => Vec::new(),
     }
+}
+
+/// The `scale` that draws the object `wanted` long on a side, with the
+/// proportions kept and the corner where it is: wanted over the side at scale
+/// 1 (main.a33651a4.js 110870-110877, 114993-115002, 117329-117337,
+/// 118604-118625, 120086-120100, 121781-121789, 123507-123515). A drawing's
+/// scale is rounded to 3 places (109798).
+fn rescaled(
+    transaction: &TransactionMut<'_>,
+    scope: &WriteTransaction<'_>,
+    fields: &Value,
+    (wanted, side): (f64, fn(&Rectangle) -> f64),
+) -> Vec<(&'static str, Value)> {
+    let object = object_with_text(fields.clone(), transaction, &scope.roots.documents);
+    let base = object.as_ref().and_then(|object| {
+        let drawn = Scene::new(std::slice::from_ref(object)).rectangle_of(object)?;
+        Some((
+            side(&drawn) / drawn_scale(object),
+            object.kind == ObjectKind::Drawing,
+        ))
+    });
+    let scale = base
+        .map(|(base, rounded)| {
+            let scale = wanted / base;
+            if rounded {
+                (scale * 1000.0).round() / 1000.0
+            } else {
+                scale
+            }
+        })
+        .filter(|scale| scale.is_finite() && *scale > 0.0);
+    scale
+        .map(|scale| (SCALE, json!(scale)))
+        .into_iter()
+        .collect()
 }
 
 fn scaled_size(
@@ -998,6 +1171,7 @@ fn changed_names(
         patch.size.map(|_| "size"),
         patch.color.as_ref().map(|_| "color"),
         patch.rotation.map(|_| "rotation"),
+        patch.scale.map(|_| "scale"),
         patch.width.map(|_| "width"),
         patch.tick.map(|_| "checklist"),
         patch.look.marks.as_ref().map(|_| "marks"),

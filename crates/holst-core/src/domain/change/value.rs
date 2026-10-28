@@ -195,6 +195,8 @@ pub struct ObjectPatch {
     pub color: Option<Color>,
     /// Clockwise degrees to turn to; the position follows, keeping the centre.
     pub rotation: Option<f64>,
+    /// The factor a scaled kind or a text is drawn at.
+    pub scale: Option<f64>,
     pub link_to: Option<LinkTo>,
     pub width: Option<TextWidth>,
     pub tick: Option<Tick>,

@@ -17,7 +17,10 @@ use crate::{
         object::LsArgs,
     },
     domain::{
-        area::{listed_area, scene::text_scale},
+        area::{
+            listed_area,
+            scene::{Scene, drawn_at_scale, text_scale},
+        },
         board::{
             DrawnArrowEnds,
             EditRight,
@@ -217,6 +220,7 @@ async fn listing(
     let page = query.page_where(&selected.objects, |object| {
         tag.is_none_or(|tag| tags.has(object, tag))
     })?;
+    let scene = Scene::new(&objects);
     let markdown = args.text_format == Some(TextFormat::Markdown);
     let target = selected.target.map(|object| object.id.as_str());
     let base = client.base_url();
@@ -248,12 +252,24 @@ async fn listing(
                         .then(|| markdown_text(&loaded.document, object))
                         .flatten()
                         .unwrap_or_else(|| object.text.clone()),
-                    ..object.clone()
+                    ..drawn_size(&scene, object)
                 },
             })
             .collect(),
         id: board,
     })
+}
+
+/// The object, with the size it is drawn at when a scale sets that.
+fn drawn_size(scene: &Scene<'_>, object: &Object) -> Object {
+    let scaled = drawn_at_scale(&object.kind)
+        || matches!(object.kind, ObjectKind::Sticker | ObjectKind::StickerStack);
+    let rectangle = scene.rectangle_of(object).filter(|_| scaled);
+    Object {
+        width: rectangle.map_or(object.width, |rect| Some(rect.width)),
+        height: rectangle.map_or(object.height, |rect| Some(rect.height)),
+        ..object.clone()
+    }
 }
 
 fn widen(count: u32) -> usize {

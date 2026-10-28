@@ -841,6 +841,10 @@ expression: "*holst.tools"
           "description": "Degrees clockwise; not frame, table, group, arrow.",
           "type": "number"
         },
+        "scale": {
+          "description": "Factor; not with size.",
+          "type": "number"
+        },
         "shape": {
           "description": "Shape kind.",
           "enum": [

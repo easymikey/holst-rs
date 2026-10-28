@@ -40,6 +40,7 @@ FLAGS
       --show-content         Show the content of a frame again
       --frame frame|none     Move it into this frame: id, link, title or part of a title; none takes it out onto the board. It keeps its place relative to the frame and goes to the front there; unchanged by default
       --rotate deg           Turn to this angle in clockwise degrees, any number taken modulo 360; the corner moves so that the object turns about its centre; not for a frame, a table, a table cell, a group or an arrow; unchanged by default
+      --scale s              Scale a link, drawing, code, file, kanban, flipcard, dice, wheel or task to this factor above 0, or a sticker, text or sticker stack text to it; the corner stays; not with --size; unchanged by default
       --link-to link         What the object opens on click: a web address (http:// is added without a scheme), another object of the board by id, or none to take the link away; unchanged by default
       --width auto|n         A text's width: auto wraps it by its content, a number fixes it in board units; unchanged by default
       --check n              Tick the n-th checklist item of a sticker, text or shape, counting from 1 in reading order; unchanged by default

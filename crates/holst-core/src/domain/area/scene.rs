@@ -94,6 +94,12 @@ impl<'a> Scene<'a> {
                 fallback(160.0, 100.0)
             }
         }?;
+        let size = if drawn_at_scale(&object.kind) {
+            let by = drawn_scale(object);
+            StoredSize::new(size.width * by, size.height * by)
+        } else {
+            size
+        };
         let corner = if object.kind == ObjectKind::TableCell {
             self.cell_corner(object)
         } else {
@@ -369,6 +375,35 @@ pub fn text_scale(object: &Object) -> f64 {
         .unwrap_or(1.0)
 }
 
+/// Whether the kind is drawn at its `scale` (a drawing's points are scaled
+/// on their own).
+#[must_use]
+pub fn drawn_at_scale(kind: &ObjectKind) -> bool {
+    matches!(
+        kind,
+        ObjectKind::Code
+            | ObjectKind::Dice
+            | ObjectKind::Wheel
+            | ObjectKind::Flipcard
+            | ObjectKind::Task
+            | ObjectKind::Link
+            | ObjectKind::File
+    )
+}
+
+/// `scale` of an object; unset, a die is drawn at 0.5 and a wheel at 1.5
+/// (main.a33651a4.js 169136, 200219), anything else at 1.
+#[must_use]
+pub fn drawn_scale(object: &Object) -> f64 {
+    let unset = [(ObjectKind::Dice, 0.5), (ObjectKind::Wheel, 1.5)]
+        .into_iter()
+        .find_map(|(kind, scale)| (kind == object.kind).then_some(scale))
+        .unwrap_or(1.0);
+    number(&object.fields, document::SCALE)
+        .filter(|scale| *scale > 0.0)
+        .unwrap_or(unset)
+}
+
 /// Rotation in degrees, clockwise about the stored position.
 #[must_use]
 pub fn rotation(object: &Object) -> f64 {
@@ -457,7 +492,7 @@ fn tracks(fields: &Value, prefix: &str, default: f64, side: &str) -> Vec<Track> 
         .collect()
 }
 
-fn table_size(fields: &Value) -> StoredSize {
+pub(crate) fn table_size(fields: &Value) -> StoredSize {
     let sum = |prefix, default, side| {
         tracks(fields, prefix, default, side)
             .iter()

@@ -562,6 +562,12 @@ pub struct EditArgs {
     )]
     pub rotate: Option<f64>,
     #[argument(
+        value_name = "s",
+        help = "Scale a link, drawing, code, file, kanban, flipcard, dice, wheel or task to this factor above 0, or a sticker, text or sticker stack text to it; the corner stays; not with --size; unchanged by default",
+        tool_doc = "Factor; not with size."
+    )]
+    pub scale: Option<f64>,
+    #[argument(
         value_name = "link",
         help = "What the object opens on click: a web address (http:// is added without a scheme), another object of the board by id, or none to take the link away; unchanged by default",
         tool_doc = "URL, object id, or none."
@@ -637,6 +643,7 @@ pub struct EditItem {
     pub show_content: Option<bool>,
     pub frame: Option<String>,
     pub rotate: Option<f64>,
+    pub scale: Option<f64>,
     pub link_to: Option<String>,
     pub width: Option<String>,
     pub check: Option<u32>,
@@ -1032,7 +1039,7 @@ mod tests {
             "hide_content",
             "show_content",
         ];
-        const EDIT_KEYS: [&str; 26] = [
+        const EDIT_KEYS: [&str; 27] = [
             "object",
             "text",
             "at",
@@ -1053,6 +1060,7 @@ mod tests {
             "show_content",
             "frame",
             "rotate",
+            "scale",
             "link_to",
             "width",
             "check",

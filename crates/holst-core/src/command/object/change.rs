@@ -251,6 +251,7 @@ fn read_edits(args: &EditArgs, share: &str) -> Result<Vec<ObjectEdit>> {
                 show_content: args.show_content.then_some(true),
                 frame: args.frame.clone(),
                 rotate: args.rotate,
+                scale: args.scale,
                 link_to: args.link_to.clone(),
                 width: args.width.clone(),
                 check: args.check,
@@ -319,6 +320,7 @@ fn refuse_with_items(args: &EditArgs) -> Result<()> {
         ("show_content", args.show_content),
         ("frame", args.frame.is_some()),
         ("rotate", args.rotate.is_some()),
+        ("scale", args.scale.is_some()),
         ("link_to", args.link_to.is_some()),
         ("width", args.width.is_some()),
         ("check", args.check.is_some()),
@@ -391,6 +393,7 @@ fn patch_of(item: &EditItem, format: TextFormat, address: &str) -> Result<Object
                     .ok_or_else(|| not_value(EDIT, "rotate", "a number of degrees"))
             })
             .transpose()?,
+        scale: scale_of(item)?,
         link_to: item
             .link_to
             .as_deref()
@@ -430,6 +433,19 @@ fn patch_of(item: &EditItem, format: TextFormat, address: &str) -> Result<Object
         },
         reparent: item.frame.as_deref().map(reparent_of).transpose()?,
     })
+}
+
+/// What `--scale` says: a factor above 0, not beside a size that says the same.
+fn scale_of(item: &EditItem) -> Result<Option<f64>> {
+    item.scale
+        .map(|scale| match scale {
+            _ if item.size.is_some() => {
+                Err(not_value(EDIT, "scale", "left out with --size"))
+            }
+            _ if scale.is_finite() && scale > 0.0 => Ok(scale),
+            _ => Err(not_value(EDIT, "scale", "a number above 0")),
+        })
+        .transpose()
 }
 
 /// What `--frame` says: `none` for the board, else a frame.

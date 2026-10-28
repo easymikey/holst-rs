@@ -17,7 +17,7 @@ const REPEATED: [&str; 3] = ["object", "tag", "label"];
 /// Flags that hold a count, a number for the tool.
 const COUNTS: [&str; 6] = ["offset", "limit", "padding", "radius", "check", "uncheck"];
 /// Flags that hold a fraction, a number for the tool.
-const FRACTIONS: [&str; 3] = ["opacity", "stroke_width", "rotate"];
+const FRACTIONS: [&str; 4] = ["opacity", "stroke_width", "rotate", "scale"];
 
 /// How `--items` reaches the command line; the tool always gets an array.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

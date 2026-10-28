@@ -1217,6 +1217,7 @@ fn changeable_edit(
                 size: None,
                 color: None,
                 rotation: None,
+                scale: None,
                 link_to: None,
                 width: None,
                 tick: None,
@@ -1241,6 +1242,7 @@ fn changeable_edit(
             Err(Error::BoardChange(BoardChangeError::NothingToChange))
         }
         (patch, _, _) => fits(kind, held, patch)
+            .and(scales(kind, held, patch))
             .and(spins(kind, patch))
             .and(framed(kind, patch))
             .and(tags),
@@ -1378,6 +1380,67 @@ fn turns(kind: &ObjectKind) -> bool {
     )
 }
 
+/// Whether the web client resizes the kind (main.a33651a4.js 110870, 114350,
+/// 114993, 117329, 118604, 120086, 121781, 123507, 124216, 109786); a kanban
+/// has no stored size, only a scale.
+fn resizable(kind: &ObjectKind) -> bool {
+    matches!(
+        kind,
+        ObjectKind::Sticker
+            | ObjectKind::StickerStack
+            | ObjectKind::Text
+            | ObjectKind::Shape
+            | ObjectKind::Frame
+            | ObjectKind::Table
+            | ObjectKind::Code
+            | ObjectKind::Drawing
+            | ObjectKind::Dice
+            | ObjectKind::Wheel
+            | ObjectKind::Flipcard
+            | ObjectKind::Task
+            | ObjectKind::Link
+            | ObjectKind::File
+    ) || matches!(kind, ObjectKind::Other(name) if name == "phosphor-icon")
+}
+
+/// Whether the kind takes the `scale` the patch asks for, and a task card in
+/// a kanban a new size at all: the kanban sizes it (main.a33651a4.js 114995).
+fn scales(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()> {
+    let refuse = |named: String, field| {
+        Err(Error::BoardChange(BoardChangeError::NotChangeable {
+            kind: named,
+            field,
+        }))
+    };
+    match (held, patch.size.is_some() || patch.scale.is_some()) {
+        (Some(Held { object, container }), true) if *kind == ObjectKind::Task => {
+            refuse(format!("{object} in a {container}"), "size")
+        }
+        _ if patch.scale.is_some() && !scaled(kind) => {
+            refuse(kind.as_str().to_owned(), "scale")
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Whether the kind is drawn at a `scale` or a `textScale`.
+fn scaled(kind: &ObjectKind) -> bool {
+    matches!(
+        kind,
+        ObjectKind::Sticker
+            | ObjectKind::StickerStack
+            | ObjectKind::Text
+            | ObjectKind::Code
+            | ObjectKind::Drawing
+            | ObjectKind::Dice
+            | ObjectKind::Wheel
+            | ObjectKind::Flipcard
+            | ObjectKind::Task
+            | ObjectKind::Link
+            | ObjectKind::File
+    ) || matches!(kind, ObjectKind::Other(name) if name == "kanban")
+}
+
 /// Whether the kind has what the patch changes.
 fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()> {
     let refuse = |field| {
@@ -1395,14 +1458,7 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
         ObjectKind::Sticker | ObjectKind::Text | ObjectKind::Shape
     );
     let place = !matches!(kind, ObjectKind::Arrow);
-    let size = matches!(
-        kind,
-        ObjectKind::Sticker
-            | ObjectKind::StickerStack
-            | ObjectKind::Text
-            | ObjectKind::Shape
-            | ObjectKind::Frame
-    );
+    let size = resizable(kind);
     let color = matches!(
         kind,
         ObjectKind::Sticker | ObjectKind::Shape | ObjectKind::Frame | ObjectKind::Arrow
