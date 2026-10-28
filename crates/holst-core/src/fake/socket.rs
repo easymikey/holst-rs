@@ -1,4 +1,4 @@
-// The hud WebSocket of docs/board-protocol.md: serves a filled board.
+// The hud WebSocket: serves a filled board.
 
 use std::{io, sync::PoisonError};
 
