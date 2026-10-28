@@ -328,8 +328,12 @@ async fn png(svg: &str, images: &Images) -> Result<Vec<u8>> {
 }
 
 #[cfg(not(feature = "png"))]
-async fn png(_: &str, _: &Images) -> Result<Vec<u8>> {
-    Err(not_value(SNAP, "format", "svg: this build draws no PNG"))
+fn png(_: &str, _: &Images) -> impl Future<Output = Result<Vec<u8>>> {
+    std::future::ready(Err(not_value(
+        SNAP,
+        "format",
+        "svg: this build draws no PNG",
+    )))
 }
 
 /// As asked, else by the file's extension, else PNG.

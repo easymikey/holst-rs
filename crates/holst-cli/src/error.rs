@@ -44,12 +44,6 @@ pub(crate) enum Error {
     #[error("the SVG picture is not printed on a terminal")]
     SvgToTerminal,
 
-    #[cfg(not(feature = "png"))]
-    #[error(
-        "this holst was built without PNG support: save as .svg, or build it with the default features"
-    )]
-    NoPng,
-
     #[error(
         "there is no home directory to find ~/Downloads in: give a file or --to <dir>"
     )]
@@ -228,8 +222,6 @@ impl Error {
             | Error::ItemsNotJson(_)
             | Error::BodyFile { .. }
             | Error::NotCleaned { .. } => None,
-            #[cfg(not(feature = "png"))]
-            Error::NoPng => None,
         }
     }
 }

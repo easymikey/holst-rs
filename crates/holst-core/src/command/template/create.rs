@@ -249,13 +249,13 @@ async fn thumbnail_file(
 
 /// A build without PNG uploads the SVG.
 #[cfg(not(feature = "png"))]
-async fn thumbnail_file(
+fn thumbnail_file(
     _: &Client,
     drawn: &picture::Picture,
-) -> Result<(&'static str, Vec<u8>, ImageFormat)> {
-    Ok((
+) -> impl Future<Output = Result<(&'static str, Vec<u8>, ImageFormat)>> {
+    std::future::ready(Ok((
         "thumbnail.svg",
         drawn.svg.clone().into_bytes(),
         ImageFormat::Svg,
-    ))
+    )))
 }

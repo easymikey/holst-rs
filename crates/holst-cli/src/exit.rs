@@ -119,8 +119,6 @@ pub(crate) fn report(error: &Error) -> ExitCode {
         | Error::QueryNoEquals { .. }
         | Error::BodyFile { .. }
         | Error::ItemsNotJson(_) => print(error, code),
-        #[cfg(not(feature = "png"))]
-        Error::NoPng => print(error, code),
     }
 }
 
@@ -165,8 +163,6 @@ pub(crate) fn code(error: &Error) -> u8 {
         | Error::SessionNotAccepted(_)
         | Error::Unconfirmed(_) => EX_NOPERM,
         Error::NoDownloads => EX_CONFIG,
-        #[cfg(not(feature = "png"))]
-        Error::NoPng => EX_UNAVAILABLE,
     }
 }
 
