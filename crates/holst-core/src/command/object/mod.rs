@@ -294,6 +294,14 @@ pub struct AddArgs {
     )]
     pub stroke_width: Option<f64>,
     #[argument(
+        value_name = "text[@pos]",
+        help = "An arrow's label, repeat for several; text@0.25 puts it a quarter of the way from the start, in the middle by default",
+        tool_doc = "Arrow labels text[@0..1]; an edit replaces the old.",
+        kinds = [arrow]
+    )]
+    #[serde(default)]
+    pub label: Vec<String>,
+    #[argument(
         value_name = "file",
         help = "Many in one write: a JSON array or JSON lines file, - for stdin; its keys are the flags of one call",
         tool_doc = "Many at once, each with the arguments of one; at most 100 per call."
@@ -320,6 +328,8 @@ pub struct AddItem {
     pub heads: Option<String>,
     pub stroke_style: Option<StrokeStyle>,
     pub stroke_width: Option<f64>,
+    #[serde(default)]
+    pub label: Vec<String>,
     pub url: Option<String>,
     pub path: Option<String>,
     pub no_embed: Option<bool>,
@@ -472,6 +482,13 @@ pub struct EditArgs {
     )]
     pub to: Option<String>,
     #[argument(
+        value_name = "text[@pos]",
+        help = "An arrow's labels, repeat for several; they replace the ones it has; text@0.25 puts one a quarter of the way from the start, in the middle by default; unchanged by default",
+        tool_doc = "Arrow labels text[@0..1]; an edit replaces the old."
+    )]
+    #[serde(default)]
+    pub label: Vec<String>,
+    #[argument(
         value_name = "deg",
         help = "Turn to this angle in clockwise degrees, any number taken modulo 360; the corner moves so that the object turns about its centre; not for a frame, a table, a table cell, a group or an arrow; unchanged by default",
         tool_doc = "Degrees clockwise; not frame, table, group, arrow."
@@ -521,6 +538,8 @@ pub struct EditItem {
     pub bend: Option<String>,
     pub from: Option<String>,
     pub to: Option<String>,
+    #[serde(default)]
+    pub label: Vec<String>,
     pub rotate: Option<f64>,
     pub order: Option<LayerOrder>,
     #[serde(default)]
@@ -836,6 +855,7 @@ mod tests {
                     ("heads", &["arrow"][..]),
                     ("stroke_style", &["arrow"][..]),
                     ("stroke_width", &["arrow"][..]),
+                    ("label", &["arrow"][..]),
                 ]
             )
         );
@@ -843,7 +863,7 @@ mod tests {
 
     #[test]
     fn the_keys_of_an_item_are_flags_of_one_call() {
-        const ADD_KEYS: [&str; 16] = [
+        const ADD_KEYS: [&str; 17] = [
             "kind",
             "text",
             "shape",
@@ -857,11 +877,12 @@ mod tests {
             "heads",
             "stroke_style",
             "stroke_width",
+            "label",
             "url",
             "path",
             "no_embed",
         ];
-        const EDIT_KEYS: [&str; 16] = [
+        const EDIT_KEYS: [&str; 17] = [
             "object",
             "text",
             "at",
@@ -875,6 +896,7 @@ mod tests {
             "opacity",
             "line",
             "heads",
+            "label",
             "rotate",
             "order",
             "tag",

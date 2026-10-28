@@ -560,6 +560,70 @@ async fn an_arrow_edit_with_a_wrong_look_is_refused(
 }
 
 #[rstest]
+#[tokio::test]
+async fn an_arrow_is_added_with_labels(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = two_notes().start().await?;
+    let call = ObjectCall::add("arrow")
+        .with("from", holst.fixture_object("Plans", 1)?)
+        .with("to", holst.fixture_object("Plans", 2)?)
+        .with("label", "Yes@0.25")
+        .with("label", "No");
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
+    let observation = holst.on(surface).objects("Plans").await?;
+    then(&observation).lists_arrow_looking(
+        "elbow sides right,auto labels Yes@0.25 No@0.5 stroke gray12",
+    );
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn an_arrow_edit_replaces_its_labels(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = one_arrow().start().await?;
+    let arrow = holst.fixture_object("Plans", 3)?;
+    let first = ObjectCall::edit()
+        .with("object", arrow.clone())
+        .with("label", "Yes@0.25")
+        .with("label", "No");
+    let added = holst.on(surface).object("Plans", first).await?;
+    then(&added).succeeded();
+    let second = ObjectCall::edit()
+        .with("object", arrow)
+        .with("label", "Maybe@1");
+    let written = holst.on(surface).object("Plans", second).await?;
+    then(&written).succeeded();
+    let observation = holst.on(surface).objects("Plans").await?;
+    then(&observation).lists_arrow_looking("elbow labels Maybe@1 stroke gray8 2px");
+    Ok(())
+}
+
+#[rstest]
+#[case::empty("")]
+#[case::off_the_arrow("Yes@2")]
+#[tokio::test]
+async fn an_arrow_edit_with_a_wrong_label_is_refused(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+    #[case] label: &'static str,
+) -> Result<(), ScenarioError> {
+    let holst = one_arrow().start().await?;
+    let arrow = holst.fixture_object("Plans", 3)?;
+    let call = ObjectCall::edit()
+        .with("object", arrow)
+        .with("label", label);
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("is not a label")
+        .signalled_as(surface.usage());
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
 #[case::curved("curved", "300,200", "curved bend 300,200 stroke gray8 2px")]
 #[case::elbow("elbow", ",250", "elbow bend ,250 stroke gray8 2px")]
 #[tokio::test]

@@ -373,6 +373,7 @@ fn read_items(args: &AddArgs) -> Result<Vec<Item>> {
         ("heads", args.heads.is_some()),
         ("stroke_style", args.stroke_style.is_some()),
         ("stroke_width", args.stroke_width.is_some()),
+        ("label", !args.label.is_empty()),
         ("url", args.url.is_some()),
         ("path", args.path.is_some()),
         ("no_embed", args.no_embed),
@@ -397,6 +398,7 @@ fn read_items(args: &AddArgs) -> Result<Vec<Item>> {
         heads: args.heads.clone(),
         stroke_style: args.stroke_style,
         stroke_width: args.stroke_width,
+        label: args.label.clone(),
         url: args.url.clone(),
         path: args.path.clone(),
         no_embed: args.no_embed.then_some(true),
@@ -454,6 +456,7 @@ impl Reader {
             ("heads", item.heads.is_some()),
             ("stroke_style", item.stroke_style.is_some()),
             ("stroke_width", item.stroke_width.is_some()),
+            ("label", !item.label.is_empty()),
         ]
         .into_iter()
         .find_map(|(name, given)| (given && kind != AddKind::Arrow).then_some(name))
@@ -655,7 +658,7 @@ const fn word(kind: AddKind) -> &'static str {
     }
 }
 
-/// How the item draws an arrow: its line, heads, dash and width.
+/// How the item draws an arrow: its line, heads, labels, dash and width.
 fn arrow_look(item: &AddItem) -> Result<ArrowLook> {
     Ok(ArrowLook {
         arrow: ArrowEdit {
@@ -666,6 +669,11 @@ fn arrow_look(item: &AddItem) -> Result<ArrowLook> {
                 .map(str::parse)
                 .transpose()?
                 .unwrap_or_default(),
+            labels: item
+                .label
+                .iter()
+                .map(|raw| raw.parse())
+                .collect::<Result<_>>()?,
             ..ArrowEdit::default()
         },
         outline: ShapeEdit {

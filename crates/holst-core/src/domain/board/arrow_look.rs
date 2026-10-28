@@ -182,6 +182,43 @@ impl FromStr for Bend {
     }
 }
 
+const LABEL_EXPECTED: &str =
+    "a label: text, or text@0.5 to place it from 0 (start) to 1 (end)";
+
+/// A text on an arrow and where along the arrow it sits.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Label {
+    pub text: String,
+    pub position: f64,
+}
+
+impl FromStr for Label {
+    type Err = Error;
+
+    fn from_str(raw: &str) -> Result<Self> {
+        let bad = || {
+            Error::BoardChange(BoardChangeError::NotArrowLook {
+                raw: raw.into(),
+                expected: LABEL_EXPECTED,
+            })
+        };
+        // BUNDLE: no position means the middle (main.a33651a4.js 166325).
+        let (text, position) = match raw.rsplit_once('@') {
+            Some((text, place)) => place
+                .trim()
+                .parse::<f64>()
+                .map_or((raw, 0.5), |place| (text, place)),
+            None => (raw, 0.5),
+        };
+        ((0.0..=1.0).contains(&position) && !text.trim().is_empty())
+            .then(|| Self {
+                text: text.to_owned(),
+                position,
+            })
+            .ok_or_else(bad)
+    }
+}
+
 /// A side of a box an arrow end sticks to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EndSide {
@@ -275,6 +312,24 @@ mod tests {
         let at = "120,-80.5".parse::<Bend>().ok();
         assert_eq!(at.map(|bend| bend.suits(ArrowType::Straight)), Some(true));
         assert_eq!(at.map(|bend| bend.suits(ArrowType::Elbow)), Some(false));
+    }
+
+    #[test]
+    fn a_label_is_a_text_and_a_place_along_the_arrow() {
+        let placed = "Yes@0.25".parse::<Label>().ok();
+        assert_eq!(placed.map(|label| label.position), Some(0.25));
+        let plain = "a@b.c".parse::<Label>().ok();
+        assert_eq!(plain.map(|label| label.text), Some("a@b.c".to_owned()));
+        let middle = "Yes".parse::<Label>().ok();
+        assert_eq!(middle.map(|label| label.position), Some(0.5));
+    }
+
+    #[test]
+    fn a_label_with_no_text_or_a_place_off_the_arrow_is_refused() {
+        assert!("".parse::<Label>().is_err());
+        assert!("@0.5".parse::<Label>().is_err());
+        assert!("Yes@1.5".parse::<Label>().is_err());
+        assert!("Yes@-1".parse::<Label>().is_err());
     }
 
     #[test]

@@ -13,7 +13,7 @@ use crate::{
 };
 
 /// Flags the command line repeats and the tool takes as an array.
-const REPEATED: [&str; 2] = ["object", "tag"];
+const REPEATED: [&str; 3] = ["object", "tag", "label"];
 /// Flags that hold a count, a number for the tool.
 const COUNTS: [&str; 4] = ["offset", "limit", "padding", "radius"];
 /// Flags that hold a fraction, a number for the tool.
@@ -154,8 +154,8 @@ impl ObjectCall {
         }
     }
 
-    /// Sets the flag `name` (the tool's field of the same name); `object` and
-    /// `tag` can be set again and again.
+    /// Sets the flag `name` (the tool's field of the same name); `object`,
+    /// `tag` and `label` can be set again and again.
     #[must_use]
     pub fn with(self, name: &'static str, value: impl Into<String>) -> Self {
         Self {

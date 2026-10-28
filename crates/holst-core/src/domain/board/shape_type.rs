@@ -18,11 +18,14 @@ use crate::{
         MIDWAY_CONTROLS,
         OBJECT_ID,
         OPACITY,
+        POSITION,
         SHAPE_TYPE,
         START,
         STROKE_COLOR,
         STROKE_STYLE,
         STROKE_WIDTH,
+        TEXT,
+        TEXTS,
     },
 };
 
@@ -212,6 +215,9 @@ pub struct ShapeLook {
     /// An arrow's sides as `start,end`: top to left, `auto`, or `free`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sides: Option<String>,
+    /// An arrow's labels as `text@position`, the place from 0 to 1.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
 }
 
 impl ShapeLook {
@@ -236,6 +242,7 @@ impl ShapeLook {
             heads: heads_of(fields),
             bend: bend_of(fields),
             sides: sides_of(fields),
+            labels: labels_of(fields),
         };
         (look.shape.is_some() || look.stroke.is_some()).then_some(look)
     }
@@ -249,6 +256,8 @@ impl ShapeLook {
             self.heads.as_ref().map(|heads| format!("heads {heads}")),
             (!self.bend.is_empty()).then(|| format!("bend {}", self.bend.join(" "))),
             self.sides.as_ref().map(|sides| format!("sides {sides}")),
+            (!self.labels.is_empty())
+                .then(|| format!("labels {}", self.labels.join(" "))),
             self.stroke
                 .as_ref()
                 .map(|stroke| format!("stroke {stroke}")),
@@ -294,6 +303,22 @@ fn bend_of(fields: &Value) -> Vec<String> {
                 y: axis(control, "y"),
             }
             .to_string()
+        })
+        .collect()
+}
+
+/// The labels of an arrow as `text@position`; a label with no place sits in
+/// the middle.
+fn labels_of(fields: &Value) -> Vec<String> {
+    fields
+        .get(TEXTS)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|label| {
+            let text = label.get(TEXT).and_then(Value::as_str)?;
+            let place = label.get(POSITION).and_then(Value::as_f64).unwrap_or(0.5);
+            Some(format!("{text}@{place}"))
         })
         .collect()
 }

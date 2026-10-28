@@ -267,7 +267,7 @@ fn add(
         context,
     } = *scope;
     let id = context.ids.new_id();
-    let (kind, fields, text) = stored_fields(new, states);
+    let (kind, fields, text) = stored_fields(new, states, context.ids);
     let parent = placement
         .parent
         .map_or(json!({}), |parent| json!({ (PARENT_ID): parent }));
@@ -351,6 +351,7 @@ fn layer(states: &HashMap<String, Value>, new: &NewObject, id: &str) -> f64 {
 fn stored_fields<'a>(
     new: &'a NewObject,
     states: &HashMap<String, Value>,
+    ids: &dyn IdSource,
 ) -> (ObjectKind, Value, Option<&'a str>) {
     match new {
         NewObject::Sticker {
@@ -405,7 +406,7 @@ fn stored_fields<'a>(
             to,
             color,
             look,
-        } => arrow_fields(states, (from, to), color.as_ref(), look),
+        } => arrow_fields(states, (from, to), color.as_ref(), look, ids),
         NewObject::Link {
             url,
             at,
@@ -519,6 +520,7 @@ fn arrow_fields<'a>(
     (from, to): (&str, &str),
     color: Option<&Color>,
     look: &ArrowLook,
+    ids: &dyn IdSource,
 ) -> (ObjectKind, Value, Option<&'a str>) {
     let rectangle = |object: &str| states.get(object).and_then(rectangle_of);
     let point = |x: f64, y: f64| json!({ (X): x, (Y): y });
@@ -541,7 +543,7 @@ fn arrow_fields<'a>(
         (ARROW_TYPE): "elbow",
         (STROKE_COLOR): { (COLOR): color.map_or("gray12", Color::as_str) },
     });
-    let looks = arrow_changes(&look.arrow, &json!({}), states)
+    let looks = arrow_changes(&look.arrow, &json!({}), states, ids)
         .into_iter()
         .chain(shape_changes(&look.outline, &json!({}), None, false));
     if let Some(map) = fields.as_object_mut() {
@@ -666,7 +668,7 @@ fn content_changes(
         .unwrap_or_default();
     text.into_iter()
         .chain(shape_changes(&patch.shape, fields, patch.size, patch.color.is_some()))
-        .chain(arrow_changes(&patch.arrow, fields, scope.states))
+        .chain(arrow_changes(&patch.arrow, fields, scope.states, scope.context.ids))
         .chain(
             patch
                 .at

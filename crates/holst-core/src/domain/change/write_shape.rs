@@ -15,6 +15,7 @@ use crate::{
             value::{ArrowEdit, ShapeEdit},
         },
         geometry::Size,
+        id_source::IdSource,
     },
     protocol::document::{
         ARROW_TYPE,
@@ -24,11 +25,13 @@ use crate::{
         BPMN_RESOURCES,
         COLOR,
         CONTROL,
+        EDITOR,
         ELBOW_MIDWAY_CONTROLS,
         END,
         FILL_COLOR,
         FIXED_SIZE,
         HEIGHT,
+        ID,
         MIDWAY_CONTROLS,
         OBJECT_ID,
         OPACITY,
@@ -40,6 +43,8 @@ use crate::{
         STROKE_COLOR,
         STROKE_STYLE,
         STROKE_WIDTH,
+        TEXT,
+        TEXTS,
         WIDTH,
     },
 };
@@ -104,11 +109,12 @@ pub(super) fn line_of(chosen: Option<ArrowType>, fields: &Value) -> ArrowType {
 }
 
 /// The fields `edit` sets on an arrow whose stored fields are `fields`: its
-/// line, heads, bend and ends.
+/// line, heads, bend, ends and labels.
 pub(super) fn arrow_changes(
     edit: &ArrowEdit,
     fields: &Value,
     states: &HashMap<String, Value>,
+    ids: &dyn IdSource,
 ) -> Changes {
     // BUNDLE: an elbow bends on one axis (main.a33651a4.js 162183).
     let bend = edit.bend.map(|bend| {
@@ -118,6 +124,18 @@ pub(super) fn arrow_changes(
             MIDWAY_CONTROLS
         };
         (name, json!([{ "x": bend.x, "y": bend.y }]))
+    });
+    // BUNDLE: text, position, editor (main.a33651a4.js 162034-162041).
+    let labels = (!edit.labels.is_empty()).then(|| {
+        let texts = edit.labels.iter().map(|label| {
+            json!({
+                (ID): ids.new_id(),
+                (TEXT): label.text,
+                (POSITION): label.position,
+                (EDITOR): [{ "type": "paragraph", "children": [{ (TEXT): label.text }] }],
+            })
+        });
+        (TEXTS, Value::Array(texts.collect()))
     });
     let end = |name, asked: &Option<ArrowEndEdit>| {
         asked
@@ -137,6 +155,7 @@ pub(super) fn arrow_changes(
         bend,
         end(START, &edit.from),
         end(END, &edit.to),
+        labels,
     ]
     .into_iter()
     .flatten()

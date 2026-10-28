@@ -718,6 +718,13 @@ expression: "*holst.tools"
           ],
           "type": "string"
         },
+        "label": {
+          "description": "Arrow labels text[@0..1]; an edit replaces the old.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "line": {
           "description": "Arrow line.",
           "enum": [

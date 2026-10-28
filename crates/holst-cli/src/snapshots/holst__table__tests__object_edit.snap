@@ -33,6 +33,7 @@ FLAGS
       --bend x,y             Bend an arrow: x,y for a straight or curved one, x, or ,y for an elbow, whose middle run sits there; unchanged by default
       --from end             Move an arrow's start: object:side (top, right, bottom or left) or x,y; unchanged by default
       --to end               Move an arrow's end: object:side (top, right, bottom or left) or x,y; unchanged by default
+      --label text[@pos]     An arrow's labels, repeat for several; they replace the ones it has; text@0.25 puts one a quarter of the way from the start, in the middle by default; unchanged by default
       --rotate deg           Turn to this angle in clockwise degrees, any number taken modulo 360; the corner moves so that the object turns about its centre; not for a frame, a table, a table cell, a group or an arrow; unchanged by default
       --order order          Where it stands among the objects: front or back; unchanged by default
       --tag tag              The object's tags, repeat for several; a new tag is made, '' clears; unchanged by default

@@ -1,6 +1,6 @@
 ---
 source: crates/holst-cli/src/table.rs
-expression: help_of(line)
+expression: "help_of(&format!(\"{line} -h\"))"
 ---
 Add objects of one kind to a board; the kind word is the default kind of every --items item.
 Without --at each goes to a free corner, in --frame if given, else in the frame a linked object sits in. It prints one line per object with @N and its link.
@@ -22,6 +22,7 @@ FLAGS
       --heads start,end      An arrow's heads, e.g. none,triangle-filled: none, figma, miro, arc, triangle-filled, triangle, circle-filled, circle, rhombus-filled, rhombus, stick, stick-stick, triadius, triadius-stick, triadius-circle, stick-circle or slash; an empty side keeps that end; none,miro by default
       --stroke-style style   An arrow's line: solid, dashed or dotted; solid by default
       --stroke-width n       An arrow's line width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17; 2 by default
+      --label text[@pos]     An arrow's label, repeat for several; text@0.25 puts it a quarter of the way from the start, in the middle by default
       --items file           Many in one write: a JSON array or JSON lines file, - for stdin; its keys are the flags of one call
   -n, --dry-run              Show what would change; change nothing
 

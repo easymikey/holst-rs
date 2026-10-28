@@ -320,3 +320,43 @@ fn an_end_cannot_stick_to_the_arrow_itself() -> Result<()> {
     assert!(is_unfit(&refused));
     Ok(())
 }
+
+#[test]
+fn an_arrow_edit_replaces_its_labels_with_their_text_place_and_editor() -> Result<()> {
+    let document = seeded()?;
+    let id = arrow(&document, ArrowLook::default())?;
+    let label = |raw: &str| raw.parse().ok();
+    apply(
+        &document,
+        &edit(
+            id.clone(),
+            arrow_patch(ArrowEdit {
+                labels: [label("Yes@0.25"), label("No")]
+                    .into_iter()
+                    .flatten()
+                    .collect(),
+                ..ArrowEdit::default()
+            }),
+        ),
+    )?;
+    apply(
+        &document,
+        &edit(
+            id.clone(),
+            arrow_patch(ArrowEdit {
+                labels: label("Maybe@1").into_iter().collect(),
+                ..ArrowEdit::default()
+            }),
+        ),
+    )?;
+    assert_eq!(
+        at(&fields_of(&document, &id), "texts"),
+        json!([{
+            "id": "e-1",
+            "text": "Maybe",
+            "position": 1,
+            "editor": [{ "type": "paragraph", "children": [{ "text": "Maybe" }] }],
+        }])
+    );
+    Ok(())
+}

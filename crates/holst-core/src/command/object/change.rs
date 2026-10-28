@@ -232,6 +232,7 @@ fn read_edits(args: &EditArgs) -> Result<Vec<ObjectEdit>> {
                 bend: args.bend.clone(),
                 from: args.from.clone(),
                 to: args.to.clone(),
+                label: args.label.clone(),
                 rotate: args.rotate,
                 order: None,
                 tag: Vec::new(),
@@ -289,6 +290,7 @@ fn refuse_with_items(args: &EditArgs) -> Result<()> {
         ("bend", args.bend.is_some()),
         ("from", args.from.is_some()),
         ("to", args.to.is_some()),
+        ("label", !args.label.is_empty()),
         ("rotate", args.rotate.is_some()),
         ("order", args.order.is_some()),
         ("tag", !args.tag.is_empty()),
@@ -377,6 +379,11 @@ fn patch_of(item: &EditItem, format: TextFormat) -> Result<ObjectPatch> {
             bend: item.bend.as_deref().map(str::parse).transpose()?,
             from: item.from.as_deref().map(str::parse).transpose()?,
             to: item.to.as_deref().map(str::parse).transpose()?,
+            labels: item
+                .label
+                .iter()
+                .map(|raw| raw.parse())
+                .collect::<Result<_>>()?,
         },
     })
 }
