@@ -53,7 +53,7 @@ flate2 = { version = "1", default-features = false, features = ["rust_backend"] 
 # Board indexes on disk: compact serde encoding, no std I/O or heapless needed.
 postcard = { version = "1", default-features = false, features = ["alloc"] }
 # Already built through reqwest: images inlined into an SVG as `data:` URLs.
-base64 = { version = "0.22", default-features = false, features = ["alloc"] }
+base64 = { version = "0.23", default-features = false, features = ["alloc"] }
 # Snapshots as PNG: SVG rendering with text from the system fonts (feature `png`).
 resvg = { workspace = true, optional = true }
 

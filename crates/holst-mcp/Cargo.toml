@@ -42,7 +42,7 @@ arc-swap.workspace = true
 # The board document: kept boards are seeds of the next load.
 yrs.workspace = true
 # Already built through reqwest: PNG pictures go to the model as base64.
-base64 = { version = "0.22", default-features = false, features = ["alloc"] }
+base64 = { version = "0.23", default-features = false, features = ["alloc"] }
 
 # Echo off while a code or password is typed; already built for the CLI.
 [target.'cfg(unix)'.dependencies]
