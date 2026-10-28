@@ -22,7 +22,7 @@ uuid.workspace = true
 # Already built through serde_json: SIMD substring search for the index, hyphen jumps for UUIDs.
 memchr = "2"
 # ASCII-only hosts in URLs: 1.0.0 is the no-op IDNA backend of `url`; an IDN host can be given as punycode.
-idna_adapter = "=1.0.0"
+idna_adapter = "=1.2.1"
 # Names typed decomposed (NFD) match composed ones.
 icu_normalizer = { version = "2", default-features = false, features = ["compiled_data"] }
 # rt, sync, time are already built through reqwest: JoinSet, Semaphore, sleep;
