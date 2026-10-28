@@ -18,7 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 itertools.workspace = true
-holst-core = { path = "../holst-core", version = "0.1.0", features = ["logging"] }
+holst-core = { path = "../holst-core", version = "0.2.0", features = ["logging"] }
 thiserror.workspace = true
 secrecy.workspace = true
 serde.workspace = true
