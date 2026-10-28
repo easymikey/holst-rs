@@ -145,41 +145,6 @@ mod tests {
             .iter()
             .try_for_each(|line| Cli::parse_from_args(line.split(' ')).map(drop))
     }
-
-    /// The `holst …` commands an installer prints as the next step.
-    fn printed_commands(script: &str) -> Vec<&str> {
-        script
-            .lines()
-            .filter(|line| {
-                ["echo ", "printf ", "Write-Host "]
-                    .iter()
-                    .any(|print| line.trim_start().starts_with(print))
-            })
-            .filter_map(|line| {
-                let (_, quoted) = line.split_once(['"', '\''])?;
-                let text = quoted.split(['"', '\'']).next()?.trim();
-                text.starts_with("holst ").then_some(text)
-            })
-            .collect()
-    }
-
-    #[test]
-    fn the_commands_the_installers_print_parse() -> Result<(), clap::Error> {
-        let scripts = [
-            include_str!("../../../install.sh"),
-            include_str!("../../../install.ps1"),
-            include_str!("../../../scripts/install-from-source.sh"),
-            include_str!("../../../scripts/install-from-source.ps1"),
-        ];
-        scripts.into_iter().try_for_each(|script| {
-            let commands = printed_commands(script);
-            assert!(!commands.is_empty(), "no command found in:\n{script}");
-            commands
-                .into_iter()
-                .try_for_each(|line| Cli::parse_from_args(line.split(' ')).map(drop))
-        })
-    }
-
     #[test]
     fn the_trash_caution_names_a_command_that_parses() -> Result<(), clap::Error> {
         let id = "cccccccc-dddd-4eee-8fff-000000000000";

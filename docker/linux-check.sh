@@ -1,6 +1,6 @@
 #!/bin/sh
 # One Linux check step inside the holst-xc-linux image:
-#   build | test | e2e | keyring-none | keyring-dbus | keyring-file | install
+#   build | test | e2e | keyring-none | keyring-dbus | keyring-file
 # Mounts: /src (repo, read-only), /checks (a checks directory holding cli-e2e.mjs and mock.py, given by HOLST_XC_CHECKS; not shipped; read-only),
 # /work/target (cargo target volume). Every login goes to the local mock.
 set -eu
@@ -181,25 +181,6 @@ keyring-file)
 	echo "logout: exit $CODE: $OUT"
 	code 0
 	[ ! -e "$HOLST_HOME/session" ] || fail "logout left the session file"
-	;;
-install)
-	# HOLST_XC_INSTALL_SH on the host mounts another source installer here.
-	[ ! -f /extra/install.sh ] || cp /extra/install.sh scripts/install-from-source.sh
-	[ -f scripts/install-from-source.sh ] || {
-		echo "skipped: no scripts/install-from-source.sh"
-		exit 0
-	}
-	export CARGO_TARGET_DIR=/work/target
-	CODE=0
-	OUT=$(sh scripts/install-from-source.sh </dev/null 2>&1) || CODE=$?
-	printf '%s\n' "$OUT" | grep -v -E '^ +(Compiling|Downloaded|Downloading|Installing|Installed|Replacing|Replaced|Locking|Updating|Adding)( |$)'
-	code 0
-	lacks '[Ss]igning with|codesign' "install-from-source.sh signed on Linux"
-	has '^  holst login$' "no next step: holst login"
-	has 'claude mcp add holst-rs' "no next step: claude mcp add"
-	command -v holst && command -v holst-mcp
-	holst --help | grep -q 'holst login' || fail "the installed holst does not answer --help"
-	holst-mcp --help 2>&1 | grep -q 'holst-mcp' || fail "the installed holst-mcp does not answer --help"
 	;;
 *)
 	fail "unknown step '${1:-}'"

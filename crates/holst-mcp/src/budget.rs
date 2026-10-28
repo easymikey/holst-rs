@@ -1,6 +1,6 @@
 //! Token budgets: what every session and the typical replies cost a model.
 
-// The table shows with BUDGET_TABLE=1; real tokens: scripts/measure.mjs.
+// The table shows with BUDGET_TABLE=1.
 
 #![expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
 

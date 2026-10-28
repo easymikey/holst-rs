@@ -1,4 +1,4 @@
-# Build and tests on the MSRV; fmt and clippy on the justfile's nightly.
+# Build and tests on the MSRV; fmt and clippy on the nightly.
 [toolchain]
 channel = "1.96.0"
 components = ["clippy", "rustfmt", "rust-src"]
