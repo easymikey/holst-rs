@@ -217,6 +217,62 @@ fn requests_are_what_the_web_client_sends() -> Result<()> {
 }
 
 #[test]
+fn restore_and_sharing_requests_carry_the_clients_keys() -> Result<()> {
+    use crate::{
+        protocol::sharing::{SharingPatch, WireRole},
+        remote::api::{access, channel},
+    };
+    let base: BaseUrl = "https://app.holst.so".parse()?;
+    let wire = |request: Result<ApiRequest>| -> Result<String> {
+        let request = request?;
+        let body = request
+            .body
+            .as_ref()
+            .map(|body| String::from_utf8_lossy(&body.bytes).into_owned());
+        Ok(format!(
+            "{} {}\n{}",
+            request.method,
+            request.url(&base)?,
+            body.unwrap_or_default()
+        ))
+    };
+    let gapi = "https://app.holst.so/gapi";
+    let table = [
+        (
+            wire(channel::restore_request("b"))?,
+            format!("POST {gapi}/channel/restore/b\n{{}}"),
+        ),
+        (
+            wire(access::set_channel_access_request(
+                "b",
+                SharingPatch {
+                    workspace_member_access: Some(WireRole::None(())),
+                    ..SharingPatch::default()
+                },
+            ))?,
+            format!(
+                "PATCH {gapi}/channel/b\n{{\"workspace_member_access\":null,\"in_trash\":null,\"thumbnail_updated_at\":null}}"
+            ),
+        ),
+        (
+            wire(access::set_sharing_settings_request(
+                "b",
+                SharingPatch {
+                    who_can_copy_content: Some(WireRole::Held("editor")),
+                    ..SharingPatch::default()
+                },
+            ))?,
+            format!(
+                "PATCH {gapi}/channel/b/sharing_settings\n{{\"who_can_copy_content\":\"editor\",\"in_trash\":null,\"thumbnail_updated_at\":null}}"
+            ),
+        ),
+    ];
+    let (sent, expected): (Vec<_>, Vec<_>) = table.into_iter().unzip();
+    assert_eq!(sent, expected);
+    Ok(())
+}
+
+#[test]
 fn the_password_is_sent_as_typed() -> Result<()> {
     let body = |password: &str| -> Result<Option<String>> {
         Ok(crate::remote::api::login::with_email_request(
