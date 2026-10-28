@@ -62,7 +62,7 @@ jobs:
           tool: cargo-deny,cargo-machete
 
       - name: cargo-deny
-        run: cargo deny check --config .config/deny.toml
+        run: cargo deny --config .config/deny.toml check
 
       - name: cargo-machete
         run: cargo machete
