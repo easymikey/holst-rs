@@ -231,25 +231,6 @@ impl Backend for OnFake {
             holst_core::system::id::RandomIds,
         )
     }
-
-    fn save_new(
-        &self,
-        _: &Session,
-    ) -> holst_core::Result<holst_core::storage::session_store::LoginSaveReport> {
-        Ok(holst_core::storage::session_store::LoginSaveReport {
-            store: SessionStoreKind::File,
-            stale: None,
-        })
-    }
-
-    fn anonymous(&self) -> holst_core::Result<holst_core::remote::client::Client> {
-        holst_core::command::login::connect(
-            None,
-            self.base_url.parse()?,
-            holst_core::system::clock::SystemClock,
-            holst_core::system::id::RandomIds,
-        )
-    }
 }
 
 /// A fake server with the board `Plans` of one sticker, and a client on it.
@@ -795,9 +776,62 @@ async fn an_action_the_tool_does_not_have_is_refused() {
         table_call(&holst, "auth", serde_json::json!({ "action": "logout" })).await;
     assert!(failed);
     assert!(
-        text.contains("`auth` has no action \"logout\"; it has: login, status"),
+        text.contains("`auth` has no action \"logout\"; it has: status"),
         "{text}"
     );
+}
+
+#[tokio::test]
+async fn auth_has_no_login_action_on_mcp() {
+    let (holst, network) = McpServer::scripted([]);
+    let (failed, text) =
+        table_call(&holst, "auth", serde_json::json!({ "action": "login" })).await;
+    assert!(failed);
+    assert!(
+        text.contains("`auth` has no action \"login\"; it has: status"),
+        "{text}"
+    );
+    assert!(network.seen().is_empty(), "the call went to the network");
+}
+
+#[tokio::test]
+async fn auth_without_a_login_names_the_setup_command() {
+    let (holst, ..) = server(Memory::new(None, Script::new([])));
+    let (failed, text) =
+        table_call(&holst, "auth", serde_json::json!({ "action": "status" })).await;
+    assert!(!failed, "{text}");
+    assert_eq!(
+        text,
+        "no login: ask the user to run `holst-mcp setup` in a terminal, then call auth again"
+    );
+}
+
+#[tokio::test]
+async fn a_login_saved_by_another_process_is_taken_on_the_next_call() {
+    let network = Script::new([CannedResponse::ok(ME), CannedResponse::ok(TREE)]);
+    let (holst, memory, _) = server(Memory::new(None, Arc::clone(&network)));
+    let (failed, text) =
+        table_call(&holst, "workspace", serde_json::json!({ "action": "ls" })).await;
+    assert!(failed, "{text}");
+    assert!(text.contains("holst-mcp setup"), "{text}");
+
+    memory.store(Some(session("a")));
+    let (failed_after, status) =
+        table_call(&holst, "auth", serde_json::json!({ "action": "status" })).await;
+    assert!(!failed_after, "{status}");
+    assert!(status.starts_with("logged in: Ann @"), "{status}");
+}
+
+#[test]
+fn auth_is_read_only_in_the_tool_list() {
+    let holst = McpServer::offline();
+    let hints = holst
+        .listed_tools()
+        .iter()
+        .find(|tool| tool.name == "auth")
+        .and_then(|tool| tool.annotations.as_ref())
+        .map(|hints| (hints.read_only_hint, hints.destructive_hint));
+    assert_eq!(hints, Some((Some(true), None)));
 }
 
 #[tokio::test]
@@ -855,7 +889,7 @@ fn instructions_explain_the_tools_and_the_login() {
     let wanted = [
         "object_write",
         "x,y,width,height",
-        "action login",
+        "holst-mcp setup",
         "@N",
         "output: json (board, object only)",
     ];

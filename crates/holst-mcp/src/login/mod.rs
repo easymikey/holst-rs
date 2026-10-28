@@ -1,11 +1,10 @@
 #[cfg(test)] pub(crate) mod fake;
 pub(crate) mod machine;
-pub(crate) mod page;
 pub(crate) mod store;
 
 use std::sync::{Arc, atomic::AtomicU64};
 
-use arc_swap::{ArcSwap, ArcSwapOption};
+use arc_swap::ArcSwap;
 use holst_core::{
     domain::session::{Session, SessionStatus},
     effect::clock::Clock,
@@ -30,8 +29,6 @@ pub(crate) type LoginStep<'a> = machine::LoginStep<'a, Client>;
 
 pub(crate) type ReadyLogin = machine::ReadyLogin<Client>;
 
-pub(crate) type NewLogin = machine::NewLogin<Client>;
-
 impl LoginClient for Client {
     type Store = SessionStoreKind;
 
@@ -46,10 +43,6 @@ pub(crate) struct SharedLogin {
     pub(crate) epochs: AtomicU64,
     pub(crate) backend: Arc<dyn Backend>,
     clock: Arc<dyn Clock>,
-    /// A login the page saved, not yet taken by the server.
-    pub(crate) arrived: ArcSwapOption<NewLogin>,
-    /// The login page that is open.
-    pub(crate) page: Mutex<Option<page::OpenPage>>,
 }
 
 impl SharedLogin {
@@ -60,8 +53,6 @@ impl SharedLogin {
             epochs: AtomicU64::new(0),
             backend,
             clock,
-            arrived: ArcSwapOption::empty(),
-            page: Mutex::new(None),
         }
     }
 
@@ -79,11 +70,6 @@ impl SharedLogin {
         from: SessionStoreKind,
     ) -> Result<LoginSaveReport> {
         self.blocking(move |backend| backend.save(&session, from))
-            .await
-    }
-
-    pub(crate) async fn save_new(&self, session: Session) -> Result<LoginSaveReport> {
-        self.blocking(move |backend| backend.save_new(&session))
             .await
     }
 

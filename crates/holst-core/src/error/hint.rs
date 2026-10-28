@@ -128,7 +128,7 @@ impl Hint {
 
 const SIGN_IN: SurfaceText = SurfaceText::Each {
     cli: "run `holst auth login` to log in again",
-    mcp: "call auth with action login, ask the user to open its link to log in again, then call auth",
+    mcp: "ask the user to run `holst-mcp setup` in a terminal to log in again, then call again",
 };
 const CHECK_ID: SurfaceText =
     SurfaceText::Same("check the id or link — it may be deleted or in the trash");
@@ -200,13 +200,13 @@ const USE_HOME: SurfaceText = SurfaceText::Each {
 const REPLACE_STALE: SurfaceText = SurfaceText::Each {
     cli: "unlock the keychain and run `holst auth login` again, so the new login \
           replaces the older one",
-    mcp: "ask the user to unlock the keychain and log in again, so the new \
-          login replaces the older one",
+    mcp: "ask the user to unlock the keychain and run `holst-mcp setup` in a \
+          terminal again, so the new login replaces the older one",
 };
 const FULL_LOGIN: SurfaceText = SurfaceText::Each {
     cli: "run `holst auth login` to get a full session — a bare token has no cookies",
-    mcp: "call auth with action login and ask the user to open its link to log in \
-          again — a bare token has no cookies",
+    mcp: "ask the user to run `holst-mcp setup` in a terminal to log in again — a \
+          bare token has no cookies",
 };
 const CONFIRM_FIRST: SurfaceText = SurfaceText::Each {
     cli: "check the target, then run the command again with `--yes`",
@@ -304,6 +304,8 @@ mod tests {
     fn mcp_hints_never_mention_cli_commands_or_flags() {
         let cli: Vec<String> = Hint::iter()
             .map(|hint| hint.on(Surface::Mcp).to_string())
+            // The one command the model may name is the server's own.
+            .map(|text| text.replace("`holst-mcp setup`", "holst-mcp setup"))
             .filter(|text| {
                 text.contains("holst ")
                     || text.contains("--")

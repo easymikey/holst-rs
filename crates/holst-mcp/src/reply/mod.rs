@@ -204,6 +204,8 @@ mod tests {
         let cli: Vec<&String> = hints
             .iter()
             .filter(|hint| {
+                // The one command the model may name is the server's own.
+                let hint = hint.replace("`holst-mcp setup`", "");
                 hint.contains("holst ") || hint.contains("--") || hint.contains('`')
             })
             .collect();

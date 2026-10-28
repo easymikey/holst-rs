@@ -43,6 +43,7 @@ impl AuthVerb {
     group = Auth,
     verb = "login",
     risk = Write,
+    surfaces = [Cli],
     local_files,
     about = "Log in and save the login",
     help = "Log in with your email address and a login code or password, and save the login.\n\

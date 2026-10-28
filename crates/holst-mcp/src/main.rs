@@ -55,6 +55,7 @@ fn usage(arg: &str) -> Result<String, StartError> {
         "--version" | "-V" => Ok(format!("holst-mcp {VERSION}")),
         "--help" | "-h" => Ok(format!(
             "holst-mcp {VERSION} — the Holst MCP server on stdio.\n\
+             Log in: run `holst-mcp setup` in a terminal\n\
              Connect: claude mcp add holst-rs -- holst-mcp\n\
              Environment: HOLST_HOME, HOLST_BASE_URL, HOLST_LOG, HOLST_MCP_RAW_WRITE=1"
         )),

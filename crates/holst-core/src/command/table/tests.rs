@@ -378,7 +378,12 @@ const VERBS: [&str; 36] = [
 ];
 
 // Commands on one surface only, each with its reason.
-const ONE_SURFACE: [(&str, Surface, &str); 3] = [
+const ONE_SURFACE: [(&str, Surface, &str); 4] = [
+    (
+        "auth login",
+        Surface::Cli,
+        "the MCP server logs in in a terminal with `holst-mcp setup`",
+    ),
     (
         "auth logout",
         Surface::Cli,

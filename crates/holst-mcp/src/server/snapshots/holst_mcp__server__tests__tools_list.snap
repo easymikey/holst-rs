@@ -5,16 +5,9 @@ expression: "*holst.tools"
 [
   {
     "name": "auth",
-    "description": "The account and its workspaces. Start here. login: a link for the user to open.",
+    "description": "The account and its workspaces. Start here. No login: ask the user to run `holst-mcp setup` in a terminal, then call auth again.",
     "inputSchema": {
       "properties": {
-        "action": {
-          "enum": [
-            "login",
-            "status"
-          ],
-          "type": "string"
-        },
         "with": {
           "items": {
             "enum": [
@@ -25,14 +18,10 @@ expression: "*holst.tools"
           "type": "array"
         }
       },
-      "required": [
-        "action"
-      ],
       "type": "object"
     },
     "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": true,
+      "readOnlyHint": true,
       "openWorldHint": false
     }
   },
