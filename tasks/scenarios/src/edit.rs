@@ -57,7 +57,6 @@ impl ObjectCall {
         }
     }
 
-    /// Lists the objects of a board.
     #[must_use]
     pub const fn list() -> Self {
         Self::new("ls", None)
@@ -70,37 +69,31 @@ impl ObjectCall {
         Self::new("add", Some(kind))
     }
 
-    /// Changes objects.
     #[must_use]
     pub const fn edit() -> Self {
         Self::new("edit", None)
     }
 
-    /// Copies objects.
     #[must_use]
     pub const fn copy() -> Self {
         Self::new("cp", None)
     }
 
-    /// Puts objects into a new group.
     #[must_use]
     pub const fn group() -> Self {
         Self::new("group", None)
     }
 
-    /// Dissolves groups.
     #[must_use]
     pub const fn ungroup() -> Self {
         Self::new("ungroup", None)
     }
 
-    /// Locks objects.
     #[must_use]
     pub const fn lock() -> Self {
         Self::new("lock", None)
     }
 
-    /// Unlocks objects.
     #[must_use]
     pub const fn unlock() -> Self {
         Self::new("unlock", None)
@@ -112,7 +105,6 @@ impl ObjectCall {
         Self::new("align", None)
     }
 
-    /// Removes objects.
     #[must_use]
     pub const fn remove() -> Self {
         Self::new("rm", None)
@@ -174,7 +166,6 @@ impl ObjectCall {
         }
     }
 
-    /// Turns the flag `name` on.
     #[must_use]
     pub fn switched(self, name: &'static str) -> Self {
         Self {

@@ -15,7 +15,6 @@ pub struct CountedWorkspace {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Observation {
     Workspaces(Vec<String>),
-    /// A change went through.
     Done,
     /// A change was only shown: the request it would have sent.
     DryRun {
@@ -127,7 +126,6 @@ pub enum ErrorExit {
     ToolError,
 }
 
-/// One object of a board as a surface lists it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListedObject {
     /// The full id on the CLI, the `@N` alias on MCP; `ends` use the same.
@@ -155,7 +153,6 @@ pub struct ListedObject {
     pub ends: Option<(Option<String>, Option<String>)>,
 }
 
-/// One hit of a text search across boards.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListedTextHit {
     pub board: String,
@@ -170,7 +167,6 @@ pub enum ListedMatch {
     Text(ListedTextHit),
 }
 
-/// A board or folder a search found by its name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListedName {
     pub name: String,

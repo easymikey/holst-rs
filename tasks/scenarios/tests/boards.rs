@@ -140,8 +140,6 @@ async fn a_limit_caps_the_hits(
     Ok(())
 }
 
-// The tree of boards and folders.
-
 /// A folder `Work` holding the board `Plan`, and the board `Notes` at the
 /// root.
 fn work_and_notes() -> Given {
@@ -496,8 +494,6 @@ async fn an_own_board_cannot_be_left(
     tree_of(&holst, "Team").has_board("Plan", None);
     Ok(())
 }
-
-// Showing a whole board, or a part of it.
 
 fn plan_of_four() -> Given {
     given().saved_login().workspace("Team").board_with_objects(

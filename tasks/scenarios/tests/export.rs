@@ -240,8 +240,6 @@ async fn a_save_beside_an_existing_folder_takes_the_next_name(
     Ok(())
 }
 
-// Board files.
-
 fn plans_with_objects() -> Given {
     given()
         .saved_login()

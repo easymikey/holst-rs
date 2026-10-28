@@ -212,7 +212,6 @@ impl On<'_> {
     }
 }
 
-/// Expects things of the comment threads of the board called `board`.
 #[must_use]
 pub fn comments_of(holst: &Holst, board: &str) -> CommentsThen {
     CommentsThen {

@@ -75,7 +75,6 @@ impl Given {
         }
     }
 
-    /// Adds a workspace of the organization `organization`.
     #[must_use]
     pub fn workspace_in(self, name: &str, organization: &str) -> Self {
         Self {
@@ -93,7 +92,6 @@ impl Given {
         }
     }
 
-    /// Makes the person called `name` a member of `workspace` with `role`.
     #[must_use]
     pub fn member(self, name: &str, workspace: &str, role: WorkspaceRole) -> Self {
         Self {
@@ -111,7 +109,6 @@ impl Given {
         }
     }
 
-    /// Adds a verified domain to `workspace`.
     #[must_use]
     pub fn domain(self, workspace: &str, domain: &str) -> Self {
         Self {
@@ -120,7 +117,6 @@ impl Given {
         }
     }
 
-    /// Turns single sign-on on in `workspace`.
     #[must_use]
     pub fn sso(self, workspace: &str) -> Self {
         Self {
@@ -162,7 +158,6 @@ impl Given {
         }
     }
 
-    /// Adds a folder at the root of the workspace named `workspace`.
     #[must_use]
     pub fn folder(self, name: &str, workspace: &str) -> Self {
         Self {
@@ -325,7 +320,6 @@ impl Given {
         }
     }
 
-    /// Gives a board a note holding `text`.
     #[must_use]
     pub fn note(self, board: &str, text: &str) -> Self {
         Self {
@@ -334,7 +328,6 @@ impl Given {
         }
     }
 
-    /// Adds a comment thread to the board called `board`.
     #[must_use]
     pub fn thread(self, board: &str, thread: FixtureThread) -> Self {
         Self {
@@ -343,7 +336,6 @@ impl Given {
         }
     }
 
-    /// Puts a board with `objects` on it into the workspace of that name.
     #[must_use]
     pub fn board_with_objects(
         self,

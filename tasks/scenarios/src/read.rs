@@ -136,7 +136,6 @@ impl<'a> Search<'a> {
         }
     }
 
-    /// Looks in the trash too.
     #[must_use]
     pub const fn in_trash(self) -> Self {
         Self {

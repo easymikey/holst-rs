@@ -12,7 +12,6 @@ use crate::{
     then::Then,
 };
 
-/// A change of who may use a board.
 #[derive(Debug, Clone, Copy)]
 pub enum RightsChange<'a> {
     /// Gives `user` the right `right`, as the user typed it.
@@ -132,7 +131,6 @@ impl Then<'_> {
     }
 }
 
-/// Expects things of the link settings of a board.
 #[must_use]
 pub fn sharing_of(holst: &Holst, board: &str) -> SharingThen {
     SharingThen {

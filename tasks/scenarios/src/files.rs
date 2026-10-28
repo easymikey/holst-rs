@@ -143,7 +143,6 @@ impl Then<'_> {
     }
 }
 
-/// Expects things of the files the server received.
 #[must_use]
 pub fn uploads_of(holst: &Holst) -> UploadsThen {
     UploadsThen {

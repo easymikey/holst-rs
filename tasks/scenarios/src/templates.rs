@@ -93,7 +93,6 @@ impl On<'_> {
                     self.holst.command("holst-mcp")?,
                     "template",
                     fields(json!({ "action": "ls", "view": "categories" })),
-                    // One line per category, with its alias.
                     |reply| {
                         reply
                             .text
@@ -391,7 +390,6 @@ impl Then<'_> {
     }
 }
 
-/// Expects things of the user's own templates.
 #[must_use]
 pub fn templates_of(holst: &Holst) -> TemplatesThen {
     TemplatesThen {
@@ -399,7 +397,6 @@ pub fn templates_of(holst: &Holst) -> TemplatesThen {
     }
 }
 
-/// Expects things of the templates shared with a workspace.
 #[must_use]
 pub fn workspace_templates_of(holst: &Holst, workspace: &str) -> TemplatesThen {
     TemplatesThen {
@@ -407,7 +404,6 @@ pub fn workspace_templates_of(holst: &Holst, workspace: &str) -> TemplatesThen {
     }
 }
 
-/// Expects things of the template called `name`.
 #[must_use]
 pub fn template_of(holst: &Holst, name: &str) -> TemplateThen {
     TemplateThen {

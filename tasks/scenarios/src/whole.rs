@@ -486,7 +486,6 @@ impl Holst {
     }
 }
 
-/// Expects things of what the downloads folder of the home holds.
 #[must_use]
 pub fn downloads_of(holst: &Holst) -> DownloadsThen {
     DownloadsThen {
@@ -523,7 +522,6 @@ impl DownloadsThen {
     }
 }
 
-/// Expects things of the picture file `name` a snap left.
 #[must_use]
 pub fn picture(holst: &Holst, name: &str) -> PictureThen {
     PictureThen {

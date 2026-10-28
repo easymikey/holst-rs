@@ -121,7 +121,6 @@ impl Then<'_> {
     }
 }
 
-/// Expects things of the folders and boards a workspace holds.
 #[must_use]
 pub fn tree_of(holst: &Holst, workspace: &str) -> TreeThen {
     TreeThen {
@@ -129,7 +128,6 @@ pub fn tree_of(holst: &Holst, workspace: &str) -> TreeThen {
     }
 }
 
-/// Expects things of the folders and boards in the trash of a workspace.
 #[must_use]
 pub fn trash_of(holst: &Holst, workspace: &str) -> TreeThen {
     TreeThen {
@@ -137,7 +135,6 @@ pub fn trash_of(holst: &Holst, workspace: &str) -> TreeThen {
     }
 }
 
-/// Expects things of the favorites of a workspace.
 #[must_use]
 pub fn favorites_of(holst: &Holst, workspace: &str) -> FavoritesThen {
     FavoritesThen {

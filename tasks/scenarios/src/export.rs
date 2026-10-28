@@ -537,7 +537,6 @@ impl On<'_> {
     }
 }
 
-/// Expects things of the file `name` a board was exported to.
 #[must_use]
 pub fn exported_file(holst: &Holst, name: &str) -> FileThen {
     FileThen {
