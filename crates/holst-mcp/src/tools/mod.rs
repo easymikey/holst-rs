@@ -52,7 +52,6 @@ impl McpServer {
         }
     }
 
-    /// Reads the arguments of a verb and runs it, or fails with what is wrong.
     pub(super) async fn parsed<A: CommandArgs>(
         &self,
         arguments: Map<String, Value>,
@@ -64,7 +63,6 @@ impl McpServer {
         }
     }
 
-    /// Runs one command of the table; the match grows by a line per group.
     pub(crate) async fn command(
         &self,
         name: CommandName,

@@ -18,8 +18,6 @@ use crate::{
     run::{RunSettings, run_signed_in},
 };
 
-/// Runs a command of the `template` group with the arguments the command line
-/// gave it.
 pub(crate) async fn run(
     verb: TemplateVerb,
     arguments: Map<String, Value>,

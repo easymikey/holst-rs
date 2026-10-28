@@ -1113,7 +1113,6 @@ mod tests {
             table::kinds_of,
         };
 
-        /// The sections of a command page in their order.
         const LEAF_ORDER: &[&[&str]] = &[
             &["USAGE"],
             &["ARGUMENTS"],
@@ -1122,7 +1121,6 @@ mod tests {
             &["EXAMPLES"],
             &["LEARN MORE"],
         ];
-        /// The sections of the page of a command with a subcommand (`o add`).
         const KINDS_ORDER: &[&[&str]] = &[
             &["USAGE"],
             &["KINDS"],
@@ -1130,7 +1128,6 @@ mod tests {
             &["EXAMPLES"],
             &["LEARN MORE"],
         ];
-        /// The sections of a group page: its blocks, then the shared parts.
         const GROUP_ORDER: &[&[&str]] = &[
             &["USAGE"],
             &["COMMANDS", "GENERAL COMMANDS"],

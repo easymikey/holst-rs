@@ -178,7 +178,6 @@ impl McpServer {
         self.by_mode(args.dry_run, call).await
     }
 
-    /// Reads the arguments of a change and runs it.
     async fn apply<A: CommandArgs>(
         &self,
         arguments: Map<String, Value>,

@@ -20,7 +20,6 @@ pub(crate) enum Error {
     #[error(transparent)]
     Alias(#[from] UnknownAlias),
 
-    // ── arguments ──
     #[error("the search query must not be empty")]
     EmptyQuery,
 
@@ -42,7 +41,6 @@ pub(crate) enum Error {
     #[error("{command} is for the command line: it has no tool")]
     CliOnly { command: String },
 
-    // ── confirmations and refusals ──
     #[error("{}", .0.on(Surface::Mcp))]
     Unconfirmed(Unconfirmed),
 
@@ -52,7 +50,6 @@ pub(crate) enum Error {
     )]
     RawWriteDisabled { method: HttpMethod },
 
-    // ── local files ──
     #[error("the file cannot be read")]
     Unreadable {
         #[source]

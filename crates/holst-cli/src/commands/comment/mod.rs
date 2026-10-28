@@ -15,8 +15,6 @@ use crate::{
     run::{RunSettings, run_signed_in},
 };
 
-/// Runs a command of the `comment` group with the arguments the command line
-/// gave it.
 pub(crate) async fn run(
     verb: CommentVerb,
     arguments: Map<String, Value>,

@@ -35,8 +35,6 @@ async fn roots(run: &RunSettings) -> DataRoots {
     data_roots(run, store)
 }
 
-/// Runs a command of the `storage` group with the arguments the command line
-/// gave it.
 pub(crate) async fn run(
     verb: StorageVerb,
     arguments: Map<String, Value>,

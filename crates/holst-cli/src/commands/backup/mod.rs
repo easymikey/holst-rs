@@ -20,8 +20,6 @@ use crate::{
 /// The file name that means standard output.
 const STDOUT: &str = "-";
 
-/// Runs a command of the `backup` group with the arguments the command line
-/// gave it.
 pub(crate) async fn run(
     verb: BackupVerb,
     arguments: Map<String, Value>,

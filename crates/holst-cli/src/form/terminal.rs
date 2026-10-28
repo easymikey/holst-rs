@@ -35,7 +35,6 @@ pub(crate) trait Terminal {
     /// How the form can talk to the person.
     fn kind(&self) -> TerminalKind;
 
-    /// Whether to color the output.
     fn has_color(&self) -> bool;
 
     /// The width in columns; `None` when unknown.

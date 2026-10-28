@@ -16,7 +16,6 @@ use crate::{
     run::{RunSettings, board::account_cache, run_signed_in},
 };
 
-/// Runs `search` with the arguments the command line gave it.
 pub(crate) async fn run(
     arguments: Map<String, Value>,
     run: &RunSettings,

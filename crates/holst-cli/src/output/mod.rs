@@ -131,7 +131,6 @@ pub(crate) fn value(format: OutputFormat, value: &Value) -> Result<()> {
     reply(format, ReplyKind::Read, value)
 }
 
-/// Prints a typed reply as the formats show a reply.
 /// Prints `text` as text, or the reply as JSON.
 pub(crate) fn print(
     format: OutputFormat,
@@ -191,7 +190,6 @@ impl OutputTarget {
     }
 }
 
-/// Tells whether stdout is a terminal or redirected.
 #[expect(
     clippy::disallowed_methods,
     reason = "the output module is the one door to stdout"

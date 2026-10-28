@@ -27,7 +27,6 @@ pub(super) fn listing(format: OutputFormat, backups: &Backups) -> Result<()> {
     }
 }
 
-/// Prints where a backup was saved.
 pub(super) fn fetched(format: OutputFormat, fetched: &Fetched) -> Result<()> {
     output::print(format, &fetched_text(fetched), fetched)
 }

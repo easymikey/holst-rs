@@ -14,7 +14,6 @@ use crate::{
     table::{self, TableCall},
 };
 
-/// The command line.
 #[derive(Debug, Parser)]
 #[command(
     name = "holst",
@@ -80,7 +79,6 @@ fn help_of_missing_subcommand(
     }
 }
 
-/// Returns the clap command of the whole command line: the table's groups.
 pub(crate) fn command() -> clap::Command {
     let root = Cli::command().subcommand(exit_codes_topic());
     table::groups(&root)
@@ -106,7 +104,6 @@ const STYLES: Styles = Styles::styled()
     .valid(AnsiColor::Green.on_default())
     .invalid(AnsiColor::Yellow.on_default());
 
-/// Runs the command the command line chose.
 pub(crate) async fn run(
     table: Option<Result<TableCall>>,
     format: OutputFormat,

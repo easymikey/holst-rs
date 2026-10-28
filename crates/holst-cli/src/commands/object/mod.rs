@@ -22,8 +22,6 @@ use crate::{
     run::{RunSettings, run_signed_in},
 };
 
-/// Runs a command of the `object` group with the arguments the command line
-/// gave it.
 pub(crate) async fn run(
     verb: ObjectVerb,
     mut arguments: Map<String, Value>,
