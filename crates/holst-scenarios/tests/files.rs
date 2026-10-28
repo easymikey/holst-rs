@@ -605,7 +605,7 @@ async fn a_missing_local_file_is_not_found(
     let holst = with_media().start().await?;
     let call = ObjectCall::add("image").path(&holst.work_place("nope.png"));
     let observation = holst.on(surface).object("Plans", call).await?;
-    then(&observation).fails_saying("No such file");
+    then(&observation).fails_saying("os error 2");
     uploads_of(&holst).is_empty();
     board_of(&holst).got_no_update();
     Ok(())
