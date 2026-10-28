@@ -137,6 +137,8 @@ pub struct ListedObject {
     /// The top-left corner as `x,y`, rounded.
     pub corner: String,
     pub in_frame: bool,
+    /// Shown with the lock flag.
+    pub locked: bool,
     /// The size as `WxH`, when the object has one.
     pub size: Option<String>,
     pub color: Option<String>,

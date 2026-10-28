@@ -26,6 +26,7 @@ use crate::{
             build::author_number,
             check::{
                 CheckedChange,
+                Grouping,
                 Placement,
                 earlier_entry,
                 ends_in,
@@ -51,7 +52,7 @@ use crate::{
                 ObjectPatch,
                 Upload,
             },
-            write_group::{dissolve_after_removal, group, ungroup},
+            write_group::{dissolve_after_removal, group, lock_only, ungroup, unlock},
             write_many::{edit_all, paste},
             write_shape::shape_changes,
         },
@@ -161,8 +162,15 @@ pub(super) fn write_change(
         CheckedChange::EditAll(edits) => edit_all(transaction, scope, &edits),
         CheckedChange::RemoveAll(ids) => remove_all(transaction, scope, &ids),
         CheckedChange::Paste(pasted) => paste(transaction, scope, pasted),
-        CheckedChange::Group(members) => group(transaction, scope, &members),
+        CheckedChange::Group(members) => {
+            group(transaction, scope, &members, Grouping::Plain)
+        }
+        CheckedChange::Lock(members) => {
+            group(transaction, scope, &members, Grouping::Locked)
+        }
         CheckedChange::Ungroup(groups) => ungroup(transaction, scope, &groups),
+        CheckedChange::LockOnly(ids) => lock_only(transaction, scope, &ids),
+        CheckedChange::Unlock(ids) => unlock(transaction, scope, &ids),
     }
 }
 

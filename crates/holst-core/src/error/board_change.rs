@@ -100,6 +100,26 @@ impl fmt::Display for GroupRefusal {
     }
 }
 
+/// Why an object cannot be locked, as the web client's menu refuses it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LockRefusal {
+    Held,
+    NotFrameOrTable,
+    Group(GroupRefusal),
+}
+
+impl fmt::Display for LockRefusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LockRefusal::Held => f.write_str("it is locked already"),
+            LockRefusal::NotFrameOrTable => {
+                f.write_str("--only locks frames and tables, nothing else")
+            }
+            LockRefusal::Group(why) => write!(f, "{why}"),
+        }
+    }
+}
+
 /// A board change that was refused, malformed or not accepted.
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(test, derive(strum::EnumDiscriminants))]
@@ -113,6 +133,12 @@ pub enum BoardChangeError {
          nothing was copied"
     )]
     CopyWithheld { needs: String, holds: &'static str },
+
+    #[error(
+        "locking and unlocking on this board is held to {needs} and above: your right here \
+         is {holds}; nothing was changed"
+    )]
+    LockWithheld { needs: String, holds: &'static str },
 
     #[error(
         "the target board already has {objects} objects: import only into an empty board, or \
@@ -204,6 +230,18 @@ pub enum BoardChangeError {
     #[error("\"{reference}\" is not a group: only groups can be ungrouped")]
     NotGroup { reference: String },
 
+    #[error("\"{reference}\" cannot be locked: {why}")]
+    NotLockable { reference: String, why: LockRefusal },
+
+    #[error(
+        "\"{reference}\" is not locked itself: only a locked group, frame or table can be \
+         unlocked"
+    )]
+    NotLocked { reference: String },
+
+    #[error("nothing is locked on the board: nothing was changed")]
+    NothingToUnlock,
+
     #[error(
         "the server did not accept the change within {seconds} s — it may or may not be on \
          the board"
@@ -234,12 +272,13 @@ impl BoardChangeError {
     #[must_use]
     pub const fn hint(&self) -> Option<Hint> {
         match self {
-            BoardChangeError::ReadOnly | BoardChangeError::CopyWithheld { .. } => {
-                Some(Hint::AskOwner)
-            }
+            BoardChangeError::ReadOnly
+            | BoardChangeError::CopyWithheld { .. }
+            | BoardChangeError::LockWithheld { .. } => Some(Hint::AskOwner),
             BoardChangeError::NoObject { .. }
             | BoardChangeError::NotFrame { .. }
             | BoardChangeError::NotGroup { .. }
+            | BoardChangeError::NotLocked { .. }
             | BoardChangeError::OutsideFrame { .. } => Some(Hint::ListObjects),
             BoardChangeError::AcceptTimeout { .. }
             | BoardChangeError::ClosedBeforeAccept => Some(Hint::CheckBeforeRetry),
@@ -258,6 +297,8 @@ impl BoardChangeError {
             | BoardChangeError::StickerSize { .. }
             | BoardChangeError::TooFewToGroup { .. }
             | BoardChangeError::NotGroupable { .. }
+            | BoardChangeError::NotLockable { .. }
+            | BoardChangeError::NothingToUnlock
             | BoardChangeError::ContentHidden { .. } => None,
         }
     }
@@ -285,6 +326,7 @@ impl BoardChangeError {
             )),
             BoardChangeError::ReadOnly
             | BoardChangeError::CopyWithheld { .. }
+            | BoardChangeError::LockWithheld { .. }
             | BoardChangeError::NotChangeable { .. }
             | BoardChangeError::PlacedByContainer { .. }
             | BoardChangeError::Locked { .. }
@@ -300,6 +342,9 @@ impl BoardChangeError {
             | BoardChangeError::TooFewToGroup { .. }
             | BoardChangeError::NotGroupable { .. }
             | BoardChangeError::NotGroup { .. }
+            | BoardChangeError::NotLockable { .. }
+            | BoardChangeError::NotLocked { .. }
+            | BoardChangeError::NothingToUnlock
             | BoardChangeError::ContentHidden { .. }
             | BoardChangeError::AcceptTimeout { .. }
             | BoardChangeError::ClosedBeforeAccept
@@ -328,6 +373,7 @@ pub(super) mod tests {
             GivenPoint,
             GivenRectangle,
             GroupRefusal,
+            LockRefusal,
             OffBoardValue,
         },
         hint::{Hint, Surface, decided::assert_every_variant},
@@ -416,6 +462,25 @@ pub(super) mod tests {
                 BoardChangeError::NotGroup { reference: text() },
                 Some(Hint::ListObjects),
             ),
+            (
+                BoardChangeError::LockWithheld {
+                    needs: text(),
+                    holds: "editor",
+                },
+                Some(Hint::AskOwner),
+            ),
+            (
+                BoardChangeError::NotLockable {
+                    reference: text(),
+                    why: LockRefusal::Held,
+                },
+                None,
+            ),
+            (
+                BoardChangeError::NotLocked { reference: text() },
+                Some(Hint::ListObjects),
+            ),
+            (BoardChangeError::NothingToUnlock, None),
             (
                 BoardChangeError::OutsideFrame {
                     reference: text(),

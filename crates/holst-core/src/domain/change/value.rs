@@ -269,6 +269,14 @@ pub enum BoardChange {
     Group(Vec<String>),
     /// The named groups, dissolved; their members stay.
     Ungroup(Vec<String>),
+    /// The named objects, put into one new locked group.
+    Lock(Vec<String>),
+    /// The named frames and tables, flagged locked; nothing is grouped.
+    LockOnly(Vec<String>),
+    /// Locked groups dissolved, locked frames and tables unlocked.
+    Unlock(Vec<String>),
+    /// Everything locked on the board, unlocked.
+    UnlockAll,
 }
 
 /// What happened to an object.

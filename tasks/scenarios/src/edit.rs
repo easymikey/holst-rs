@@ -94,6 +94,18 @@ impl ObjectCall {
         Self::new("ungroup", None)
     }
 
+    /// Locks objects.
+    #[must_use]
+    pub const fn lock() -> Self {
+        Self::new("lock", None)
+    }
+
+    /// Unlocks objects.
+    #[must_use]
+    pub const fn unlock() -> Self {
+        Self::new("unlock", None)
+    }
+
     /// Removes objects.
     #[must_use]
     pub const fn remove() -> Self {

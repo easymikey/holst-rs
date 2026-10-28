@@ -350,6 +350,7 @@ fn board_write_code(error: &BoardChangeError) -> u8 {
     match error {
         BoardChangeError::ReadOnly
         | BoardChangeError::CopyWithheld { .. }
+        | BoardChangeError::LockWithheld { .. }
         | BoardChangeError::NotEmpty { .. }
         | BoardChangeError::Locked { .. }
         | BoardChangeError::NotYours { .. } => EX_NOPERM,
@@ -368,6 +369,9 @@ fn board_write_code(error: &BoardChangeError) -> u8 {
         | BoardChangeError::TooFewToGroup { .. }
         | BoardChangeError::NotGroupable { .. }
         | BoardChangeError::NotGroup { .. }
+        | BoardChangeError::NotLockable { .. }
+        | BoardChangeError::NotLocked { .. }
+        | BoardChangeError::NothingToUnlock
         | BoardChangeError::OutsideFrame { .. } => EX_USAGE,
         BoardChangeError::AcceptTimeout { .. }
         | BoardChangeError::ClosedBeforeAccept

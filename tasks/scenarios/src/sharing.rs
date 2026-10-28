@@ -169,6 +169,12 @@ pub fn withhold_copying(holst: &Holst, board: &str, needs: &str, role: &str) {
     holst.fake().withhold_copying(board, needs, role);
 }
 
+/// Keeps locking and unlocking on the board called `board` to the role `needs`
+/// and up, and gives the user the role `role` there.
+pub fn withhold_locking(holst: &Holst, board: &str, needs: &str, role: &str) {
+    holst.fake().withhold_locking(board, needs, role);
+}
+
 /// Keeps removing other people's objects on the board called `board` to the
 /// role `needs` and up, and gives the user the role `role` there.
 pub fn withhold_deleting(holst: &Holst, board: &str, needs: &str, role: &str) {

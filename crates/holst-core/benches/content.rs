@@ -94,6 +94,7 @@ fn board(board: usize, objects: usize, words: &[String]) -> BoardIndex {
             look: None,
             ends: None,
             author: Some("a0000000-0000-4000-8000-000000000000".into()),
+            locked: false,
             file: None,
             fields: Value::Null,
         })

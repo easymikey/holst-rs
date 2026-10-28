@@ -6,6 +6,7 @@ pub mod copy;
 pub mod get;
 pub mod group;
 pub mod list;
+pub mod lock;
 
 use holst_macros::CommandArgs;
 use serde::Deserialize;
@@ -32,6 +33,8 @@ pub enum ObjectVerb {
     Cp,
     Group,
     Ungroup,
+    Lock,
+    Unlock,
     Rm,
     Get,
 }
@@ -46,6 +49,8 @@ impl ObjectVerb {
             ObjectVerb::Cp => &CopyArgs::COMMAND,
             ObjectVerb::Group => &GroupArgs::COMMAND,
             ObjectVerb::Ungroup => &UngroupArgs::COMMAND,
+            ObjectVerb::Lock => &LockArgs::COMMAND,
+            ObjectVerb::Unlock => &UnlockArgs::COMMAND,
             ObjectVerb::Rm => &RemoveArgs::COMMAND,
             ObjectVerb::Get => &GetArgs::COMMAND,
         }
@@ -515,6 +520,70 @@ pub struct UngroupArgs {
         help = "A group, repeat for several: id, link, @N or the first 8 characters of its id"
     )]
     pub object: Vec<String>,
+    #[argument(
+        letter = 'w',
+        value_name = "ws",
+        help = "Where names are looked up and new things go: a workspace id or part of its name; all of yours by default"
+    )]
+    pub workspace: Option<String>,
+    #[argument(letter = 'n', help = "Show what would change; change nothing")]
+    pub dry_run: WriteMode,
+}
+
+#[derive(Debug, Deserialize, CommandArgs)]
+#[holst_command(
+    group = Object,
+    verb = "lock",
+    risk = Write,
+    block = Commands,
+    about = "Lock objects so that they cannot be changed",
+    help = "Lock objects: they are put into one new locked group, which `o edit` and `o rm` then refuse to touch until `o unlock`. The objects are the linked object and every --object.\n\
+            With --only a frame or a table is locked by itself, its content stays free; nothing else can be locked that way. Needs the board's right to manage locks. Table cells and mind-map nodes cannot be locked. It prints one line per changed object with @N and its link.",
+    example = "holst o lock \"Roadmap\" --object a1b2c3d4 --object e5f6a7b8",
+    example = "holst o lock \"Roadmap\" --object a1b2c3d4 --only -n"
+)]
+pub struct LockArgs {
+    #[argument(positional, help = "The board: id, link or part of its name")]
+    pub board: String,
+    #[argument(
+        value_name = "object",
+        help = "An object, repeat for several: id, link, @N or the first 8 characters of its id"
+    )]
+    pub object: Vec<String>,
+    #[argument(help = "Lock a frame or a table itself, not what is in it")]
+    pub only: bool,
+    #[argument(
+        letter = 'w',
+        value_name = "ws",
+        help = "Where names are looked up and new things go: a workspace id or part of its name; all of yours by default"
+    )]
+    pub workspace: Option<String>,
+    #[argument(letter = 'n', help = "Show what would change; change nothing")]
+    pub dry_run: WriteMode,
+}
+
+#[derive(Debug, Deserialize, CommandArgs)]
+#[holst_command(
+    group = Object,
+    verb = "unlock",
+    risk = Write,
+    block = Commands,
+    about = "Unlock locked groups, frames and tables",
+    help = "Unlock what `o lock` locked: a locked group is dissolved and its objects stay, a locked frame or table is unlocked. The objects are the linked object and every --object; --all unlocks everything locked on the board.\n\
+            Needs the board's right to manage locks. It prints one line per changed object with @N and its link.",
+    example = "holst o unlock \"Roadmap\" --object a1b2c3d4",
+    example = "holst o unlock \"Roadmap\" --all -n"
+)]
+pub struct UnlockArgs {
+    #[argument(positional, help = "The board: id, link or part of its name")]
+    pub board: String,
+    #[argument(
+        value_name = "object",
+        help = "A locked group, frame or table, repeat for several: id, link, @N or the first 8 characters of its id"
+    )]
+    pub object: Vec<String>,
+    #[argument(help = "Unlock everything locked on the board")]
+    pub all: bool,
     #[argument(
         letter = 'w',
         value_name = "ws",

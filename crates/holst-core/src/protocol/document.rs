@@ -23,6 +23,8 @@ pub(crate) const CREATED: &str = "created";
 pub(crate) const AUTHOR_INDEX: &str = "a";
 pub(crate) const PARENT_ID: &str = "parentId";
 
+// PROTOCOL: set on a group, a frame or a table that is locked.
+pub(crate) const LOCKED: &str = "locked";
 // PROTOCOL: a group keeps its members' places and is their `parentId`.
 pub(crate) const IGNORE_Z_INDEX: &str = "ignoreZIndex";
 // PROTOCOL: the table cell an object in a table sits in, copied onto its group.

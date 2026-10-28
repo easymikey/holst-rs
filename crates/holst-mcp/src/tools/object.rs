@@ -11,16 +11,19 @@ use holst_core::{
             EditArgs,
             GetArgs,
             GroupArgs,
+            LockArgs,
             LsArgs,
             ObjectVerb,
             RemoveArgs,
             UngroupArgs,
+            UnlockArgs,
             add,
             change::{self, Removed},
             copy,
             get::{self, Downloaded},
             group,
             list::{self, ListedObject, Listing},
+            lock,
         },
         table::{CommandArgs, CommandName, parse},
     },
@@ -144,6 +147,14 @@ impl McpServer {
             ObjectVerb::Ungroup => {
                 let dry = |args: &UngroupArgs| args.dry_run;
                 self.change_objects(arguments, dry, group::ungroup).await
+            }
+            ObjectVerb::Lock => {
+                let dry = |args: &LockArgs| args.dry_run;
+                self.change_objects(arguments, dry, lock::lock).await
+            }
+            ObjectVerb::Unlock => {
+                let dry = |args: &UnlockArgs| args.dry_run;
+                self.change_objects(arguments, dry, lock::unlock).await
             }
             ObjectVerb::Rm => self.remove_objects(arguments).await,
             ObjectVerb::Get => self.download_objects(arguments).await,
@@ -339,6 +350,7 @@ impl McpServer {
         } else {
             format!("  #{}", listed.tags.join(" #"))
         };
+        let padlock = if object.locked { "  locked" } else { "" };
         let text = shorten(&one_line(&object.text));
         let quoted = if text.is_empty() {
             String::new()
@@ -346,7 +358,7 @@ impl McpServer {
             format!("  \"{}\"", printable(&text))
         };
         format!(
-            "{} {:<7} {corner}{size}{inside}{color}{look}{ends}{tags}{quoted}",
+            "{} {:<7} {corner}{size}{inside}{color}{look}{ends}{padlock}{tags}{quoted}",
             alias(&object.id),
             object.kind.short_name(),
         )

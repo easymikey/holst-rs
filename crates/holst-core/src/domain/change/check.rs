@@ -30,6 +30,7 @@ use crate::{
             GivenRectangle,
             GivenSize,
             GroupRefusal,
+            LockRefusal,
             OffBoardValue,
         },
     },
@@ -38,6 +39,7 @@ use crate::{
         CREATED,
         END,
         HEIGHT,
+        LOCKED,
         OBJECT_ID,
         PARENT_ID,
         POSITION,
@@ -50,8 +52,6 @@ use crate::{
     },
 };
 
-/// Written by the web client on a group, a frame or a table that is locked.
-const LOCKED: &str = "locked";
 /// Written on a sticker stuck to another object.
 const STICKY_POSITION: &str = "stickyPosition";
 /// The author's number in an object's `created`.
@@ -96,7 +96,10 @@ impl CheckedChange<'_> {
             CheckedChange::RemoveAll(_)
             | CheckedChange::Paste(_)
             | CheckedChange::Group(_)
-            | CheckedChange::Ungroup(_) => BTreeSet::new(),
+            | CheckedChange::Lock(_)
+            | CheckedChange::Ungroup(_)
+            | CheckedChange::LockOnly(_)
+            | CheckedChange::Unlock(_) => BTreeSet::new(),
         }
     }
 }
@@ -122,7 +125,22 @@ pub(crate) enum CheckedChange<'a> {
     Paste(&'a Pasted),
     /// The members of a new group, once each, the top ones only.
     Group(Vec<String>),
+    /// The members of a new locked group, once each, the top ones only.
+    Lock(Vec<String>),
     Ungroup(Vec<String>),
+    /// Frames and tables to flag locked.
+    LockOnly(Vec<String>),
+    /// Locked groups to dissolve and locked frames and tables to unlock.
+    Unlock(Vec<String>),
+}
+
+/// What a new group is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Grouping {
+    /// Objects picked and moved together.
+    Plain,
+    /// Objects kept as they are: the group carries the lock flag.
+    Locked,
 }
 
 /// An edit of many with the object it names found.
@@ -186,9 +204,13 @@ pub(crate) fn check<'a>(
             on_board(edit.patch.at.as_ref(), edit.patch.size.as_ref())
         }),
         BoardChange::Paste(pasted) => pasted_on_board(pasted),
-        BoardChange::RemoveAll(_) | BoardChange::Group(_) | BoardChange::Ungroup(_) => {
-            Ok(())
-        }
+        BoardChange::RemoveAll(_)
+        | BoardChange::Group(_)
+        | BoardChange::Ungroup(_)
+        | BoardChange::Lock(_)
+        | BoardChange::LockOnly(_)
+        | BoardChange::Unlock(_)
+        | BoardChange::UnlockAll => Ok(()),
     }?;
     match change {
         BoardChange::AddAll(entries) => entries
@@ -231,6 +253,16 @@ pub(crate) fn check<'a>(
         BoardChange::Ungroup(objects) => {
             ungroupable(states, objects).map(CheckedChange::Ungroup)
         }
+        BoardChange::Lock(objects) => {
+            lockable(states, objects).map(CheckedChange::Lock)
+        }
+        BoardChange::LockOnly(objects) => {
+            flaggable(states, objects).map(CheckedChange::LockOnly)
+        }
+        BoardChange::Unlock(objects) => {
+            unlockable(states, objects).map(CheckedChange::Unlock)
+        }
+        BoardChange::UnlockAll => all_locked(states).map(CheckedChange::Unlock),
     }
 }
 
@@ -243,30 +275,38 @@ pub(super) fn flagged(states: &HashMap<String, Value>, object: &str) -> bool {
         .unwrap_or_default()
 }
 
-/// The ids of the objects named, once each, that may go into one new group:
-/// what lies inside another named object goes with it, and the rest must be
-/// at least two, none of a kind the web client keeps out of groups.
-fn groupable(states: &HashMap<String, Value>, named: &[String]) -> Result<Vec<String>> {
+/// The objects named, once each, the top ones only: what lies inside another
+/// named object goes with it. Each is the id with the reference that named it.
+fn top_named<'a>(
+    states: &HashMap<String, Value>,
+    named: &'a [String],
+) -> Result<Vec<(&'a String, String)>> {
     let found = named
         .iter()
         .map(|reference| find(states, reference).map(|id| (reference, id)))
         .collect::<Result<Vec<_>>>()?;
-    let asked: BTreeSet<&str> = found.iter().map(|(_, id)| id.as_str()).collect();
-    let top: Vec<_> = found
-        .iter()
-        .unique_by(|(_, id)| id)
+    let asked: BTreeSet<String> = found.iter().map(|(_, id)| id.clone()).collect();
+    Ok(found
+        .into_iter()
+        .unique_by(|(_, id)| id.clone())
         .filter(|(_, id)| {
             ancestry(states, id)
                 .iter()
                 .skip(1)
                 .all(|above| !asked.contains(above.as_str()))
         })
-        .collect();
+        .collect())
+}
+
+/// The ids of the objects named, once each, that may go into one new group:
+/// at least two, none of a kind the web client keeps out of groups.
+fn groupable(states: &HashMap<String, Value>, named: &[String]) -> Result<Vec<String>> {
+    let top = top_named(states, named)?;
     let too_few = (top.len() < 2).then(|| {
         Error::BoardChange(BoardChangeError::TooFewToGroup { given: top.len() })
     });
     let refused = top.iter().find_map(|(reference, id)| {
-        refusal_to_group(states, id).map(|why| {
+        refusal_to_group(states, id, Grouping::Plain).map(|why| {
             Error::BoardChange(BoardChangeError::NotGroupable {
                 reference: (*reference).clone(),
                 why,
@@ -278,15 +318,123 @@ fn groupable(states: &HashMap<String, Value>, named: &[String]) -> Result<Vec<St
         .map_or_else(|| Ok(top.iter().map(|(_, id)| id.clone()).collect()), Err)
 }
 
+/// The ids of the objects named, once each, that may go into one new locked
+/// group: any number, frames included, none locked or kept out of groups.
+fn lockable(states: &HashMap<String, Value>, named: &[String]) -> Result<Vec<String>> {
+    let top = top_named(states, named)?;
+    let refused = top.iter().find_map(|(reference, id)| {
+        refusal_to_lock(states, id).map(|why| {
+            Error::BoardChange(BoardChangeError::NotLockable {
+                reference: (*reference).clone(),
+                why,
+            })
+        })
+    });
+    refused.map_or_else(|| Ok(top.iter().map(|(_, id)| id.clone()).collect()), Err)
+}
+
+/// Why the web client's menu will not lock the object with a group, if it will
+/// not.
+fn refusal_to_lock(states: &HashMap<String, Value>, id: &str) -> Option<LockRefusal> {
+    refusal_to_group(states, id, Grouping::Locked)
+        .map(LockRefusal::Group)
+        .or_else(|| locked(states, id).then_some(LockRefusal::Held))
+}
+
+/// The ids of the frames and tables named, once each, that are not locked.
+fn flaggable(states: &HashMap<String, Value>, named: &[String]) -> Result<Vec<String>> {
+    let found = named
+        .iter()
+        .map(|reference| find(states, reference).map(|id| (reference, id)))
+        .collect::<Result<Vec<_>>>()?;
+    found
+        .iter()
+        .unique_by(|(_, id)| id)
+        .map(|(reference, id)| {
+            let refusal =
+                if matches!(kind_of(states, id), ObjectKind::Frame | ObjectKind::Table)
+                {
+                    locked(states, id).then_some(LockRefusal::Held)
+                } else {
+                    Some(LockRefusal::NotFrameOrTable)
+                };
+            refusal.map_or_else(
+                || Ok(id.clone()),
+                |why| {
+                    Err(Error::BoardChange(BoardChangeError::NotLockable {
+                        reference: (*reference).clone(),
+                        why,
+                    }))
+                },
+            )
+        })
+        .collect()
+}
+
+/// Whether the object itself is a group, frame or table that is locked: what
+/// an unlock takes off.
+fn locked_itself(states: &HashMap<String, Value>, id: &str) -> bool {
+    let holder = matches!(
+        kind_of(states, id),
+        ObjectKind::Group | ObjectKind::Frame | ObjectKind::Table
+    );
+    holder && flagged(states, id)
+}
+
+/// The ids of the objects named, once each; each must be locked itself.
+fn unlockable(
+    states: &HashMap<String, Value>,
+    named: &[String],
+) -> Result<Vec<String>> {
+    let found = named
+        .iter()
+        .map(|reference| find(states, reference).map(|id| (reference, id)))
+        .collect::<Result<Vec<_>>>()?;
+    found
+        .iter()
+        .unique_by(|(_, id)| id)
+        .map(|(reference, id)| {
+            if locked_itself(states, id) {
+                Ok(id.clone())
+            } else {
+                Err(Error::BoardChange(BoardChangeError::NotLocked {
+                    reference: (*reference).clone(),
+                }))
+            }
+        })
+        .collect()
+}
+
+/// The ids of everything locked on the board.
+fn all_locked(states: &HashMap<String, Value>) -> Result<Vec<String>> {
+    let ids: Vec<String> = states
+        .keys()
+        .filter(|id| locked_itself(states, id))
+        .sorted_unstable()
+        .cloned()
+        .collect();
+    if ids.is_empty() {
+        Err(Error::BoardChange(BoardChangeError::NothingToUnlock))
+    } else {
+        Ok(ids)
+    }
+}
+
 /// Why the web client's menu will not group the object, if it will not.
-fn refusal_to_group(states: &HashMap<String, Value>, id: &str) -> Option<GroupRefusal> {
+fn refusal_to_group(
+    states: &HashMap<String, Value>,
+    id: &str,
+    grouping: Grouping,
+) -> Option<GroupRefusal> {
     let in_group = ancestry(states, id)
         .iter()
         .skip(1)
         .any(|above| kind_of(states, above) == ObjectKind::Group);
     let kind = kind_of(states, id);
     let by_kind = match &kind {
-        ObjectKind::Frame => Some(GroupRefusal::Frame),
+        ObjectKind::Frame => {
+            (grouping == Grouping::Plain).then_some(GroupRefusal::Frame)
+        }
         ObjectKind::TableCell => Some(GroupRefusal::TableCell),
         ObjectKind::Other(name) => {
             (name == MIND_MAP_NODE).then_some(GroupRefusal::MindMapNode)

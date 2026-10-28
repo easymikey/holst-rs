@@ -180,6 +180,7 @@ async fn a_saved_original_is_linked_by_its_percent_encoded_name() -> Result<()> 
         look: None,
         ends: None,
         author: None,
+        locked: false,
         file: Some(StoredFile {
             name: "x/a1.png".into(),
             original: Some("a#1 100%.png".into()),

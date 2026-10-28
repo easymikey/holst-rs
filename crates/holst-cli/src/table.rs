@@ -499,6 +499,8 @@ mod tests {
             ObjectVerb::Cp => parse::<object::CopyArgs>(arguments).map(drop),
             ObjectVerb::Group => parse::<object::GroupArgs>(arguments).map(drop),
             ObjectVerb::Ungroup => parse::<object::UngroupArgs>(arguments).map(drop),
+            ObjectVerb::Lock => parse::<object::LockArgs>(arguments).map(drop),
+            ObjectVerb::Unlock => parse::<object::UnlockArgs>(arguments).map(drop),
             ObjectVerb::Rm => parse::<object::RemoveArgs>(arguments).map(drop),
             ObjectVerb::Get => parse::<object::GetArgs>(arguments).map(drop),
         }

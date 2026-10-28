@@ -216,6 +216,7 @@ fn named_objects(
                     look: None,
                     ends: None,
                     author: None,
+                    locked: false,
                     file: crate::domain::board::stored_file(&crate::domain::board::ObjectKind::of(name), &fields),
                     fields,
                 }
@@ -294,6 +295,7 @@ proptest! {
             look: None,
             ends: None,
             author: None,
+            locked: false,
             file: None,
             fields: json!({"data": {"type": "textStamp", "text": texts.last()}}),
         };

@@ -147,6 +147,12 @@ impl Access {
         self.withhold(board, "who_can_delete_content", needs, role);
     }
 
+    /// Keeps locking and unlocking on `board` to the role `needs` and up, and
+    /// gives the user the role `role` there.
+    pub(crate) fn withhold_locking(&mut self, board: &str, needs: &str, role: &str) {
+        self.withhold(board, "who_can_manage_lock_content", needs, role);
+    }
+
     fn withhold(&mut self, board: &str, setting: &str, needs: &str, role: &str) {
         self.patch(board, Map::from_iter([(setting.to_owned(), json!(needs))]));
         let user = self.user.clone();

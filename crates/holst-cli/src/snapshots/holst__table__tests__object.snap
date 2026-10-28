@@ -1,6 +1,6 @@
 ---
 source: crates/holst-cli/src/table.rs
-expression: help_of(line)
+expression: "help_of(&format!(\"{line} -h\"))"
 ---
 Work with the objects on a board.
 
@@ -14,6 +14,8 @@ COMMANDS
   cp:          Copy objects on their board or onto another board
   group:       Put objects into a group
   ungroup:     Dissolve groups; their objects stay
+  lock:        Lock objects so that they cannot be changed
+  unlock:      Unlock locked groups, frames and tables
   rm:          Remove objects with what a frame holds and their arrows
   get:         Download the original of an image or file object
 

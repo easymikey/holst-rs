@@ -4,6 +4,7 @@ mod add_all;
 mod frame;
 mod group;
 mod journal;
+mod lock;
 mod locked;
 mod many;
 mod markdown;

@@ -14,7 +14,7 @@ use crate::{
         area::scene::Scene,
         board::{Object, ObjectKind, any, object_of},
         change::{
-            check::{kind_of, parent_of, shows_content},
+            check::{Grouping, kind_of, parent_of, shows_content},
             journal,
             value::{ChangedObject, ObjectChangeKind},
             write::{WriteTransaction, insert_changes, object_map},
@@ -27,6 +27,7 @@ use crate::{
         CREATED,
         ID,
         IGNORE_Z_INDEX,
+        LOCKED,
         PARENT_ID,
         POSITION,
         TYPE,
@@ -44,6 +45,7 @@ pub(super) fn group(
     transaction: &mut TransactionMut<'_>,
     scope: &WriteTransaction<'_>,
     members: &[String],
+    grouping: Grouping,
 ) -> Result<Vec<ChangedObject>> {
     let WriteTransaction {
         roots,
@@ -67,8 +69,10 @@ pub(super) fn group(
         (POSITION, json!({ (X): corner.0, (Y): corner.1 })),
         (IGNORE_Z_INDEX, json!(true)),
     ];
+    let locked = (grouping == Grouping::Locked).then_some((LOCKED, json!(true)));
     let pairs = own
         .into_iter()
+        .chain(locked)
         .chain(home_of(states, members))
         .map(|(name, value)| any(&value).map(|value| (name.to_owned(), value)))
         .collect::<Result<Vec<(String, Any)>>>()?;
@@ -324,4 +328,62 @@ pub(super) fn dissolve_after_removal(
         }
     }
     dissolution.written(transaction, scope)
+}
+
+/// The frames and tables flagged locked, nothing grouped.
+pub(super) fn lock_only(
+    transaction: &mut TransactionMut<'_>,
+    scope: &WriteTransaction<'_>,
+    ids: &[String],
+) -> Result<Vec<ChangedObject>> {
+    flagged(transaction, scope, ids, true)
+}
+
+/// The locked groups dissolved, their members left where the groups stood, and
+/// the locked frames and tables unlocked.
+pub(super) fn unlock(
+    transaction: &mut TransactionMut<'_>,
+    scope: &WriteTransaction<'_>,
+    ids: &[String],
+) -> Result<Vec<ChangedObject>> {
+    let (groups, others): (Vec<String>, Vec<String>) = ids
+        .iter()
+        .cloned()
+        .partition(|id| kind_of(scope.states, id) == ObjectKind::Group);
+    let freed = ungroup(transaction, scope, &groups)?;
+    let cleared = flagged(transaction, scope, &others, false)?;
+    Ok(freed.into_iter().chain(cleared).collect())
+}
+
+/// `locked` written on each of the objects, as the web client's `update` does.
+fn flagged(
+    transaction: &mut TransactionMut<'_>,
+    scope: &WriteTransaction<'_>,
+    ids: &[String],
+    locked: bool,
+) -> Result<Vec<ChangedObject>> {
+    let WriteTransaction {
+        roots,
+        states,
+        stamp,
+        ..
+    } = *scope;
+    ids.iter()
+        .map(|id| {
+            let kind = kind_of(states, id);
+            let map = object_map(transaction, &roots.objects, id, &kind)?;
+            insert_changes(
+                transaction,
+                &map,
+                &[(LOCKED, json!(locked)), ("updated", stamp.json())],
+            )?;
+            Ok(ChangedObject {
+                id: id.clone(),
+                kind,
+                change: ObjectChangeKind::Changed,
+                fields: vec![LOCKED],
+                link: None,
+            })
+        })
+        .collect()
 }

@@ -209,6 +209,15 @@ impl Fake {
         }
     }
 
+    /// Keeps locking and unlocking on the board called `board` to the role
+    /// `needs` and up, and gives the user the role `role` there.
+    pub fn withhold_locking(&self, board: &str, needs: &str, role: &str) {
+        let mut state = self.locked();
+        if let Some(id) = state.tree.id_of(board) {
+            state.access.withhold_locking(&id, needs, role);
+        }
+    }
+
     /// Keeps removing other people's objects on the board called `board` to
     /// the role `needs` and up, and gives the user the role `role` there.
     pub fn withhold_deleting(&self, board: &str, needs: &str, role: &str) {

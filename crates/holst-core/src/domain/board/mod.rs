@@ -278,6 +278,9 @@ pub struct Object {
     pub look: Option<shape_type::ShapeLook>,
     pub ends: Option<ArrowEnds>,
     pub author: Option<String>,
+    /// Whether the object itself carries the lock flag.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub locked: bool,
     #[serde(skip)]
     pub file: Option<StoredFile>,
     #[serde(skip)]
@@ -530,6 +533,9 @@ fn object(
             .and_then(|created| created.get(document::AUTHOR_INDEX))
             .and_then(Value::as_u64)
             .and_then(|index| authors.get(&index).cloned()),
+        locked: field(document::LOCKED)
+            .and_then(Value::as_bool)
+            .unwrap_or_default(),
         file: stored_file(&kind, &fields),
         kind,
         fields,

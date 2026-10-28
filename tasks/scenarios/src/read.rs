@@ -34,6 +34,8 @@ struct Listed {
     parent: Option<String>,
     ends: Option<Ends>,
     #[serde(default)]
+    locked: bool,
+    #[serde(default)]
     tags: Vec<String>,
 }
 
@@ -291,6 +293,7 @@ pub(crate) fn cli_objects(stdout: &[u8]) -> Result<Observation, ScenarioError> {
                     listed.y.round() + 0.0
                 ),
                 in_frame: listed.parent.is_some(),
+                locked: listed.locked,
                 size: listed
                     .width
                     .zip(listed.height)
@@ -363,6 +366,7 @@ fn listed_object(line: &str) -> Option<ListedObject> {
         kind,
         corner,
         in_frame: parent.is_some(),
+        locked: rest.contains(&"locked"),
         text: text.to_owned(),
         size: rest
             .iter()
@@ -375,6 +379,7 @@ fn listed_object(line: &str) -> Option<ListedObject> {
                 !spoken_for.contains(at)
                     && !word.contains('×')
                     && !word.starts_with('#')
+                    && **word != "locked"
             })
             .map(|(_, word)| (*word).to_owned()),
         look: Some(look).filter(|look| !look.is_empty()),
@@ -477,6 +482,21 @@ impl Then<'_> {
             .collect();
         let wanted: std::collections::BTreeSet<&str> = texts.iter().copied().collect();
         assert_eq!(inside, wanted, "{:?}", self.observation);
+    }
+
+    /// Expects exactly the objects with these texts to be shown locked.
+    ///
+    /// # Panics
+    /// When the observation differs.
+    pub fn lists_locked(&self, texts: &[&str]) {
+        let locked: std::collections::BTreeSet<&str> = self
+            .objects()
+            .iter()
+            .filter(|row| row.locked)
+            .map(|row| row.text.as_str())
+            .collect();
+        let wanted: std::collections::BTreeSet<&str> = texts.iter().copied().collect();
+        assert_eq!(locked, wanted, "{:?}", self.observation);
     }
 
     /// Expects no object inside a frame.

@@ -7,6 +7,7 @@ mod files;
 mod fixtures;
 mod folders;
 mod grouping;
+mod locking;
 mod search;
 mod session;
 mod settings;

@@ -130,6 +130,7 @@ fn plain_object(
         look: None,
         ends: None,
         author: Some(id_of_author()),
+        locked: false,
         file: None,
         fields: Value::Null,
     }
