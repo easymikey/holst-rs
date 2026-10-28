@@ -95,15 +95,16 @@ fn text_of(given: &str, stdin: &mut impl Read) -> Result<String> {
     reason = "reads the user-named body file; its error is the CLI's BodyFile, not a storage one"
 )]
 pub(crate) fn read_source(source: &str, stdin: &mut impl Read) -> Result<String> {
-    if source == "-" {
-        let mut text = String::new();
-        stdin.read_to_string(&mut text).map_err(Error::ReadInput)?;
-        Ok(text)
-    } else {
-        std::fs::read_to_string(source).map_err(|error| Error::BodyFile {
-            path: source.into(),
+    match source {
+        "-" => {
+            let mut text = String::new();
+            stdin.read_to_string(&mut text).map_err(Error::ReadInput)?;
+            Ok(text)
+        }
+        path => std::fs::read_to_string(path).map_err(|error| Error::BodyFile {
+            path: path.into(),
             error,
-        })
+        }),
     }
 }
 

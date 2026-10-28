@@ -135,31 +135,15 @@ impl Access {
             .unwrap_or_default()
     }
 
-    /// Keeps copying out of `board` to the role `needs` and up, and gives the
-    /// user the role `role` there.
-    pub(crate) fn withhold_copying(&mut self, board: &str, needs: &str, role: &str) {
-        self.withhold(board, "who_can_copy_content", needs, role);
-    }
-
-    /// Keeps removing other people's objects on `board` to the role `needs`
-    /// and up, and gives the user the role `role` there.
-    pub(crate) fn withhold_deleting(&mut self, board: &str, needs: &str, role: &str) {
-        self.withhold(board, "who_can_delete_content", needs, role);
-    }
-
-    /// Keeps locking and unlocking on `board` to the role `needs` and up, and
+    /// Keeps the setting `setting` of `board` to the role `needs` and up, and
     /// gives the user the role `role` there.
-    pub(crate) fn withhold_locking(&mut self, board: &str, needs: &str, role: &str) {
-        self.withhold(board, "who_can_manage_lock_content", needs, role);
-    }
-
-    /// Keeps hiding and showing frame content on `board` to the role `needs`
-    /// and up, and gives the user the role `role` there.
-    pub(crate) fn withhold_hiding(&mut self, board: &str, needs: &str, role: &str) {
-        self.withhold(board, "who_can_manage_frame_hide_content", needs, role);
-    }
-
-    fn withhold(&mut self, board: &str, setting: &str, needs: &str, role: &str) {
+    pub(crate) fn withhold(
+        &mut self,
+        board: &str,
+        setting: &str,
+        needs: &str,
+        role: &str,
+    ) {
         self.patch(board, Map::from_iter([(setting.to_owned(), json!(needs))]));
         let user = self.user.clone();
         self.roles

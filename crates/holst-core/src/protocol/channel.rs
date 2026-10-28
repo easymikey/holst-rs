@@ -47,14 +47,13 @@ impl BoardFormat {
     pub(crate) fn supported(&self) -> Result<()> {
         let schema = self.schema_version.unwrap_or(1);
         let provider = self.provider.as_deref().unwrap_or(SUPPORTED_PROVIDER);
-        (schema == SUPPORTED_SCHEMA && provider == SUPPORTED_PROVIDER)
-            .then_some(())
-            .ok_or_else(|| {
-                Error::BoardSocket(BoardSocketError::UnsupportedFormat {
-                    schema,
-                    provider: provider.to_owned(),
-                })
-            })
+        match (schema, provider) {
+            (SUPPORTED_SCHEMA, SUPPORTED_PROVIDER) => Ok(()),
+            _ => Err(Error::BoardSocket(BoardSocketError::UnsupportedFormat {
+                schema,
+                provider: provider.to_owned(),
+            })),
+        }
     }
 }
 

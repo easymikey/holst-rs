@@ -7,10 +7,18 @@ use itertools::Itertools as _;
 use crate::{
     command::{
         board::show::{Loading, account_cache, board_id},
-        board_load::{CacheUse, withheld},
+        board_load::CacheUse,
         object::{
             CopyArgs,
-            change::{Sending, load_board, named, reported, send},
+            change::{
+                Guard,
+                Sending,
+                load_board,
+                named,
+                refuse_withheld,
+                reported,
+                send,
+            },
         },
         table::not_value,
     },
@@ -30,9 +38,8 @@ use crate::{
         confirmation::ALWAYS,
         settings::CacheSettings,
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{Result, board_change::BoardChangeError},
     remote::{
-        api,
         client::Client,
         socket::write::{connector, interpreter},
     },
@@ -89,7 +96,11 @@ async fn copied<I: WriteInterpreter + ?Sized>(
     let elsewhere = target != source;
     refuse_files(&chosen, elsewhere)?;
     if elsewhere {
-        refuse_withheld(client, &source).await?;
+        // As the web client does before it lets objects go to another board.
+        let copying: Guard = ("who_can_copy_content", |needs, holds| {
+            BoardChangeError::CopyWithheld { needs, holds }
+        });
+        refuse_withheld(client, &source, copying).await?;
     }
     let beside = if elsewhere {
         board_objects(&load_board(client, &loading, &target).await?.document)
@@ -283,19 +294,6 @@ fn refuse_files(chosen: &Chosen, elsewhere: bool) -> Result<()> {
                 ),
             ))
         })
-}
-
-/// Refuses a copy out of the board `source` when its `who_can_copy_content`
-/// stands above the role the caller's permits give there, as the web client
-/// does before it lets objects go to another board.
-async fn refuse_withheld(client: &Client, source: &str) -> Result<()> {
-    let channel = api::channel::get(client, source).await?;
-    withheld(&channel, "who_can_copy_content").map_or(Ok(()), |(needs, holds)| {
-        Err(Error::BoardChange(BoardChangeError::CopyWithheld {
-            needs,
-            holds,
-        }))
-    })
 }
 
 /// The corner the copies' box goes to: the one given, else a free one.

@@ -129,9 +129,10 @@ async fn added<I: WriteInterpreter + ?Sized>(
     )
     .await?;
     // Before any upload: a board that cannot be changed takes no file.
-    matches!(loaded.right, EditRight::Editable)
-        .then_some(())
-        .ok_or(Error::BoardChange(BoardChangeError::ReadOnly))?;
+    match loaded.right {
+        EditRight::Editable => Ok(()),
+        EditRight::ReadOnly => Err(Error::BoardChange(BoardChangeError::ReadOnly)),
+    }?;
     let hides = items.iter().any(
         |item| matches!(&item.what, What::Frame { look, .. } if look.hidden.is_some()),
     );
@@ -360,15 +361,14 @@ fn fitted(pixels: Size) -> Result<Size> {
 fn read_items(args: &AddArgs) -> Result<Vec<Item>> {
     let kind = args.kind.unwrap_or_default();
     let listed = args.items.as_ref().map(|items| items.0.as_slice());
-    listed
-        .filter(|listed| listed.is_empty())
-        .map_or(Ok(()), |_| {
-            Err(not_value(
-                COMMAND,
-                "items",
-                "a list of at least one object: --items holds no objects",
-            ))
-        })?;
+    match listed {
+        Some([]) => Err(not_value(
+            COMMAND,
+            "items",
+            "a list of at least one object: --items holds no objects",
+        )),
+        _ => Ok(()),
+    }?;
     let many = listed.is_some();
     let given = [
         ("text", args.text.is_some()),
@@ -435,6 +435,30 @@ fn read_items(args: &AddArgs) -> Result<Vec<Item>> {
         })
 }
 
+impl AddItem {
+    /// The keys only an arrow takes, each with whether it is given.
+    fn arrow_keys(&self) -> [(&'static str, bool); 7] {
+        [
+            ("from", self.from.is_some()),
+            ("to", self.to.is_some()),
+            ("line", self.line.is_some()),
+            ("heads", self.heads.is_some()),
+            ("stroke_style", self.stroke_style.is_some()),
+            ("stroke_width", self.stroke_width.is_some()),
+            ("label", !self.label.is_empty()),
+        ]
+    }
+
+    /// The keys only a frame takes, each with whether it is given.
+    fn frame_keys(&self) -> [(&'static str, bool); 3] {
+        [
+            ("ratio", self.ratio.is_some()),
+            ("background", self.background.is_some()),
+            ("hide_content", self.hide_content.is_some()),
+        ]
+    }
+}
+
 /// Reads the values of one item, which is the `slot`-th of `--items` if `many`.
 struct Reader {
     many: bool,
@@ -456,42 +480,28 @@ impl Reader {
     /// refused.
     fn rich(&self, kind: AddKind, word: &str) -> Result<bool> {
         let rich = matches!(kind, AddKind::Sticker | AddKind::Text | AddKind::Shape);
-        let refused = !rich && !self.many && self.format == TextFormat::Markdown;
-        refused
-            .then(|| self.bad("text_format", &format!("left out for {word}")))
-            .map_or(Ok(rich), Err)
+        match (rich, self.many, self.format) {
+            (false, false, TextFormat::Markdown) => {
+                Err(self.bad("text_format", &format!("left out for {word}")))
+            }
+            _ => Ok(rich),
+        }
     }
 
-    /// Refuses the keys only an arrow takes on another kind.
-    fn refuse_arrow_keys(&self, item: &AddItem, kind: AddKind) -> Result<()> {
-        [
-            ("from", item.from.is_some()),
-            ("to", item.to.is_some()),
-            ("line", item.line.is_some()),
-            ("heads", item.heads.is_some()),
-            ("stroke_style", item.stroke_style.is_some()),
-            ("stroke_width", item.stroke_width.is_some()),
-            ("label", !item.label.is_empty()),
-        ]
-        .into_iter()
-        .find_map(|(name, given)| (given && kind != AddKind::Arrow).then_some(name))
-        .map_or(Ok(()), |name| {
-            Err(self.bad(name, &format!("left out for {}", word(kind))))
-        })
-    }
-
-    /// Refuses the keys only a frame takes on another kind.
-    fn refuse_frame_keys(&self, item: &AddItem, kind: AddKind) -> Result<()> {
-        [
-            ("ratio", item.ratio.is_some()),
-            ("background", item.background.is_some()),
-            ("hide_content", item.hide_content.is_some()),
-        ]
-        .into_iter()
-        .find_map(|(name, given)| (given && kind != AddKind::Frame).then_some(name))
-        .map_or(Ok(()), |name| {
-            Err(self.bad(name, &format!("left out for {}", word(kind))))
-        })
+    /// Refuses the first given key of `keys`, which only the `owner` kind
+    /// takes.
+    fn refuse_foreign(
+        &self,
+        kind: AddKind,
+        owner: AddKind,
+        keys: &[(&'static str, bool)],
+    ) -> Result<()> {
+        keys.iter()
+            .find(|(_, given)| *given)
+            .filter(|_| kind != owner)
+            .map_or(Ok(()), |(name, _)| {
+                Err(self.bad(name, &format!("left out for {}", word(kind))))
+            })
     }
 
     fn missing(&self, name: &'static str) -> Error {
@@ -520,7 +530,7 @@ impl Reader {
                 .map_or(Ok(()), Err)
         };
         let arrow = kind == AddKind::Arrow;
-        self.refuse_arrow_keys(item, kind)?;
+        self.refuse_foreign(kind, AddKind::Arrow, &item.arrow_keys())?;
         let linked = kind == AddKind::Link;
         let uploaded = matches!(kind, AddKind::Image | AddKind::File);
         refuse("text", (arrow || linked || uploaded) && item.text.is_some())?;
@@ -538,7 +548,7 @@ impl Reader {
         refuse("path", !uploaded && item.path.is_some())?;
         let rich = self.rich(kind, word)?;
         refuse("no_embed", !linked && item.no_embed.is_some())?;
-        self.refuse_frame_keys(item, kind)?;
+        self.refuse_foreign(kind, AddKind::Frame, &item.frame_keys())?;
         let at = item.at.as_deref().map(str::parse).transpose()?;
         let size = item.size.as_deref().map(str::parse).transpose()?;
         let text = item.text.clone();
@@ -865,9 +875,10 @@ fn entries(
 
 /// The rectangle of the frame the item made, as the last one placed.
 fn made_frame(item: &Item, placed: &[Rectangle]) -> Option<Rectangle> {
-    matches!(item.what, What::Frame { .. })
-        .then(|| placed.last().copied())
-        .flatten()
+    placed
+        .last()
+        .copied()
+        .filter(|_| matches!(item.what, What::Frame { .. }))
 }
 
 /// The frame an item sits in: the rectangle of one made earlier in the list

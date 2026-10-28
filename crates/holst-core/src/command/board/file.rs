@@ -128,9 +128,10 @@ async fn exported(
         .object_list
         .then(|| json_lines(&saved.content.objects))
         .transpose()?;
+    let bytes = document.len();
     let (file, inline) = match place {
         Some(place) => (place.write(extension, &document)?, None),
-        None => (PathBuf::from(STDOUT), Some(document.to_vec())),
+        None => (PathBuf::from(STDOUT), Some(document.into_owned())),
     };
     let object_list = lines
         .map(|lines| {
@@ -146,7 +147,7 @@ async fn exported(
         board: id,
         objects: saved.content.objects.len(),
         state_bytes: saved.document.len(),
-        bytes: document.len(),
+        bytes,
         file,
         object_list,
         inline,
@@ -383,11 +384,7 @@ async fn new_board(
 /// The import's error, after the board it made for the import is moved to the
 /// trash; when that fails too, the error also names the board left behind.
 async fn unmade(client: &Client, id: &str, error: Error) -> Error {
-    let trashed = match api::channel::delete_request(id, DeleteMode::Trash) {
-        Ok(request) => client.send_json(request).await,
-        Err(failed) => Err(failed),
-    };
-    match trashed {
+    match trashed(client, id).await {
         Ok(_) => error,
         Err(failed) => Error::from(InputError::Several {
             errors: vec![
@@ -399,6 +396,12 @@ async fn unmade(client: &Client, id: &str, error: Error) -> Error {
             ],
         }),
     }
+}
+
+async fn trashed(client: &Client, id: &str) -> Result<serde_json::Value> {
+    client
+        .send_json(api::channel::delete_request(id, DeleteMode::Trash)?)
+        .await
 }
 
 /// The file's name without `.gz` and the extension before it.

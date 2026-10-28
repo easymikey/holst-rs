@@ -3,23 +3,16 @@ use strum::VariantNames as _;
 
 use crate::{
     command::{
-        board::show::account_cache,
-        board_load::CacheUse,
-        object::{AlignArgs, change::named, group::sent},
+        object::{AlignArgs, change::named, group::written},
         table::not_value,
     },
     domain::change::{
         receipt::ChangeReport,
         value::{Alignment, Arrangement, BoardChange},
     },
-    effect::{
-        board_write::WriteInterpreter,
-        cache::CachePort,
-        settings::CacheSettings,
-    },
+    effect::settings::CacheSettings,
     error::Result,
-    remote::{client::Client, socket::write::interpreter},
-    storage::cache::Cache,
+    remote::client::Client,
 };
 
 const ALIGN: &str = "object align";
@@ -37,30 +30,15 @@ pub async fn align(
     cache: &CacheSettings,
     args: &AlignArgs,
 ) -> Result<ChangeReport> {
-    let account = account_cache(client, cache, CacheUse::Use).await?;
-    aligned(
-        client,
-        account.as_ref().map(Cache::as_port),
-        interpreter(args.dry_run),
-        args,
-    )
-    .await
-}
-
-async fn aligned<I: WriteInterpreter + ?Sized>(
-    client: &Client,
-    cache: Option<&dyn CachePort>,
-    interpreter: &I,
-    args: &AlignArgs,
-) -> Result<ChangeReport> {
     let how = arrangement(args)?;
     let objects = named(&args.board, &args.object, ALIGN)?;
-    sent(
+    written(
         client,
         cache,
-        interpreter,
+        args.dry_run,
         (&args.board, args.workspace.as_deref()),
         &BoardChange::Arrange { objects, how },
+        None,
     )
     .await
 }

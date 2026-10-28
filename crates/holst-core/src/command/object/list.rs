@@ -221,7 +221,6 @@ async fn listing(
         tag.is_none_or(|tag| tags.has(object, tag))
     })?;
     let scene = Scene::new(&objects);
-    let markdown = args.text_format == Some(TextFormat::Markdown);
     let target = selected.target.map(|object| object.id.as_str());
     let base = client.base_url();
     let storage = base.storage();
@@ -248,16 +247,22 @@ async fn listing(
                 style: TextStyle::of(&loaded.document, object),
                 object: Object {
                     fields: serde_json::Value::Null,
-                    text: markdown
-                        .then(|| markdown_text(&loaded.document, object))
-                        .flatten()
-                        .unwrap_or_else(|| object.text.clone()),
+                    text: listed_text(&loaded.document, object, args.text_format),
                     ..drawn_size(&scene, object)
                 },
             })
             .collect(),
         id: board,
     })
+}
+
+/// The text of the object: its markdown when asked for and the object has one.
+fn listed_text(document: &Doc, object: &Object, format: Option<TextFormat>) -> String {
+    match format {
+        Some(TextFormat::Markdown) => markdown_text(document, object),
+        Some(TextFormat::Plain) | None => None,
+    }
+    .unwrap_or_else(|| object.text.clone())
 }
 
 /// The object, with the size it is drawn at when a scale sets that.

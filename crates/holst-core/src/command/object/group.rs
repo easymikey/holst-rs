@@ -7,16 +7,11 @@ use crate::{
         object::{
             GroupArgs,
             UngroupArgs,
-            change::{Sending, named, reported, send},
+            change::{Guard, Sending, named, refuse_withheld, reported, send},
         },
     },
     domain::change::{receipt::ChangeReport, value::BoardChange},
-    effect::{
-        board_write::WriteInterpreter,
-        cache::CachePort,
-        confirmation::ALWAYS,
-        settings::CacheSettings,
-    },
+    effect::{board_write::WriteMode, confirmation::ALWAYS, settings::CacheSettings},
     error::Result,
     remote::{client::Client, socket::write::interpreter},
     storage::cache::Cache,
@@ -37,29 +32,14 @@ pub async fn group(
     cache: &CacheSettings,
     args: &GroupArgs,
 ) -> Result<ChangeReport> {
-    let account = account_cache(client, cache, CacheUse::Use).await?;
-    grouped(
-        client,
-        account.as_ref().map(Cache::as_port),
-        interpreter(args.dry_run),
-        args,
-    )
-    .await
-}
-
-async fn grouped<I: WriteInterpreter + ?Sized>(
-    client: &Client,
-    cache: Option<&dyn CachePort>,
-    interpreter: &I,
-    args: &GroupArgs,
-) -> Result<ChangeReport> {
     let objects = named(&args.board, &args.object, GROUP)?;
-    sent(
+    written(
         client,
         cache,
-        interpreter,
+        args.dry_run,
         (&args.board, args.workspace.as_deref()),
         &BoardChange::Group(objects),
+        None,
     )
     .await
 }
@@ -75,46 +55,38 @@ pub async fn ungroup(
     cache: &CacheSettings,
     args: &UngroupArgs,
 ) -> Result<ChangeReport> {
-    let account = account_cache(client, cache, CacheUse::Use).await?;
-    ungrouped(
-        client,
-        account.as_ref().map(Cache::as_port),
-        interpreter(args.dry_run),
-        args,
-    )
-    .await
-}
-
-async fn ungrouped<I: WriteInterpreter + ?Sized>(
-    client: &Client,
-    cache: Option<&dyn CachePort>,
-    interpreter: &I,
-    args: &UngroupArgs,
-) -> Result<ChangeReport> {
     let objects = named(&args.board, &args.object, UNGROUP)?;
-    sent(
+    written(
         client,
         cache,
-        interpreter,
+        args.dry_run,
         (&args.board, args.workspace.as_deref()),
         &BoardChange::Ungroup(objects),
+        None,
     )
     .await
 }
 
-/// Writes `change` to the board `(name, workspace)` names.
-pub(super) async fn sent<I: WriteInterpreter + ?Sized>(
+/// Writes `change` to the board `(name, workspace)` names, after the `guard`
+/// right it needs, if any, is found held.
+pub(super) async fn written(
     client: &Client,
-    cache: Option<&dyn CachePort>,
-    interpreter: &I,
+    cache: &CacheSettings,
+    mode: WriteMode,
     (name, workspace): (&str, Option<&str>),
     change: &BoardChange,
+    guard: Option<Guard>,
 ) -> Result<ChangeReport> {
+    let account = account_cache(client, cache, CacheUse::Use).await?;
     let board = board_id(client, name, workspace, CacheUse::Use).await?;
+    match guard {
+        Some(guard) => refuse_withheld(client, &board, guard).await,
+        None => Ok(()),
+    }?;
     let written = send(
         client,
-        cache,
-        interpreter,
+        account.as_ref().map(Cache::as_port),
+        interpreter(mode),
         Sending {
             board: &board,
             change,

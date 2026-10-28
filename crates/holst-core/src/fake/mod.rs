@@ -200,39 +200,13 @@ impl Fake {
             .unwrap_or_default()
     }
 
-    /// Keeps copying out of the board called `board` to the role `needs` and
-    /// up, and gives the user the role `role` there.
-    pub fn withhold_copying(&self, board: &str, needs: &str, role: &str) {
+    /// Keeps the board setting `setting` (such as `who_can_copy_content`) on
+    /// the board called `board` to the role `needs` and up, and gives the user
+    /// the role `role` there.
+    pub fn withhold(&self, board: &str, setting: &str, needs: &str, role: &str) {
         let mut state = self.locked();
         if let Some(id) = state.tree.id_of(board) {
-            state.access.withhold_copying(&id, needs, role);
-        }
-    }
-
-    /// Keeps locking and unlocking on the board called `board` to the role
-    /// `needs` and up, and gives the user the role `role` there.
-    pub fn withhold_locking(&self, board: &str, needs: &str, role: &str) {
-        let mut state = self.locked();
-        if let Some(id) = state.tree.id_of(board) {
-            state.access.withhold_locking(&id, needs, role);
-        }
-    }
-
-    /// Keeps hiding and showing frame content on the board called `board` to
-    /// the role `needs` and up, and gives the user the role `role` there.
-    pub fn withhold_hiding(&self, board: &str, needs: &str, role: &str) {
-        let mut state = self.locked();
-        if let Some(id) = state.tree.id_of(board) {
-            state.access.withhold_hiding(&id, needs, role);
-        }
-    }
-
-    /// Keeps removing other people's objects on the board called `board` to
-    /// the role `needs` and up, and gives the user the role `role` there.
-    pub fn withhold_deleting(&self, board: &str, needs: &str, role: &str) {
-        let mut state = self.locked();
-        if let Some(id) = state.tree.id_of(board) {
-            state.access.withhold_deleting(&id, needs, role);
+            state.access.withhold(&id, setting, needs, role);
         }
     }
 

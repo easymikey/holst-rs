@@ -316,11 +316,11 @@ async fn board(
         members: members?,
         rights: rights?,
         note: held_note,
-        sharing: args
-            .with
-            .contains(&ShowPart::Sharing)
-            .then(|| channel.as_object().cloned().map(Sharing::from))
-            .flatten(),
+        sharing: channel
+            .as_object()
+            .filter(|_| args.with.contains(&ShowPart::Sharing))
+            .cloned()
+            .map(Sharing::from),
         id,
     })
 }

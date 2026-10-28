@@ -84,9 +84,10 @@ pub(super) async fn created(
         .iter()
         .filter(|object| Some(object.id.as_str()) != frame)
         .count();
-    (held > 0)
-        .then_some(())
-        .ok_or_else(|| Error::Picture(nothing_in(&area, args)))?;
+    match held {
+        0 => Err(Error::Picture(nothing_in(&area, args))),
+        _ => Ok(()),
+    }?;
     // The server wants a workspace for every scope, a personal one too.
     let workspace_id = match &workspace {
         Some(workspace) => workspace.id.clone(),

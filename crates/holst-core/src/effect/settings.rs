@@ -1,6 +1,9 @@
 //! The settings of one run, built once in `main` and passed down.
 
-use std::{ffi::OsString, path::PathBuf};
+use std::{
+    ffi::{OsStr, OsString},
+    path::PathBuf,
+};
 
 use crate::{
     domain::url::BaseUrl,
@@ -187,9 +190,7 @@ impl CacheSettings {
                     roots
                 });
         let settings = Self {
-            root: (!off && refused.is_none())
-                .then(|| named.or(beside))
-                .flatten(),
+            root: named.or(beside).filter(|_| !off && refused.is_none()),
             roots,
             host: base.host_key(),
             max_bytes: max_bytes.unwrap_or(DEFAULT_CACHE_MAX),
@@ -312,8 +313,8 @@ impl LogSettings {
                 Some(value) if !value.is_empty() => ColorPreference::Declined,
                 Some(_) | None => ColorPreference::Allowed,
             },
-            terminal: match read_variable("TERM") {
-                Some(term) if term == "dumb" => TerminalType::Dumb,
+            terminal: match read_variable("TERM").as_deref().and_then(OsStr::to_str) {
+                Some("dumb") => TerminalType::Dumb,
                 Some(_) | None => TerminalType::Capable,
             },
         }

@@ -29,10 +29,9 @@ pub(crate) const ROOT_EXAMPLES: [&str; 5] = [
 /// Returns the long flag of an argument: its name in kebab case, except
 /// `confirm`, which the command line calls `--yes`.
 pub(crate) fn long(name: &str) -> String {
-    if name == "confirm" {
-        String::from("yes")
-    } else {
-        kebab(name)
+    match name {
+        "confirm" => String::from("yes"),
+        _ => kebab(name),
     }
 }
 
@@ -94,10 +93,8 @@ pub(crate) fn root(groups: &[CommandGroup], root: &clap::Command) -> String {
         .filter_map(|argument| {
             let long = argument.get_long()?;
             let value = argument
-                .get_action()
-                .takes_values()
-                .then(|| argument.get_value_names())
-                .flatten()
+                .get_value_names()
+                .filter(|_| argument.get_action().takes_values())
                 .and_then(|names| names.first())
                 .map(ToString::to_string);
             let help = argument.get_help().map(ToString::to_string)?;

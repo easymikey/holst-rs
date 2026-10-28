@@ -61,12 +61,12 @@ impl ReqwestTransport {
         request: &HttpRequest,
     ) -> Result<Vec<u8>> {
         let limit = self.body_limit;
-        response
-            .content_length()
-            .filter(|declared| *declared > u64::try_from(limit).unwrap_or(u64::MAX))
-            .map_or(Ok(()), |_| {
+        match response.content_length() {
+            Some(declared) if declared > u64::try_from(limit).unwrap_or(u64::MAX) => {
                 Err(Error::Http(HttpError::ResponseTooLarge { limit }))
-            })?;
+            }
+            _ => Ok(()),
+        }?;
         // The server answered: a cut-off body may follow an applied write.
         stream::try_unfold(response, |mut response| async move {
             let chunk = response

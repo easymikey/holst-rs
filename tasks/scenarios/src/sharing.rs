@@ -166,24 +166,32 @@ impl SharingThen {
 /// Keeps copying out of the board called `board` to the role `needs` and up,
 /// and gives the user the role `role` there.
 pub fn withhold_copying(holst: &Holst, board: &str, needs: &str, role: &str) {
-    holst.fake().withhold_copying(board, needs, role);
+    holst
+        .fake()
+        .withhold(board, "who_can_copy_content", needs, role);
 }
 
 /// Keeps locking and unlocking on the board called `board` to the role `needs`
 /// and up, and gives the user the role `role` there.
 pub fn withhold_locking(holst: &Holst, board: &str, needs: &str, role: &str) {
-    holst.fake().withhold_locking(board, needs, role);
+    holst
+        .fake()
+        .withhold(board, "who_can_manage_lock_content", needs, role);
 }
 
 /// Keeps hiding and showing frame content on the board called `board` to the
 /// role `needs` and up, and gives the user the role `role` there.
 pub fn withhold_hiding(holst: &Holst, board: &str, needs: &str, role: &str) {
-    holst.fake().withhold_hiding(board, needs, role);
+    holst
+        .fake()
+        .withhold(board, "who_can_manage_frame_hide_content", needs, role);
 }
 /// Keeps removing other people's objects on the board called `board` to the
 /// role `needs` and up, and gives the user the role `role` there.
 pub fn withhold_deleting(holst: &Holst, board: &str, needs: &str, role: &str) {
-    holst.fake().withhold_deleting(board, needs, role);
+    holst
+        .fake()
+        .withhold(board, "who_can_delete_content", needs, role);
 }
 
 /// Expects the role `user` holds on the board called `board`, if any.

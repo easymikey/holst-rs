@@ -2,29 +2,27 @@
 
 use crate::{
     command::{
-        board::show::{account_cache, board_id},
-        board_load::{CacheUse, withheld},
         object::{
             LockArgs,
             UnlockArgs,
-            change::{Sending, named, reported, send},
+            change::{Guard, named},
+            group::written,
         },
         table::not_value,
     },
     domain::change::{receipt::ChangeReport, value::BoardChange},
-    effect::{
-        board_write::WriteInterpreter,
-        cache::CachePort,
-        confirmation::ALWAYS,
-        settings::CacheSettings,
-    },
-    error::{Error, Result, board_change::BoardChangeError},
-    remote::{api, client::Client, socket::write::interpreter},
-    storage::cache::Cache,
+    effect::settings::CacheSettings,
+    error::{Result, board_change::BoardChangeError},
+    remote::client::Client,
 };
 
 const LOCK: &str = "object lock";
 const UNLOCK: &str = "object unlock";
+
+/// Locking needs the role `who_can_manage_lock_content` asks for.
+const LOCKING: Guard = ("who_can_manage_lock_content", |needs, holds| {
+    BoardChangeError::LockWithheld { needs, holds }
+});
 
 /// Locks the objects: into one new locked group, or, with `only`, the flag on
 /// each frame and table.
@@ -38,34 +36,19 @@ pub async fn lock(
     cache: &CacheSettings,
     args: &LockArgs,
 ) -> Result<ChangeReport> {
-    let account = account_cache(client, cache, CacheUse::Use).await?;
-    locked(
-        client,
-        account.as_ref().map(Cache::as_port),
-        interpreter(args.dry_run),
-        args,
-    )
-    .await
-}
-
-async fn locked<I: WriteInterpreter + ?Sized>(
-    client: &Client,
-    cache: Option<&dyn CachePort>,
-    interpreter: &I,
-    args: &LockArgs,
-) -> Result<ChangeReport> {
     let objects = named(&args.board, &args.object, LOCK)?;
     let change = if args.only {
         BoardChange::LockOnly(objects)
     } else {
         BoardChange::Lock(objects)
     };
-    sent(
+    written(
         client,
         cache,
-        interpreter,
+        args.dry_run,
         (&args.board, args.workspace.as_deref()),
         &change,
+        Some(LOCKING),
     )
     .await
 }
@@ -82,29 +65,13 @@ pub async fn unlock(
     cache: &CacheSettings,
     args: &UnlockArgs,
 ) -> Result<ChangeReport> {
-    let account = account_cache(client, cache, CacheUse::Use).await?;
-    unlocked(
-        client,
-        account.as_ref().map(Cache::as_port),
-        interpreter(args.dry_run),
-        args,
-    )
-    .await
-}
-
-async fn unlocked<I: WriteInterpreter + ?Sized>(
-    client: &Client,
-    cache: Option<&dyn CachePort>,
-    interpreter: &I,
-    args: &UnlockArgs,
-) -> Result<ChangeReport> {
-    let change = unlock_change(args)?;
-    sent(
+    written(
         client,
         cache,
-        interpreter,
+        args.dry_run,
         (&args.board, args.workspace.as_deref()),
-        &change,
+        &unlock_change(args)?,
+        Some(LOCKING),
     )
     .await
 }
@@ -116,44 +83,4 @@ fn unlock_change(args: &UnlockArgs) -> Result<BoardChange> {
         (true, true) => Ok(BoardChange::UnlockAll),
         (true, false) => Err(not_value(UNLOCK, "object", "left out with all")),
     }
-}
-
-/// Writes `change` to the board `(name, workspace)` names, if its
-/// `who_can_manage_lock_content` is not above the caller's role.
-async fn sent<I: WriteInterpreter + ?Sized>(
-    client: &Client,
-    cache: Option<&dyn CachePort>,
-    interpreter: &I,
-    (name, workspace): (&str, Option<&str>),
-    change: &BoardChange,
-) -> Result<ChangeReport> {
-    let board = board_id(client, name, workspace, CacheUse::Use).await?;
-    refuse_withheld(client, &board).await?;
-    let written = send(
-        client,
-        cache,
-        interpreter,
-        Sending {
-            board: &board,
-            change,
-            release: ALWAYS,
-        },
-    )
-    .await?;
-    Ok(reported(client, &board, &written))
-}
-
-/// Refuses locking on `board` when its `who_can_manage_lock_content` stands
-/// above the role the caller's permits give there, as the web client does.
-async fn refuse_withheld(client: &Client, board: &str) -> Result<()> {
-    let channel = api::channel::get(client, board).await?;
-    withheld(&channel, "who_can_manage_lock_content").map_or(
-        Ok(()),
-        |(needs, holds)| {
-            Err(Error::BoardChange(BoardChangeError::LockWithheld {
-                needs,
-                holds,
-            }))
-        },
-    )
 }

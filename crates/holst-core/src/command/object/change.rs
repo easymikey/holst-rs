@@ -438,12 +438,10 @@ fn patch_of(item: &EditItem, format: TextFormat, address: &str) -> Result<Object
 /// What `--scale` says: a factor above 0, not beside a size that says the same.
 fn scale_of(item: &EditItem) -> Result<Option<f64>> {
     item.scale
-        .map(|scale| match scale {
-            _ if item.size.is_some() => {
-                Err(not_value(EDIT, "scale", "left out with size"))
-            }
-            _ if scale.is_finite() && scale > 0.0 => Ok(scale),
-            _ => Err(not_value(EDIT, "scale", "a number above 0")),
+        .map(|scale| match (item.size.is_some(), scale) {
+            (true, _) => Err(not_value(EDIT, "scale", "left out with size")),
+            (false, scale) if scale.is_finite() && scale > 0.0 => Ok(scale),
+            (false, _) => Err(not_value(EDIT, "scale", "a number above 0")),
         })
         .transpose()
 }
@@ -479,16 +477,27 @@ pub(super) fn hidden_of(
 /// Refuses hiding or showing frame content on `board` when its
 /// `who_can_manage_frame_hide_content` stands above the caller's role.
 pub(super) async fn refuse_hiding(client: &Client, board: &str) -> Result<()> {
+    let guard: Guard = ("who_can_manage_frame_hide_content", |needs, holds| {
+        BoardChangeError::HideWithheld { needs, holds }
+    });
+    refuse_withheld(client, board, guard).await
+}
+
+/// A right a write needs: the `who_can_*` setting of the board that gates it,
+/// and the error that names the roles when it stands above the caller's.
+pub(super) type Guard = (&'static str, fn(String, &'static str) -> BoardChangeError);
+
+/// Refuses on `board` when the setting of `guard` stands above the role the
+/// caller's permits give there, as the web client does.
+pub(super) async fn refuse_withheld(
+    client: &Client,
+    board: &str,
+    (setting, refused): Guard,
+) -> Result<()> {
     let channel = api::channel::get(client, board).await?;
-    withheld(&channel, "who_can_manage_frame_hide_content").map_or(
-        Ok(()),
-        |(needs, holds)| {
-            Err(Error::BoardChange(BoardChangeError::HideWithheld {
-                needs,
-                holds,
-            }))
-        },
-    )
+    withheld(&channel, setting).map_or(Ok(()), |(needs, holds)| {
+        Err(Error::BoardChange(refused(needs, holds)))
+    })
 }
 
 /// What `--width` says: `auto`, or a width above 0. The width is read as
@@ -496,12 +505,10 @@ pub(super) async fn refuse_hiding(client: &Client, board: &str) -> Result<()> {
 fn width_of(item: &EditItem) -> Result<Option<TextWidth>> {
     item.width
         .as_deref()
-        .map(|raw| match raw.trim() {
-            _ if item.size.is_some() => {
-                Err(not_value(EDIT, "width", "left out with size"))
-            }
-            "auto" => Ok(TextWidth::Auto),
-            number => number
+        .map(|raw| match (item.size.is_some(), raw.trim()) {
+            (true, _) => Err(not_value(EDIT, "width", "left out with size")),
+            (false, "auto") => Ok(TextWidth::Auto),
+            (false, number) => number
                 .parse::<f64>()
                 .ok()
                 .filter(|width| width.is_finite() && *width > 0.0)
@@ -571,9 +578,9 @@ fn look_of(item: &EditItem) -> Result<TextLook> {
 
 /// The marks of a comma-apart list; `none` is no marks.
 fn marks_of(raw: &str) -> Result<Vec<Mark>> {
-    let listed = raw.split(',').map(str::trim).filter(|name| *name != "none");
-    listed
-        .filter(|name| !name.is_empty())
+    raw.split(',')
+        .map(str::trim)
+        .filter(|name| !matches!(*name, "" | "none"))
         .map(|name| {
             Mark::of(name).ok_or_else(|| {
                 not_value(

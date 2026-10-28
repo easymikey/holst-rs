@@ -136,11 +136,6 @@ pub struct RestoreArgs {
     )]
     pub workspace: Option<String>,
     #[argument(
-        value_name = "provider",
-        help = "Where the server keeps the backup, as `backup ls` shows; the usual place by default"
-    )]
-    pub provider: Option<String>,
-    #[argument(
         letter = 'y',
         help = "Confirm a risky change; without it only the dry run is shown (exit code 77)"
     )]
@@ -296,11 +291,6 @@ async fn restored(
     socket: &dyn SocketConnector,
     args: &RestoreArgs,
 ) -> Result<Restored> {
-    let given = args
-        .provider
-        .as_deref()
-        .map(|given| known_provider("backup restore", given))
-        .transpose()?;
     let target =
         lookup::exact_board(client, &args.board, args.workspace.as_deref()).await?;
     let listed = api::backup::list(client, &target.id).await?;
@@ -310,7 +300,7 @@ async fn restored(
         .find(|each| each.key.as_deref() == Some(args.key.as_str()))
         .cloned()
         .ok_or_else(|| missing(&args.key))?;
-    let provider = listed_provider(given, backup.download_provider())?;
+    let provider = backup.download_provider();
     only_v2(provider)?;
     let snapshot = fetch(client, &args.key, provider).await?;
     let state = compression::uncompressed(snapshot.as_bytes())?;
@@ -371,17 +361,6 @@ fn known_provider<'a>(command: &str, given: &'a str) -> Result<&'a str> {
     }
 }
 
-/// The list says where the server keeps the backup; a flag can only agree.
-fn listed_provider(given: Option<&str>, listed: &'static str) -> Result<&'static str> {
-    match given {
-        Some(given) if given != listed => Err(provider_error(
-            "backup restore",
-            format!("{listed}, where `backup ls` puts this backup"),
-        )),
-        Some(_) | None => Ok(listed),
-    }
-}
-
 fn provider_error(command: &str, expected: String) -> Error {
     InputError::NotArgumentValue {
         command: command.to_owned(),
@@ -432,15 +411,16 @@ pub async fn download(
 ) -> Result<DownloadedBackup> {
     let backup = fetch(client, key, provider).await?;
     let state = compression::uncompressed(backup.as_bytes())?;
+    let uncompressed_len = state.len();
     let bytes = match packing {
         Compression::Gzip => {
             compression::compressed(backup.as_bytes(), Compression::Gzip)?.into_owned()
         }
-        Compression::Plain => state.to_vec(),
+        Compression::Plain => state.into_owned(),
     };
     Ok(DownloadedBackup {
         bytes,
-        uncompressed_len: state.len(),
+        uncompressed_len,
     })
 }
 
@@ -566,16 +546,11 @@ mod tests {
     }
 
     /// The provider a dry-run restore names in its download, when the list
-    /// puts the backup in `listed` and the user gives `given`.
-    async fn downloaded_from(
-        listed: &str,
-        given: Option<&str>,
-    ) -> Result<Option<String>> {
+    /// puts the backup in `listed`.
+    async fn downloaded_from(listed: &str) -> Result<Option<String>> {
         let (fake, client) =
             client([channel(), account(), listing_by(listed), body()?, channel()])?;
-        let args = json!({
-            "board": BOARD, "key": "k1", "dry_run": true, "provider": given,
-        });
+        let args = json!({ "board": BOARD, "key": "k1", "dry_run": true });
         restored(&client, &empty(), &arguments::<RestoreArgs>(args)?).await?;
         Ok(fake
             .requests()
@@ -591,7 +566,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_restore_downloads_from_hud_when_the_list_says_hud() -> Result<()> {
-        assert_eq!(downloaded_from("hud", None).await?.as_deref(), Some("hud"));
+        assert_eq!(downloaded_from("hud").await?.as_deref(), Some("hud"));
         Ok(())
     }
 
@@ -607,33 +582,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_provider_other_than_the_listed_one_is_a_usage_error() -> Result<()> {
-        let (fake, client) =
-            client([channel(), account(), listing_by("hocuspocus"), body()?])?;
-        let args = json!({
-            "board": BOARD, "key": "k1", "dry_run": true, "provider": "hud",
-        });
-        let error = restored(&client, &empty(), &arguments::<RestoreArgs>(args)?)
-            .await
-            .err();
-        assert!(wrong_provider(error.as_ref()));
-        assert!(
-            fake.requests()
-                .iter()
-                .all(|sent| !sent.url.path().ends_with("backup/download"))
-        );
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn an_unknown_provider_is_a_usage_error_before_any_request() -> Result<()> {
         let (fake, client) = client([channel()])?;
-        let restore = json!({ "board": BOARD, "key": "k1", "provider": "s3" });
-        let restoring =
-            restored(&client, &empty(), &arguments::<RestoreArgs>(restore)?)
-                .await
-                .err();
-        assert!(wrong_provider(restoring.as_ref()));
         let fetch = json!({ "key": "k1", "provider": "s3" });
         let getting = get(&client, None, &arguments::<GetArgs>(fetch)?)
             .await
@@ -643,15 +593,13 @@ mod tests {
         Ok(())
     }
 
-    /// A confirmed restore of `listed`, or of the `given` provider, fails with
-    /// the format error, downloads nothing and writes nothing.
-    async fn refused(listed: &str, given: Option<&str>) -> Result<()> {
+    /// A confirmed restore of a backup listed in `listed` fails with the
+    /// format error, downloads nothing and writes nothing.
+    async fn refused(listed: &str) -> Result<()> {
         let socket = empty();
         let (fake, client) =
             client([channel(), account(), listing_by(listed), body()?])?;
-        let args = json!({
-            "board": BOARD, "key": "k1", "confirm": true, "provider": given,
-        });
+        let args = json!({ "board": BOARD, "key": "k1", "confirm": true });
         let error = restored(&client, &socket, &arguments::<RestoreArgs>(args)?)
             .await
             .err();
@@ -673,12 +621,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_backup_listed_in_another_provider_is_refused() -> Result<()> {
-        refused("hocuspocus", None).await
-    }
-
-    #[tokio::test]
-    async fn a_given_provider_other_than_hud_is_refused() -> Result<()> {
-        refused("hocuspocus", Some("hocuspocus")).await
+        refused("hocuspocus").await
     }
 
     /// The saved state of a board with a sticker whose text is `text`.
