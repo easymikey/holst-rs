@@ -1,5 +1,4 @@
-//! The fields an edit writes for a shape's kind, outline, corners and fill
-//! opacity.
+//! The fields an edit writes for a shape: kind, outline, corners, opacity.
 
 use serde_json::{Value, json};
 

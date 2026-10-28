@@ -720,32 +720,33 @@ pub fn markdown_text(document: &Doc, object: &Object) -> Option<String> {
     if let Some(name) = field(document::DOCUMENT_ID).and_then(Value::as_str) {
         let documents = document.get_or_insert_map(document::DOCUMENTS);
         let txn = document.transact();
-        return Some(match documents.get(&txn, name) {
+        Some(match documents.get(&txn, name) {
             Some(Out::YXmlText(root)) => {
                 markdown(&Value::Array(slate_children(&txn, &root)))
             }
             _ => String::new(),
-        });
-    }
-    let labels: Vec<String> = field(document::TEXTS)?
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|label| {
-            label.get(document::EDITOR).map_or_else(
-                || {
-                    label
-                        .get(document::TEXT)
-                        .and_then(Value::as_str)
-                        .map(str::to_owned)
-                        .unwrap_or_default()
-                },
-                markdown,
-            )
         })
-        .filter(|label| !label.is_empty())
-        .collect();
-    Some(labels.join("\n\n"))
+    } else {
+        let labels: Vec<String> = field(document::TEXTS)?
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|label| {
+                label.get(document::EDITOR).map_or_else(
+                    || {
+                        label
+                            .get(document::TEXT)
+                            .and_then(Value::as_str)
+                            .map(str::to_owned)
+                            .unwrap_or_default()
+                    },
+                    markdown,
+                )
+            })
+            .filter(|label| !label.is_empty())
+            .collect();
+        Some(labels.join("\n\n"))
+    }
 }
 
 /// The user's right on a board, as the server grants it.

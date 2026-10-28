@@ -1,5 +1,4 @@
-//! The Slate JSON the editor keeps, read back as markdown; the inverse of
-//! `parse`. No I/O.
+//! The Slate JSON the editor keeps, read back as markdown; inverse of `parse`.
 
 use std::collections::BTreeSet;
 
@@ -327,8 +326,19 @@ fn spanned(text: &str, marks: &BTreeSet<Mark>, start: bool) -> String {
     let lead = text.len() - text.trim_start_matches(blank_edge).len();
     let trail = text.len() - text.trim_end_matches(blank_edge).len();
     if core.is_empty() {
-        return escaped(text, start);
+        escaped(text, start)
+    } else {
+        spanned_core(text, core, (lead, trail), marks, start)
     }
+}
+
+fn spanned_core(
+    text: &str,
+    core: &str,
+    (lead, trail): (usize, usize),
+    marks: &BTreeSet<Mark>,
+    start: bool,
+) -> String {
     let body = if marks.contains(&Mark::Code) {
         code_span(core)
     } else {
@@ -370,16 +380,17 @@ fn linked(url: &str, inner: &[Piece]) -> String {
             .any(|scheme| url.starts_with(scheme))
         && !url.contains([' ', '<', '>']);
     if bare {
-        return format!("<{url}>");
-    }
-    let target = url.replace('<', "%3C").replace('>', "%3E");
-    let target = if target.contains([' ', '(', ')']) {
-        format!("<{target}>")
+        format!("<{url}>")
     } else {
-        target
-    };
-    let inside = inline(inner);
-    format!("[{inside}]({target})")
+        let target = url.replace('<', "%3C").replace('>', "%3E");
+        let target = if target.contains([' ', '(', ')']) {
+            format!("<{target}>")
+        } else {
+            target
+        };
+        let inside = inline(inner);
+        format!("[{inside}]({target})")
+    }
 }
 
 /// `text` with the characters that would start markdown escaped; `start`
@@ -412,22 +423,22 @@ fn escaped(text: &str, start: bool) -> String {
             let before = at.checked_sub(1).and_then(|i| chars.get(i)).copied();
             let space_after = next.is_none_or(char::is_whitespace);
             let escape = match c {
-                '\n' => return "\\\n".to_owned(),
-                '\\' | '*' | '`' | '[' | ']' | '<' | '~' => true,
-                '_' => {
+                '\n' => None,
+                '\\' | '*' | '`' | '[' | ']' | '<' | '~' => Some(true),
+                '_' => Some(
                     !(before.is_some_and(char::is_alphanumeric)
-                        && next.is_some_and(char::is_alphanumeric))
-                }
-                '>' => line_start(at),
-                '#' | '+' => line_start(at) && space_after,
-                '-' => line_start(at) && (space_after || next == Some('-')),
-                '.' | ')' => space_after && numbered(at),
-                _ => false,
+                        && next.is_some_and(char::is_alphanumeric)),
+                ),
+                '>' => Some(line_start(at)),
+                '#' | '+' => Some(line_start(at) && space_after),
+                '-' => Some(line_start(at) && (space_after || next == Some('-'))),
+                '.' | ')' => Some(space_after && numbered(at)),
+                _ => Some(false),
             };
-            if escape {
-                format!("\\{c}")
-            } else {
-                c.to_string()
+            match escape {
+                None => "\\\n".to_owned(),
+                Some(true) => format!("\\{c}"),
+                Some(false) => c.to_string(),
             }
         })
         .collect()
