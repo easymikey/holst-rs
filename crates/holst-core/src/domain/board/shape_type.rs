@@ -38,113 +38,318 @@ use crate::{
     },
 };
 
-/// Makes the enum of shape kinds from the stored name and default size of each.
-macro_rules! shape_types {
-    ($($name:ident = $stored:literal, ($width:literal, $height:literal);)+) => {
-        /// A shape kind of the web client's picker: what `shapeType` can hold.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, strum::VariantNames)]
-        #[serde(rename_all = "snake_case")]
-        #[strum(serialize_all = "snake_case")]
-        pub enum ShapeType {
-            $($name,)+
-        }
-
-        impl ShapeType {
-            const ALL: &'static [ShapeType] = &[$(ShapeType::$name,)+];
-
-            /// The name the document stores in `shapeType`.
-            #[must_use]
-            pub const fn stored_name(self) -> &'static str {
-                match self {
-                    $(ShapeType::$name => $stored,)+
-                }
-            }
-
-            /// The width and height the web client gives a new shape of the kind.
-            #[must_use]
-            pub const fn default_sides(self) -> (f64, f64) {
-                match self {
-                    $(ShapeType::$name => ($width, $height),)+
-                }
-            }
-        }
-    };
+/// A shape kind of the web client's picker: what `shapeType` can hold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, strum::VariantNames)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum ShapeType {
+    Square,
+    RoundedRectangle,
+    Ellipse,
+    Triangle,
+    Diamond,
+    BasicSpeechBubble,
+    RightParallelogram,
+    BasicStar,
+    BasicArrowRight,
+    BasicArrowLeft,
+    BasicArrowLeftRight,
+    BasicPentagon,
+    BasicHexagon,
+    BasicOctagon,
+    BasicTrapezoid,
+    LeftParallelogram,
+    InvertedTriangle,
+    BasicCross,
+    BasicCloud,
+    FlowchartProcess,
+    FlowchartDecision,
+    FlowchartTerminator,
+    FlowchartPredefinedProcess,
+    FlowchartDocument,
+    FlowchartMultipleDocuments,
+    FlowchartManualInput,
+    FlowchartPreparation,
+    FlowchartData,
+    FlowchartDatabase,
+    FlowchartDirectAccessStorage,
+    FlowchartInternalStorage,
+    FlowchartManualOperation,
+    FlowchartDelay,
+    FlowchartStoredData,
+    FlowchartMerge,
+    FlowchartConnector,
+    FlowchartOr,
+    FlowchartSummingJunction,
+    FlowchartDisplay,
+    FlowchartOffPageConnector,
+    FlowchartLeftCurlyBraceAnnotation,
+    FlowchartRightCurlyBraceAnnotation,
+    FlowchartComment,
+    FlowchartNote,
+    BpmnTask,
+    BpmnTransaction,
+    BpmnEventSubprocess,
+    BpmnCallActivity,
+    BpmnEventStart,
+    BpmnEventStartNonInterrupting,
+    BpmnEventIntermediate,
+    BpmnEventIntermediateNonInterrupting,
+    BpmnEventEnd,
+    BpmnConversation,
+    BpmnCallConversation,
+    BpmnGateway,
+    BpmnDataObject,
+    BpmnDataStore,
+    BpmnEmptyPool,
+    BpmnGroup,
+    BpmnAnnotation,
+    BpmnMessage,
 }
 
 // BUNDLE: main.a33651a4.js 196553-196620 (names), 182154-182477 (sizes).
-shape_types! {
-    Square = "square", (144.0, 144.0);
-    RoundedRectangle = "roundedRectangle", (144.0, 144.0);
-    Ellipse = "ellipse", (144.0, 144.0);
-    Triangle = "triangle", (168.0, 144.0);
-    Diamond = "diamond", (144.0, 144.0);
-    BasicSpeechBubble = "basic-speech-bubble", (176.0, 144.0);
-    RightParallelogram = "rightParallelogram", (176.0, 144.0);
-    BasicStar = "basic-star", (156.0, 144.0);
-    BasicArrowRight = "basic-arrow-right", (176.0, 144.0);
-    BasicArrowLeft = "basic-arrow-left", (176.0, 144.0);
-    BasicArrowLeftRight = "basic-arrow-left-right", (200.0, 144.0);
-    BasicPentagon = "basic-pentagon", (150.0, 144.0);
-    BasicHexagon = "basic-hexagon", (168.0, 144.0);
-    BasicOctagon = "basic-octagon", (144.0, 144.0);
-    BasicTrapezoid = "basic-trapezoid", (176.0, 144.0);
-    LeftParallelogram = "leftParallelogram", (176.0, 144.0);
-    InvertedTriangle = "invertedTriangle", (168.0, 144.0);
-    BasicCross = "basic-cross", (144.0, 144.0);
-    BasicCloud = "basic-cloud", (176.0, 144.0);
-    FlowchartProcess = "flowchart-process", (176.0, 128.0);
-    FlowchartDecision = "flowchart-decision", (200.0, 128.0);
-    FlowchartTerminator = "flowchart-terminator", (176.0, 106.0);
-    FlowchartPredefinedProcess = "flowchart-predefined-process", (176.0, 128.0);
-    FlowchartDocument = "flowchart-document", (176.0, 128.0);
-    FlowchartMultipleDocuments = "flowchart-multiple-documents", (188.0, 128.0);
-    FlowchartManualInput = "flowchart-manual-input", (176.0, 128.0);
-    FlowchartPreparation = "flowchart-preparation", (176.0, 128.0);
-    FlowchartData = "flowchart-data", (176.0, 128.0);
-    FlowchartDatabase = "flowchart-database", (144.0, 128.0);
-    FlowchartDirectAccessStorage = "flowchart-direct-access-storage", (176.0, 128.0);
-    FlowchartInternalStorage = "flowchart-internal-storage", (176.0, 128.0);
-    FlowchartManualOperation = "flowchart-manual-operation", (176.0, 128.0);
-    FlowchartDelay = "flowchart-delay", (176.0, 128.0);
-    FlowchartStoredData = "flowchart-stored-data", (168.0, 128.0);
-    FlowchartMerge = "flowchart-merge", (168.0, 128.0);
-    FlowchartConnector = "flowchart-connector", (148.0, 148.0);
-    FlowchartOr = "flowchart-or", (86.0, 86.0);
-    FlowchartSummingJunction = "flowchart-summing-junction", (86.0, 86.0);
-    FlowchartDisplay = "flowchart-display", (176.0, 128.0);
-    FlowchartOffPageConnector = "flowchart-off-page-connector", (156.0, 144.0);
-    FlowchartLeftCurlyBraceAnnotation = "flowchart-left-curly-brace-annotation", (176.0, 144.0);
-    FlowchartRightCurlyBraceAnnotation = "flowchart-right-curly-brace-annotation", (176.0, 144.0);
-    FlowchartComment = "flowchart-comment", (176.0, 144.0);
-    FlowchartNote = "flowchart-note", (168.0, 128.0);
-    BpmnTask = "bpmn-task", (168.0, 128.0);
-    BpmnTransaction = "bpmn-transaction", (168.0, 128.0);
-    BpmnEventSubprocess = "bpmn-event-subprocess", (168.0, 128.0);
-    BpmnCallActivity = "bpmn-call-activity", (168.0, 128.0);
-    BpmnEventStart = "bpmn-event-start", (40.0, 40.0);
-    BpmnEventStartNonInterrupting = "bpmn-event-start-non-interrupting", (40.0, 40.0);
-    BpmnEventIntermediate = "bpmn-event-intermediate", (40.0, 40.0);
-    BpmnEventIntermediateNonInterrupting = "bpmn-event-intermediate-non-interrupting", (40.0, 40.0);
-    BpmnEventEnd = "bpmn-event-end", (40.0, 40.0);
-    BpmnConversation = "bpmn-conversation", (46.0, 40.0);
-    BpmnCallConversation = "bpmn-call-conversation", (46.0, 40.0);
-    BpmnGateway = "bpmn-gateway", (48.0, 48.0);
-    BpmnDataObject = "bpmn-data-object", (60.0, 80.0);
-    BpmnDataStore = "bpmn-data-store", (144.0, 118.0);
-    BpmnEmptyPool = "bpmn-empty-pool", (200.0, 40.0);
-    BpmnGroup = "bpmn-group", (200.0, 384.0);
-    BpmnAnnotation = "bpmn-annotation", (144.0, 118.0);
-    BpmnMessage = "bpmn-message", (44.0, 33.0);
+/// Each kind with its stored name and default size, in declaration order.
+const SHAPES: &[(ShapeType, &str, (f64, f64))] = &[
+    (ShapeType::Square, "square", (144.0, 144.0)),
+    (
+        ShapeType::RoundedRectangle,
+        "roundedRectangle",
+        (144.0, 144.0),
+    ),
+    (ShapeType::Ellipse, "ellipse", (144.0, 144.0)),
+    (ShapeType::Triangle, "triangle", (168.0, 144.0)),
+    (ShapeType::Diamond, "diamond", (144.0, 144.0)),
+    (
+        ShapeType::BasicSpeechBubble,
+        "basic-speech-bubble",
+        (176.0, 144.0),
+    ),
+    (
+        ShapeType::RightParallelogram,
+        "rightParallelogram",
+        (176.0, 144.0),
+    ),
+    (ShapeType::BasicStar, "basic-star", (156.0, 144.0)),
+    (
+        ShapeType::BasicArrowRight,
+        "basic-arrow-right",
+        (176.0, 144.0),
+    ),
+    (
+        ShapeType::BasicArrowLeft,
+        "basic-arrow-left",
+        (176.0, 144.0),
+    ),
+    (
+        ShapeType::BasicArrowLeftRight,
+        "basic-arrow-left-right",
+        (200.0, 144.0),
+    ),
+    (ShapeType::BasicPentagon, "basic-pentagon", (150.0, 144.0)),
+    (ShapeType::BasicHexagon, "basic-hexagon", (168.0, 144.0)),
+    (ShapeType::BasicOctagon, "basic-octagon", (144.0, 144.0)),
+    (ShapeType::BasicTrapezoid, "basic-trapezoid", (176.0, 144.0)),
+    (
+        ShapeType::LeftParallelogram,
+        "leftParallelogram",
+        (176.0, 144.0),
+    ),
+    (
+        ShapeType::InvertedTriangle,
+        "invertedTriangle",
+        (168.0, 144.0),
+    ),
+    (ShapeType::BasicCross, "basic-cross", (144.0, 144.0)),
+    (ShapeType::BasicCloud, "basic-cloud", (176.0, 144.0)),
+    (
+        ShapeType::FlowchartProcess,
+        "flowchart-process",
+        (176.0, 128.0),
+    ),
+    (
+        ShapeType::FlowchartDecision,
+        "flowchart-decision",
+        (200.0, 128.0),
+    ),
+    (
+        ShapeType::FlowchartTerminator,
+        "flowchart-terminator",
+        (176.0, 106.0),
+    ),
+    (
+        ShapeType::FlowchartPredefinedProcess,
+        "flowchart-predefined-process",
+        (176.0, 128.0),
+    ),
+    (
+        ShapeType::FlowchartDocument,
+        "flowchart-document",
+        (176.0, 128.0),
+    ),
+    (
+        ShapeType::FlowchartMultipleDocuments,
+        "flowchart-multiple-documents",
+        (188.0, 128.0),
+    ),
+    (
+        ShapeType::FlowchartManualInput,
+        "flowchart-manual-input",
+        (176.0, 128.0),
+    ),
+    (
+        ShapeType::FlowchartPreparation,
+        "flowchart-preparation",
+        (176.0, 128.0),
+    ),
+    (ShapeType::FlowchartData, "flowchart-data", (176.0, 128.0)),
+    (
+        ShapeType::FlowchartDatabase,
+        "flowchart-database",
+        (144.0, 128.0),
+    ),
+    (
+        ShapeType::FlowchartDirectAccessStorage,
+        "flowchart-direct-access-storage",
+        (176.0, 128.0),
+    ),
+    (
+        ShapeType::FlowchartInternalStorage,
+        "flowchart-internal-storage",
+        (176.0, 128.0),
+    ),
+    (
+        ShapeType::FlowchartManualOperation,
+        "flowchart-manual-operation",
+        (176.0, 128.0),
+    ),
+    (ShapeType::FlowchartDelay, "flowchart-delay", (176.0, 128.0)),
+    (
+        ShapeType::FlowchartStoredData,
+        "flowchart-stored-data",
+        (168.0, 128.0),
+    ),
+    (ShapeType::FlowchartMerge, "flowchart-merge", (168.0, 128.0)),
+    (
+        ShapeType::FlowchartConnector,
+        "flowchart-connector",
+        (148.0, 148.0),
+    ),
+    (ShapeType::FlowchartOr, "flowchart-or", (86.0, 86.0)),
+    (
+        ShapeType::FlowchartSummingJunction,
+        "flowchart-summing-junction",
+        (86.0, 86.0),
+    ),
+    (
+        ShapeType::FlowchartDisplay,
+        "flowchart-display",
+        (176.0, 128.0),
+    ),
+    (
+        ShapeType::FlowchartOffPageConnector,
+        "flowchart-off-page-connector",
+        (156.0, 144.0),
+    ),
+    (
+        ShapeType::FlowchartLeftCurlyBraceAnnotation,
+        "flowchart-left-curly-brace-annotation",
+        (176.0, 144.0),
+    ),
+    (
+        ShapeType::FlowchartRightCurlyBraceAnnotation,
+        "flowchart-right-curly-brace-annotation",
+        (176.0, 144.0),
+    ),
+    (
+        ShapeType::FlowchartComment,
+        "flowchart-comment",
+        (176.0, 144.0),
+    ),
+    (ShapeType::FlowchartNote, "flowchart-note", (168.0, 128.0)),
+    (ShapeType::BpmnTask, "bpmn-task", (168.0, 128.0)),
+    (
+        ShapeType::BpmnTransaction,
+        "bpmn-transaction",
+        (168.0, 128.0),
+    ),
+    (
+        ShapeType::BpmnEventSubprocess,
+        "bpmn-event-subprocess",
+        (168.0, 128.0),
+    ),
+    (
+        ShapeType::BpmnCallActivity,
+        "bpmn-call-activity",
+        (168.0, 128.0),
+    ),
+    (ShapeType::BpmnEventStart, "bpmn-event-start", (40.0, 40.0)),
+    (
+        ShapeType::BpmnEventStartNonInterrupting,
+        "bpmn-event-start-non-interrupting",
+        (40.0, 40.0),
+    ),
+    (
+        ShapeType::BpmnEventIntermediate,
+        "bpmn-event-intermediate",
+        (40.0, 40.0),
+    ),
+    (
+        ShapeType::BpmnEventIntermediateNonInterrupting,
+        "bpmn-event-intermediate-non-interrupting",
+        (40.0, 40.0),
+    ),
+    (ShapeType::BpmnEventEnd, "bpmn-event-end", (40.0, 40.0)),
+    (
+        ShapeType::BpmnConversation,
+        "bpmn-conversation",
+        (46.0, 40.0),
+    ),
+    (
+        ShapeType::BpmnCallConversation,
+        "bpmn-call-conversation",
+        (46.0, 40.0),
+    ),
+    (ShapeType::BpmnGateway, "bpmn-gateway", (48.0, 48.0)),
+    (ShapeType::BpmnDataObject, "bpmn-data-object", (60.0, 80.0)),
+    (ShapeType::BpmnDataStore, "bpmn-data-store", (144.0, 118.0)),
+    (ShapeType::BpmnEmptyPool, "bpmn-empty-pool", (200.0, 40.0)),
+    (ShapeType::BpmnGroup, "bpmn-group", (200.0, 384.0)),
+    (ShapeType::BpmnAnnotation, "bpmn-annotation", (144.0, 118.0)),
+    (ShapeType::BpmnMessage, "bpmn-message", (44.0, 33.0)),
+];
+
+impl ShapeType {
+    /// The name the document stores in `shapeType`.
+    #[expect(
+        clippy::indexing_slicing,
+        clippy::as_conversions,
+        reason = "the table test pins order"
+    )]
+    #[must_use]
+    pub const fn stored_name(self) -> &'static str {
+        SHAPES[self as usize].1
+    }
+
+    /// The width and height the web client gives a new shape of the kind.
+    #[expect(
+        clippy::indexing_slicing,
+        clippy::as_conversions,
+        reason = "the table test pins order"
+    )]
+    #[must_use]
+    pub const fn default_sides(self) -> (f64, f64) {
+        SHAPES[self as usize].2
+    }
 }
 
 impl ShapeType {
     /// The kind a stored `shapeType` names; none for a name the picker lacks.
     #[must_use]
     pub fn from_stored_name(name: &str) -> Option<Self> {
-        Self::ALL
+        SHAPES
             .iter()
-            .copied()
-            .find(|kind| kind.stored_name() == name)
+            .find(|(_, stored, _)| *stored == name)
+            .map(|(kind, ..)| *kind)
     }
 
     /// Whether the kind is one of the BPMN set, which keeps `bpmnResources`.
@@ -423,15 +628,22 @@ mod tests {
 
     #[test]
     fn every_kind_is_known_by_its_stored_name() {
-        assert_eq!(ShapeType::ALL.len(), ShapeType::VARIANTS.len());
-        assert!(ShapeType::ALL.iter().all(|kind| {
-            ShapeType::from_stored_name(kind.stored_name()) == Some(*kind)
+        assert_eq!(SHAPES.len(), ShapeType::VARIANTS.len());
+        assert!(SHAPES.iter().all(|(kind, name, _)| {
+            ShapeType::from_stored_name(name) == Some(*kind)
+        }));
+    }
+
+    #[test]
+    fn the_table_lists_each_kind_once_in_declaration_order() {
+        assert!(SHAPES.iter().all(|(kind, name, sides)| {
+            kind.stored_name() == *name && kind.default_sides() == *sides
         }));
     }
 
     #[test]
     fn the_bpmn_set_is_the_last_eighteen() {
-        let bpmn = ShapeType::ALL.iter().filter(|kind| kind.is_bpmn()).count();
+        let bpmn = SHAPES.iter().filter(|(kind, ..)| kind.is_bpmn()).count();
         assert_eq!(bpmn, 18);
         assert!(ShapeType::BpmnMessage.is_bpmn() && !ShapeType::Square.is_bpmn());
     }
