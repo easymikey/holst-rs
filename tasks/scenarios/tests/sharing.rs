@@ -106,7 +106,7 @@ async fn a_dry_run_of_sharing_changes_nothing(
         .dry_running()
         .change_rights("Roadmap", "Team", SHARE_BY_LINK)
         .await?;
-    then(&observation).shows("public_access");
+    then(&observation).shows_change("link", "none", "viewer");
     sharing_of(&holst, "Roadmap").is_untouched();
     Ok(())
 }
@@ -132,9 +132,9 @@ async fn a_dry_run_of_both_kinds_of_sharing_plans_both_requests(
             },
         )
         .await?;
-    then(&observation).shows("workspace_member_access");
-    then(&observation).shows("/sharing_settings");
-    then(&observation).shows("who_can_copy_content");
+    then(&observation).shows_change("members", "full", "editor");
+    then(&observation).shows_change("link", "none", "viewer");
+    then(&observation).shows_change("copy", "viewer", "editor");
     sharing_of(&holst, "Roadmap").is_untouched();
     Ok(())
 }

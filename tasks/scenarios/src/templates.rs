@@ -366,6 +366,22 @@ impl Then<'_> {
         );
     }
 
+    /// Expects a planned sharing change `setting: was → becomes`, as text or as
+    /// JSON.
+    ///
+    /// # Panics
+    /// When the reply shows neither form.
+    pub fn shows_change(&self, setting: &str, was: &str, becomes: &str) {
+        let text = format!("{setting}: {was} → {becomes}");
+        let json =
+            format!(r#"{{"becomes":"{becomes}","setting":"{setting}","was":"{was}"}}"#);
+        assert!(
+            matches!(self.observation, Observation::Shown(shown) if shown.contains(&text) || shown.contains(&json)),
+            "expected a reply showing {text:?}, got {:?}",
+            self.observation
+        );
+    }
+
     /// Expects a change that went through.
     ///
     /// # Panics
