@@ -18,26 +18,20 @@ use holst_scenarios::{
 use rstest::rstest;
 use serde_json::{Value, json};
 
+use crate::fixtures::plans_with;
+
 fn two_notes() -> Given {
-    given().saved_login().workspace("Team").board_with_objects(
-        "Plans",
-        "Team",
-        vec![
-            FixtureObject::Sticker("Buy milk".into()),
-            FixtureObject::FreeText("Roadmap".into()),
-        ],
-    )
+    plans_with(vec![
+        FixtureObject::Sticker("Buy milk".into()),
+        FixtureObject::FreeText("Roadmap".into()),
+    ])
 }
 
 fn frame_and_note() -> Given {
-    given().saved_login().workspace("Team").board_with_objects(
-        "Plans",
-        "Team",
-        vec![
-            FixtureObject::Frame("Q4".into()),
-            FixtureObject::Sticker("Buy milk".into()),
-        ],
-    )
+    plans_with(vec![
+        FixtureObject::Frame("Q4".into()),
+        FixtureObject::Sticker("Buy milk".into()),
+    ])
 }
 
 #[rstest]
@@ -128,7 +122,7 @@ async fn a_sticker_moved_into_a_frame_joins_it(
     let holst = frame_and_note().start().await?;
     let sticker = holst.fixture_object("Plans", 2)?;
     let before = holst.on(surface).objects("Plans").await?;
-    then(&before).lists_no_object_in_a_frame();
+    then(&before).lists_inside_a_parent(&[]);
     holst
         .on(surface)
         .move_object("Plans", &sticker, (200, 300))
@@ -143,20 +137,13 @@ async fn a_sticker_moved_into_a_frame_joins_it(
 async fn a_grouped_sticker_moves_and_stays_in_its_group(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
-    let holst = given()
-        .saved_login()
-        .workspace("Team")
-        .board_with_objects(
-            "Plans",
-            "Team",
-            vec![
-                FixtureObject::Frame("Q4".into()),
-                FixtureObject::Shape("Group".into()).set("type", json!("group")),
-                FixtureObject::Sticker("Buy milk".into()).inside(2),
-            ],
-        )
-        .start()
-        .await?;
+    let holst = plans_with(vec![
+        FixtureObject::Frame("Q4".into()),
+        FixtureObject::Shape("Group".into()).set("type", json!("group")),
+        FixtureObject::Sticker("Buy milk".into()).inside(2),
+    ])
+    .start()
+    .await?;
     let sticker = holst.fixture_object("Plans", 3)?;
     holst
         .on(surface)
@@ -296,17 +283,14 @@ const fn shape_words(surface: Surface) -> &'static str {
 
 /// Returns `value`, or the id of the second object of the fixture for `@2`.
 fn resolved(holst: &Holst, value: &str) -> Result<String, ScenarioError> {
-    if value == "@2" {
-        holst.fixture_object("Plans", 2)
-    } else {
-        Ok(value.to_owned())
+    match value {
+        "@2" => holst.fixture_object("Plans", 2),
+        other => Ok(other.to_owned()),
     }
 }
 
 fn five_notes() -> Given {
-    given().saved_login().workspace("Team").board_with_objects(
-        "Plans",
-        "Team",
+    plans_with(
         ["one", "two", "three", "four", "five"]
             .map(|text| FixtureObject::Sticker(text.into()))
             .to_vec(),
@@ -315,15 +299,11 @@ fn five_notes() -> Given {
 
 // Frame Q4 holds `In`; `Out` is far away.
 fn frame_with_one_inside() -> Given {
-    given().saved_login().workspace("Team").board_with_objects(
-        "Plans",
-        "Team",
-        vec![
-            FixtureObject::Frame("Q4".into()).at(0, 0).sized(400, 400),
-            FixtureObject::Sticker("In".into()).at(50, 50).inside(1),
-            FixtureObject::Sticker("Out".into()).at(3000, 3000),
-        ],
-    )
+    plans_with(vec![
+        FixtureObject::Frame("Q4".into()).at(0, 0).sized(400, 400),
+        FixtureObject::Sticker("In".into()).at(50, 50).inside(1),
+        FixtureObject::Sticker("Out".into()).at(3000, 3000),
+    ])
 }
 
 #[rstest]
@@ -434,11 +414,7 @@ fn shape_name(surface: Surface, name: &str) -> String {
 }
 
 fn one_shape() -> Given {
-    given().saved_login().workspace("Team").board_with_objects(
-        "Plans",
-        "Team",
-        vec![FixtureObject::Shape("Launch".into())],
-    )
+    plans_with(vec![FixtureObject::Shape("Launch".into())])
 }
 
 #[rstest]
@@ -507,15 +483,11 @@ async fn an_arrow_is_added_with_its_line_heads_dash_and_width(
 }
 
 fn one_arrow() -> Given {
-    given().saved_login().workspace("Team").board_with_objects(
-        "Plans",
-        "Team",
-        vec![
-            FixtureObject::Sticker("Buy milk".into()),
-            FixtureObject::FreeText("Roadmap".into()),
-            FixtureObject::Arrow(1, 2),
-        ],
-    )
+    plans_with(vec![
+        FixtureObject::Sticker("Buy milk".into()),
+        FixtureObject::FreeText("Roadmap".into()),
+        FixtureObject::Arrow(1, 2),
+    ])
 }
 
 #[rstest]
@@ -763,14 +735,7 @@ async fn a_misspelt_shape_is_refused_with_the_shapes_listed(
 async fn a_new_object_takes_a_free_corner(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
-    let holst = given()
-        .saved_login()
-        .workspace("Team")
-        .board_with_objects(
-            "Plans",
-            "Team",
-            vec![FixtureObject::Sticker("Buy milk".into()).at(0, 0)],
-        )
+    let holst = plans_with(vec![FixtureObject::Sticker("Buy milk".into()).at(0, 0)])
         .start()
         .await?;
     holst
@@ -998,19 +963,12 @@ async fn an_offline_object_list_is_the_cached_copy() -> Result<(), ScenarioError
 async fn an_edited_object_moves_in_the_stacking_order(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
-    let holst = given()
-        .saved_login()
-        .workspace("Team")
-        .board_with_objects(
-            "Plans",
-            "Team",
-            vec![
-                FixtureObject::Sticker("A".into()).stacked(1),
-                FixtureObject::Sticker("B".into()).stacked(2),
-            ],
-        )
-        .start()
-        .await?;
+    let holst = plans_with(vec![
+        FixtureObject::Sticker("A".into()).stacked(1),
+        FixtureObject::Sticker("B".into()).stacked(2),
+    ])
+    .start()
+    .await?;
     let call = ObjectCall::edit()
         .with("object", holst.fixture_object("Plans", 1)?)
         .with("order", "front");
@@ -1150,19 +1108,12 @@ async fn a_copy_goes_to_the_asked_corner(
 async fn a_frame_name_that_fits_two_frames_lists_them(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
-    let holst = given()
-        .saved_login()
-        .workspace("Team")
-        .board_with_objects(
-            "Plans",
-            "Team",
-            vec![
-                FixtureObject::Frame("Q4 plan".into()),
-                FixtureObject::Frame("Q4 review".into()),
-            ],
-        )
-        .start()
-        .await?;
+    let holst = plans_with(vec![
+        FixtureObject::Frame("Q4 plan".into()),
+        FixtureObject::Frame("Q4 review".into()),
+    ])
+    .start()
+    .await?;
     let observation = holst
         .on(surface)
         .add_sticker("Plans", "Call Ann", Some("Q4"))
@@ -1209,21 +1160,14 @@ async fn object_commands_need_a_login(
 async fn a_locked_sticker_is_not_changed(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
-    let holst = given()
-        .saved_login()
-        .workspace("Team")
-        .board_with_objects(
-            "Plans",
-            "Team",
-            vec![
-                FixtureObject::Shape("Lock".into())
-                    .set("type", json!("group"))
-                    .set("locked", json!(true)),
-                FixtureObject::Sticker("Buy milk".into()).inside(1),
-            ],
-        )
-        .start()
-        .await?;
+    let holst = plans_with(vec![
+        FixtureObject::Shape("Lock".into())
+            .set("type", json!("group"))
+            .set("locked", json!(true)),
+        FixtureObject::Sticker("Buy milk".into()).inside(1),
+    ])
+    .start()
+    .await?;
     let sticker = holst.fixture_object("Plans", 2)?;
     let edited = holst
         .on(surface)
@@ -1312,15 +1256,11 @@ async fn a_rotation_of_many_turns_each_object(
 }
 
 fn one_table() -> Given {
-    given().saved_login().workspace("Team").board_with_objects(
-        "Plans",
-        "Team",
-        vec![FixtureObject::Set(
-            Box::new(FixtureObject::Sticker("Grid".into())),
-            "type".into(),
-            json!("table"),
-        )],
-    )
+    plans_with(vec![FixtureObject::Set(
+        Box::new(FixtureObject::Sticker("Grid".into())),
+        "type".into(),
+        json!("table"),
+    )])
 }
 
 #[rstest]
@@ -1342,19 +1282,15 @@ async fn a_table_is_not_rotated(
 }
 
 fn one_of_kind(kind: &str) -> Given {
-    given().saved_login().workspace("Team").board_with_objects(
-        "Plans",
-        "Team",
-        vec![FixtureObject::Set(
-            Box::new(FixtureObject::Set(
-                Box::new(FixtureObject::Sticker("Roll".into())),
-                "type".into(),
-                json!(kind),
-            )),
-            "scale".into(),
-            json!(1),
-        )],
-    )
+    plans_with(vec![FixtureObject::Set(
+        Box::new(FixtureObject::Set(
+            Box::new(FixtureObject::Sticker("Roll".into())),
+            "type".into(),
+            json!(kind),
+        )),
+        "scale".into(),
+        json!(1),
+    )])
 }
 
 #[rstest]
@@ -1415,9 +1351,7 @@ async fn a_size_and_a_scale_together_are_refused(
 }
 
 fn three_overlapping_notes() -> Given {
-    given().saved_login().workspace("Team").board_with_objects(
-        "Plans",
-        "Team",
+    plans_with(
         ["A", "B", "C"]
             .into_iter()
             .zip(1..)
@@ -1668,13 +1602,9 @@ async fn a_frame_look_on_a_sticker_is_refused(
 }
 
 fn checklist_text() -> Given {
-    given().saved_login().workspace("Team").board_with_objects(
-        "Plans",
-        "Team",
-        vec![FixtureObject::FreeText(
-            "- [ ] buy\n- [x] sell\n- [ ] ship".into(),
-        )],
-    )
+    plans_with(vec![FixtureObject::FreeText(
+        "- [ ] buy\n- [x] sell\n- [ ] ship".into(),
+    )])
 }
 
 // The listing shows a text on one line in the tool, line by line in JSON.
@@ -1784,7 +1714,7 @@ async fn an_object_is_moved_into_a_frame_and_back_to_the_board(
     then(&inside).lists_object_in_a_frame("sticker", "Buy milk");
     then(&holst.on(surface).object("Plans", put("none")).await?).succeeded();
     let outside = holst.on(surface).objects("Plans").await?;
-    then(&outside).lists_no_object_in_a_frame();
+    then(&outside).lists_inside_a_parent(&[]);
     Ok(())
 }
 
@@ -1793,19 +1723,12 @@ async fn an_object_is_moved_into_a_frame_and_back_to_the_board(
 async fn a_frame_that_hides_its_content_takes_no_object(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
-    let holst = given()
-        .saved_login()
-        .workspace("Team")
-        .board_with_objects(
-            "Plans",
-            "Team",
-            vec![
-                FixtureObject::Frame("Q4".into()).set("isContentHidden", json!(true)),
-                FixtureObject::Sticker("Buy milk".into()),
-            ],
-        )
-        .start()
-        .await?;
+    let holst = plans_with(vec![
+        FixtureObject::Frame("Q4".into()).set("isContentHidden", json!(true)),
+        FixtureObject::Sticker("Buy milk".into()),
+    ])
+    .start()
+    .await?;
     let call = ObjectCall::edit()
         .with("object", holst.fixture_object("Plans", 2)?)
         .with("frame", "Q4");
@@ -1822,20 +1745,13 @@ async fn a_frame_that_hides_its_content_takes_no_object(
 async fn an_object_in_a_group_stays_out_of_frames(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
-    let holst = given()
-        .saved_login()
-        .workspace("Team")
-        .board_with_objects(
-            "Plans",
-            "Team",
-            vec![
-                FixtureObject::Frame("Q4".into()),
-                FixtureObject::Shape("Group".into()).set("type", json!("group")),
-                FixtureObject::Sticker("Buy milk".into()).inside(2),
-            ],
-        )
-        .start()
-        .await?;
+    let holst = plans_with(vec![
+        FixtureObject::Frame("Q4".into()),
+        FixtureObject::Shape("Group".into()).set("type", json!("group")),
+        FixtureObject::Sticker("Buy milk".into()).inside(2),
+    ])
+    .start()
+    .await?;
     let call = ObjectCall::edit()
         .with("object", holst.fixture_object("Plans", 3)?)
         .with("frame", "Q4");

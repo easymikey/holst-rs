@@ -2,10 +2,10 @@
 
 use holst_core::{
     command::{
-        backup::{self, BackupVerb, Fetched, GetArgs, RestoreArgs, Restored},
+        backup::{self, BackupVerb, Fetched, GetArgs, LsArgs, RestoreArgs, Restored},
         board::picture::Delivery,
         change::ChangeReport,
-        table::{NewFile, parse},
+        table::NewFile,
     },
     domain::{
         backup::Backups,
@@ -45,23 +45,27 @@ impl McpServer {
         arguments: Map<String, Value>,
     ) -> CallToolResult {
         match verb {
-            BackupVerb::Ls => match parse(arguments) {
-                Ok(args) => {
+            BackupVerb::Ls => {
+                self.parsed(arguments, async |args: LsArgs| {
                     self.run(async |client| {
                         Ok(listing_text(&backup::ls(&client, &args).await?))
                     })
                     .await
-                }
-                Err(err) => self.fail(&err.into()),
-            },
-            BackupVerb::Get => match parse(arguments) {
-                Ok(args) => self.save_backup(args).await,
-                Err(err) => self.fail(&err.into()),
-            },
-            BackupVerb::Restore => match parse(arguments) {
-                Ok(args) => self.restore_backup(&args).await,
-                Err(err) => self.fail(&err.into()),
-            },
+                })
+                .await
+            }
+            BackupVerb::Get => {
+                self.parsed(arguments, async |args: GetArgs| {
+                    self.save_backup(args).await
+                })
+                .await
+            }
+            BackupVerb::Restore => {
+                self.parsed(arguments, async |args: RestoreArgs| {
+                    self.restore_backup(&args).await
+                })
+                .await
+            }
         }
     }
 

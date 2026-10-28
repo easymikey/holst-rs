@@ -7,21 +7,15 @@ use holst_scenarios::{
     ScenarioError,
     Surface,
     board_of,
-    given,
     then,
 };
 use rstest::rstest;
 use serde_json::{Value, json};
 
-fn board_with(objects: Vec<FixtureObject>) -> Given {
-    given()
-        .saved_login()
-        .workspace("Team")
-        .board_with_objects("Plans", "Team", objects)
-}
+use crate::fixtures::plans_with;
 
 fn three_notes() -> Given {
-    board_with(vec![
+    plans_with(vec![
         FixtureObject::Sticker("One".into()),
         FixtureObject::Sticker("Two".into()),
         FixtureObject::Sticker("Three".into()),
@@ -30,7 +24,7 @@ fn three_notes() -> Given {
 
 /// A group of the stickers `One` and `Two`, and a free `Three`.
 fn grouped_notes() -> Given {
-    board_with(vec![
+    plans_with(vec![
         FixtureObject::Group,
         FixtureObject::Sticker("One".into()).inside(1),
         FixtureObject::Sticker("Two".into()).inside(1),
@@ -100,7 +94,7 @@ async fn a_dry_run_group_changes_nothing(
 async fn a_frame_is_refused_and_nothing_is_written(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
-    let holst = board_with(vec![
+    let holst = plans_with(vec![
         FixtureObject::Frame("Q4".into()),
         FixtureObject::Sticker("One".into()),
     ])

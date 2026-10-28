@@ -7,22 +7,16 @@ use holst_scenarios::{
     ScenarioError,
     Surface,
     board_of,
-    given,
     then,
 };
 use rstest::rstest;
 use serde_json::json;
 
-fn board_with(objects: Vec<FixtureObject>) -> Given {
-    given()
-        .saved_login()
-        .workspace("Team")
-        .board_with_objects("Plans", "Team", objects)
-}
+use crate::fixtures::plans_with;
 
 /// Three stickers 192 wide at 100,100, 300,150 and 700,400.
 fn scattered() -> Given {
-    board_with(vec![
+    plans_with(vec![
         FixtureObject::Sticker("One".into()).at(100, 100),
         FixtureObject::Sticker("Two".into()).at(300, 150),
         FixtureObject::Sticker("Three".into()).at(700, 400),
@@ -30,12 +24,11 @@ fn scattered() -> Given {
 }
 
 fn call_of(holst: &Holst, numbers: &[u32]) -> Result<ObjectCall, ScenarioError> {
-    let mut call = ObjectCall::align();
-    // imperative: each object is added to the call
-    for number in numbers {
-        call = call.with("object", holst.fixture_object("Plans", *number)?);
-    }
-    Ok(call)
+    numbers
+        .iter()
+        .try_fold(ObjectCall::align(), |call, number| {
+            Ok(call.with("object", holst.fixture_object("Plans", *number)?))
+        })
 }
 
 #[rstest]
@@ -89,7 +82,7 @@ async fn a_spread_makes_the_gaps_equal(
 async fn a_locked_object_refuses_the_call_and_nothing_is_written(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
-    let holst = board_with(vec![
+    let holst = plans_with(vec![
         FixtureObject::Group.set("locked", json!(true)),
         FixtureObject::Sticker("One".into()).inside(1),
         FixtureObject::Sticker("Two".into()).at(400, 150),

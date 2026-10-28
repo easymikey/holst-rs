@@ -205,10 +205,9 @@ impl On<'_> {
         .into_iter()
         .chain(fields)
         .collect();
-        if verb == "ls" {
-            self.reading(&spoken, "comment", Value::Object(tool)).await
-        } else {
-            self.changing(&spoken, "comment", Value::Object(tool)).await
+        match verb {
+            "ls" => self.reading(&spoken, "comment", Value::Object(tool)).await,
+            _ => self.changing(&spoken, "comment", Value::Object(tool)).await,
         }
     }
 }

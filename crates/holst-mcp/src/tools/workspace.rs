@@ -3,7 +3,6 @@
 use holst_core::{
     command::{
         change::ChangeReport,
-        table::parse,
         workspace::{
             ChangeKind,
             CreateArgs,
@@ -54,41 +53,45 @@ impl McpServer {
         arguments: Map<String, Value>,
     ) -> CallToolResult {
         match verb {
-            WorkspaceVerb::Ls => match parse::<ListArgs>(arguments) {
-                Ok(args) => {
+            WorkspaceVerb::Ls => {
+                self.parsed(arguments, async |args: ListArgs| {
                     self.run(async |client| {
                         Ok(self.listing_text(&list(&client, &args).await?))
                     })
                     .await
-                }
-                Err(err) => self.fail(&err.into()),
-            },
-            WorkspaceVerb::Show => match parse::<ShowArgs>(arguments) {
-                Ok(args) => {
+                })
+                .await
+            }
+            WorkspaceVerb::Show => {
+                self.parsed(arguments, async |args: ShowArgs| {
                     self.run(async |client| {
                         Ok(self.shown_text(&show(&client, &args).await?))
                     })
                     .await
-                }
-                Err(err) => self.fail(&err.into()),
-            },
-            WorkspaceVerb::Create => match parse::<CreateArgs>(arguments) {
-                Ok(args) => self.create_workspace(&args).await,
-                Err(err) => self.fail(&err.into()),
-            },
-            WorkspaceVerb::Rename => match parse::<RenameArgs>(arguments) {
-                Ok(args) => self.rename_workspace(&args).await,
-                Err(err) => self.fail(&err.into()),
-            },
-            WorkspaceVerb::Log => match parse::<LogArgs>(arguments) {
-                Ok(args) => {
+                })
+                .await
+            }
+            WorkspaceVerb::Create => {
+                self.parsed(arguments, async |args: CreateArgs| {
+                    self.create_workspace(&args).await
+                })
+                .await
+            }
+            WorkspaceVerb::Rename => {
+                self.parsed(arguments, async |args: RenameArgs| {
+                    self.rename_workspace(&args).await
+                })
+                .await
+            }
+            WorkspaceVerb::Log => {
+                self.parsed(arguments, async |args: LogArgs| {
                     self.run(async |client| {
                         Ok(self.log_text(&log(&client, &args).await?))
                     })
                     .await
-                }
-                Err(err) => self.fail(&err.into()),
-            },
+                })
+                .await
+            }
         }
     }
 

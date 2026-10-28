@@ -207,38 +207,34 @@ impl McpServer {
             &A,
         ) -> holst_core::Result<ChangeReport>,
     ) -> CallToolResult {
-        match parse::<A>(arguments) {
-            Ok(args) => {
-                let call = async |client: HandedClient| -> Result<String> {
-                    let report = change(&client, &self.cache, &args).await?;
-                    Ok(self.written_text(&report))
-                };
-                self.by_mode(dry_run(&args), call).await
-            }
-            Err(err) => self.fail(&err.into()),
-        }
+        self.parsed(arguments, async |args: A| {
+            let call = async |client: HandedClient| -> Result<String> {
+                let report = change(&client, &self.cache, &args).await?;
+                Ok(self.written_text(&report))
+            };
+            self.by_mode(dry_run(&args), call).await
+        })
+        .await
     }
 
     /// Several objects, or a frame with content, stay on the board without
     /// `confirm`.
     async fn remove_objects(&self, arguments: Map<String, Value>) -> CallToolResult {
-        match parse::<RemoveArgs>(arguments) {
-            Ok(args) => {
-                let call = async |client: HandedClient| -> Result<String> {
-                    let Removed {
-                        report, refusal, ..
-                    } = change::rm(&client, &self.cache, &args).await?;
-                    said(refusal.as_ref(), || self.written_text(&report))
-                };
-                self.by_mode(args.dry_run, call).await
-            }
-            Err(err) => self.fail(&err.into()),
-        }
+        self.parsed(arguments, async |args: RemoveArgs| {
+            let call = async |client: HandedClient| -> Result<String> {
+                let Removed {
+                    report, refusal, ..
+                } = change::rm(&client, &self.cache, &args).await?;
+                said(refusal.as_ref(), || self.written_text(&report))
+            };
+            self.by_mode(args.dry_run, call).await
+        })
+        .await
     }
 
     async fn download_objects(&self, arguments: Map<String, Value>) -> CallToolResult {
-        match parse::<GetArgs>(arguments) {
-            Ok(args) => match self.download_place(&args) {
+        self.parsed(arguments, async |args: GetArgs| {
+            match self.download_place(&args) {
                 Ok(()) => {
                     self.run(async |client| {
                         let downloaded = get::get(
@@ -253,9 +249,9 @@ impl McpServer {
                     .await
                 }
                 Err(err) => self.fail(&err),
-            },
-            Err(err) => self.fail(&err.into()),
-        }
+            }
+        })
+        .await
     }
 
     /// Refuses standard output and the secret places before any request.

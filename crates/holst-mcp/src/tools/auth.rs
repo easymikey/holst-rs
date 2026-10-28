@@ -1,16 +1,13 @@
 //! The `auth` tool: the saved login, the account and its workspaces.
 
 use holst_core::{
-    command::{
-        auth::{
-            AccountStatus,
-            AuthVerb,
-            StatusArgs,
-            StatusReport,
-            WorkspaceStatus,
-            status,
-        },
-        table::parse,
+    command::auth::{
+        AccountStatus,
+        AuthVerb,
+        StatusArgs,
+        StatusReport,
+        WorkspaceStatus,
+        status,
     },
     error::hint::Surface,
 };
@@ -38,10 +35,12 @@ impl McpServer {
             AuthVerb::Logout => self.fail(&Error::CliOnly {
                 command: "auth logout".to_owned(),
             }),
-            AuthVerb::Status => match parse::<StatusArgs>(arguments) {
-                Ok(args) => self.auth_status(&args).await,
-                Err(err) => self.fail(&err.into()),
-            },
+            AuthVerb::Status => {
+                self.parsed(arguments, async |args: StatusArgs| {
+                    self.auth_status(&args).await
+                })
+                .await
+            }
         }
     }
 

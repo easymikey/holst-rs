@@ -368,21 +368,21 @@ fn listed_object(line: &str) -> Option<ListedObject> {
         word.filter(|word| **word != "·")
             .map(|word| (*word).to_owned())
     };
-    // the words after the color, up to the ends and tags: a shape's look
-    let look = rest
+    // the color first, then a shape's look: the words no other field owns
+    let free: Vec<&str> = rest
         .iter()
         .enumerate()
         .filter(|(at, word)| {
             !spoken_for.contains(at)
                 && !word.contains('×')
                 && !word.starts_with(['#', '{'])
+                && **word != "locked"
                 && !word.ends_with('°')
                 && !word.starts_with("link-to=")
         })
-        .skip(1)
         .map(|(_, word)| *word)
-        .collect::<Vec<_>>()
-        .join(" ");
+        .collect();
+    let look = free.get(1..).unwrap_or_default().join(" ");
     Some(ListedObject {
         id,
         kind,
@@ -402,18 +402,7 @@ fn listed_object(line: &str) -> Option<ListedObject> {
             .iter()
             .find(|word| word.contains('×'))
             .map(|word| word.replace('×', "x")),
-        color: rest
-            .iter()
-            .enumerate()
-            .find(|(at, word)| {
-                !spoken_for.contains(at)
-                    && !word.contains('×')
-                    && !word.starts_with(['#', '{'])
-                    && **word != "locked"
-                    && !word.ends_with('°')
-                    && !word.starts_with("link-to=")
-            })
-            .map(|(_, word)| (*word).to_owned()),
+        color: free.first().map(|word| (*word).to_owned()),
         look: Some(look).filter(|look| !look.is_empty()),
         tags: rest
             .iter()
@@ -513,14 +502,19 @@ impl Then<'_> {
     /// # Panics
     /// When the observation differs.
     pub fn lists_inside_a_parent(&self, texts: &[&str]) {
-        let inside: std::collections::BTreeSet<&str> = self
+        self.texts_where(|row| row.in_frame, texts);
+    }
+
+    /// Expects exactly the objects that `keep` picks to have these texts.
+    fn texts_where(&self, keep: impl Fn(&ListedObject) -> bool, texts: &[&str]) {
+        let kept: std::collections::BTreeSet<&str> = self
             .objects()
             .iter()
-            .filter(|row| row.in_frame)
+            .filter(|row| keep(row))
             .map(|row| row.text.as_str())
             .collect();
         let wanted: std::collections::BTreeSet<&str> = texts.iter().copied().collect();
-        assert_eq!(inside, wanted, "{:?}", self.observation);
+        assert_eq!(kept, wanted, "{:?}", self.observation);
     }
 
     /// Expects the object with this text to be shown turned by these degrees.
@@ -559,26 +553,7 @@ impl Then<'_> {
     /// # Panics
     /// When the observation differs.
     pub fn lists_locked(&self, texts: &[&str]) {
-        let locked: std::collections::BTreeSet<&str> = self
-            .objects()
-            .iter()
-            .filter(|row| row.locked)
-            .map(|row| row.text.as_str())
-            .collect();
-        let wanted: std::collections::BTreeSet<&str> = texts.iter().copied().collect();
-        assert_eq!(locked, wanted, "{:?}", self.observation);
-    }
-
-    /// Expects no object inside a frame.
-    ///
-    /// # Panics
-    /// When there is one.
-    pub fn lists_no_object_in_a_frame(&self) {
-        assert!(
-            self.objects().iter().all(|row| !row.in_frame),
-            "expected no object in a frame, got {:?}",
-            self.observation
-        );
+        self.texts_where(|row| row.locked, texts);
     }
 
     /// Expects an object with this text, or none when `listed` is false.

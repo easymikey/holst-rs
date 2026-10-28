@@ -1,19 +1,16 @@
 //! The `comment` tool: list, start, reply, resolve, delete, mark read.
 
 use holst_core::{
-    command::{
-        comment::{
-            self,
-            AddArgs,
-            CommentReport,
-            CommentVerb,
-            LsArgs,
-            ReadArgs,
-            RemoveArgs,
-            ReplyArgs,
-            ResolveArgs,
-        },
-        table::parse,
+    command::comment::{
+        self,
+        AddArgs,
+        CommentReport,
+        CommentVerb,
+        LsArgs,
+        ReadArgs,
+        RemoveArgs,
+        ReplyArgs,
+        ResolveArgs,
     },
     domain::text::EMPTY,
     effect::board_write::WriteMode,
@@ -41,8 +38,8 @@ impl McpServer {
         arguments: Map<String, Value>,
     ) -> CallToolResult {
         match verb {
-            CommentVerb::Ls => match parse::<LsArgs>(arguments) {
-                Ok(args) => {
+            CommentVerb::Ls => {
+                self.parsed(arguments, async |args: LsArgs| {
                     self.run(async |client| {
                         let list = comment::ls(&client, &args).await?;
                         Ok(if list.threads.is_empty() {
@@ -52,49 +49,51 @@ impl McpServer {
                         })
                     })
                     .await
-                }
-                Err(err) => self.fail(&err.into()),
-            },
-            CommentVerb::Add => match parse::<AddArgs>(arguments) {
-                Ok(args) => {
+                })
+                .await
+            }
+            CommentVerb::Add => {
+                self.parsed(arguments, async |args: AddArgs| {
                     self.sent(args.dry_run, async |client| {
                         comment::add(&client, &args).await
                     })
                     .await
-                }
-                Err(err) => self.fail(&err.into()),
-            },
-            CommentVerb::Reply => match parse::<ReplyArgs>(arguments) {
-                Ok(args) => {
+                })
+                .await
+            }
+            CommentVerb::Reply => {
+                self.parsed(arguments, async |args: ReplyArgs| {
                     self.sent(args.dry_run, async |client| {
                         comment::reply(&client, &args).await
                     })
                     .await
-                }
-                Err(err) => self.fail(&err.into()),
-            },
-            CommentVerb::Resolve => match parse::<ResolveArgs>(arguments) {
-                Ok(args) => {
+                })
+                .await
+            }
+            CommentVerb::Resolve => {
+                self.parsed(arguments, async |args: ResolveArgs| {
                     self.sent(args.dry_run, async |client| {
                         comment::resolve(&client, &args).await
                     })
                     .await
-                }
-                Err(err) => self.fail(&err.into()),
-            },
-            CommentVerb::Read => match parse::<ReadArgs>(arguments) {
-                Ok(args) => {
+                })
+                .await
+            }
+            CommentVerb::Read => {
+                self.parsed(arguments, async |args: ReadArgs| {
                     self.sent(args.dry_run, async |client| {
                         comment::read(&client, &args).await
                     })
                     .await
-                }
-                Err(err) => self.fail(&err.into()),
-            },
-            CommentVerb::Rm => match parse::<RemoveArgs>(arguments) {
-                Ok(args) => self.remove_thread(&args).await,
-                Err(err) => self.fail(&err.into()),
-            },
+                })
+                .await
+            }
+            CommentVerb::Rm => {
+                self.parsed(arguments, async |args: RemoveArgs| {
+                    self.remove_thread(&args).await
+                })
+                .await
+            }
         }
     }
 

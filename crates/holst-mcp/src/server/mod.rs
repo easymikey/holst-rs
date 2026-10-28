@@ -253,12 +253,18 @@ impl McpServer {
         arguments: Option<Map<String, Value>>,
     ) -> CallToolResult {
         let mut arguments = arguments.unwrap_or_default();
-        match tool.pick(&mut arguments) {
-            Ok(command) => match only_on_mcp(command, &arguments) {
-                Ok(()) => self.command(command, arguments).await,
-                Err(err) => reply::error(err.to_string()),
-            },
-            Err(err) => reply::error(err.to_string()),
+        let refused = |err: &dyn std::fmt::Display| reply::error(err.to_string());
+        let allowed = tool
+            .pick(&mut arguments)
+            .map_err(|err| refused(&err))
+            .and_then(|command| {
+                only_on_mcp(command, &arguments)
+                    .map(|()| command)
+                    .map_err(|err| refused(&err))
+            });
+        match allowed {
+            Ok(command) => self.command(command, arguments).await,
+            Err(reply) => reply,
         }
     }
 

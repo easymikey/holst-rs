@@ -122,10 +122,12 @@ impl McpServer {
             BoardVerb::Save => self.save_board(arguments).await,
             BoardVerb::Export => self.export_board(arguments).await,
             BoardVerb::Import => self.import_board(arguments).await,
-            BoardVerb::Edit => match parse::<EditArgs>(arguments) {
-                Ok(args) => self.edit_board(&args).await,
-                Err(err) => self.fail(&err.into()),
-            },
+            BoardVerb::Edit => {
+                self.parsed(arguments, async |args: EditArgs| {
+                    self.edit_board(&args).await
+                })
+                .await
+            }
             BoardVerb::Grant => {
                 let dry = |args: &GrantArgs| args.dry_run;
                 self.apply_sharing(arguments, dry, rights::grant).await
@@ -183,16 +185,14 @@ impl McpServer {
         dry_run: impl Fn(&A) -> WriteMode,
         change: impl AsyncFnOnce(&Client, &A) -> holst_core::Result<Changed>,
     ) -> CallToolResult {
-        match parse::<A>(arguments) {
-            Ok(args) => {
-                let call = async |client: HandedClient| {
-                    let changed = change(&client, &args).await?;
-                    said(changed.outcome.refusal(), || self.changed_text(&changed))
-                };
-                self.by_mode(dry_run(&args), call).await
-            }
-            Err(err) => self.fail(&err.into()),
-        }
+        self.parsed(arguments, async |args: A| {
+            let call = async |client: HandedClient| {
+                let changed = change(&client, &args).await?;
+                said(changed.outcome.refusal(), || self.changed_text(&changed))
+            };
+            self.by_mode(dry_run(&args), call).await
+        })
+        .await
     }
 
     /// As [`Self::apply`], for a change of who may use a board.
@@ -202,16 +202,14 @@ impl McpServer {
         dry_run: impl Fn(&A) -> WriteMode,
         change: impl AsyncFnOnce(&Client, &A) -> holst_core::Result<Shared>,
     ) -> CallToolResult {
-        match parse::<A>(arguments) {
-            Ok(args) => {
-                let call = async |client: HandedClient| {
-                    let shared = change(&client, &args).await?;
-                    said(shared.refusal(), || self.shared_text(&shared))
-                };
-                self.by_mode(dry_run(&args), call).await
-            }
-            Err(err) => self.fail(&err.into()),
-        }
+        self.parsed(arguments, async |args: A| {
+            let call = async |client: HandedClient| {
+                let shared = change(&client, &args).await?;
+                said(shared.refusal(), || self.shared_text(&shared))
+            };
+            self.by_mode(dry_run(&args), call).await
+        })
+        .await
     }
 
     fn tree_text(&self, listing: &Listing) -> String {

@@ -51,18 +51,20 @@ pub(crate) async fn call_then(
     let first = client
         .call_tool(CallToolRequestParams::new(tool).with_arguments(arguments))
         .await;
-    let second = match first.as_ref().ok().filter(|reply| failure(reply).is_none()) {
-        Some(reply) => match next(&read(reply)) {
-            Some((second_tool, second_arguments)) => Some(
-                client
-                    .call_tool(
-                        CallToolRequestParams::new(second_tool)
-                            .with_arguments(second_arguments),
-                    )
-                    .await,
-            ),
-            None => None,
-        },
+    let follow = first
+        .as_ref()
+        .ok()
+        .filter(|reply| failure(reply).is_none())
+        .and_then(|reply| next(&read(reply)));
+    let second = match follow {
+        Some((second_tool, second_arguments)) => Some(
+            client
+                .call_tool(
+                    CallToolRequestParams::new(second_tool)
+                        .with_arguments(second_arguments),
+                )
+                .await,
+        ),
         None => None,
     };
     client.cancel().await?;

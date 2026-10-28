@@ -7,22 +7,16 @@ use holst_scenarios::{
     ScenarioError,
     Surface,
     board_of,
-    given,
     then,
     withhold_locking,
 };
 use rstest::rstest;
 use serde_json::json;
 
-fn board_with(objects: Vec<FixtureObject>) -> Given {
-    given()
-        .saved_login()
-        .workspace("Team")
-        .board_with_objects("Plans", "Team", objects)
-}
+use crate::fixtures::plans_with;
 
 fn two_notes() -> Given {
-    board_with(vec![
+    plans_with(vec![
         FixtureObject::Sticker("One".into()),
         FixtureObject::Sticker("Two".into()),
     ])
@@ -30,7 +24,7 @@ fn two_notes() -> Given {
 
 /// A locked group of `One` and `Two`, a free `Three`, an unlocked frame `Q4`.
 fn locked_notes() -> Given {
-    board_with(vec![
+    plans_with(vec![
         FixtureObject::Group.set("locked", json!(true)),
         FixtureObject::Sticker("One".into()).inside(1),
         FixtureObject::Sticker("Two".into()).inside(1),
@@ -75,12 +69,17 @@ async fn locked_objects_sit_in_a_locked_group_and_are_kept(
 async fn only_locks_a_frame_by_itself(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
-    let holst = board_with(vec![
+    let holst = plans_with(vec![
         FixtureObject::Frame("Q4".into()),
         FixtureObject::Sticker("One".into()).inside(1),
     ])
     .start()
     .await?;
+    let shape = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("ratio", "1:1")
+        .with("background", "fill");
+    then(&holst.on(surface).object("Plans", shape).await?).succeeded();
     let call = ObjectCall::lock()
         .with("object", holst.fixture_object("Plans", 1)?)
         .switched("only");
@@ -88,6 +87,7 @@ async fn only_locks_a_frame_by_itself(
     let read = holst.on(surface).objects("Plans").await?;
     then(&read).lists_objects(&[("frame", "Q4"), ("sticker", "One")]);
     then(&read).lists_locked(&["Q4"]);
+    then(&read).lists_shape_looking("Q4", "ratio 1:1 background fill");
     Ok(())
 }
 
@@ -172,7 +172,7 @@ async fn an_unlocked_group_frees_its_members_and_goes(
         ("frame", "Q4"),
     ]);
     then(&read).lists_locked(&[]);
-    then(&read).lists_no_object_in_a_frame();
+    then(&read).lists_inside_a_parent(&[]);
     Ok(())
 }
 
@@ -181,7 +181,7 @@ async fn an_unlocked_group_frees_its_members_and_goes(
 async fn an_unlocked_frame_is_flagged_free(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
-    let holst = board_with(vec![
+    let holst = plans_with(vec![
         FixtureObject::Frame("Q4".into()).set("locked", json!(true)),
     ])
     .start()

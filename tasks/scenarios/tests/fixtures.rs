@@ -39,3 +39,11 @@ pub(crate) fn plan_with_a_frame() -> Given {
         ],
     )
 }
+
+/// Logged in, workspace Team, board Plans holding `objects`.
+pub(crate) fn plans_with(objects: Vec<FixtureObject>) -> Given {
+    given()
+        .saved_login()
+        .workspace("Team")
+        .board_with_objects("Plans", "Team", objects)
+}

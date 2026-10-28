@@ -17,7 +17,7 @@ mod template;
 mod workspace;
 
 use holst_core::{
-    command::table::CommandName,
+    command::table::{CommandArgs, CommandName, parse},
     effect::board_write::WriteMode,
     error::confirmation::Unconfirmed,
 };
@@ -49,6 +49,18 @@ impl McpServer {
         match mode {
             WriteMode::DryRun => self.run(call).await,
             WriteMode::Send => self.write(call).await,
+        }
+    }
+
+    /// Reads the arguments of a verb and runs it, or fails with what is wrong.
+    pub(super) async fn parsed<A: CommandArgs>(
+        &self,
+        arguments: Map<String, Value>,
+        then: impl AsyncFnOnce(A) -> CallToolResult,
+    ) -> CallToolResult {
+        match parse::<A>(arguments) {
+            Ok(args) => then(args).await,
+            Err(err) => self.fail(&err.into()),
         }
     }
 

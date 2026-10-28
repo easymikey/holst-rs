@@ -15,7 +15,6 @@ use holst_core::{
             SearchHit,
             TextMatch,
         },
-        table::parse,
     },
     domain::{
         account::Workspace,
@@ -74,14 +73,14 @@ impl Reads for Kept<'_> {
 
 impl McpServer {
     pub(super) async fn search(&self, arguments: Map<String, Value>) -> CallToolResult {
-        match parse::<SearchArgs>(arguments) {
-            Ok(args) if args.query.trim().is_empty() => self.fail(&Error::EmptyQuery),
-            Ok(args) => {
+        self.parsed(arguments, async |args: SearchArgs| match args {
+            args if args.query.trim().is_empty() => self.fail(&Error::EmptyQuery),
+            args => {
                 self.run(async |client| self.found(&client, args).await)
                     .await
             }
-            Err(err) => self.fail(&err.into()),
-        }
+        })
+        .await
     }
 
     async fn found(&self, client: &HandedClient, args: SearchArgs) -> Result<String> {

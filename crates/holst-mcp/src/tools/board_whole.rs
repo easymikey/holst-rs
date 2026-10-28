@@ -67,25 +67,22 @@ impl McpServer {
                 MAX_SIDE_MODEL.get().to_string().parse().unwrap_or_default();
             arguments.insert("max_side".to_owned(), Value::from(side));
         }
-        match parse::<SnapArgs>(arguments) {
-            Ok(args) => {
-                self.run_blocks(async |client| {
-                    let snapped =
-                        picture::snap(&client, &self.cache, None, &args).await?;
-                    Ok(snapped_blocks(snapped))
-                })
-                .await
-            }
-            Err(err) => self.fail(&err.into()),
-        }
+        self.parsed(arguments, async |args: SnapArgs| {
+            self.run_blocks(async |client| {
+                let snapped = picture::snap(&client, &self.cache, None, &args).await?;
+                Ok(snapped_blocks(snapped))
+            })
+            .await
+        })
+        .await
     }
 
     pub(super) async fn save_board(
         &self,
         arguments: Map<String, Value>,
     ) -> CallToolResult {
-        match parse::<SaveArgs>(arguments) {
-            Ok(args) => match self.named_place(args.dir.as_deref()) {
+        self.parsed(arguments, async |args: SaveArgs| {
+            match self.named_place(args.dir.as_deref()) {
                 Ok(()) => {
                     self.run(async |client| {
                         let saved = picture::save(
@@ -100,17 +97,17 @@ impl McpServer {
                     .await
                 }
                 Err(err) => self.fail(&err),
-            },
-            Err(err) => self.fail(&err.into()),
-        }
+            }
+        })
+        .await
     }
 
     pub(super) async fn export_board(
         &self,
         arguments: Map<String, Value>,
     ) -> CallToolResult {
-        match parse::<ExportArgs>(arguments) {
-            Ok(args) => match self.named_place(args.file.as_deref()) {
+        self.parsed(arguments, async |args: ExportArgs| {
+            match self.named_place(args.file.as_deref()) {
                 Ok(()) => {
                     self.run(async |client| {
                         let exported =
@@ -121,17 +118,17 @@ impl McpServer {
                     .await
                 }
                 Err(err) => self.fail(&err),
-            },
-            Err(err) => self.fail(&err.into()),
-        }
+            }
+        })
+        .await
     }
 
     pub(super) async fn import_board(
         &self,
         arguments: Map<String, Value>,
     ) -> CallToolResult {
-        match parse::<ImportArgs>(arguments) {
-            Ok(args) => match LocalFile::check(Path::new(&args.file), &self.secrets) {
+        self.parsed(arguments, async |args: ImportArgs| {
+            match LocalFile::check(Path::new(&args.file), &self.secrets) {
                 Ok(()) => {
                     let call = async |client: HandedClient| {
                         let imported = file::import(&client, &args).await?;
@@ -142,9 +139,9 @@ impl McpServer {
                     self.by_mode(args.dry_run, call).await
                 }
                 Err(err) => self.fail(&err),
-            },
-            Err(err) => self.fail(&err.into()),
-        }
+            }
+        })
+        .await
     }
 
     /// A place a call names for a new file or folder: not the command line's

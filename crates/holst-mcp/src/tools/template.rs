@@ -3,7 +3,7 @@
 use holst_core::{
     command::{
         change::ChangeReport,
-        table::{CommandArgs, parse},
+        table::CommandArgs,
         template::{
             Changed,
             CreateArgs,
@@ -58,24 +58,24 @@ impl McpServer {
         arguments: Map<String, Value>,
     ) -> CallToolResult {
         match verb {
-            TemplateVerb::Ls => match parse::<LsArgs>(arguments) {
-                Ok(args) => {
+            TemplateVerb::Ls => {
+                self.parsed(arguments, async |args: LsArgs| {
                     self.run(async |client| {
                         Ok(self.template_listing_text(&ls(&client, &args).await?))
                     })
                     .await
-                }
-                Err(err) => self.fail(&err.into()),
-            },
-            TemplateVerb::Show => match parse::<ShowArgs>(arguments) {
-                Ok(args) => {
+                })
+                .await
+            }
+            TemplateVerb::Show => {
+                self.parsed(arguments, async |args: ShowArgs| {
                     self.run(async |client| {
                         Ok(self.template_shown_text(&show(&client, &args).await?))
                     })
                     .await
-                }
-                Err(err) => self.fail(&err.into()),
-            },
+                })
+                .await
+            }
             TemplateVerb::Create => {
                 let mode = |args: &CreateArgs| args.dry_run;
                 self.template_changing(arguments, mode, create).await
@@ -99,18 +99,16 @@ impl McpServer {
         mode: impl Fn(&A) -> WriteMode,
         make: impl AsyncFn(&Client, &A) -> holst_core::Result<Changed>,
     ) -> CallToolResult {
-        match parse::<A>(arguments) {
-            Ok(args) => {
-                let call = async |client: HandedClient| {
-                    let changed = make(&client, &args).await?;
-                    said(changed.outcome.refusal(), || {
-                        self.template_changed_text(&changed)
-                    })
-                };
-                self.by_mode(mode(&args), call).await
-            }
-            Err(err) => self.fail(&err.into()),
-        }
+        self.parsed(arguments, async |args: A| {
+            let call = async |client: HandedClient| {
+                let changed = make(&client, &args).await?;
+                said(changed.outcome.refusal(), || {
+                    self.template_changed_text(&changed)
+                })
+            };
+            self.by_mode(mode(&args), call).await
+        })
+        .await
     }
 
     fn template_listing_text(&self, listing: &Listing) -> String {
