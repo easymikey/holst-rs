@@ -1225,7 +1225,7 @@ dependencies = [
 name = "holst-core"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "derive_more",
  "divan",
  "flate2",
@@ -1276,7 +1276,7 @@ name = "holst-mcp"
 version = "0.1.0"
 dependencies = [
  "arc-swap",
- "base64 0.22.1",
+ "base64 0.23.1",
  "holst-core",
  "insta",
  "itertools",

@@ -34,7 +34,7 @@ arc-swap.workspace = true
 # The board document: kept boards are seeds of the next load.
 yrs.workspace = true
 # Already built through reqwest: PNG pictures go to the model as base64.
-base64 = { version = "0.22", default-features = false, features = ["alloc"] }
+base64 = { version = "0.23", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 rstest = { version = "0.28", default-features = false }
