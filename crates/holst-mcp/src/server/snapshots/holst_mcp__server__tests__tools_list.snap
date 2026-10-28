@@ -669,6 +669,10 @@ expression: "*holst.tools"
         "board": {
           "type": "string"
         },
+        "check": {
+          "description": "Tick checklist item n, from 1.",
+          "type": "integer"
+        },
         "color": {
           "description": "E.g. yellow4.",
           "type": "string"
@@ -902,8 +906,16 @@ expression: "*holst.tools"
           "description": "Arrow end; cp: the target board. On edit object:side or x,y.",
           "type": "string"
         },
+        "uncheck": {
+          "description": "Untick checklist item n.",
+          "type": "integer"
+        },
         "url": {
           "description": "Page address.",
+          "type": "string"
+        },
+        "width": {
+          "description": "Text: auto or a width.",
           "type": "string"
         },
         "workspace": {

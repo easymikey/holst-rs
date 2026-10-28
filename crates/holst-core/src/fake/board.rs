@@ -308,7 +308,7 @@ impl FixtureObject {
 }
 
 /// Writes the text as the web client does: a wrapper per line, its paragraph
-/// first in it.
+/// first in it; a line of `- [ ] ` or `- [x] ` is a checklist item.
 fn fill(txn: &mut TransactionMut<'_>, root: &XmlTextRef, text: &str, ordinal: u64) {
     let key = |part: u32| {
         format!(
@@ -320,8 +320,22 @@ fn fill(txn: &mut TransactionMut<'_>, root: &XmlTextRef, text: &str, ordinal: u6
         let wrapper = root.insert_embed(txn, at, XmlTextPrelim::new(""));
         wrapper.insert_attribute(txn, "type", "wrapper");
         wrapper.insert_attribute(txn, "key", key(at * 2));
-        let paragraph = wrapper.insert_embed(txn, 0, XmlTextPrelim::new(line));
-        paragraph.insert_attribute(txn, "type", "paragraph");
+        let item = [("- [ ] ", false), ("- [x] ", true)]
+            .into_iter()
+            .find_map(|(marker, done)| Some((line.strip_prefix(marker)?, done)));
+        let paragraph = wrapper.insert_embed(
+            txn,
+            0,
+            XmlTextPrelim::new(item.map_or(line, |(rest, _)| rest)),
+        );
+        paragraph.insert_attribute(
+            txn,
+            "type",
+            item.map_or("paragraph", |_| "checkbox-list-item"),
+        );
         paragraph.insert_attribute(txn, "key", key(at * 2 + 1));
+        if let Some((_, done)) = item {
+            paragraph.insert_attribute(txn, "checked", Any::Bool(done));
+        }
     });
 }

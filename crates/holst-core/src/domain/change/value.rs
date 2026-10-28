@@ -3,6 +3,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt,
+    num::NonZeroU32,
 };
 
 use serde::{Deserialize, Serialize};
@@ -182,9 +183,28 @@ pub struct ObjectPatch {
     /// Clockwise degrees to turn to; the position follows, keeping the centre.
     pub rotation: Option<f64>,
     pub link_to: Option<LinkTo>,
+    pub width: Option<TextWidth>,
+    pub tick: Option<Tick>,
     pub look: TextLook,
     pub shape: ShapeEdit,
     pub arrow: ArrowEdit,
+}
+
+/// How a text wraps its lines.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TextWidth {
+    /// By its content, as before it was widened.
+    Auto,
+    /// This wide as drawn, in board units; above 0.
+    Fixed(f64),
+}
+
+/// A checklist item to tick or untick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Tick {
+    /// From 1, in reading order.
+    pub item: NonZeroU32,
+    pub done: bool,
 }
 
 /// What an object opens when clicked.

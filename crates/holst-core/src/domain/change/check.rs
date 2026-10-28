@@ -1048,6 +1048,8 @@ fn changeable_edit(
                 color: None,
                 rotation: None,
                 link_to: None,
+                width: None,
+                tick: None,
                 format: _,
                 look:
                     TextLook {
@@ -1232,6 +1234,10 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
         }
         (ObjectPatch { size: Some(_), .. }, _) if !size => refuse("size"),
         (ObjectPatch { color: Some(_), .. }, _) if !color => refuse("color"),
+        (ObjectPatch { width: Some(_), .. }, _) if *kind != ObjectKind::Text => {
+            refuse("width")
+        }
+        (ObjectPatch { tick: Some(_), .. }, _) if !rich => refuse("checklist"),
         (ObjectPatch { shape, arrow, .. }, _)
             if unfit_field(kind, shape, arrow).is_some() =>
         {

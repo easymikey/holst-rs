@@ -501,6 +501,24 @@ pub struct EditArgs {
     )]
     pub link_to: Option<String>,
     #[argument(
+        value_name = "auto|n",
+        help = "A text's width: auto wraps it by its content, a number fixes it in board units; unchanged by default",
+        tool_doc = "Text: auto or a width."
+    )]
+    pub width: Option<String>,
+    #[argument(
+        value_name = "n",
+        help = "Tick the n-th checklist item of a sticker, text or shape, counting from 1 in reading order; unchanged by default",
+        tool_doc = "Tick checklist item n, from 1."
+    )]
+    pub check: Option<u32>,
+    #[argument(
+        value_name = "n",
+        help = "Untick the n-th checklist item of a sticker, text or shape, counting from 1 in reading order; unchanged by default",
+        tool_doc = "Untick checklist item n."
+    )]
+    pub uncheck: Option<u32>,
+    #[argument(
         value_name = "order",
         help = "Where it stands among the objects: front or back, or forward or backward for one step past the next overlapping object; unchanged by default"
     )]
@@ -548,6 +566,9 @@ pub struct EditItem {
     pub label: Vec<String>,
     pub rotate: Option<f64>,
     pub link_to: Option<String>,
+    pub width: Option<String>,
+    pub check: Option<u32>,
+    pub uncheck: Option<u32>,
     pub order: Option<LayerOrder>,
     #[serde(default)]
     pub tag: Vec<String>,
@@ -889,7 +910,7 @@ mod tests {
             "path",
             "no_embed",
         ];
-        const EDIT_KEYS: [&str; 18] = [
+        const EDIT_KEYS: [&str; 21] = [
             "object",
             "text",
             "at",
@@ -906,6 +927,9 @@ mod tests {
             "label",
             "rotate",
             "link_to",
+            "width",
+            "check",
+            "uncheck",
             "order",
             "tag",
         ];

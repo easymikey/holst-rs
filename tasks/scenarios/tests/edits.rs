@@ -1494,3 +1494,103 @@ async fn a_link_to_an_object_that_is_not_there_changes_nothing(
     board_of(&holst).got_no_update();
     Ok(())
 }
+
+fn checklist_text() -> Given {
+    given().saved_login().workspace("Team").board_with_objects(
+        "Plans",
+        "Team",
+        vec![FixtureObject::FreeText(
+            "- [ ] buy\n- [x] sell\n- [ ] ship".into(),
+        )],
+    )
+}
+
+// The listing shows a text on one line in the tool, line by line in JSON.
+fn lines_as_listed(surface: Surface, lines: &[&str]) -> String {
+    match surface {
+        Surface::Cli => lines.join("\n"),
+        Surface::Mcp => lines.join(" / "),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn checklist_items_are_ticked_and_unticked_by_their_number(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = checklist_text().start().await?;
+    let text = holst.fixture_object("Plans", 1)?;
+    let edit = |flag: &'static str, item: &'static str| {
+        ObjectCall::edit()
+            .with("object", text.clone())
+            .with(flag, item)
+    };
+    let ticked = holst
+        .on(surface)
+        .object("Plans", edit("check", "1"))
+        .await?;
+    then(&ticked).succeeded();
+    holst
+        .on(surface)
+        .object("Plans", edit("uncheck", "2"))
+        .await?;
+    let listing = ObjectCall::list().with("text_format", "markdown");
+    let shown = holst.on(surface).object("Plans", listing).await?;
+    let wanted = lines_as_listed(surface, &["- [x] buy", "- [ ] sell", "- [ ] ship"]);
+    then(&shown).lists_objects(&[("text", wanted.as_str())]);
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_checklist_item_the_text_does_not_have_changes_nothing(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = checklist_text().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("check", "4");
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("the text has no checklist item 4: it has 3")
+        .signalled_as(surface.usage());
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_text_is_held_to_a_width_and_let_go_to_wrap_by_itself(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = two_notes().start().await?;
+    let text = holst.fixture_object("Plans", 2)?;
+    let width = |to: &'static str| {
+        ObjectCall::edit()
+            .with("object", text.clone())
+            .with("width", to)
+    };
+    holst.on(surface).object("Plans", width("300")).await?;
+    let fixed = holst.on(surface).objects("Plans").await?;
+    then(&fixed).lists_object_styled("Roadmap", &["width:300"]);
+    holst.on(surface).object("Plans", width("auto")).await?;
+    let auto = holst.on(surface).objects("Plans").await?;
+    then(&auto).lists_object_styled("Roadmap", &[]);
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_sticker_has_no_width_to_set(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = two_notes().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("width", "300");
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("sticker objects have no width to change")
+        .signalled_as(surface.usage());
+    Ok(())
+}

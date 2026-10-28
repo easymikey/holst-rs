@@ -288,5 +288,6 @@ fn a_frame_title_takes_no_markdown() -> Result<()> {
     Ok(())
 }
 
+mod checklist;
 mod look;
 mod read;

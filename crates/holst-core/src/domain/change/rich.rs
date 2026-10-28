@@ -5,6 +5,7 @@ use std::sync::Arc;
 use yrs::{
     Any,
     Out,
+    ReadTxn,
     Text as _,
     TransactionMut,
     Xml as _,
@@ -15,7 +16,7 @@ use yrs::{
 
 use crate::{
     domain::{
-        change::value::{Backdrop, TextLook},
+        change::value::{Backdrop, TextLook, Tick},
         id_source::IdSource,
         rich_text::{Block, BlockKind, Mark, Run},
     },
@@ -157,6 +158,52 @@ pub(super) fn restyle(
     if !attrs.is_empty() {
         format_leaves(transaction, root, &attrs);
     }
+}
+
+/// Sets or clears `checked` on a checklist item of the text under `root`.
+///
+/// # Errors
+/// The number of checklist items the text has, when it has not that many.
+pub(super) fn tick(
+    transaction: &mut TransactionMut<'_>,
+    root: Option<&XmlTextRef>,
+    tick: Tick,
+) -> Result<(), usize> {
+    let items = root.map_or_else(Vec::new, |root| checklist(&*transaction, root));
+    let at = usize::try_from(tick.item.get().saturating_sub(1)).ok();
+    at.and_then(|at| items.get(at))
+        .map(|element| {
+            element.insert_attribute(transaction, "checked", Any::Bool(tick.done));
+        })
+        .ok_or(items.len())
+}
+
+/// The checklist items under `node` in reading order, the nested ones after
+/// their parent.
+fn checklist<T: ReadTxn>(transaction: &T, node: &XmlTextRef) -> Vec<XmlTextRef> {
+    let is_item = matches!(
+        node.get_attribute(transaction, "type"),
+        Some(Out::Any(Any::String(kind))) if &*kind == BlockKind::Check(false).element()
+    );
+    is_item
+        .then(|| node.clone())
+        .into_iter()
+        .chain(
+            node.diff(transaction, YChange::identity)
+                .into_iter()
+                .flat_map(|chunk| match chunk.insert {
+                    Out::YXmlText(child) => checklist(transaction, &child),
+                    Out::Any(_)
+                    | Out::YText(_)
+                    | Out::YArray(_)
+                    | Out::YMap(_)
+                    | Out::YXmlElement(_)
+                    | Out::YXmlFragment(_)
+                    | Out::YDoc(_)
+                    | Out::UndefinedRef(_) => Vec::new(),
+                }),
+        )
+        .collect()
 }
 
 /// `attrs` on the text of `element` and of the elements inside it.

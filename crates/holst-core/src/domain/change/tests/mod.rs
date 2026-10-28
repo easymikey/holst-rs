@@ -15,6 +15,7 @@ mod objects;
 mod remove;
 mod rotation;
 mod shape_edit;
+mod text_width;
 
 use std::collections::HashMap;
 

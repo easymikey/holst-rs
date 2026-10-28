@@ -179,6 +179,9 @@ pub enum BoardChangeError {
     )]
     NothingToChange,
 
+    #[error("the text has no checklist item {item}: it has {count}")]
+    NoCheckItem { item: u32, count: usize },
+
     #[error("\"{raw}\" is not a point: expected x,y, e.g. 100,-40")]
     NotPoint { raw: String },
 
@@ -292,6 +295,7 @@ impl BoardChangeError {
             | BoardChangeError::Locked { .. }
             | BoardChangeError::NotYours { .. }
             | BoardChangeError::NothingToChange
+            | BoardChangeError::NoCheckItem { .. }
             | BoardChangeError::NotPoint { .. }
             | BoardChangeError::OffBoard { .. }
             | BoardChangeError::NotSize { .. }
@@ -336,6 +340,7 @@ impl BoardChangeError {
             | BoardChangeError::Locked { .. }
             | BoardChangeError::NotYours { .. }
             | BoardChangeError::NothingToChange
+            | BoardChangeError::NoCheckItem { .. }
             | BoardChangeError::NotPoint { .. }
             | BoardChangeError::OffBoard { .. }
             | BoardChangeError::NotSize { .. }
@@ -421,6 +426,7 @@ pub(super) mod tests {
             (BoardChangeError::Locked { reference: text() }, None),
             (BoardChangeError::NotYours { reference: text() }, None),
             (BoardChangeError::NothingToChange, None),
+            (BoardChangeError::NoCheckItem { item: 1, count: 0 }, None),
             (BoardChangeError::NotPoint { raw: text() }, None),
             (
                 BoardChangeError::OffBoard {

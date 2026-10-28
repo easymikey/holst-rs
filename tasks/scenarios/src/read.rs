@@ -45,6 +45,7 @@ struct Listed {
     marks: Vec<String>,
     text_color: Option<String>,
     text_background: Option<String>,
+    text_width: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -317,6 +318,7 @@ pub(crate) fn cli_objects(stdout: &[u8]) -> Result<Observation, ScenarioError> {
                     .into_iter()
                     .chain(listed.text_color.map(|color| format!("text:{color}")))
                     .chain(listed.text_background.map(|color| format!("bg:{color}")))
+                    .chain(listed.text_width.map(|width| format!("width:{width}")))
                     .collect(),
             })
             .collect(),
@@ -630,7 +632,8 @@ impl Then<'_> {
     }
 
     /// Expects the object with this text to show exactly these marks and
-    /// colors of its whole text, e.g. `bold`, `text:red6`, `bg:yellow4`.
+    /// colors of its whole text, e.g. `bold`, `text:red6`, `bg:yellow4`, and
+    /// the width it is held to, `width:300`.
     ///
     /// # Panics
     /// When there is none, or it differs.

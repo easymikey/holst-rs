@@ -17,7 +17,7 @@ use crate::{
         object::LsArgs,
     },
     domain::{
-        area::listed_area,
+        area::{listed_area, scene::text_scale},
         board::{
             DrawnArrowEnds,
             EditRight,
@@ -38,7 +38,7 @@ use crate::{
     },
     effect::settings::CacheSettings,
     error::Result,
-    protocol::document::{COLOR, TEXT_BACKGROUND_COLOR, TEXT_COLOR},
+    protocol::document::{COLOR, FIXED_WIDTH, TEXT_BACKGROUND_COLOR, TEXT_COLOR},
     remote::{client::Client, socket::write::connector},
     storage::cache::Cache,
 };
@@ -91,6 +91,9 @@ pub struct TextStyle {
     pub text_color: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text_background: Option<String>,
+    /// The width a text is held to as drawn; none when it wraps by itself.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_width: Option<f64>,
 }
 
 impl TextStyle {
@@ -107,6 +110,13 @@ impl TextStyle {
             marks: text_marks(document, object),
             text_color: color(TEXT_COLOR),
             text_background: color(TEXT_BACKGROUND_COLOR),
+            text_width: object
+                .fields
+                .get(FIXED_WIDTH)
+                .and_then(serde_json::Value::as_bool)
+                .filter(|fixed| *fixed)
+                .and(object.width)
+                .map(|stored| (stored * text_scale(object) * 100.0).round() / 100.0),
         }
     }
 
@@ -120,7 +130,9 @@ impl TextStyle {
             .text_background
             .as_ref()
             .map(|name| format!("bg:{name}"));
-        let words: Vec<String> = marks.chain(text).chain(background).collect();
+        let width = self.text_width.map(|width| format!("width:{width}"));
+        let words: Vec<String> =
+            marks.chain(text).chain(background).chain(width).collect();
         if words.is_empty() {
             String::new()
         } else {

@@ -41,7 +41,7 @@ use crate::{
                 subtree,
             },
             journal,
-            rich::{fill_blocks, restyle},
+            rich::{fill_blocks, restyle, tick},
             value::{
                 ArrowLook,
                 Backdrop,
@@ -51,7 +51,7 @@ use crate::{
                 NewObject,
                 ObjectChangeKind,
                 ObjectPatch,
-                TextLook,
+                TextWidth,
                 Upload,
             },
             write_group::{dissolve_after_removal, group, lock_only, ungroup, unlock},
@@ -76,6 +76,7 @@ use crate::{
         END,
         FILE_NAME,
         FILL_COLOR,
+        FIXED_WIDTH,
         HEIGHT,
         ID,
         LABEL_TEXT,
@@ -607,7 +608,7 @@ pub(super) fn edit(
     let fields = states.get(id).cloned().unwrap_or_default();
     let map = object_map(transaction, &scope.roots.objects, id, kind)?;
     let content = content_changes(transaction, scope, edited, &fields);
-    restyle_text(transaction, scope, &fields, &content, &patch.look);
+    rewrite_document(transaction, scope, &fields, &content, patch)?;
     // A moved object with no parent or a frame for one goes into the deepest frame.
     let held = subtree(states, id);
     let placed = placed_rectangle(patch, &fields);
@@ -628,6 +629,13 @@ pub(super) fn edit(
         .chain([("updated", scope.stamp.json())])
         .collect();
     insert_changes(transaction, &map, &changed)?;
+    // BUNDLE: auto width unsets both fields (main.a33651a4.js 199436-199446).
+    if patch.width == Some(TextWidth::Auto) {
+        // imperative: each removal writes to the transaction
+        for name in [WIDTH, FIXED_WIDTH] {
+            map.remove(transaction, name);
+        }
+    }
     let moved = match (patch.at, placed) {
         (Some(to), Some(rect)) => Some(MovedFrame {
             frame: id,
@@ -691,6 +699,7 @@ fn content_changes(
                 size_changes(&*transaction, scope, kind, fields, size)
             }),
         )
+        .chain(patch.width.into_iter().flat_map(|width| width_changes(width, fields)))
         .chain(patch.color.as_ref().map(|color| {
             (
                 color_field(kind),
@@ -768,14 +777,31 @@ fn painted(color: Option<&Color>) -> Value {
     })
 }
 
-/// The marks and colours of the whole text, on the document the text is in.
-fn restyle_text(
+/// A fixed width, as the web client stores it: `width` before `textScale`
+/// and `fixedWidth` (main.a33651a4.js 199603). Auto unsets both, later.
+fn width_changes(width: TextWidth, fields: &Value) -> Vec<(&'static str, Value)> {
+    let scale = fields
+        .get(TEXT_SCALE)
+        .and_then(Value::as_f64)
+        .filter(|scale| *scale > 0.0)
+        .unwrap_or(1.0);
+    match width {
+        TextWidth::Auto => Vec::new(),
+        TextWidth::Fixed(drawn) => {
+            vec![(WIDTH, json!(drawn / scale)), (FIXED_WIDTH, json!(true))]
+        }
+    }
+}
+
+/// The marks and colours of the whole text and a ticked checklist item, on
+/// the document the text is in.
+fn rewrite_document(
     transaction: &mut TransactionMut<'_>,
     scope: &WriteTransaction<'_>,
     fields: &Value,
     written: &[(&'static str, Value)],
-    look: &TextLook,
-) {
+    patch: &ObjectPatch,
+) -> Result<()> {
     let document = written
         .iter()
         .find(|(name, _)| *name == DOCUMENT_ID)
@@ -789,8 +815,20 @@ fn restyle_text(
         }
     });
     if let Some(root) = &root {
-        restyle(transaction, root, look);
+        restyle(transaction, root, &patch.look);
     }
+    patch
+        .tick
+        .map(|asked| {
+            tick(transaction, root.as_ref(), asked).map_err(|count| {
+                Error::BoardChange(BoardChangeError::NoCheckItem {
+                    item: asked.item.get(),
+                    count,
+                })
+            })
+        })
+        .transpose()
+        .map(|_| ())
 }
 
 /// A sticker, a stack and a text grow by `textScale` (the web client's corner
@@ -890,6 +928,8 @@ fn changed_names(
         patch.size.map(|_| "size"),
         patch.color.as_ref().map(|_| "color"),
         patch.rotation.map(|_| "rotation"),
+        patch.width.map(|_| "width"),
+        patch.tick.map(|_| "checklist"),
         patch.look.marks.as_ref().map(|_| "marks"),
         patch.look.color.as_ref().map(|_| "text color"),
         patch.look.background.as_ref().map(|_| "text background"),

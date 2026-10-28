@@ -1,5 +1,7 @@
 //! `object edit` and `object rm`: changes to objects already on a board.
 
+use std::num::NonZeroU32;
+
 use itertools::Itertools as _;
 use serde::Serialize;
 
@@ -25,6 +27,8 @@ use crate::{
                 ObjectPatch,
                 ShapeEdit,
                 TextLook,
+                TextWidth,
+                Tick,
             },
         },
         id,
@@ -237,6 +241,9 @@ fn read_edits(args: &EditArgs, share: &str) -> Result<Vec<ObjectEdit>> {
                 label: args.label.clone(),
                 rotate: args.rotate,
                 link_to: args.link_to.clone(),
+                width: args.width.clone(),
+                check: args.check,
+                uncheck: args.uncheck,
                 order: None,
                 tag: Vec::new(),
             },
@@ -297,6 +304,9 @@ fn refuse_with_items(args: &EditArgs) -> Result<()> {
         ("label", !args.label.is_empty()),
         ("rotate", args.rotate.is_some()),
         ("link_to", args.link_to.is_some()),
+        ("width", args.width.is_some()),
+        ("check", args.check.is_some()),
+        ("uncheck", args.uncheck.is_some()),
         ("order", args.order.is_some()),
         ("tag", !args.tag.is_empty()),
     ]
@@ -370,6 +380,8 @@ fn patch_of(item: &EditItem, format: TextFormat, address: &str) -> Result<Object
             .as_deref()
             .map(|raw| link_of(raw, address))
             .transpose()?,
+        width: width_of(item)?,
+        tick: tick_of(item)?,
         shape: ShapeEdit {
             kind: item.shape,
             stroke: item.stroke.as_deref().map(str::parse).transpose()?,
@@ -396,6 +408,43 @@ fn patch_of(item: &EditItem, format: TextFormat, address: &str) -> Result<Object
                 .collect::<Result<_>>()?,
         },
     })
+}
+
+/// What `--width` says: `auto`, or a width above 0. The width is read as
+/// drawn, so a size given beside it would change what it means.
+fn width_of(item: &EditItem) -> Result<Option<TextWidth>> {
+    item.width
+        .as_deref()
+        .map(|raw| match raw.trim() {
+            _ if item.size.is_some() => {
+                Err(not_value(EDIT, "width", "left out with --size"))
+            }
+            "auto" => Ok(TextWidth::Auto),
+            number => number
+                .parse::<f64>()
+                .ok()
+                .filter(|width| width.is_finite() && *width > 0.0)
+                .map(TextWidth::Fixed)
+                .ok_or_else(|| not_value(EDIT, "width", "auto or a number above 0")),
+        })
+        .transpose()
+}
+
+/// What `--check` and `--uncheck` say: one checklist item, from 1.
+fn tick_of(item: &EditItem) -> Result<Option<Tick>> {
+    let asked = match (item.check, item.uncheck) {
+        (Some(_), Some(_)) => Err(not_value(EDIT, "check", "left out with --uncheck")),
+        (Some(number), None) => Ok(Some((number, true))),
+        (None, Some(number)) => Ok(Some((number, false))),
+        (None, None) => Ok(None),
+    }?;
+    asked
+        .map(|(number, done)| {
+            NonZeroU32::new(number)
+                .map(|nth| Tick { item: nth, done })
+                .ok_or_else(|| not_value(EDIT, "check", "an item number from 1"))
+        })
+        .transpose()
 }
 
 /// What `--link-to` says: `none`, an address, or an object of the board.

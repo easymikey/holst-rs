@@ -358,6 +358,7 @@ fn board_write_code(error: &BoardChangeError) -> u8 {
         | BoardChangeError::NotChangeable { .. }
         | BoardChangeError::PlacedByContainer { .. }
         | BoardChangeError::NothingToChange
+        | BoardChangeError::NoCheckItem { .. }
         | BoardChangeError::NotPoint { .. }
         | BoardChangeError::OffBoard { .. }
         | BoardChangeError::NotSize { .. }
