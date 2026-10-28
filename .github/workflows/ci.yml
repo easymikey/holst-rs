@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  NIGHTLY: nightly-2026-05-22
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: nightly rustfmt
+        run: rustup toolchain install "$NIGHTLY" --profile minimal -c rustfmt
+
+      - name: fmt
+        run: cargo +"$NIGHTLY" fmt --all --check
+
+      # cargo-spellcheck's hunspell-sys build script needs libclang (bindgen).
+      - name: libclang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libclang-dev
+
+      - uses: actions/cache@v4
+        id: spellcheck-cache
+        with:
+          path: ~/.cargo/bin/cargo-spellcheck
+          key: cargo-spellcheck-0.15.7-${{ runner.os }}-${{ runner.arch }}
+
+      - name: install cargo-spellcheck
+        if: steps.spellcheck-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-spellcheck --version 0.15.7 --locked
+
+      - name: spellcheck
+        run: cargo spellcheck check -m 1
+
+  deny:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: cargo-deny
+        run: cargo deny check
+
+  check:
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-22.04
+          - ubuntu-22.04-arm
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: rustup
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
+          fi
+
+      # rust-toolchain.toml pins 1.96.0 for build and tests; clippy runs on the
+      # nightly the lints are tuned for.
+      - name: toolchains
+        run: |
+          rustup toolchain install
+          rustup toolchain install "$NIGHTLY" --profile minimal -c clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: clippy
+        run: cargo +"$NIGHTLY" clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+      - name: test
+        run: cargo test --workspace --all-features --locked
