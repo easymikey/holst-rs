@@ -382,6 +382,86 @@ async fn markdown_text_is_written_and_read_back(
 }
 
 #[rstest]
+#[case::flowchart("flowchart_decision", "flowchart-decision stroke gray12 2px")]
+#[case::bpmn("bpmn_gateway", "bpmn-gateway stroke gray12 2px")]
+#[tokio::test]
+async fn a_shape_is_added_in_a_kind_from_all_the_kinds(
+    #[case] shape: &'static str,
+    #[case] listed: &str,
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = two_notes().start().await?;
+    let call = ObjectCall::add("shape")
+        .text("Launch")
+        .with("color", "yellow4")
+        .with("shape", shape_name(surface, shape));
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
+    let observation = holst.on(surface).objects("Plans").await?;
+    then(&observation).lists_shape_looking("Launch", listed);
+    Ok(())
+}
+
+// The tool takes snake_case shape kinds, the command line kebab-case.
+fn shape_name(surface: Surface, name: &str) -> String {
+    match surface {
+        Surface::Cli => name.replace('_', "-"),
+        Surface::Mcp => name.to_owned(),
+    }
+}
+
+fn one_shape() -> Given {
+    given().saved_login().workspace("Team").board_with_objects(
+        "Plans",
+        "Team",
+        vec![FixtureObject::Shape("Launch".into())],
+    )
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_shape_edit_changes_its_kind_outline_corners_and_opacity(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = one_shape().start().await?;
+    let shape = holst.fixture_object("Plans", 1)?;
+    let call = ObjectCall::edit()
+        .with("object", shape)
+        .with("shape", shape_name(surface, "bpmn_gateway"))
+        .with("stroke", "gray12")
+        .with("stroke_width", "3")
+        .with("stroke_style", "dashed")
+        .with("radius", "8")
+        .with("opacity", "0.5");
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
+    let observation = holst.on(surface).objects("Plans").await?;
+    then(&observation).lists_shape_looking(
+        "Launch",
+        "bpmn-gateway stroke gray12 3px dashed radius 8 opacity 0.5",
+    );
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_shape_edit_with_a_wrong_outline_is_refused(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = one_shape().start().await?;
+    let shape = holst.fixture_object("Plans", 1)?;
+    let call = ObjectCall::edit()
+        .with("object", shape)
+        .with("stroke_width", "11");
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("0 to 10")
+        .signalled_as(surface.usage());
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
 #[tokio::test]
 async fn an_arrow_joins_two_objects(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,

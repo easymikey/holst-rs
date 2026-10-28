@@ -140,6 +140,8 @@ pub struct ListedObject {
     /// The size as `WxH`, when the object has one.
     pub size: Option<String>,
     pub color: Option<String>,
+    /// A shape's kind and outline in the words of a listing line.
+    pub look: Option<String>,
     pub tags: Vec<String>,
     /// Where an arrow starts and ends, when attached.
     pub ends: Option<(Option<String>, Option<String>)>,

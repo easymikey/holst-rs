@@ -1,5 +1,6 @@
 //! Reading a board and searching the text on boards, on either surface.
 
+use holst_core::domain::board::shape_type::ShapeLook;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
@@ -29,6 +30,7 @@ struct Listed {
     width: Option<f64>,
     height: Option<f64>,
     color: Option<String>,
+    look: Option<ShapeLook>,
     parent: Option<String>,
     ends: Option<Ends>,
     #[serde(default)]
@@ -294,6 +296,7 @@ pub(crate) fn cli_objects(stdout: &[u8]) -> Result<Observation, ScenarioError> {
                     .zip(listed.height)
                     .map(|(width, height)| format!("{width:.0}x{height:.0}")),
                 color: listed.color,
+                look: listed.look.map(|look| look.words()),
                 tags: listed.tags,
                 ends: listed.ends.map(|ends| (ends.start, ends.end)),
             })
@@ -344,6 +347,17 @@ fn listed_object(line: &str) -> Option<ListedObject> {
         word.filter(|word| **word != "·")
             .map(|word| (*word).to_owned())
     };
+    // the words after the color, up to the ends and tags: a shape's look
+    let look = rest
+        .iter()
+        .enumerate()
+        .filter(|(at, word)| {
+            !spoken_for.contains(at) && !word.contains('×') && !word.starts_with('#')
+        })
+        .skip(1)
+        .map(|(_, word)| *word)
+        .collect::<Vec<_>>()
+        .join(" ");
     Some(ListedObject {
         id,
         kind,
@@ -363,6 +377,7 @@ fn listed_object(line: &str) -> Option<ListedObject> {
                     && !word.starts_with('#')
             })
             .map(|(_, word)| (*word).to_owned()),
+        look: Some(look).filter(|look| !look.is_empty()),
         tags: rest
             .iter()
             .filter_map(|word| word.strip_prefix('#'))
@@ -522,6 +537,21 @@ impl Then<'_> {
                 .iter()
                 .any(|row| row.text == text && row.color.as_deref() == Some(color)),
             "expected {text:?} coloured {color}, got {:?}",
+            self.observation
+        );
+    }
+
+    /// Expects the shape with this text to list this kind and outline, in the
+    /// words of a listing line.
+    ///
+    /// # Panics
+    /// When there is none, or it differs.
+    pub fn lists_shape_looking(&self, text: &str, look: &str) {
+        assert!(
+            self.objects()
+                .iter()
+                .any(|row| row.text == text && row.look.as_deref() == Some(look)),
+            "expected {text:?} looking {look:?}, got {:?}",
             self.observation
         );
     }

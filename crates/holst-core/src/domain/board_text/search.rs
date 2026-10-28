@@ -183,6 +183,7 @@ impl TextCorpus<'_> {
     ///     z_index: 0.0,
     ///     text: text.into(),
     ///     color: None,
+    ///     look: None,
     ///     ends: None,
     ///     author: None,
     ///     file: None,

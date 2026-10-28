@@ -203,7 +203,7 @@ pub struct AddArgs {
     pub workspace: Option<String>,
     #[argument(
         value_name = "shape",
-        help = "The kind of shape, e.g. ellipse, flowchart_decision or bpmn_gateway; square by default",
+        help = "The kind of shape, e.g. ellipse, flowchart-decision or bpmn-gateway; square by default",
         tool_doc = "Shape kind.",
         kinds = [shape]
     )]
@@ -347,7 +347,7 @@ pub struct EditArgs {
     pub color: Option<String>,
     #[argument(
         value_name = "shape",
-        help = "Change a shape's kind, e.g. ellipse, flowchart_decision or bpmn_gateway; unchanged by default",
+        help = "Change a shape's kind, e.g. ellipse, flowchart-decision or bpmn-gateway; unchanged by default",
         tool_doc = "Shape kind."
     )]
     pub shape: Option<ShapeType>,

@@ -15,7 +15,9 @@ use crate::{
 /// Flags the command line repeats and the tool takes as an array.
 const REPEATED: [&str; 2] = ["object", "tag"];
 /// Flags that hold a count, a number for the tool.
-const COUNTS: [&str; 3] = ["offset", "limit", "padding"];
+const COUNTS: [&str; 5] = ["offset", "limit", "padding", "stroke_width", "radius"];
+/// Flags that hold a fraction, a number for the tool.
+const FRACTIONS: [&str; 1] = ["opacity"];
 
 /// How `--items` reaches the command line; the tool always gets an array.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -253,11 +255,15 @@ impl ObjectCall {
             let count = values(name).last()?.parse::<u64>().ok()?;
             Some(((*name).to_owned(), Value::from(count)))
         });
+        let fractions = FRACTIONS.iter().filter_map(|name| {
+            let fraction = values(name).last()?.parse::<f64>().ok()?;
+            Some(((*name).to_owned(), Value::from(fraction)))
+        });
         let arrays = REPEATED.iter().filter_map(|name| {
             let found = values(name);
             (!found.is_empty()).then(|| ((*name).to_owned(), Value::from(found)))
         });
-        tool.extend(counts.chain(arrays));
+        tool.extend(counts.chain(fractions).chain(arrays));
         if let Some(items) = &self.items {
             tool.insert("items".to_owned(), Value::Array(items.clone()));
         }

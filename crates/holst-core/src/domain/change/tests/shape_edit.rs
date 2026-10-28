@@ -54,6 +54,10 @@ fn shape_edit(shape: ShapeEdit) -> ObjectPatch {
     }
 }
 
+fn at(fields: &Value, pointer: &str) -> Value {
+    fields.pointer(pointer).cloned().unwrap_or(Value::Null)
+}
+
 fn number(fields: &Value, name: &str) -> f64 {
     fields.get(name).and_then(Value::as_f64).unwrap_or(f64::NAN)
 }
@@ -74,7 +78,7 @@ fn a_shape_changes_its_kind_and_stays_fixed_in_size() -> Result<()> {
     )?;
     let fields = fields_of(&document, &id);
     assert_eq!(
-        (fields["shapeType"].clone(), fields["fixedSize"].clone()),
+        (at(&fields, "/shapeType"), at(&fields, "/fixedSize")),
         (json!("flowchart-decision"), json!(true))
     );
     Ok(())
@@ -97,15 +101,15 @@ fn a_bpmn_kind_clears_the_markers_and_keeps_the_centre() -> Result<()> {
     let fields = fields_of(&document, &id);
     // 144x144 to 48x48 is a third, and the shape is 120 high: 120 / 144 * 48.
     let side = 120.0 / 144.0 * 48.0;
-    let position = &fields["position"];
+    let position = at(&fields, "/position");
     let centre = (
-        number(position, "x") + number(&fields, "width") / 2.0,
-        number(position, "y") + number(&fields, "height") / 2.0,
+        number(&position, "x") + number(&fields, "width") / 2.0,
+        number(&position, "y") + number(&fields, "height") / 2.0,
     );
     assert_eq!(
         (
-            fields["shapeType"].clone(),
-            fields["bpmnResources"].clone(),
+            at(&fields, "/shapeType"),
+            at(&fields, "/bpmnResources"),
             number(&fields, "width"),
             number(&fields, "height"),
             centre,
@@ -137,12 +141,12 @@ fn the_outline_corners_and_fill_opacity_are_written_and_the_radius_clamped()
     let fields = fields_of(&document, &id);
     assert_eq!(
         (
-            fields["strokeColor"].clone(),
-            fields["strokeWidth"].clone(),
-            fields["strokeStyle"].clone(),
-            fields["borderRadius"].clone(),
-            fields["fillColor"]["opacity"].clone(),
-            fields["fillColor"]["color"].clone(),
+            at(&fields, "/strokeColor"),
+            at(&fields, "/strokeWidth"),
+            at(&fields, "/strokeStyle"),
+            at(&fields, "/borderRadius"),
+            at(&fields, "/fillColor/opacity"),
+            at(&fields, "/fillColor/color"),
         ),
         (
             json!({"color": "blue4", "opacity": 1}),

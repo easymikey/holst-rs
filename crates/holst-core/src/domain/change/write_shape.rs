@@ -61,7 +61,9 @@ pub(super) fn shape_changes(
     // A fill color in the same edit writes the opacity itself.
     let opacity = edit.opacity.filter(|_| !colored).map(|opacity| {
         let mut fill = fields.get(FILL_COLOR).cloned().unwrap_or_else(|| json!({}));
-        fill[OPACITY] = json!(opacity);
+        if let Some(map) = fill.as_object_mut() {
+            map.insert(OPACITY.to_owned(), json!(opacity));
+        }
         (FILL_COLOR, fill)
     });
     kind.into_iter()
@@ -105,7 +107,7 @@ fn kind_changes(kind: ShapeType, fields: &Value) -> Changes {
             fields.get(HEIGHT).and_then(Value::as_f64) == Some(kind.default_sides().1);
         [named]
             .into_iter()
-            .chain((!fixed && !same).then(|| (FIXED_SIZE, json!(true))))
+            .chain((!fixed && !same).then_some((FIXED_SIZE, json!(true))))
             .collect()
     }
 }
@@ -130,10 +132,10 @@ fn max_radius(edit: &ShapeEdit, fields: &Value, size: Option<Size>) -> u32 {
             .zip(fields.get(HEIGHT).and_then(Value::as_f64))
     });
     sides.map_or(u32::MAX, |(width, height)| {
-        let side = (width.min(height) / divisor)
+        let rounded = (width.min(height) / divisor)
             .floor()
             .clamp(0.0, f64::from(u32::MAX));
-        // A whole number below the clamp.
-        side as u32
+        // A whole float in [0, u32::MAX] displays as its digits; no cast needed.
+        rounded.to_string().parse().unwrap_or_default()
     })
 }

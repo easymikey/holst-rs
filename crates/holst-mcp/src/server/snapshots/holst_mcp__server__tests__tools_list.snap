@@ -704,6 +704,10 @@ expression: "*holst.tools"
           },
           "type": "array"
         },
+        "opacity": {
+          "description": "0.1..1.",
+          "type": "number"
+        },
         "order": {
           "enum": [
             "front",
@@ -715,22 +719,101 @@ expression: "*holst.tools"
           "description": "Local file.",
           "type": "string"
         },
+        "radius": {
+          "description": "Corner radius.",
+          "type": "integer"
+        },
         "refresh": {
           "type": "boolean"
         },
         "shape": {
+          "description": "Shape kind.",
           "enum": [
             "square",
             "rounded_rectangle",
             "ellipse",
             "triangle",
-            "diamond"
+            "diamond",
+            "basic_speech_bubble",
+            "right_parallelogram",
+            "basic_star",
+            "basic_arrow_right",
+            "basic_arrow_left",
+            "basic_arrow_left_right",
+            "basic_pentagon",
+            "basic_hexagon",
+            "basic_octagon",
+            "basic_trapezoid",
+            "left_parallelogram",
+            "inverted_triangle",
+            "basic_cross",
+            "basic_cloud",
+            "flowchart_process",
+            "flowchart_decision",
+            "flowchart_terminator",
+            "flowchart_predefined_process",
+            "flowchart_document",
+            "flowchart_multiple_documents",
+            "flowchart_manual_input",
+            "flowchart_preparation",
+            "flowchart_data",
+            "flowchart_database",
+            "flowchart_direct_access_storage",
+            "flowchart_internal_storage",
+            "flowchart_manual_operation",
+            "flowchart_delay",
+            "flowchart_stored_data",
+            "flowchart_merge",
+            "flowchart_connector",
+            "flowchart_or",
+            "flowchart_summing_junction",
+            "flowchart_display",
+            "flowchart_off_page_connector",
+            "flowchart_left_curly_brace_annotation",
+            "flowchart_right_curly_brace_annotation",
+            "flowchart_comment",
+            "flowchart_note",
+            "bpmn_task",
+            "bpmn_transaction",
+            "bpmn_event_subprocess",
+            "bpmn_call_activity",
+            "bpmn_event_start",
+            "bpmn_event_start_non_interrupting",
+            "bpmn_event_intermediate",
+            "bpmn_event_intermediate_non_interrupting",
+            "bpmn_event_end",
+            "bpmn_conversation",
+            "bpmn_call_conversation",
+            "bpmn_gateway",
+            "bpmn_data_object",
+            "bpmn_data_store",
+            "bpmn_empty_pool",
+            "bpmn_group",
+            "bpmn_annotation",
+            "bpmn_message"
           ],
           "type": "string"
         },
         "size": {
           "description": "WxH.",
           "type": "string"
+        },
+        "stroke": {
+          "description": "Outline color.",
+          "type": "string"
+        },
+        "stroke_style": {
+          "description": "Outline style.",
+          "enum": [
+            "solid",
+            "dashed",
+            "dotted"
+          ],
+          "type": "string"
+        },
+        "stroke_width": {
+          "description": "0..10.",
+          "type": "integer"
         },
         "tag": {
           "items": {

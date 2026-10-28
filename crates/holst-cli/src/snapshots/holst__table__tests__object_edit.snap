@@ -19,6 +19,12 @@ FLAGS
       --at x,y               The new top-left corner in board units; unchanged by default
       --size wxh             The new size as width x height, e.g. 260x160; unchanged by default
   -c, --color color          The new fill, or an arrow's line color: a palette token, e.g. yellow4; unchanged by default
+      --shape shape          Change a shape's kind, e.g. ellipse, flowchart-decision or bpmn-gateway; unchanged by default
+      --stroke color         A shape's outline color: a palette token, e.g. gray12; unchanged by default
+      --stroke-width n       A shape's outline width, 0 to 10; unchanged by default
+      --stroke-style style   A shape's outline: solid, dashed or dotted; unchanged by default
+      --radius n             A shape's corner radius, at most as the shape's size allows; unchanged by default
+      --opacity n            A shape's fill opacity, 0.1 to 1; unchanged by default
       --order order          Where it stands among the objects: front or back; unchanged by default
       --tag tag              The object's tags, repeat for several; a new tag is made, '' clears; unchanged by default
       --items file           Many in one write: a JSON array or JSON lines file, - for stdin; its keys are the flags of one call

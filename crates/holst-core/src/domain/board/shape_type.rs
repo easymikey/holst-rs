@@ -184,7 +184,7 @@ impl StrokeStyle {
 
 /// What a listing shows of a shape: its kind, outline, corners and fill
 /// opacity.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ShapeLook {
     pub shape: Option<String>,
     pub stroke: Option<String>,
