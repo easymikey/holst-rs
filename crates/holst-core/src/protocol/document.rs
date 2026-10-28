@@ -76,6 +76,8 @@ pub(crate) const OBJECT_ID: &str = "objectId";
 pub(crate) const ARROW_TYPE: &str = "arrowType";
 pub(crate) const ARROWHEAD_START: &str = "arrowheadStart";
 pub(crate) const ARROWHEAD_END: &str = "arrowheadEnd";
+pub(crate) const MIDWAY_CONTROLS: &str = "midwayControls";
+pub(crate) const ELBOW_MIDWAY_CONTROLS: &str = "elbowMidwayControls";
 
 // PROTOCOL: files and images.
 pub(crate) const NAME: &str = "name";

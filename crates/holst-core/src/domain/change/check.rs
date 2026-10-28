@@ -8,17 +8,24 @@ use serde_json::Value;
 use crate::{
     domain::{
         area::scene::Scene,
-        board::{Object, ObjectKind, arrow_look::ARROW_WIDTHS},
-        change::value::{
-            ArrowEdit,
-            BoardChange,
-            NewObject,
-            ObjectEdit,
-            ObjectPatch,
-            Pasted,
-            RemoveRight,
-            ShapeEdit,
-            TextLook,
+        board::{
+            Object,
+            ObjectKind,
+            arrow_look::{ARROW_WIDTHS, ArrowEndEdit},
+        },
+        change::{
+            value::{
+                ArrowEdit,
+                BoardChange,
+                NewObject,
+                ObjectEdit,
+                ObjectPatch,
+                Pasted,
+                RemoveRight,
+                ShapeEdit,
+                TextLook,
+            },
+            write_shape::line_of,
         },
         geometry,
         geometry::{Point, Rectangle, Size},
@@ -238,11 +245,9 @@ pub(crate) fn check<'a>(
                 unlocked(states, &id, &edit.object)?;
                 let kind = kind_of(states, &id);
                 let held = held_in(states, &id, &kind);
-                changeable_edit(&kind, held, edit).map(|()| CheckedEdit {
-                    id,
-                    kind,
-                    edit,
-                })
+                changeable_edit(&kind, held, edit)
+                    .and_then(|()| arrow_fits(states, &id, &edit.patch.arrow))
+                    .map(|()| CheckedEdit { id, kind, edit })
             })
             .collect::<Result<Vec<_>>>()
             .map(CheckedChange::EditAll),
@@ -1045,6 +1050,38 @@ fn changeable_edit(
         }
         (patch, _, _) => fits(kind, held, patch).and(spins(kind, patch)).and(tags),
     }
+}
+
+/// An arrow edit that can be drawn: the bend suits the line, and an end on a
+/// side names a box other than the arrow.
+fn arrow_fits(
+    states: &HashMap<String, Value>,
+    id: &str,
+    arrow: &ArrowEdit,
+) -> Result<()> {
+    let line = line_of(arrow.line, states.get(id).unwrap_or(&Value::Null));
+    let bend = arrow
+        .bend
+        .filter(|bend| !bend.suits(line))
+        .map_or(Ok(()), |bend| Err(bend.unfit()));
+    let boxed = |end: &Option<ArrowEndEdit>| match end {
+        Some(ArrowEndEdit::Side { object, .. }) => {
+            let target = find(states, object)?;
+            (target != id
+                && kind_of(states, &target) != ObjectKind::Arrow
+                && states.get(&target).and_then(rectangle_of).is_some())
+            .then_some(())
+            .ok_or_else(|| {
+                Error::BoardChange(BoardChangeError::NotArrowLook {
+                    raw: object.clone(),
+                    expected: "a box to attach an arrow to",
+                })
+            })
+        }
+        Some(ArrowEndEdit::Free(_)) | None => Ok(()),
+    };
+    bend.and_then(|()| boxed(&arrow.from))
+        .and_then(|()| boxed(&arrow.to))
 }
 
 /// An object and the container that places it.

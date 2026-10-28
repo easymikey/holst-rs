@@ -651,6 +651,10 @@ expression: "*holst.tools"
           "description": "x,y; add, cp: a free corner by default; edit: unchanged.",
           "type": "string"
         },
+        "bend": {
+          "description": "Arrow bend: x,y; an elbow x, or ,y.",
+          "type": "string"
+        },
         "board": {
           "type": "string"
         },
@@ -675,7 +679,7 @@ expression: "*holst.tools"
           "type": "string"
         },
         "from": {
-          "description": "Or #N: an earlier item.",
+          "description": "Or #N: an earlier item. On edit object:side or x,y.",
           "type": "string"
         },
         "heads": {
@@ -871,7 +875,7 @@ expression: "*holst.tools"
           "type": "string"
         },
         "to": {
-          "description": "Arrow end; cp: the target board.",
+          "description": "Arrow end; cp: the target board. On edit object:side or x,y.",
           "type": "string"
         },
         "url": {

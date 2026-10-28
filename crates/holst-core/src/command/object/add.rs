@@ -666,6 +666,7 @@ fn arrow_look(item: &AddItem) -> Result<ArrowLook> {
                 .map(str::parse)
                 .transpose()?
                 .unwrap_or_default(),
+            ..ArrowEdit::default()
         },
         outline: ShapeEdit {
             stroke_width: item.stroke_width,

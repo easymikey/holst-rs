@@ -541,12 +541,9 @@ fn arrow_fields<'a>(
         (ARROW_TYPE): "elbow",
         (STROKE_COLOR): { (COLOR): color.map_or("gray12", Color::as_str) },
     });
-    let looks = arrow_changes(&look.arrow).into_iter().chain(shape_changes(
-        &look.outline,
-        &json!({}),
-        None,
-        false,
-    ));
+    let looks = arrow_changes(&look.arrow, &json!({}), states)
+        .into_iter()
+        .chain(shape_changes(&look.outline, &json!({}), None, false));
     if let Some(map) = fields.as_object_mut() {
         map.extend(looks.map(|(name, value)| (name.to_owned(), value)));
     }
@@ -669,7 +666,7 @@ fn content_changes(
         .unwrap_or_default();
     text.into_iter()
         .chain(shape_changes(&patch.shape, fields, patch.size, patch.color.is_some()))
-        .chain(arrow_changes(&patch.arrow))
+        .chain(arrow_changes(&patch.arrow, fields, scope.states))
         .chain(
             patch
                 .at

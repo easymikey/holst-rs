@@ -1,12 +1,17 @@
 //! The fields an edit writes for a shape's look and an arrow's line.
 
+use std::collections::HashMap;
+
 use serde_json::{Value, json};
 
 use crate::{
     domain::{
-        board::shape_type::ShapeType,
+        board::{
+            arrow_look::{ArrowEndEdit, ArrowType},
+            shape_type::ShapeType,
+        },
         change::{
-            check::rectangle_of,
+            check::{find, rectangle_of},
             value::{ArrowEdit, ShapeEdit},
         },
         geometry::Size,
@@ -18,12 +23,20 @@ use crate::{
         BORDER_RADIUS,
         BPMN_RESOURCES,
         COLOR,
+        CONTROL,
+        ELBOW_MIDWAY_CONTROLS,
+        END,
         FILL_COLOR,
         FIXED_SIZE,
         HEIGHT,
+        MIDWAY_CONTROLS,
+        OBJECT_ID,
         OPACITY,
+        POINT,
         POSITION,
+        RELATIVE_POINT,
         SHAPE_TYPE,
+        START,
         STROKE_COLOR,
         STROKE_STYLE,
         STROKE_WIDTH,
@@ -81,8 +94,37 @@ pub(super) fn shape_changes(
         .collect()
 }
 
-/// The fields `edit` sets on an arrow: its line and its heads.
-pub(super) fn arrow_changes(edit: &ArrowEdit) -> Changes {
+/// The line an arrow has: the one an edit gives, else the stored, else elbow.
+pub(super) fn line_of(chosen: Option<ArrowType>, fields: &Value) -> ArrowType {
+    chosen.unwrap_or_else(|| match fields.get(ARROW_TYPE).and_then(Value::as_str) {
+        Some("straight") => ArrowType::Straight,
+        Some("curved") => ArrowType::Curved,
+        _ => ArrowType::Elbow,
+    })
+}
+
+/// The fields `edit` sets on an arrow whose stored fields are `fields`: its
+/// line, heads, bend and ends.
+pub(super) fn arrow_changes(
+    edit: &ArrowEdit,
+    fields: &Value,
+    states: &HashMap<String, Value>,
+) -> Changes {
+    // BUNDLE: an elbow bends on one axis (main.a33651a4.js 162183).
+    let bend = edit.bend.map(|bend| {
+        let name = if line_of(edit.line, fields) == ArrowType::Elbow {
+            ELBOW_MIDWAY_CONTROLS
+        } else {
+            MIDWAY_CONTROLS
+        };
+        (name, json!([{ "x": bend.x, "y": bend.y }]))
+    });
+    let end = |name, asked: &Option<ArrowEndEdit>| {
+        asked
+            .as_ref()
+            .and_then(|asked| attached(asked, states))
+            .map(|value| (name, value))
+    };
     [
         edit.line
             .map(|line| (ARROW_TYPE, json!(line.stored_name()))),
@@ -92,10 +134,36 @@ pub(super) fn arrow_changes(edit: &ArrowEdit) -> Changes {
         edit.heads
             .end
             .map(|head| (ARROWHEAD_END, json!(head.stored_name()))),
+        bend,
+        end(START, &edit.from),
+        end(END, &edit.to),
     ]
     .into_iter()
     .flatten()
     .collect()
+}
+
+/// BUNDLE: an end on a side keeps the object, the side as `control`, its
+/// middle as `relativePoint` and on the board as `point`; a free end only its
+/// point (main.a33651a4.js 129402-129417).
+fn attached(edit: &ArrowEndEdit, states: &HashMap<String, Value>) -> Option<Value> {
+    match edit {
+        ArrowEndEdit::Free(at) => Some(json!({ (POINT): at })),
+        ArrowEndEdit::Side { object, side } => {
+            let id = find(states, object).ok()?;
+            let rect = rectangle_of(states.get(&id)?)?;
+            let (across, down) = side.relative_point();
+            Some(json!({
+                (OBJECT_ID): id,
+                (CONTROL): side.control(),
+                (RELATIVE_POINT): { "x": across, "y": down },
+                (POINT): {
+                    "x": rect.x + across * rect.width,
+                    "y": rect.y + down * rect.height,
+                },
+            }))
+        }
+    }
 }
 
 /// The kind and what follows from it: BPMN kinds drop their markers and keep

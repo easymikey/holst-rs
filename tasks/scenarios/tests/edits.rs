@@ -500,7 +500,7 @@ async fn an_arrow_is_added_with_its_line_heads_dash_and_width(
     then(&written).succeeded();
     let observation = holst.on(surface).objects("Plans").await?;
     then(&observation).lists_arrow_looking(
-        "curved heads none,triangle-filled stroke gray12 4px dashed",
+        "curved heads none,triangle-filled sides right,auto stroke gray12 4px dashed",
     );
     Ok(())
 }
@@ -551,6 +551,91 @@ async fn an_arrow_edit_with_a_wrong_look_is_refused(
     let holst = one_arrow().start().await?;
     let arrow = holst.fixture_object("Plans", 3)?;
     let call = ObjectCall::edit().with("object", arrow).with(flag, value);
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying(saying)
+        .signalled_as(surface.usage());
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[case::curved("curved", "300,200", "curved bend 300,200 stroke gray8 2px")]
+#[case::elbow("elbow", ",250", "elbow bend ,250 stroke gray8 2px")]
+#[tokio::test]
+async fn an_arrow_edit_bends_its_line(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+    #[case] line: &'static str,
+    #[case] bend: &'static str,
+    #[case] looking: &str,
+) -> Result<(), ScenarioError> {
+    let holst = one_arrow().start().await?;
+    let arrow = holst.fixture_object("Plans", 3)?;
+    let call = ObjectCall::edit()
+        .with("object", arrow)
+        .with("line", line)
+        .with("bend", bend);
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
+    let observation = holst.on(surface).objects("Plans").await?;
+    then(&observation).lists_arrow_looking(looking);
+    Ok(())
+}
+
+#[rstest]
+#[case::curved_by_one("curved", "300,")]
+#[case::elbow_by_two("elbow", "300,200")]
+#[tokio::test]
+async fn an_arrow_edit_with_a_bend_its_line_cannot_take_is_refused(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+    #[case] line: &'static str,
+    #[case] bend: &'static str,
+) -> Result<(), ScenarioError> {
+    let holst = one_arrow().start().await?;
+    let arrow = holst.fixture_object("Plans", 3)?;
+    let call = ObjectCall::edit()
+        .with("object", arrow)
+        .with("line", line)
+        .with("bend", bend);
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("is not a bend")
+        .signalled_as(surface.usage());
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn an_arrow_edit_moves_its_ends_to_a_side_and_to_a_free_point(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = one_arrow().start().await?;
+    let arrow = holst.fixture_object("Plans", 3)?;
+    let note = holst.fixture_object("Plans", 1)?;
+    let call = ObjectCall::edit()
+        .with("object", arrow)
+        .with("from", format!("{note}:bottom"))
+        .with("to", "600,40");
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
+    let observation = holst.on(surface).objects("Plans").await?;
+    then(&observation).lists_arrow_looking("elbow sides bottom,free stroke gray8 2px");
+    Ok(())
+}
+
+#[rstest]
+#[case::no_side("Buy milk", "is not an arrow end")]
+#[case::unknown_side("Buy milk:middle", "is not an arrow end")]
+#[tokio::test]
+async fn an_arrow_edit_with_a_wrong_end_is_refused(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+    #[case] end: &'static str,
+    #[case] saying: &str,
+) -> Result<(), ScenarioError> {
+    let holst = one_arrow().start().await?;
+    let arrow = holst.fixture_object("Plans", 3)?;
+    let call = ObjectCall::edit().with("object", arrow).with("to", end);
     let observation = holst.on(surface).object("Plans", call).await?;
     then(&observation)
         .failed_saying(saying)

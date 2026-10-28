@@ -30,6 +30,9 @@ FLAGS
       --text-bg color        The background of the whole text of a sticker, text or shape: a palette token, e.g. yellow4, or none; unchanged by default
       --line line            An arrow's line: straight, elbow or curved; unchanged by default
       --heads start,end      An arrow's heads, e.g. none,triangle-filled: none, figma, miro, arc, triangle-filled, triangle, circle-filled, circle, rhombus-filled, rhombus, stick, stick-stick, triadius, triadius-stick, triadius-circle, stick-circle or slash; an empty side keeps that end; unchanged by default
+      --bend x,y             Bend an arrow: x,y for a straight or curved one, x, or ,y for an elbow, whose middle run sits there; unchanged by default
+      --from end             Move an arrow's start: object:side (top, right, bottom or left) or x,y; unchanged by default
+      --to end               Move an arrow's end: object:side (top, right, bottom or left) or x,y; unchanged by default
       --rotate deg           Turn to this angle in clockwise degrees, any number taken modulo 360; the corner moves so that the object turns about its centre; not for a frame, a table, a table cell, a group or an arrow; unchanged by default
       --order order          Where it stands among the objects: front or back; unchanged by default
       --tag tag              The object's tags, repeat for several; a new tag is made, '' clears; unchanged by default

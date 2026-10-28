@@ -12,7 +12,7 @@ use crate::{
         board::{
             Object,
             ObjectKind,
-            arrow_look::{ArrowHeads, ArrowType},
+            arrow_look::{ArrowEndEdit, ArrowHeads, ArrowType, Bend},
             shape_type::{ShapeType, StrokeStyle},
         },
         change::receipt::Delivery,
@@ -209,11 +209,14 @@ pub struct ArrowLook {
     pub outline: ShapeEdit,
 }
 
-/// What an edit changes of an arrow's line and heads.
+/// What an edit changes of an arrow's line, heads, bend and ends.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ArrowEdit {
     pub line: Option<ArrowType>,
     pub heads: ArrowHeads,
+    pub bend: Option<Bend>,
+    pub from: Option<ArrowEndEdit>,
+    pub to: Option<ArrowEndEdit>,
 }
 
 impl ArrowEdit {
@@ -226,6 +229,9 @@ impl ArrowEdit {
                 "heads",
                 self.heads.start.is_some() || self.heads.end.is_some(),
             ),
+            ("bend", self.bend.is_some()),
+            ("from", self.from.is_some()),
+            ("to", self.to.is_some()),
         ]
         .into_iter()
         .filter_map(|(name, given)| given.then_some(name))

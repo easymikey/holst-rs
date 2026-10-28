@@ -254,14 +254,14 @@ pub struct AddArgs {
     #[argument(
         value_name = "object",
         help = "The object an arrow starts at: id, link, @N or the first 8 characters of its id; with --items also #N, an earlier item",
-        tool_doc = "Or #N: an earlier item.",
+        tool_doc = "Or #N: an earlier item. On edit object:side or x,y.",
         kinds = [arrow]
     )]
     pub from: Option<String>,
     #[argument(
         value_name = "object",
         help = "The object an arrow points to: id, link, @N or the first 8 characters of its id; with --items also #N, an earlier item",
-        tool_doc = "Arrow end; cp: the target board.",
+        tool_doc = "Arrow end; cp: the target board. On edit object:side or x,y.",
         kinds = [arrow]
     )]
     pub to: Option<String>,
@@ -454,6 +454,24 @@ pub struct EditArgs {
     )]
     pub heads: Option<String>,
     #[argument(
+        value_name = "x,y",
+        help = "Bend an arrow: x,y for a straight or curved one, x, or ,y for an elbow, whose middle run sits there; unchanged by default",
+        tool_doc = "Arrow bend: x,y; an elbow x, or ,y."
+    )]
+    pub bend: Option<String>,
+    #[argument(
+        value_name = "end",
+        help = "Move an arrow's start: object:side (top, right, bottom or left) or x,y; unchanged by default",
+        tool_doc = "Or #N: an earlier item. On edit object:side or x,y."
+    )]
+    pub from: Option<String>,
+    #[argument(
+        value_name = "end",
+        help = "Move an arrow's end: object:side (top, right, bottom or left) or x,y; unchanged by default",
+        tool_doc = "Arrow end; cp: the target board. On edit object:side or x,y."
+    )]
+    pub to: Option<String>,
+    #[argument(
         value_name = "deg",
         help = "Turn to this angle in clockwise degrees, any number taken modulo 360; the corner moves so that the object turns about its centre; not for a frame, a table, a table cell, a group or an arrow; unchanged by default",
         tool_doc = "Degrees clockwise; not frame, table, group, arrow."
@@ -500,6 +518,9 @@ pub struct EditItem {
     pub text_bg: Option<String>,
     pub line: Option<ArrowType>,
     pub heads: Option<String>,
+    pub bend: Option<String>,
+    pub from: Option<String>,
+    pub to: Option<String>,
     pub rotate: Option<f64>,
     pub order: Option<LayerOrder>,
     #[serde(default)]
@@ -530,7 +551,7 @@ pub struct CopyArgs {
     #[argument(
         value_name = "board",
         help = "Copy onto this board: id, link or part of its name; the same board by default",
-        tool_doc = "Arrow end; cp: the target board."
+        tool_doc = "Arrow end; cp: the target board. On edit object:side or x,y."
     )]
     pub to: Option<String>,
     #[argument(

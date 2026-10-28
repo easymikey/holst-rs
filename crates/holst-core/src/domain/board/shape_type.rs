@@ -4,15 +4,19 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    domain::geometry::Size,
+    domain::{board::arrow_look::Bend, geometry::Size},
     protocol::document::{
         ARROW_TYPE,
         ARROWHEAD_END,
         ARROWHEAD_START,
         BORDER_RADIUS,
         COLOR,
+        CONTROL,
+        ELBOW_MIDWAY_CONTROLS,
         END,
         FILL_COLOR,
+        MIDWAY_CONTROLS,
+        OBJECT_ID,
         OPACITY,
         SHAPE_TYPE,
         START,
@@ -202,6 +206,12 @@ pub struct ShapeLook {
     /// An arrow's heads as `start,end`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub heads: Option<String>,
+    /// An arrow's bend, one entry per control: `x,y`, or `x,` and `,y`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bend: Vec<String>,
+    /// An arrow's sides as `start,end`: top to left, `auto`, or `free`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sides: Option<String>,
 }
 
 impl ShapeLook {
@@ -224,6 +234,8 @@ impl ShapeLook {
             opacity: inside(FILL_COLOR, OPACITY).and_then(Value::as_f64),
             line: text(ARROW_TYPE),
             heads: heads_of(fields),
+            bend: bend_of(fields),
+            sides: sides_of(fields),
         };
         (look.shape.is_some() || look.stroke.is_some()).then_some(look)
     }
@@ -235,6 +247,8 @@ impl ShapeLook {
             self.shape.clone(),
             self.line.clone(),
             self.heads.as_ref().map(|heads| format!("heads {heads}")),
+            (!self.bend.is_empty()).then(|| format!("bend {}", self.bend.join(" "))),
+            self.sides.as_ref().map(|sides| format!("sides {sides}")),
             self.stroke
                 .as_ref()
                 .map(|stroke| format!("stroke {stroke}")),
@@ -255,6 +269,57 @@ impl ShapeLook {
         .collect::<Vec<_>>()
         .join(" ")
     }
+}
+
+/// The controls an arrow bends at, those of its line kind.
+fn bend_of(fields: &Value) -> Vec<String> {
+    let name = if fields
+        .get(ARROW_TYPE)
+        .and_then(Value::as_str)
+        .is_some_and(|line| line != "elbow")
+    {
+        MIDWAY_CONTROLS
+    } else {
+        ELBOW_MIDWAY_CONTROLS
+    };
+    let axis = |control: &Value, axis: &str| control.get(axis).and_then(Value::as_f64);
+    fields
+        .get(name)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|control| {
+            Bend {
+                x: axis(control, "x"),
+                y: axis(control, "y"),
+            }
+            .to_string()
+        })
+        .collect()
+}
+
+/// Where an arrow's ends stick, as `start,end`; none when no end holds a side.
+fn sides_of(fields: &Value) -> Option<String> {
+    let side = |name: &str| {
+        let end = fields.get(name)?;
+        let control = end.get(CONTROL).and_then(Value::as_u64)?;
+        end.get(OBJECT_ID)?;
+        ["top", "right", "bottom", "left"]
+            .get(usize::try_from(control).ok()?.checked_sub(1)?)
+            .copied()
+    };
+    let rest = |name: &str| {
+        let on_object = fields.get(name).and_then(|end| end.get(OBJECT_ID));
+        on_object.map_or("free", |_| "auto")
+    };
+    let (start, end) = (side(START), side(END));
+    (start.is_some() || end.is_some()).then(|| {
+        format!(
+            "{},{}",
+            start.unwrap_or_else(|| rest(START)),
+            end.unwrap_or_else(|| rest(END))
+        )
+    })
 }
 
 /// An arrow's heads as `start,end`, the web client's defaults where the
