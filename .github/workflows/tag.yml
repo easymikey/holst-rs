@@ -1,9 +1,5 @@
 name: Tag
 
-# After a green CI on main: if the Cargo version has no tag yet, tag that commit
-# and start the release. A tag pushed with GITHUB_TOKEN starts no workflow, so the
-# release is started by hand through its workflow_dispatch. A tag without a release
-# (a failed run) starts the release again.
 on:
   workflow_run:
     workflows: [CI]

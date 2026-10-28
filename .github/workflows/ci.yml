@@ -33,7 +33,6 @@ jobs:
       - name: fmt
         run: cargo +"$NIGHTLY" fmt --all --check
 
-      # cargo-spellcheck's hunspell-sys build script needs libclang (bindgen).
       - name: libclang
         run: |
           sudo apt-get update
@@ -88,8 +87,6 @@ jobs:
             echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
           fi
 
-      # rust-toolchain.toml pins 1.96.0 for build and tests; clippy runs on the
-      # nightly the lints are tuned for.
       - name: toolchains
         run: |
           rustup toolchain install

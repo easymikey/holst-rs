@@ -1,5 +1,5 @@
-//! An unofficial REST client for Holst (app.holst.so): a pure core, effect
-//! ports and a thin shell.
+//! An unofficial client for Holst (app.holst.so): the REST API and the live
+//! board sync, as a pure core, effect ports and a thin shell.
 //!
 //! ```no_run
 //! # async fn demo() -> holst_core::Result<()> {

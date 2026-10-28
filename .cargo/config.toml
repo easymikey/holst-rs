@@ -1,4 +1,3 @@
-# Aliases for the tool versions in [workspace.metadata.bin] (cargo-run-bin).
 [alias]
 hack = ["bin", "cargo-hack"]
 llvm-cov = ["bin", "cargo-llvm-cov"]

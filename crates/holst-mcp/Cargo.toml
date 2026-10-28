@@ -10,7 +10,7 @@ readme.workspace = true
 authors.workspace = true
 keywords = ["holst", "whiteboard", "mcp", "ai"]
 categories = ["development-tools", "api-bindings"]
-description = "MCP server for Holst (app.holst.so)"
+description = "Unofficial MCP server for Holst (app.holst.so)"
 
 [[bin]]
 name = "holst-mcp"
@@ -20,48 +20,33 @@ path = "src/main.rs"
 itertools.workspace = true
 holst-core = { path = "../holst-core", version = "0.1.0", features = ["logging"] }
 thiserror.workspace = true
-# The typed code or password of `setup` and the tokens of the test sessions.
 secrecy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-# tokio::fs reads the file for upload; spawn_blocking writes a backup and
-# reaches the login store; sync::Mutex lets one call read the store while
-# the others wait without holding a worker thread.
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "fs", "sync", "net"] }
 rmcp = { version = "3.6", default-features = false, features = ["server", "transport-io", "transport-streamable-http-server"] }
-# The `--http` listener: one HTTP/1 connection per task, around rmcp's service.
 hyper = { version = "1", default-features = false, features = ["server", "http1"] }
 hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
 http-body-util = "0.1"
-# Bearer token: random bytes, constant-time compare.
 getrandom = "0.4"
 subtle = "2"
 tracing.workspace = true
-# The login and the workspace list are read without locks; aliases and tree cache use std.
 arc-swap.workspace = true
-# The board document: kept boards are seeds of the next load.
 yrs.workspace = true
-# Already built through reqwest: PNG pictures go to the model as base64.
 base64 = { version = "0.23", default-features = false, features = ["alloc"] }
 
-# Echo off while a code or password is typed; already built for the CLI.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 [dev-dependencies]
 rstest = { version = "0.28", default-features = false }
 insta = { version = "1.49", features = ["json"] }
-# HeaderMap for the scripted transport in tests.
 reqwest.workspace = true
-# Labels of the login state machine in tests.
 strum.workspace = true
-# The fake Holst server for the board loads of the server tests.
 holst-core = { path = "../holst-core", features = ["fake"] }
-# The client that asks the built binary for its tools.
 rmcp = { version = "3.6", default-features = false, features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest"] }
 
 
 [features]
-# `board` snap answers with a PNG image the model can see; without it, only SVG.
 default = ["png"]
 png = ["holst-core/png"]
 

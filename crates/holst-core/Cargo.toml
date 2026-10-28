@@ -10,7 +10,7 @@ readme.workspace = true
 authors.workspace = true
 keywords = ["holst", "whiteboard", "api", "client"]
 categories = ["api-bindings"]
-description = "Unofficial client for the Holst REST API (app.holst.so)"
+description = "Unofficial client for Holst (app.holst.so): the REST API and the live board sync"
 autobenches = false
 autotests = false
 
@@ -24,48 +24,32 @@ serde_json.workspace = true
 reqwest.workspace = true
 tracing.workspace = true
 uuid.workspace = true
-# Already built through serde_json: SIMD substring search for the index, hyphen jumps for UUIDs.
 memchr = "2"
-# ASCII-only hosts in URLs: 1.0.0 is the no-op IDNA backend of `url`; an IDN host can be given as punycode.
+# The no-op IDNA backend of `url`: ASCII hosts only; 1.2 changes how Unicode hosts parse.
 idna_adapter = "=1.0.0"
-# CommonMark events for `--text-format markdown`; no HTML renderer, no CLI.
 pulldown-cmark = { version = "0.13", default-features = false }
-# Names typed decomposed (NFD) match composed ones.
 icu_normalizer = { version = "2", default-features = false, features = ["compiled_data"] }
-# rt, sync, time are already built through reqwest: JoinSet, Semaphore, sleep;
-# net and io-util through tokio-tungstenite: the proxy tunnel of the board socket.
 tokio = { workspace = true, features = ["rt", "sync", "time", "net", "io-util"] }
-# Already built through reqwest: HTTPS_PROXY and NO_PROXY read as REST reads them.
 hyper-util = { version = "0.1", default-features = false, features = ["client-proxy"] }
-# Enum <-> string and newtype derives for the pure modules.
 strum.workspace = true
 derive_more.workspace = true
 zeroize.workspace = true
 tracing-subscriber = { workspace = true, optional = true }
-# Board content: the Yjs document of a board over the hud WebSocket.
 yrs.workspace = true
 tokio-tungstenite.workspace = true
 tungstenite.workspace = true
-# Already built through tokio-tungstenite: reading and writing the socket stream.
 futures-util.workspace = true
-# Saved boards are gzip: pure Rust (miniz_oxide), the backend png already builds.
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
-# Board indexes on disk: compact serde encoding, no std I/O or heapless needed.
 postcard = { version = "1", default-features = false, features = ["alloc"] }
-# Already built through reqwest: images inlined into an SVG as `data:` URLs.
 base64 = { version = "0.23", default-features = false, features = ["alloc"] }
-# Snapshots as PNG: SVG rendering with text from the system fonts (feature `png`).
 resvg = { workspace = true, optional = true }
 
 [dev-dependencies]
 divan = { version = "0.1", default-features = false }
 rstest = { version = "0.28", default-features = false }
 insta = { version = "1.49", features = ["json"] }
-# Laws of the pure functions (`src/laws.rs`): no fork and no timeout — the
-# tests are deterministic and fast, no process per case.
 proptest = { version = "1.11", default-features = false, features = ["std", "bit-set"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "time", "test-util"] }
-# The stateful fake server (`src/fake`) the integration tests run the client against: a self dev-dependency turns the feature on for the test targets only, so `cargo test -p holst-core` works alone.
 holst-core = { path = ".", features = ["fake"] }
 
 [[test]]
@@ -89,30 +73,20 @@ name = "cache"
 harness = false
 
 [features]
-# Parsing `HOLST_LOG` and the tracing subscriber — only the binaries need it.
 logging = ["dep:tracing-subscriber"]
-# Board snapshots as PNG (resvg, about 2 MB of binary); SVG works without it.
 png = ["dep:resvg"]
-# The stateful fake Holst server `holst_core::fake` for tests; it uses only the dependencies above.
 fake = []
 
-# Without a backend for its OS keyring silently uses a mock store, so the
-# backend is enabled explicitly per OS. On Linux — Secret Service over zbus
-# (pure Rust, no libdbus) with its own async-io executor, so it does not
-# depend on the caller's tokio runtime. No keyring on macOS: the Keychain is
-# used through /usr/bin/security (`src/session_store/macos.rs`), whose partition does
-# not change with every build of holst.
+# Without an explicit backend per OS, keyring silently uses a mock store.
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))'.dependencies]
 keyring = { version = "3", features = ["async-secret-service", "async-io", "crypto-rust"] }
-# keyring wraps their errors untyped: these tell "no Secret Service" from its other failures.
 secret-service = { version = "4", default-features = false }
 zbus = { version = "4", default-features = false }
 
 [package.metadata.cargo-machete]
-# Pinned only to pick the IDNA backend of `url`; never imported.
 ignored = ["idna_adapter"]
 
 [lints]

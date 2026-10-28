@@ -1,4 +1,4 @@
-//! MCP server for Holst over stdio, on the `holst` CLI's stored login.
+//! MCP server for Holst over stdio or HTTP, on the login of `holst-mcp setup` or `holst auth login`.
 
 #[cfg(test)] mod budget;
 mod error;

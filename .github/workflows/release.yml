@@ -237,9 +237,6 @@ jobs:
           git clone git@github.com:easymikey/homebrew-holst.git tap
           mkdir -p tap/Formula
 
-          # formula <class> <desc> <binary>
-          # holst-cli.rb: class HolstCli
-          # holst-mcp.rb: class HolstMcp
           formula() {
             cat <<EOF
           class $1 < Formula

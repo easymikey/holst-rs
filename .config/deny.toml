@@ -1,4 +1,3 @@
-# cargo-deny: licences, advisories, bans and sources over every target the release ships
 
 [graph]
 targets = [

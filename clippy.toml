@@ -1,11 +1,9 @@
-# Thresholds: the tightest values production and test code pass today.
 too-many-lines-threshold = 100
 cognitive-complexity-threshold = 25
 too-many-arguments-threshold = 7
 type-complexity-threshold = 240
 max-fn-params-bools = 2
 excessive-nesting-threshold = 7
-# Proper names that docs write without backticks, besides clippy's defaults.
 doc-valid-idents = ["..", "MiB"]
 
 disallowed-methods = [

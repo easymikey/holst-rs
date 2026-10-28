@@ -1,6 +1,6 @@
 # holst-rs
 
-An unofficial CLI and MCP server for [Holst](https://app.holst.so), written in Rust. It works with your session token and does what you do by hand in the web interface. The API is closed: the endpoints were reconstructed from the web client's traffic and may change without notice. The project is not affiliated with Holst; use it within Holst's terms of service.
+An unofficial CLI and MCP server for [Holst](https://app.holst.so), written in Rust. It logs in as you and does what you do by hand in the web interface, over the same channels as the web client: the REST API for workspaces, folders, files and sharing, and the live board sync (Yjs over WebSocket) for the objects on a board. Neither is public: both were reconstructed from the web client's traffic and may change without notice. The project is not affiliated with Holst; use it within Holst's terms of service.
 
 - `holst`: a CLI for the terminal and scripts.
 - `holst-mcp`: an MCP server for AI agents, with 11 tools and short replies (`@N` aliases instead of UUIDs, lists as tables).
