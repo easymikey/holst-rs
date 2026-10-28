@@ -165,7 +165,6 @@ fn hex(high: u8, low: u8) -> Option<u8> {
         .and_then(|(high, low)| u8::try_from(high * 16 + low).ok())
 }
 
-/// The JSON object a request carries.
 pub(crate) fn object_body(request: &Request) -> Option<serde_json::Map<String, Value>> {
     match serde_json::from_str::<Value>(&request.body) {
         Ok(Value::Object(map)) => Some(map),

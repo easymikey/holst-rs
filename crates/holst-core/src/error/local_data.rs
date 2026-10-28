@@ -10,7 +10,6 @@ use crate::error::{Error, hint::Hint};
 #[cfg_attr(test, derive(strum::EnumDiscriminants))]
 #[cfg_attr(test, strum_discriminants(derive(strum::EnumIter, PartialOrd, Ord)))]
 pub enum LocalDataError {
-    // ── files ──
     #[error("the path {} has no file name", .path.display())]
     NoFileName { path: PathBuf },
 
@@ -78,7 +77,6 @@ pub enum LocalDataError {
     #[error("file error")]
     Io(#[from] io::Error),
 
-    // ── board indexes ──
     #[error("the data is not a holst board index")]
     NotBoardIndex,
 
@@ -96,7 +94,6 @@ pub enum LocalDataError {
     #[error("could not encode the board index")]
     IndexEncode(#[source] postcard::Error),
 
-    // ── the login store ──
     #[error("no home directory for the fallback login file")]
     NoHome,
 

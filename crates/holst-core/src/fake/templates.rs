@@ -42,7 +42,6 @@ impl Template {
         Value::Object(shown)
     }
 
-    /// The id of the workspace that shares the template, if one does.
     fn shared_with(&self) -> Option<&str> {
         self.fields
             .get("scope")
@@ -147,7 +146,6 @@ impl Templates {
         }
     }
 
-    /// The names of the user's own templates.
     pub(crate) fn personal_names(&self) -> Vec<String> {
         self.personal
             .iter()
@@ -156,7 +154,6 @@ impl Templates {
             .collect()
     }
 
-    /// The names of the templates shared with the workspace `workspace_id`.
     pub(crate) fn workspace_names(&self, workspace_id: &str) -> Vec<String> {
         self.shared(workspace_id)
             .map(|template| template.name.clone())
@@ -172,7 +169,6 @@ impl Templates {
             .filter(move |template| template.shared_with() == Some(workspace_id))
     }
 
-    /// The id of the user's own template called `name`.
     pub(crate) fn personal_id(&self, name: &str) -> Option<String> {
         self.personal
             .iter()

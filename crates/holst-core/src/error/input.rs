@@ -11,7 +11,6 @@ use crate::error::{
 #[cfg_attr(test, derive(strum::EnumDiscriminants))]
 #[cfg_attr(test, strum_discriminants(derive(strum::EnumIter, PartialOrd, Ord)))]
 pub enum InputError {
-    // ── address ──
     #[error(
         "the API base address must be only a scheme, host and port, without a path, query or fragment: {base}"
     )]
@@ -63,14 +62,12 @@ pub enum InputError {
     #[error("\"{raw}\" cannot be used as an id in a request path")]
     NotPathSegment { raw: String },
 
-    // ── number ──
     #[error("{value} is not a coordinate: expected a finite number, e.g. -40.5")]
     NotFinite { value: f64 },
 
     #[error("{value} is not a positive number: sides are above 0, e.g. 192")]
     NotPositive { value: f64 },
 
-    // ── request ──
     #[error("unknown kind \"{raw}\": expected board or folder")]
     NotNodeKind { raw: String },
 
@@ -130,7 +127,6 @@ pub enum InputError {
     )]
     GuestSharesNoTemplate { workspace: String },
 
-    // ── command arguments ──
     #[error("\"{name}\" is not an argument of `{command}`: it takes {}", taken_list(.taken))]
     NotArgument {
         command: String,
@@ -152,16 +148,13 @@ pub enum InputError {
     #[error("{0}")]
     NotCommandArguments(#[source] serde_json::Error),
 
-    // ── import ──
     #[error(
         "the new empty board {board} is left in the workspace: moving it to the trash failed ({failed})"
     )]
     ImportBoardLeft { board: String, failed: Box<Error> },
-    // ── several at once ──
     #[error("{} problems:{}", .errors.len(), listed(.errors))]
     Several { errors: Vec<Error> },
 
-    // ── workspace choice ──
     #[error("no workspaces found")]
     NoWorkspaces,
 

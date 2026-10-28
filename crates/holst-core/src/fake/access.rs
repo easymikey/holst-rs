@@ -27,7 +27,6 @@ impl Right {
         }
     }
 
-    /// Tells whether the role may read and not change the board.
     pub(crate) const fn is_read_only(self) -> bool {
         matches!(self, Self::Viewer | Self::Commentator)
     }
@@ -151,7 +150,6 @@ impl Access {
         self.roles.push((board.to_owned(), user, role.to_owned()));
     }
 
-    /// The role `user` holds on the board `board`.
     pub(crate) fn role_of(&self, board: &str, user: &str) -> Option<String> {
         self.roles
             .iter()

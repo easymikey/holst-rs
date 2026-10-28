@@ -162,7 +162,6 @@ pub async fn save(
     .await
 }
 
-/// What is drawn of a board, loaded and drawn.
 struct Drawing {
     id: String,
     name: String,

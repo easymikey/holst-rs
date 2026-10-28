@@ -180,7 +180,6 @@ impl Event {
         })
     }
 
-    /// Tells whether the event holds `value` in the field `key`.
     fn holds(&self, key: &str, value: &str) -> bool {
         match key {
             "workspaceId" => self.workspace == value,
@@ -262,7 +261,6 @@ impl Directory {
         events.iter().try_fold(described, Self::with_event)
     }
 
-    /// Returns the ids of the workspaces the user belongs to.
     pub(crate) fn ids(&self) -> Vec<&str> {
         self.entries
             .iter()

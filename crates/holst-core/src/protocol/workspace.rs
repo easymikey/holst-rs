@@ -23,7 +23,6 @@ pub(crate) struct RoleCounts {
     pub(crate) guest: Option<u64>,
 }
 
-/// A user of a workspace reply.
 #[derive(Debug, Deserialize)]
 pub(crate) struct ReplyUser {
     pub(crate) id: Option<String>,
@@ -61,7 +60,6 @@ pub(crate) struct WorkspaceItem {
 }
 
 impl WorkspaceItem {
-    /// The id of the workspace the item is about.
     pub(crate) fn workspace(&self) -> Option<&str> {
         [&self.id, &self.workspace_id, &self.workspace_id_camel]
             .into_iter()
@@ -105,7 +103,6 @@ impl JoinableReply {
     }
 }
 
-/// A workspace the user can join.
 #[derive(Debug, Deserialize)]
 pub(crate) struct JoinableItem {
     pub(crate) id: Option<String>,

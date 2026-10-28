@@ -135,7 +135,6 @@ pub(in crate::command) async fn send<I: WriteInterpreter + ?Sized>(
     Ok(changed.change.written)
 }
 
-/// The board loaded as `loading` says.
 pub(super) async fn load_board(
     client: &Client,
     loading: &Loading<'_>,

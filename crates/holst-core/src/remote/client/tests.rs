@@ -276,7 +276,6 @@ async fn logged(work: impl Future<Output = Result<Value>>) -> (Result<Value>, St
 
     use tracing::instrument::WithSubscriber as _;
 
-    /// A writer into a shared buffer.
     struct Lines(Arc<Mutex<Vec<u8>>>);
     impl std::io::Write for Lines {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {

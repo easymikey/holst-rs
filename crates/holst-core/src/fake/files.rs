@@ -63,7 +63,6 @@ fn held(backup: &FixtureBackup, id: &str) -> FixtureBackup {
     }
 }
 
-/// The bytes as a gzip stream.
 pub(crate) fn gzip(bytes: &[u8]) -> Vec<u8> {
     let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
     // writing into a `Vec` cannot fail
@@ -133,7 +132,6 @@ impl Files {
         })
     }
 
-    /// The files received, in order.
     pub(crate) fn uploads(&self) -> Vec<Upload> {
         self.uploads
             .iter()

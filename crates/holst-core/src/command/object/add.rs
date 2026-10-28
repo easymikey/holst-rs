@@ -905,7 +905,6 @@ fn frames_of<'a>(
     Ok((within, named))
 }
 
-/// The preview a link got, if any.
 fn page(got: Option<&Fetched>) -> Option<LinkPreview> {
     match got {
         Some(Fetched::Page(preview)) => preview.clone(),
@@ -1367,7 +1366,6 @@ mod tests {
         }
     }
 
-    /// The width and height an image is placed at.
     fn shown_size(new: &NewObject) -> Option<(f64, f64)> {
         match new {
             NewObject::Image { size, .. } => {

@@ -40,7 +40,6 @@ pub(crate) fn config() -> Config {
     }
 }
 
-// ── generators ──
 
 fn uuid() -> impl Strategy<Value = String> {
     let lower = any::<u128>()

@@ -38,7 +38,6 @@ fn index(n: usize, target: Option<&str>) -> holst_core::Result<NameIndex> {
     NameIndex::from_tree_json(&fixtures::tree(0, n, target).to_string())
 }
 
-// --- parsing the tree reply ---------------------------------------------
 
 #[divan::bench(args = SIZES)]
 fn tree_value_then_flatten(bencher: Bencher<'_, '_>, n: usize) {
@@ -65,7 +64,6 @@ fn parse_tree(bencher: Bencher<'_, '_>, n: usize) {
         .bench(|| tree::parse(black_box(&raw)).map(|parsed| parsed.nodes));
 }
 
-// --- small functions on the hot path ------------------------------------
 
 #[divan::bench]
 fn board_id_from_url(bencher: Bencher<'_, '_>) {
@@ -105,7 +103,6 @@ fn workspaces_from_current_user(bencher: Bencher<'_, '_>) {
     bencher.bench(|| holst_core::domain::account::account_workspaces(black_box(&me)));
 }
 
-// --- the compact search index -------------------------------------------
 
 #[divan::bench(args = SIZES)]
 fn index_from_json(bencher: Bencher<'_, '_>, n: usize) {
@@ -141,7 +138,6 @@ fn index_search_words(bencher: Bencher<'_, '_>, n: usize) {
     });
 }
 
-// --- a big board: load, list, draw, save ---------------------------------
 
 const BOARD_SIZES: &[usize] = &[200, 4_000];
 
@@ -301,7 +297,6 @@ fn board_draw_frame(bencher: Bencher<'_, '_>, n: usize) {
     });
 }
 
-// --- placing a new object in a full frame ---------------------------------
 
 const PLACEMENT_SIZES: &[usize] = &[100, 300, 1_000];
 

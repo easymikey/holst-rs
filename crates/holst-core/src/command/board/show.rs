@@ -220,7 +220,6 @@ fn is_missing(error: &Error) -> bool {
     matches!(error, Error::Lookup(_)) || error.is_board_closed()
 }
 
-/// The first area flag given, if any.
 fn area_flag(selection: &AreaArgs) -> Option<&'static str> {
     [
         ("rectangle", selection.rectangle.is_some()),

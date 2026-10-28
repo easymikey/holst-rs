@@ -265,7 +265,6 @@ fn cover_of(given: &str) -> Result<Cover> {
     }
 }
 
-/// Checks that the user may edit the board.
 async fn editable(client: &Client, loading: Loading<'_>, id: &str) -> Result<()> {
     supported(client, id).await?;
     let connected = open_with(client, loading.connector, id).await?;

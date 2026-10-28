@@ -665,7 +665,6 @@ fn role_of(holders: &[sharing::Holder], user: &str) -> Option<HeldRole> {
         .and_then(sharing::Holder::role)
 }
 
-/// The sharing settings the flags set.
 fn settings(args: &ShareArgs) -> Result<Settings> {
     let command = "board share";
     let settings = Settings {

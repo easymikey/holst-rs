@@ -218,7 +218,6 @@ pub async fn get(
     })
 }
 
-/// The key as a part of a file name.
 fn file_part(key: &str) -> String {
     key.chars()
         .map(|each| {
@@ -570,7 +569,6 @@ mod tests {
         Ok(())
     }
 
-    /// Tells whether the error is a `provider` that cannot be used.
     fn wrong_provider(error: Option<&Error>) -> bool {
         matches!(
             error,

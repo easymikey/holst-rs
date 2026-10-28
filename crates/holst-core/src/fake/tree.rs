@@ -243,7 +243,6 @@ impl Tree {
             .collect()
     }
 
-    /// The names of the favorite nodes of the workspace `workspace_id`.
     pub(crate) fn favorites(&self, workspace_id: &str) -> Vec<String> {
         self.favorite_nodes(workspace_id)
             .map(|node| node.name.clone())
@@ -258,7 +257,6 @@ impl Tree {
             .map(|node| node.id.clone())
     }
 
-    /// The board with this id, with what it holds.
     pub(crate) fn board(&self, id: &str) -> Option<Board> {
         self.find(id)
             .filter(|node| node.kind == "board")
@@ -312,7 +310,6 @@ impl Tree {
             .is_some()
     }
 
-    /// The fields of every object of the board `id`.
     pub(crate) fn objects_json(&self, id: &str) -> Vec<Value> {
         self.board(id)
             .map(|board| objects_json(&board.document))
@@ -767,7 +764,6 @@ impl Tree {
         }
     }
 
-    /// The id of the person who owns the node `id`.
     pub(crate) fn owner_of(&self, id: &str) -> Option<String> {
         self.find(id).map(|node| node.owner_id.clone())
     }

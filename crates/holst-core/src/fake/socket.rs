@@ -113,7 +113,6 @@ pub(crate) async fn serve(stream: TcpStream, state: Shared) -> io::Result<()> {
         .map_err(io::Error::other)
 }
 
-/// Returns what the server answers to one client message.
 fn reply(message: &[u8], state: &Shared) -> Option<Vec<u8>> {
     let (name, rest) = read_string(message)?;
     let (kind, rest) = read_uint(rest)?;

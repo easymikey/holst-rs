@@ -31,7 +31,6 @@ impl WriteRecorder {
         }
     }
 
-    /// Returns the plans carried out so far, in order.
     #[must_use]
     pub(crate) fn plans(&self) -> Vec<WritePlan> {
         self.plans

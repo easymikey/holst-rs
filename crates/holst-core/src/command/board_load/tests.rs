@@ -125,7 +125,6 @@ async fn a_corrupt_copy_loads_whole() -> Result<()> {
 #[tokio::test]
 async fn the_age_of_a_copy_is_told_by_the_client_clock() -> Result<()> {
     use tracing::instrument::WithSubscriber as _;
-    /// A writer into a shared buffer.
     struct Lines(Arc<Mutex<Vec<u8>>>);
     impl std::io::Write for Lines {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
