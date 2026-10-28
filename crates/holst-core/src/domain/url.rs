@@ -94,6 +94,26 @@ impl BaseUrl {
         format!("{base}/board/{}", percent_encode(id))
     }
 
+    /// Link to a folder in the web client on the same address as the API.
+    ///
+    /// ```
+    /// use holst_core::domain::url::BaseUrl;
+    /// let base: BaseUrl = "https://holst.example".parse()?;
+    /// assert_eq!(
+    ///     base.folder_link("w1", "f1"),
+    ///     "https://holst.example/workspace/w1/folder/f1"
+    /// );
+    /// # Ok::<(), holst_core::Error>(())
+    /// ```
+    #[must_use]
+    pub fn folder_link(&self, workspace: &str, id: &str) -> String {
+        let base = &self.raw;
+        format!(
+            "{base}/workspace/{}/folder/{}",
+            percent_encode(workspace),
+            percent_encode(id)
+        )
+    }
     /// Link to one object on a board: the web client opens the board there; ids
     /// are `%XX`-encoded.
     ///

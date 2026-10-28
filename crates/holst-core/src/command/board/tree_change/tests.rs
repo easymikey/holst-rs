@@ -86,6 +86,19 @@ async fn a_board_is_created_in_a_folder_and_has_a_link() -> Result<()> {
 }
 
 #[tokio::test]
+async fn a_folder_is_created_and_has_a_link_in_its_workspace() -> Result<()> {
+    let (_, client) = client([account(), account(), account(), done()])?;
+    let args = create_args(&json!({ "name": "Notes", "kind": "folder" }))?;
+    let changed = create(&client, &args).await?;
+    let link = changed.node.link.unwrap_or_default();
+    assert!(
+        link.ends_with(&format!("/workspace/{}/folder/{}", uuid(1), uuid(99))),
+        "{link}"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_rename_reports_the_old_and_the_new_name() -> Result<()> {
     let (fake, client) = client([channel(13, "Retro"), done()])?;
     let args = arguments(json!({ "board": uuid(13), "name": " Retro 2 " }))?;

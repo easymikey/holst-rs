@@ -6,7 +6,7 @@ use holst_core::{
             rights::{Settled, Shared},
             settings::Edited,
             tree::{ListedNode, Listing},
-            tree_change::{Action, Changed},
+            tree_change::Changed,
         },
         change::{ChangeReport, PlannedRequest},
     },
@@ -113,14 +113,8 @@ fn changed_text(changed: &Changed) -> String {
             (true, Some(request))
         }
     };
-    // A board opens at its link; a new folder is known by its id.
-    let place = (!would)
-        .then(|| {
-            node.link
-                .clone()
-                .or_else(|| node.id.clone().filter(|_| node.action == Action::Create))
-        })
-        .flatten();
+    // A board or a folder opens at its link.
+    let place = node.link.clone().filter(|_| !would);
     joined(
         [node.phrase(would)]
             .into_iter()
@@ -274,6 +268,23 @@ mod tests {
         assert_eq!(
             changed_text(&change(Action::Rename, ChangeReport::Sent)),
             "renamed Old to Plan\nhttps://holst/b1"
+        );
+    }
+
+    #[test]
+    fn a_created_folder_shows_its_link_not_its_id() {
+        let board = change(Action::Create, ChangeReport::Sent);
+        let folder = Changed {
+            node: ChangedNode {
+                kind: Some("folder"),
+                link: Some("https://holst/workspace/w1/folder/b1".to_owned()),
+                ..board.node
+            },
+            ..board
+        };
+        assert_eq!(
+            changed_text(&folder),
+            "created folder Plan\nhttps://holst/workspace/w1/folder/b1"
         );
     }
 

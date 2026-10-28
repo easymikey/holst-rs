@@ -240,17 +240,22 @@ pub async fn create(client: &Client, args: &CreateArgs) -> Result<Changed> {
         workspace,
         parent,
     };
+    let in_workspace = new.workspace.to_string();
     let request = node::plan_create(client, &new).await?;
     let node = ChangedNode {
         name: Some(shown),
         ..node_of(Action::Create, None, Some(kind))
     };
-    carry(
+    let mut changed = carry(
         client,
         Plan::plain(request, node),
         (args.dry_run, Confirmation::Missing),
     )
-    .await
+    .await?;
+    if let (Some(id), NodeKind::Folder) = (&changed.node.id, kind) {
+        changed.node.link = Some(client.folder_link(&in_workspace, id));
+    }
+    Ok(changed)
 }
 
 /// Renames a board or a folder.

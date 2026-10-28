@@ -243,6 +243,11 @@ impl Client {
         self.base.board_link(id)
     }
 
+    /// A link to a folder in the web client at the API's address.
+    #[must_use]
+    pub fn folder_link(&self, workspace: &str, id: &str) -> String {
+        self.base.folder_link(workspace, id)
+    }
     /// A snapshot link from the board server, fetched without the login.
     ///
     /// # Errors
