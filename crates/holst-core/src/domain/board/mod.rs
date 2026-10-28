@@ -20,6 +20,7 @@ use yrs::{
     ReadTxn,
     Text as _,
     Transact as _,
+    Xml as _,
     XmlTextRef,
     types::{ToJson as _, text::YChange},
 };
@@ -619,13 +620,21 @@ fn text_of<T: ReadTxn>(txn: &T, documents: &yrs::MapRef, document: &str) -> Stri
     }
 }
 
+/// Whether an element sits inside a line of text: a link or a mention.
+fn inline<T: ReadTxn>(txn: &T, element: &XmlTextRef) -> bool {
+    matches!(
+        element.get_attribute(txn, "type"),
+        Some(Out::Any(Any::String(kind))) if matches!(&*kind, "link" | "mention")
+    )
+}
+
 fn plain<T: ReadTxn>(txn: &T, element: &XmlTextRef) -> String {
     let parts: Vec<(bool, String)> = element
         .diff(txn, YChange::identity)
         .into_iter()
         .map(|chunk| match chunk.insert {
             Out::Any(Any::String(run)) => (false, run.to_string()),
-            Out::YXmlText(child) => (true, plain(txn, &child)),
+            Out::YXmlText(child) => (!inline(txn, &child), plain(txn, &child)),
             other @ (Out::Any(_)
             | Out::YText(_)
             | Out::YArray(_)

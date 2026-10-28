@@ -5,6 +5,7 @@ mod frame;
 mod journal;
 mod locked;
 mod many;
+mod markdown;
 mod new_kinds;
 mod objects;
 mod remove;
@@ -55,7 +56,11 @@ use crate::{
 
 /// A change of one new object on the board.
 fn add(new: NewObject) -> BoardChange {
-    BoardChange::AddAll(vec![NewEntry { new, frame: None }])
+    BoardChange::AddAll(vec![NewEntry {
+        new,
+        frame: None,
+        format: crate::domain::rich_text::TextFormat::Plain,
+    }])
 }
 
 /// A change of one new object inside `frame`.
@@ -63,6 +68,7 @@ fn add_in(new: NewObject, frame: String) -> BoardChange {
     BoardChange::AddAll(vec![NewEntry {
         new,
         frame: Some(frame),
+        format: crate::domain::rich_text::TextFormat::Plain,
     }])
 }
 

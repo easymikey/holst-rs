@@ -59,6 +59,7 @@ fn sticker(
                 color,
             },
             frame: None,
+            format: crate::domain::rich_text::TextFormat::Plain,
         },
     ])
 }

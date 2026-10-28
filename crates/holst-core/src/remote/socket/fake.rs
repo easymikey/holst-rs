@@ -223,6 +223,7 @@ pub(crate) fn note(text: &str) -> BoardChange {
             color: None,
         },
         frame: None,
+        format: crate::domain::rich_text::TextFormat::Plain,
     }])
 }
 

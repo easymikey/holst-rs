@@ -18,6 +18,7 @@ pub mod palette;
 pub mod picture;
 pub mod placement;
 pub mod response;
+pub mod rich_text;
 pub mod session;
 pub mod sharing;
 pub mod template;

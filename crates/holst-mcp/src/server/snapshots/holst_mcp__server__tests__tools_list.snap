@@ -732,6 +732,14 @@ expression: "*holst.tools"
           "description": "Lines are paragraphs.",
           "type": "string"
         },
+        "text_format": {
+          "description": "plain or markdown.",
+          "enum": [
+            "plain",
+            "markdown"
+          ],
+          "type": "string"
+        },
         "to": {
           "description": "Arrow end; cp: the target board.",
           "type": "string"

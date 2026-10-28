@@ -28,6 +28,8 @@ uuid.workspace = true
 memchr = "2"
 # ASCII-only hosts in URLs: 1.0.0 is the no-op IDNA backend of `url`; an IDN host can be given as punycode.
 idna_adapter = "=1.0.0"
+# CommonMark events for `--text-format markdown`; no HTML renderer, no CLI.
+pulldown-cmark = { version = "0.13", default-features = false }
 # Names typed decomposed (NFD) match composed ones.
 icu_normalizer = { version = "2", default-features = false, features = ["compiled_data"] }
 # rt, sync, time are already built through reqwest: JoinSet, Semaphore, sleep;

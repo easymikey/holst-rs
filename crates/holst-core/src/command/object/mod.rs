@@ -14,7 +14,7 @@ use crate::{
         board::{AreaArgs, Caching},
         table::{Command, CommandArgs, Confirmation, EnumArgument, Items, NewFile},
     },
-    domain::change::value::LayerOrder,
+    domain::{change::value::LayerOrder, rich_text::TextFormat},
     effect::board_write::WriteMode,
 };
 
@@ -169,6 +169,13 @@ pub struct AddArgs {
     )]
     pub text: Option<String>,
     #[argument(
+        value_name = "format",
+        help = "How the text is read: plain, or markdown for headings, lists, checkboxes, links and bold, italic, strike marks; plain by default",
+        tool_doc = "plain or markdown.",
+        kinds = [sticker, text, shape]
+    )]
+    pub text_format: Option<TextFormat>,
+    #[argument(
         positional,
         help = "The page to link to, e.g. https://example.com",
         tool_doc = "Page address.",
@@ -272,6 +279,8 @@ pub struct AddItem {
 
 impl EnumArgument for LayerOrder {}
 
+impl EnumArgument for TextFormat {}
+
 #[derive(Debug, Deserialize, CommandArgs)]
 #[holst_command(
     group = Object,
@@ -305,6 +314,12 @@ pub struct EditArgs {
         tool_doc = "Lines are paragraphs."
     )]
     pub text: Option<String>,
+    #[argument(
+        value_name = "format",
+        help = "How the new text is read: plain, or markdown for headings, lists, checkboxes, links and bold, italic, strike marks; plain by default",
+        tool_doc = "plain or markdown."
+    )]
+    pub text_format: Option<TextFormat>,
     #[argument(
         value_name = "x,y",
         help = "The new top-left corner in board units; unchanged by default",
@@ -526,6 +541,7 @@ mod tests {
                 )],
                 vec![
                     ("text", &["sticker", "text", "shape", "frame"][..]),
+                    ("text_format", &["sticker", "text", "shape"][..]),
                     ("url", &["link"][..]),
                     ("path", &["image", "file"][..]),
                     ("shape", &["shape"][..]),

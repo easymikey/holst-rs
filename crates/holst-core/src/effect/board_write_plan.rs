@@ -9,6 +9,7 @@ use crate::{
             receipt::{BoardStatus, ChangeReport, Delivery, UpdateReceipt},
             value::{BoardChange, ChangeSources, ChangeUpdate, RemoveRight},
         },
+        rich_text::kept_note,
     },
     effect::confirmation::{ReleaseCheck, frame_content_unconfirmed},
     error::{Error, Result, board_change::BoardChangeError, confirmation::Unconfirmed},
@@ -151,7 +152,7 @@ impl WrittenChange {
                 .iter()
                 .map(|touched| touched.with_link(&link))
                 .collect(),
-            warnings: Vec::new(),
+            warnings: kept_note(&self.change.kept).into_iter().collect(),
             board_status: self.placement,
         }
     }

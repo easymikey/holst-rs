@@ -32,6 +32,7 @@ use crate::{
         palette::Color,
         placement::{free_corner, free_spot_among},
         response::LinkPreview,
+        rich_text::TextFormat,
         upload::{UploadKind, file_type},
     },
     effect::{
@@ -250,6 +251,8 @@ struct Item {
     what: What,
     color: Option<Color>,
     frame: Option<String>,
+    /// How the text of a sticker, text or shape is written.
+    format: TextFormat,
 }
 
 #[derive(Debug, PartialEq)]
@@ -381,12 +384,17 @@ fn read_items(args: &AddArgs) -> Result<Vec<Item>> {
         no_embed: args.no_embed.then_some(true),
     }];
     let asked: &[AddItem] = listed.unwrap_or(&own);
+    let format = args.text_format.unwrap_or_default();
     asked
         .iter()
         .enumerate()
         .try_fold(Vec::new(), |mut read, (slot, item)| {
-            let item =
-                Reader { many, slot }.item(item, kind, args.frame.as_deref(), &read)?;
+            let item = Reader { many, slot, format }.item(
+                item,
+                kind,
+                args.frame.as_deref(),
+                &read,
+            )?;
             read.push(item);
             Ok::<_, Error>(read)
         })
@@ -396,6 +404,7 @@ fn read_items(args: &AddArgs) -> Result<Vec<Item>> {
 struct Reader {
     many: bool,
     slot: usize,
+    format: TextFormat,
 }
 
 impl Reader {
@@ -406,6 +415,16 @@ impl Reader {
             name,
             &format!("{expected}{}", place.unwrap_or_default()),
         )
+    }
+
+    /// Whether the kind holds rich text; markdown for another kind alone is
+    /// refused.
+    fn rich(&self, kind: AddKind, word: &str) -> Result<bool> {
+        let rich = matches!(kind, AddKind::Sticker | AddKind::Text | AddKind::Shape);
+        let refused = !rich && !self.many && self.format == TextFormat::Markdown;
+        refused
+            .then(|| self.bad("text_format", &format!("left out for {word}")))
+            .map_or(Ok(rich), Err)
     }
 
     fn missing(&self, name: &'static str) -> Error {
@@ -451,6 +470,7 @@ impl Reader {
         refuse("color", (linked || uploaded) && item.color.is_some())?;
         refuse("url", !linked && item.url.is_some())?;
         refuse("path", !uploaded && item.path.is_some())?;
+        let rich = self.rich(kind, word)?;
         refuse("no_embed", !linked && item.no_embed.is_some())?;
         let at = item.at.as_deref().map(str::parse).transpose()?;
         let size = item.size.as_deref().map(str::parse).transpose()?;
@@ -521,6 +541,7 @@ impl Reader {
             what,
             color: item.color.as_deref().map(str::parse).transpose()?,
             frame: frame.map(str::to_owned),
+            format: if rich { self.format } else { TextFormat::Plain },
         })
     }
 
@@ -729,6 +750,7 @@ fn entries(
                 frame: fresh
                     .map(str::to_owned)
                     .or_else(|| frame.map(|frame| frame.id.clone())),
+                format: item.format,
             })
         })
         .collect()

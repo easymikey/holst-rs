@@ -18,7 +18,11 @@ use crate::{
 };
 
 fn entry(new: NewObject) -> NewEntry {
-    NewEntry { new, frame: None }
+    NewEntry {
+        new,
+        frame: None,
+        format: crate::domain::rich_text::TextFormat::Plain,
+    }
 }
 
 fn sticker(text: &str, at: Point) -> NewEntry {
@@ -135,7 +139,11 @@ fn an_arrow_names_only_items_before_it() -> Result<()> {
 #[test]
 fn an_arrow_between_items_of_a_frame_sits_in_the_frame() -> Result<()> {
     let document = Doc::new();
-    let frame = |new| NewEntry { new, frame: None };
+    let frame = |new| NewEntry {
+        new,
+        frame: None,
+        format: crate::domain::rich_text::TextFormat::Plain,
+    };
     let made = build_all(
         &document,
         vec![frame(NewObject::Frame {

@@ -19,6 +19,7 @@ use crate::{
         },
         geometry,
         geometry::{Point, Rectangle, Size},
+        rich_text::{Editor, Kept, TextFormat, parse},
     },
     error::{
         Error,
@@ -60,6 +61,52 @@ const CONTENT_HIDDEN: &str = "isContentHidden";
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Placement {
     pub(super) parent: Option<String>,
+    pub(super) format: TextFormat,
+}
+
+impl CheckedChange<'_> {
+    /// What of the markdown to be written stays text in its editor.
+    pub(super) fn kept(&self) -> BTreeSet<Kept> {
+        let of = |text: &str, kind: &ObjectKind| parse(text, &Editor::of(kind)).kept;
+        match self {
+            CheckedChange::AddAll(entries) => entries
+                .iter()
+                .filter(|(_, placement)| placement.format == TextFormat::Markdown)
+                .filter_map(|(new, _)| {
+                    written_text(new).map(|(kind, text)| of(text, &kind))
+                })
+                .flatten()
+                .collect(),
+            CheckedChange::EditAll(edits) => edits
+                .iter()
+                .filter(|checked| checked.edit.patch.format == TextFormat::Markdown)
+                .filter_map(|checked| {
+                    checked
+                        .edit
+                        .patch
+                        .text
+                        .as_deref()
+                        .map(|text| of(text, &checked.kind))
+                })
+                .flatten()
+                .collect(),
+            CheckedChange::RemoveAll(_) | CheckedChange::Paste(_) => BTreeSet::new(),
+        }
+    }
+}
+
+/// The kind and text of a new object that holds rich text.
+fn written_text(new: &NewObject) -> Option<(ObjectKind, &str)> {
+    match new {
+        NewObject::Sticker { text, .. } => Some((ObjectKind::Sticker, text)),
+        NewObject::Text { text, .. } => Some((ObjectKind::Text, text)),
+        NewObject::Shape { text, .. } => Some((ObjectKind::Shape, text)),
+        NewObject::Frame { .. }
+        | NewObject::Arrow { .. }
+        | NewObject::Link { .. }
+        | NewObject::Image { .. }
+        | NewObject::File { .. } => None,
+    }
 }
 
 pub(crate) enum CheckedChange<'a> {
@@ -136,9 +183,15 @@ pub(crate) fn check<'a>(
         BoardChange::AddAll(entries) => entries
             .iter()
             .try_fold(Vec::new(), |mut done, entry| {
-                let one =
+                let (new, placement) =
                     checked_add(&entry.new, entry.frame.as_deref(), states, &done)?;
-                done.push(one);
+                done.push((
+                    new,
+                    Placement {
+                        format: entry.format,
+                        ..placement
+                    },
+                ));
                 Ok::<_, Error>(done)
             })
             .map(CheckedChange::AddAll),
@@ -494,7 +547,15 @@ fn check_new(
         | NewObject::Image { .. }
         | NewObject::File { .. } => None,
     });
-    sticker_size(&new).map(|()| (new, Placement { parent }))
+    sticker_size(&new).map(|()| {
+        (
+            new,
+            Placement {
+                parent,
+                format: TextFormat::Plain,
+            },
+        )
+    })
 }
 
 /// The entry an arrow end `#N` names, counted from 0.
@@ -689,6 +750,7 @@ fn changeable_edit(
                 at: None,
                 size: None,
                 color: None,
+                format: _,
             },
             None,
             None,
@@ -774,6 +836,14 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
     );
     match (patch, held) {
         (ObjectPatch { text: Some(_), .. }, _) if !text => refuse("text"),
+        (
+            ObjectPatch {
+                text: Some(_),
+                format: TextFormat::Markdown,
+                ..
+            },
+            _,
+        ) if *kind == ObjectKind::Frame => refuse("text format"),
         (ObjectPatch { at: Some(_), .. }, _) if !place => refuse("position"),
         (ObjectPatch { at: Some(_), .. }, Some(Held { object, container })) => {
             Err(Error::BoardChange(BoardChangeError::PlacedByContainer {

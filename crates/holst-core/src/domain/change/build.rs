@@ -78,11 +78,13 @@ pub fn build_with(
             stamp,
             context,
         };
+        let kept = checked.kept();
         let touched = write_change(&mut transaction, &scope, checked)?;
         transaction.commit();
         Ok(ChangeUpdate {
             update: transaction.encode_update_v2(),
             objects: touched,
+            kept,
         })
     };
     write(document.transact_mut())

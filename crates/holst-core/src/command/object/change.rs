@@ -19,6 +19,7 @@ use crate::{
             value::{BoardChange, ObjectEdit, ObjectPatch},
         },
         id,
+        rich_text::TextFormat,
     },
     effect::{
         board_write::WriteInterpreter,
@@ -199,6 +200,7 @@ fn read_edits(args: &EditArgs) -> Result<Vec<ObjectEdit>> {
     if args.items.0.is_empty() {
         let patch = patch_of(
             args.text.clone(),
+            args.text_format.unwrap_or_default(),
             args.at.as_deref(),
             args.size.as_deref(),
             args.color.as_deref(),
@@ -220,7 +222,14 @@ fn read_edits(args: &EditArgs) -> Result<Vec<ObjectEdit>> {
             .0
             .iter()
             .enumerate()
-            .map(|(slot, item)| item_edit(item, linked.as_deref(), slot))
+            .map(|(slot, item)| {
+                item_edit(
+                    item,
+                    linked.as_deref(),
+                    slot,
+                    args.text_format.unwrap_or_default(),
+                )
+            })
             .collect()
     }
 }
@@ -244,7 +253,12 @@ fn refuse_with_items(args: &EditArgs) -> Result<()> {
 }
 
 /// The edit one item asks for; an item with no object takes the linked one.
-fn item_edit(item: &EditItem, linked: Option<&str>, slot: usize) -> Result<ObjectEdit> {
+fn item_edit(
+    item: &EditItem,
+    linked: Option<&str>,
+    slot: usize,
+    format: TextFormat,
+) -> Result<ObjectEdit> {
     let object = item.object.as_deref().or(linked).ok_or_else(|| {
         not_value(EDIT, "object", &format!("given, in item {}", slot + 1))
     })?;
@@ -252,6 +266,7 @@ fn item_edit(item: &EditItem, linked: Option<&str>, slot: usize) -> Result<Objec
         object: object.to_owned(),
         patch: patch_of(
             item.text.clone(),
+            format,
             item.at.as_deref(),
             item.size.as_deref(),
             item.color.as_deref(),
@@ -263,12 +278,14 @@ fn item_edit(item: &EditItem, linked: Option<&str>, slot: usize) -> Result<Objec
 
 fn patch_of(
     text: Option<String>,
+    format: TextFormat,
     at: Option<&str>,
     size: Option<&str>,
     color: Option<&str>,
 ) -> Result<ObjectPatch> {
     Ok(ObjectPatch {
         text,
+        format,
         at: at.map(str::parse).transpose()?,
         size: size.map(str::parse).transpose()?,
         color: color.map(str::parse).transpose()?,

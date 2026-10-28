@@ -1,6 +1,9 @@
 //! The values a change is made of: new objects, patches and their effects.
 
-use std::{collections::BTreeMap, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -12,6 +15,7 @@ use crate::{
         id_source::IdSource,
         palette::Color,
         response::LinkPreview,
+        rich_text::{Kept, TextFormat},
         text::joined,
         time::Timestamp,
     },
@@ -164,6 +168,8 @@ impl NewObject {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ObjectPatch {
     pub text: Option<String>,
+    /// How `text` is written.
+    pub format: TextFormat,
     pub at: Option<Point>,
     pub size: Option<Size>,
     pub color: Option<Color>,
@@ -203,6 +209,8 @@ pub struct Pasted {
 pub struct NewEntry {
     pub new: NewObject,
     pub frame: Option<String>,
+    /// How the object's text is written.
+    pub format: TextFormat,
 }
 
 /// One change to a board.
@@ -289,6 +297,8 @@ impl ChangedObject {
 pub struct ChangeUpdate {
     pub update: Vec<u8>,
     pub objects: Vec<ChangedObject>,
+    /// What of the markdown written stayed text.
+    pub kept: BTreeSet<Kept>,
 }
 
 /// Whose objects a removal may take.

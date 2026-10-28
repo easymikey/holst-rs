@@ -130,6 +130,7 @@ mod tests {
         let built = |kinds: &[ObjectKind]| ChangeUpdate {
             update: Vec::new(),
             objects: kinds.iter().cloned().map(removed).collect(),
+            kept: std::collections::BTreeSet::new(),
         };
         assert_eq!(
             (

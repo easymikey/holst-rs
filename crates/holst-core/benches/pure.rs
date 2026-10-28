@@ -170,6 +170,7 @@ fn board_doc(n: usize) -> holst_core::Result<yrs::Doc> {
                 color: None,
             },
             frame: None,
+            format: holst_core::domain::rich_text::TextFormat::Plain,
         }]);
         let built =
             holst_core::domain::change::build::build(&doc, &frame, &user, &fresh)?;
@@ -188,6 +189,7 @@ fn board_doc(n: usize) -> holst_core::Result<yrs::Doc> {
             let op = BoardChange::AddAll(vec![NewEntry {
                 new: sticker,
                 frame: Some(id.clone()),
+                format: holst_core::domain::rich_text::TextFormat::Plain,
             }]);
             holst_core::domain::change::build::build(&doc, &op, &user, &fresh).map(drop)
         })

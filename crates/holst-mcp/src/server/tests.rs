@@ -293,6 +293,7 @@ async fn add_sticker(
             color: None,
         },
         frame: None,
+        format: holst_core::domain::rich_text::TextFormat::Plain,
     }]);
     let user = holst_core::command::account::account_id(&client.client).await?;
     write_cached(

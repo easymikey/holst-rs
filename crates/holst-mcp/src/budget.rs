@@ -8,7 +8,7 @@
     reason = "tests hand the real environment to the program under test"
 )]
 
-use std::io::Write as _;
+use std::{collections::BTreeSet, io::Write as _};
 
 use holst_core::{
     command::{
@@ -310,6 +310,7 @@ fn edit_reply(holst: &McpServer) -> String {
                 fields: Vec::new(),
                 link: None,
             }],
+            kept: BTreeSet::new(),
         },
         update_id: 42,
         accepted: Some(AcceptedUpdate { id: 42 }),

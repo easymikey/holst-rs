@@ -40,6 +40,7 @@ use crate::{
                 subtree,
             },
             journal,
+            rich::fill_blocks,
             value::{
                 ChangeSources,
                 ChangedObject,
@@ -56,6 +57,7 @@ use crate::{
         id_source::IdSource,
         palette::Color,
         response::LinkPreview,
+        rich_text::{Editor, TextFormat, parse},
         time::Timestamp,
     },
     error::{Error, Result, board_change::BoardChangeError},
@@ -184,6 +186,7 @@ fn add_all(
                 .parent
                 .as_deref()
                 .map(|parent| id_of(parent, &touched)),
+            format: placement.format,
         };
         let made = add(
             transaction,
@@ -252,7 +255,13 @@ fn add(
                 document.as_str(),
                 XmlTextPrelim::new(""),
             );
-            fill_text(transaction, &root, text, context.ids);
+            fill_as(
+                transaction,
+                &root,
+                text,
+                (placement.format, &kind),
+                context.ids,
+            );
             document
         })
         .map_or(json!({}), |document| json!({ (DOCUMENT_ID): document }));
@@ -510,6 +519,25 @@ fn arrow_fields<'a>(
     )
 }
 
+/// `text` as lines, or as the blocks of the markdown it holds for `kind`.
+fn fill_as(
+    transaction: &mut TransactionMut<'_>,
+    root: &XmlTextRef,
+    text: &str,
+    (format, kind): (TextFormat, &ObjectKind),
+    ids: &dyn IdSource,
+) {
+    match format {
+        TextFormat::Plain => fill_text(transaction, root, text, ids),
+        TextFormat::Markdown => fill_blocks(
+            transaction,
+            root,
+            &parse(text, &Editor::of(kind)).blocks,
+            ids,
+        ),
+    }
+}
+
 pub(super) fn fill_text(
     transaction: &mut TransactionMut<'_>,
     root: &XmlTextRef,
@@ -600,7 +628,7 @@ fn content_changes(
             if *kind == ObjectKind::Frame {
                 vec![(LABEL_TEXT, json!(text))]
             } else {
-                write_text(transaction, scope, fields, text)
+                write_text(transaction, scope, fields, (text, patch.format, kind))
             }
         })
         .unwrap_or_default();
@@ -819,7 +847,7 @@ fn write_text(
     transaction: &mut TransactionMut<'_>,
     scope: &WriteTransaction<'_>,
     fields: &Value,
-    text: &str,
+    (text, format, kind): (&str, TextFormat, &ObjectKind),
 ) -> Vec<(&'static str, Value)> {
     let documents = &scope.roots.documents;
     let context = scope.context;
@@ -841,7 +869,8 @@ fn write_text(
             documents.insert(transaction, document, XmlTextPrelim::new(""))
         })
     });
-    let filled = root.map(|root| fill_text(transaction, &root, text, context.ids));
+    let filled =
+        root.map(|root| fill_as(transaction, &root, text, (format, kind), context.ids));
     filled
         .and(document)
         .map(|document| vec![(DOCUMENT_ID, json!(document))])
