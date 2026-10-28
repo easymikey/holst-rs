@@ -545,7 +545,7 @@ pub struct EditArgs {
     pub show_content: bool,
     #[argument(
         value_name = "frame|none",
-        help = "Move it into this frame: id, link, title or part of a title; none takes it out onto the board. It keeps its place relative to the frame and goes to the front there; unchanged by default"
+        help = "Move it into this frame: id, link, title or part of a title; none takes it out onto the board. It keeps its place relative to the frame, or goes to a free spot in it when that would put it outside, and goes to the front there; unchanged by default"
     )]
     pub frame: Option<String>,
     #[argument(

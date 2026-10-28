@@ -103,6 +103,33 @@ fn an_object_moved_into_a_frame_keeps_its_place_relative_to_it() -> Result<()> {
 }
 
 #[test]
+fn an_object_that_would_lie_outside_the_frame_goes_to_a_free_spot_in_it() -> Result<()>
+{
+    let (document, ids) = nested_frames()?;
+    apply(
+        &document,
+        &ids,
+        &add(NewObject::Sticker {
+            text: "s".into(),
+            at: Point::new(600.0, 400.0)?,
+            size: None,
+            color: None,
+        }),
+    )?;
+    apply(
+        &document,
+        &ids,
+        &put(STICKER, Reparent::Frame(INNER.into())),
+    )?;
+    let fields = fields_of(&document, STICKER);
+    assert_eq!(
+        (fields.get("parentId"), corner(&fields)),
+        (Some(&json!(INNER)), (Some(124.0), Some(124.0)))
+    );
+    Ok(())
+}
+
+#[test]
 fn an_object_moved_out_of_its_frame_goes_to_the_board_in_the_same_place_relative_to_it()
 -> Result<()> {
     let (document, ids) = board_with_sticker()?;

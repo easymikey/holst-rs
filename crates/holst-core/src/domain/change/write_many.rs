@@ -23,6 +23,7 @@ use crate::{
             check::{
                 CheckedEdit,
                 corner_of,
+                fitted_in,
                 frame_above,
                 on_board,
                 parent_frame,
@@ -43,7 +44,7 @@ use crate::{
                 stored_now,
             },
         },
-        geometry::Point,
+        geometry::{Point, Rectangle},
         tree::name_index::build::normalized,
     },
     error::{Error, Result, board_change::BoardChangeError},
@@ -197,11 +198,25 @@ fn kept_in_frame(
     let from = corner_of(states, frame_above(states, id).as_deref());
     let to = corner_of(states, into.frame());
     let (dx, dy) = (to.0 - from.0, to.1 - from.1);
-    let at = states
+    let shifted = states
         .get(id)
         .and_then(rectangle_of)
-        .filter(|_| patch.at.is_none() && (dx.abs() > 0.5 || dy.abs() > 0.5))
-        .map(|area| Point::new(area.x + dx, area.y + dy))
+        .filter(|_| patch.at.is_none())
+        .map(|area| {
+            if dx.abs() > 0.5 || dy.abs() > 0.5 {
+                Rectangle::new(area.x + dx, area.y + dy, area.width, area.height)
+            } else {
+                area
+            }
+        });
+    let fitted = shifted
+        .zip(into.frame())
+        .map(|(moved, frame)| fitted_in(states, id, frame, moved))
+        .transpose()?
+        .flatten();
+    let at = shifted
+        .filter(|_| fitted.is_some() || dx.abs() > 0.5 || dy.abs() > 0.5)
+        .map(|moved| fitted.map_or_else(|| Point::new(moved.x, moved.y), Ok))
         .transpose()?;
     on_board(at.as_ref(), None)?;
     Ok(ObjectPatch {

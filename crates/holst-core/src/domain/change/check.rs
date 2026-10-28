@@ -866,6 +866,59 @@ pub(super) fn corner_of(
         .map_or((0.0, 0.0), |area| (area.x, area.y))
 }
 
+/// Where the object `id` goes when it is put into `frame` and would lie at
+/// `moved` there: `None` to keep that place, when it lies wholly inside the
+/// frame, when the object is bigger than the frame, or when no free spot is
+/// left; else the free corner `o add --frame` would pick.
+pub(super) fn fitted_in(
+    states: &HashMap<String, Value>,
+    id: &str,
+    frame: &str,
+    moved: Rectangle,
+) -> Result<Option<Point>> {
+    states
+        .get(frame)
+        .and_then(rectangle_of)
+        .filter(|area| {
+            !area.contains(&moved)
+                && moved.width <= area.width
+                && moved.height <= area.height
+        })
+        .map(|area| free_spot_in(states, (id, frame), area, moved))
+        .transpose()
+        .map(Option::flatten)
+}
+
+/// The free corner in `area`, the frame `frame`, for the object `id` as big as
+/// `moved`, if it lies inside `area`.
+fn free_spot_in(
+    states: &HashMap<String, Value>,
+    (id, frame): (&str, &str),
+    area: Rectangle,
+    moved: Rectangle,
+) -> Result<Option<Point>> {
+    let held = subtree(states, id);
+    let taken: Vec<Rectangle> = states
+        .iter()
+        .filter(|(other, _)| {
+            *other != frame
+                && !held.contains(other.as_str())
+                && ancestry(states, other).iter().any(|up| up == frame)
+        })
+        .filter_map(|(_, fields)| rectangle_of(fields))
+        .collect();
+    let size = Size::new(moved.width, moved.height)?;
+    let spot = crate::domain::placement::free_corner(area, &taken, size)?;
+    Ok(area
+        .contains(&Rectangle::new(
+            spot.x(),
+            spot.y(),
+            moved.width,
+            moved.height,
+        ))
+        .then_some(spot))
+}
+
 /// Every copy that moves stays on the board.
 fn pasted_on_board(pasted: &Pasted) -> Result<()> {
     pasted

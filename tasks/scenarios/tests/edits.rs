@@ -1720,6 +1720,27 @@ async fn an_object_is_moved_into_a_frame_and_back_to_the_board(
 
 #[rstest]
 #[tokio::test]
+async fn an_object_far_from_the_frame_lands_inside_it(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = frame_and_note().start().await?;
+    let sticker = holst.fixture_object("Plans", 2)?;
+    holst
+        .on(surface)
+        .move_object("Plans", &sticker, (5000, 5000))
+        .await?;
+    let call = ObjectCall::edit()
+        .with("object", sticker)
+        .with("frame", "Q4");
+    then(&holst.on(surface).object("Plans", call).await?).succeeded();
+    let after = holst.on(surface).objects("Plans").await?;
+    then(&after).lists_object_in_a_frame("sticker", "Buy milk");
+    then(&after).lists_object_at("Buy milk", (124, 124));
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
 async fn a_frame_that_hides_its_content_takes_no_object(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
