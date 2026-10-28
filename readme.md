@@ -18,8 +18,7 @@ Holst has no public API and no CLI: everything happens in the browser, one click
 Homebrew (macOS and Linux):
 
 ```sh
-brew tap easymikey/holst
-brew install holst-cli holst-mcp
+brew install easymikey/holst/holst-cli easymikey/holst/holst-mcp
 ```
 
 From crates.io:
