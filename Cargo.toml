@@ -93,6 +93,7 @@ let_underscore_must_use = "deny"
 let_underscore_untyped = "deny"
 as_conversions = "deny"
 cognitive_complexity = "deny"
+excessive_nesting = "deny"
 # groups
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }

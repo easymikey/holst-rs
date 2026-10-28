@@ -250,7 +250,7 @@ fn non_empty(value: Option<OsString>) -> Option<PathBuf> {
     value.filter(|value| !value.is_empty()).map(PathBuf::from)
 }
 
-/// Bytes from `123`, `64K`, `256M`, `1G` (also `MB`, `MiB`); powers of 1024.
+/// Bytes from `123`, `64K`, `256M`, `1G` (also MB, MiB); powers of 1024.
 ///
 /// ```
 /// use holst_core::effect::settings::parse_size;
