@@ -1,0 +1,22 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+End the server session and forget the saved login on this machine.
+The board cache of the account is removed too.
+
+USAGE
+  holst auth logout [flags]
+
+FLAGS
+  --local-only   Only forget the saved login here; do not end the server session
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst auth logout
+  $ holst auth logout --local-only
+
+LEARN MORE
+  Exit codes: `holst help exit-codes`.

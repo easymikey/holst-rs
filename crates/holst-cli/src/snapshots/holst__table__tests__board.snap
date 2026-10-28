@@ -1,0 +1,52 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Work with boards and folders.
+
+USAGE
+  holst board <command> [flags]
+
+GENERAL COMMANDS
+  ls:          List boards and folders as a tree or another view
+  create:      Create a board or a folder
+
+LOOK
+  show:        Show boards, or a part of one, with details
+  snap:        Draw a board or a part of it as PNG or SVG
+  save:        Save a board or a part of it into a new folder
+  export:      Save the whole board as a board file
+  import:      Create a board from a board file, or write it into one
+
+CHANGE
+  edit:        Change a board's cover
+  rename:      Rename a board or a folder
+  mv:          Move a board or a folder into a folder or /
+  cp:          Copy a board
+  rm:          Move a board to the trash, or delete it for good
+  restore:     Bring a board or folder back from the trash
+
+YOURS
+  favorite:    Add a board to favorites
+  unfavorite:  Remove a board from favorites
+  touch:       Mark a board as recently opened
+  leave:       Leave a board you were invited to
+
+RIGHTS AND SHARING
+  grant:       Give a user a right on a board
+  revoke:      Take a user's right on a board away
+  share:       Change who can open, edit and copy a board
+  transfer:    Make another user the owner of a board
+
+FLAGS
+  -w, --workspace ws   Where a board name is looked up, or where a new board goes
+
+ARGUMENTS
+  A board can be given as its id, its link or part of its name;
+  several matches are listed, never guessed. A link to a frame or an object selects
+  that part where a command takes a part (show, snap, save).
+  A folder is given the same way; / is the root.
+
+EXAMPLES
+  $ holst b ls -w easy
+  $ holst b rm "Old draft"

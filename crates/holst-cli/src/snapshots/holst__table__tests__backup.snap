@@ -1,0 +1,17 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+List, download and restore board backups.
+
+USAGE
+  holst backup <command> [flags]
+
+COMMANDS
+  ls:          List a board's backups with keys and dates
+  get:         Download a backup by its key
+  restore:     Write a backup back into its board
+
+EXAMPLES
+  $ holst backup ls "Roadmap"
+  $ holst backup restore "Roadmap" <key>

@@ -1,0 +1,19 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Work with board templates.
+
+USAGE
+  holst template <command> [flags]
+
+COMMANDS
+  ls:          List templates or their categories
+  show:        Show a template's content
+  create:      Save a board or a part of it as a template
+  edit:        Replace a template's body
+  rm:          Delete a template for good
+
+EXAMPLES
+  $ holst tpl ls --view standard --category strategic-planning
+  $ holst tpl create "Roadmap" --name "Quarter plan" --for workspace

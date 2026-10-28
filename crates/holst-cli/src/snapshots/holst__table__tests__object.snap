@@ -1,0 +1,30 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Work with the objects on a board.
+
+USAGE
+  holst object <command> [flags]
+
+COMMANDS
+  ls:          List the objects of a board or a part of it
+  add:         Add stickers, texts, shapes, frames, arrows, links, images or files to a board
+  edit:        Change text, corner, size, color, order or tags of objects
+  cp:          Copy objects on their board or onto another board
+  rm:          Remove objects with what a frame holds and their arrows
+  get:         Download the original of an image or file object
+
+FLAGS
+  -w, --workspace ws   Where a board name is looked up
+
+ARGUMENTS
+  The board is given as in `holst b -h`. Objects are given with --object: an id, a link,
+  an @N from a listing, or the first 8 characters of the id; a link to an object
+  as the board names that object too.
+
+EXAMPLES
+  $ holst o ls "Roadmap" -k sticker --contains "design"
+  $ holst o add sticker "Roadmap" "Ask design" -c yellow4
+  $ holst o add frame "Roadmap" "Q4" --items q4.json
+  $ holst o rm "https://app.holst.so/board/…?object=…"

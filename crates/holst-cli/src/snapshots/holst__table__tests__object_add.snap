@@ -1,0 +1,35 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Add objects of one kind to a board; the kind word is the default kind of every --items item.
+Without --at each goes to a free corner, in --frame if given, else in the frame a linked object sits in. It prints one line per object with @N and its link.
+An image or a file is uploaded first; a link card takes its title from the page. With --items, #N names an earlier item as an arrow end, and one write holds all of them.
+
+USAGE
+  holst object add <kind> [flags]
+
+KINDS
+  sticker:     Add stickers
+  text:        Add texts
+  shape:       Add shapes
+  frame:       Add frames
+  arrow:       Add arrows
+  link:        Add links
+  image:       Add images
+  file:        Add files
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst o add sticker "Roadmap" "Ask design" -c yellow4
+  $ holst o add shape "Roadmap" "Launch" --shape diamond
+  $ holst o add frame "Roadmap" "Q4" --items q4.json
+  $ holst o add arrow "Roadmap" --from a1b2c3d4 --to e5f6a7b8
+  $ holst o add link "Roadmap" https://example.com
+  $ holst o add image "Roadmap" mock.png --size 400x300
+
+LEARN MORE
+  How a board is given: `holst b -h`.
+  Exit codes: `holst help exit-codes`.

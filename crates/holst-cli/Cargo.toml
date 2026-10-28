@@ -1,0 +1,51 @@
+[package]
+name = "holst-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Unofficial command-line client for Holst (app.holst.so)"
+
+[[bin]]
+name = "holst"
+path = "src/main.rs"
+
+[dependencies]
+holst-core = { path = "../holst-core", features = ["logging"] }
+thiserror.workspace = true
+secrecy.workspace = true
+zeroize.workspace = true
+clap = { workspace = true, features = ["env", "string"] }
+derive_more.workspace = true
+# The login form in the style of @clack/prompts: colours, raw keys, widths without escapes.
+console = { version = "0.16", default-features = false, features = ["std", "unicode-width", "ansi-parsing"] }
+unicode-segmentation.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "signal", "time", "sync"] }
+
+# Already built through console and tokio: terminal settings (echo, type-ahead)
+# and a flag set in the signal handler itself.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+signal-hook-registry = "1.4"
+
+[dev-dependencies]
+# The server the integration tests run the built binary against.
+holst-fake = { path = "../holst-fake" }
+# A board document for the export tests.
+yrs.workspace = true
+proptest = { version = "1.11", default-features = false, features = ["std", "bit-set"] }
+rstest = { version = "0.28", default-features = false }
+insta = { version = "1.49", features = ["json"] }
+expectrl.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "time", "test-util"] }
+
+[features]
+# PNG pictures with their images: resvg adds about 2 MB; `--no-default-features` leaves SVG only.
+default = ["png"]
+png = ["holst-core/png"]
+
+[lints]
+workspace = true

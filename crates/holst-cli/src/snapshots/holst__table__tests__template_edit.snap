@@ -1,0 +1,28 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Replace a template's body.
+The old body is lost, so it needs -y; without it only the dry run is shown.
+
+USAGE
+  holst template edit <template> --body body [flags]
+
+ARGUMENTS
+  template   The template: id or name
+
+FLAGS
+      --body body   The new body: a JSON string, @file to read a file, - for stdin; required
+  -y, --yes         Confirm a risky change; without it only the dry run is shown (exit code 77)
+  -n, --dry-run     Show what would change; change nothing
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst tpl edit "Retro" --body @body.json -y
+  $ holst tpl edit "Retro" --body @body.json -n
+
+LEARN MORE
+  A template is given as its id or its name.
+  Exit codes: `holst help exit-codes`.

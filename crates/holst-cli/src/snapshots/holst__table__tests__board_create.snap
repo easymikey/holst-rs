@@ -1,0 +1,29 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Create a board or a folder with this name.
+It prints the new node with its link.
+
+USAGE
+  holst board create <name> [flags]
+
+ARGUMENTS
+  name   The name of the new board or folder
+
+FLAGS
+  -w, --workspace ws    The workspace a new thing goes to: id or part of its name; needed when you have several
+      --folder folder   The folder it goes into: a folder id, link or part of its name; / is the root; the workspace root by default
+  -k, --kind kind       What to create: board or folder; board by default
+  -n, --dry-run         Show what would change; change nothing
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst b create "Roadmap" -w easy
+  $ holst b create "Plans" -k folder -w easy
+
+LEARN MORE
+  How a board is given: `holst b -h`.
+  Exit codes: `holst help exit-codes`.

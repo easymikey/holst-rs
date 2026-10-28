@@ -1,0 +1,24 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Log in with your email address and a login code or password, and save the login.
+It prints the account and its workspaces. The login goes to the keychain, or to --home.
+
+USAGE
+  holst auth login [flags]
+
+FLAGS
+  --email address   The email address to log in with; asked for when missing
+  --no-save         Only check that the login works; do not save the login
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst auth login
+  $ holst auth login --email you@example.com
+  $ holst auth login --no-save
+
+LEARN MORE
+  Exit codes: `holst help exit-codes`.

@@ -1,0 +1,20 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Read and write comment threads.
+
+USAGE
+  holst comment <command> [flags]
+
+COMMANDS
+  ls:          List the board's threads and when each was read
+  add:         Start a comment thread
+  reply:       Reply in a thread
+  resolve:     Resolve a thread, or reopen it
+  rm:          Delete a thread with its replies
+  read:        Mark a thread as read
+
+EXAMPLES
+  $ holst comment ls "Roadmap"
+  $ holst comment add "Roadmap" "Is this final?" --object a1b2c3d4

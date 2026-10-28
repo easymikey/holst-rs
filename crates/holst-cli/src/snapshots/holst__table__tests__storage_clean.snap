@@ -1,0 +1,27 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Remove old logins, partial files and stale copies that holst keeps on this machine.
+The board cache and the saved login stay unless --cache or --all says otherwise.
+--all removes the saved login, so it needs -y; without it only the dry run is shown. Plain clean and --cache need no -y.
+
+USAGE
+  holst storage clean [flags]
+
+FLAGS
+      --cache     Also remove the board cache
+      --all       Also remove the board cache and the saved login here, as `holst auth logout --local-only`
+  -y, --yes       Confirm a risky change; without it only the dry run is shown (exit code 77)
+  -n, --dry-run   Show what would change; change nothing
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst storage clean -n
+  $ holst storage clean --cache
+  $ holst storage clean --all -y
+
+LEARN MORE
+  Exit codes: `holst help exit-codes`.

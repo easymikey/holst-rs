@@ -1,0 +1,29 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Send any request to the Holst API, for an endpoint no command covers.
+GET is sent at once. Any other method may change what cannot be undone, so it needs -y; without it only the dry run is shown.
+
+USAGE
+  holst api <method> <path> [flags]
+
+ARGUMENTS
+  method   The HTTP method: GET, POST, PUT, PATCH or DELETE
+  path     The path from the root, for example /gapi/current_user
+
+FLAGS
+  -q, --query key=value   A query parameter, repeat for several
+      --body body         The request body: a JSON string, @file to read a file, - for stdin
+  -y, --yes               Confirm a change other than GET; without it only the dry run is shown (exit code 77)
+  -n, --dry-run           Show the request; send nothing
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst api GET /gapi/current_user
+  $ holst api PATCH /gapi/channel/<id> --body @body.json -y
+
+LEARN MORE
+  Exit codes: `holst help exit-codes`.

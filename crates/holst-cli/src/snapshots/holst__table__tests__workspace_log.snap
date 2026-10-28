@@ -1,0 +1,26 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Show the workspace event log, newest first.
+The server filters it by the query parameters you give with -q.
+
+USAGE
+  holst workspace log [<ws>] [flags]
+
+ARGUMENTS
+  ws   The workspace: id or part of its name; your only workspace if left out
+
+FLAGS
+  -q, --query key=value   A query parameter of the log request, repeatable, e.g. -q limit=50
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst ws log
+  $ holst ws log easy -q limit=50
+
+LEARN MORE
+  How a workspace is given: `holst ws -h`.
+  Exit codes: `holst help exit-codes`.

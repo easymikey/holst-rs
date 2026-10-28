@@ -1,0 +1,25 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Work with workspaces.
+
+USAGE
+  holst workspace <command> [flags]
+
+GENERAL COMMANDS
+  ls:          List your workspaces or the ones you can join
+  create:      Create a workspace
+
+TARGETED COMMANDS
+  show:        Show a workspace and the parts asked for
+  rename:      Rename a workspace for all its members
+  log:         Show the workspace event log
+
+ARGUMENTS
+  A workspace can be given as its id or part of its name.
+  Left out, it is your only workspace.
+
+EXAMPLES
+  $ holst ws ls
+  $ holst ws show easy --with members,activity

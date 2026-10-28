@@ -1,0 +1,16 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+See and clean what holst keeps on this machine.
+
+USAGE
+  holst storage <command> [flags]
+
+COMMANDS
+  ls:          List what holst keeps on this machine, with sizes
+  clean:       Remove old logins, partial files and stale copies
+
+EXAMPLES
+  $ holst storage ls
+  $ holst storage clean -n

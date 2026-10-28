@@ -1,0 +1,30 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Copy a board; it prints the copy with its link.
+The copy keeps the objects; its rights are not copied unless --rights is given.
+
+USAGE
+  holst board cp <board> [flags]
+
+ARGUMENTS
+  board   The board to copy
+
+FLAGS
+  -w, --workspace ws    The workspace a new thing goes to: id or part of its name; needed when you have several
+      --name name       The copy's name; "<name>-copy" by default, as in the web app
+      --folder folder   The folder the copy goes into: a folder id, link or part of its name; / is the root; the board's own folder by default
+      --rights          Copy the board's rights too
+  -n, --dry-run         Show what would change; change nothing
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst b cp "Roadmap"
+  $ holst b cp "Roadmap" --name "Roadmap Q4" --folder "Plans" --rights
+
+LEARN MORE
+  How a board is given: `holst b -h`.
+  Exit codes: `holst help exit-codes`.

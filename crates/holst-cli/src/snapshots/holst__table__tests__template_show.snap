@@ -1,0 +1,23 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Show a template's content.
+It prints the name, description and the objects the template holds.
+
+USAGE
+  holst template show <template>
+
+ARGUMENTS
+  template   The template: id or name
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst tpl show "Retro"
+  $ holst tpl show "Retro" -o json
+
+LEARN MORE
+  A template is given as its id or its name.
+  Exit codes: `holst help exit-codes`.

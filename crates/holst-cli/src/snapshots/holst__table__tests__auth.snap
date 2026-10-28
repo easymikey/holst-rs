@@ -1,0 +1,18 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Log in, log out and check the saved login.
+
+USAGE
+  holst auth <command> [flags]
+
+COMMANDS
+  login:       Log in and save the login
+  logout:      End the server session and forget the saved login
+  status:      Show the saved login, account and workspaces
+
+EXAMPLES
+  $ holst auth login --email you@example.com
+  $ holst auth status
+  $ holst auth logout --local-only

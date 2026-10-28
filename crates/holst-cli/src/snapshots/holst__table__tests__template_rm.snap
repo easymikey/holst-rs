@@ -1,0 +1,27 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Delete a template for good; templates have no trash.
+Other people lose it too, so it needs -y; without it only the dry run is shown.
+
+USAGE
+  holst template rm <template> [flags]
+
+ARGUMENTS
+  template   The template: id or name
+
+FLAGS
+  -y, --yes       Confirm a risky change; without it only the dry run is shown (exit code 77)
+  -n, --dry-run   Show what would change; change nothing
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst tpl rm "Retro" -n
+  $ holst tpl rm "Retro" -y
+
+LEARN MORE
+  A template is given as its id or its name.
+  Exit codes: `holst help exit-codes`.

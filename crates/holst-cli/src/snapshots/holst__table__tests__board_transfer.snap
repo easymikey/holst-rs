@@ -1,0 +1,30 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Make another user the owner of a board or a folder; you are no longer the owner.
+It cannot be undone by you, so it needs -y; without it only the dry run is shown.
+
+USAGE
+  holst board transfer <board> <user> [flags]
+
+ARGUMENTS
+  board   The board or folder to hand over
+  user    The new owner: user id or part of a member's name (see `holst ws show --with members`)
+
+FLAGS
+  -w, --workspace ws   Where names are looked up and new things go: a workspace id or part of its name; all of yours by default
+      --with-boards    Also transfer the boards inside a folder
+  -y, --yes            Confirm a risky change; without it only the dry run is shown (exit code 77)
+  -n, --dry-run        Show what would change; change nothing
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst b transfer "Roadmap" anna -y
+  $ holst b transfer "Plans" anna --with-boards -n
+
+LEARN MORE
+  How a board is given: `holst b -h`.
+  Exit codes: `holst help exit-codes`.

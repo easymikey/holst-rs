@@ -1,0 +1,19 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+List what holst keeps on this machine, with sizes.
+It only reads; nothing is removed.
+
+USAGE
+  holst storage ls
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst storage ls
+  $ holst storage ls -o json
+
+LEARN MORE
+  Exit codes: `holst help exit-codes`.

@@ -1,0 +1,28 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Rename a workspace for all its members.
+Every member sees the new name, so it needs -y; without it only the dry run is shown.
+
+USAGE
+  holst workspace rename <ws> <name> [flags]
+
+ARGUMENTS
+  ws     The workspace: id or part of its name
+  name   The new name
+
+FLAGS
+  -y, --yes       Confirm a risky change; without it only the dry run is shown (exit code 77)
+  -n, --dry-run   Show what would change; change nothing
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst ws rename easy "Easy design" -y
+  $ holst ws rename Easy "Easy design" -n
+
+LEARN MORE
+  How a workspace is given: `holst ws -h`.
+  Exit codes: `holst help exit-codes`.

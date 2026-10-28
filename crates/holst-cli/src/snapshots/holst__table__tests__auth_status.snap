@@ -1,0 +1,22 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Show the saved login, the account and each workspace with its board and folder count.
+Counts come from one request per workspace; --with adds the tokens.
+
+USAGE
+  holst auth status [flags]
+
+FLAGS
+  --with parts   Also show these parts, comma separated: tokens; none by default
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst auth status
+  $ holst auth status --with tokens -o json
+
+LEARN MORE
+  Exit codes: `holst help exit-codes`.

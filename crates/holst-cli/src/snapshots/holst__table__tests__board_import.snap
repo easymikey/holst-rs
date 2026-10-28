@@ -1,0 +1,32 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Create a board from a board file, as the web app's Import does; it prints the new board with its link.
+With --into it writes the file into an existing board instead, which needs -y.
+
+USAGE
+  holst board import <file> [flags]
+
+ARGUMENTS
+  file   A board file from `holst b export` or `holst backup get`
+
+FLAGS
+  -w, --workspace ws    The workspace a new thing goes to: id or part of its name; needed when you have several
+      --folder folder   The folder the new board goes into: a folder id, link or part of its name; / is the root; the workspace root by default
+      --name name       The new board's name; after the file by default
+      --into board      Write into this board instead of making one: id, link or the whole name, never a part of it
+      --merge           With --into, keep what is on the board and add the file's objects; refused otherwise
+  -y, --yes             Confirm a risky change; without it only the dry run is shown (exit code 77)
+  -n, --dry-run         Show what would change; change nothing
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst b import roadmap.ydoc.gz -w easy --name "Roadmap copy"
+  $ holst b import roadmap.ydoc --into "Roadmap" --merge -y
+
+LEARN MORE
+  How a board is given: `holst b -h`.
+  Exit codes: `holst help exit-codes`.

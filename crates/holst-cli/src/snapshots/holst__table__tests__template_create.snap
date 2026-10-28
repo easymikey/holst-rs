@@ -1,0 +1,32 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Save a board or a part of it as a template.
+The objects are converted to the web app's format and a thumbnail drawn by holst is uploaded. It prints the new template with its id.
+
+USAGE
+  holst template create <board> --name name [flags]
+
+ARGUMENTS
+  board   The board to take the objects from
+
+FLAGS
+  -w, --workspace ws       The workspace a new thing goes to: id or part of its name; needed when you have several
+      --name name          The template's name; required
+      --description text   The template's description; none by default
+      --for who            Who can use it: me or workspace; me by default
+      --frame frame        An area as a frame: id, link, title or part of a title
+      --object object      An object, repeat for several: id, link, @N or the first 8 characters of its id
+  -n, --dry-run            Show what would change; change nothing
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst tpl create "Roadmap" --name "Quarter plan" --for workspace
+  $ holst tpl create "Roadmap" --name "Q3 frame" --frame "Q3"
+
+LEARN MORE
+  How a board is given: `holst b -h`.
+  Exit codes: `holst help exit-codes`.

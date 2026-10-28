@@ -1,0 +1,27 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Download a backup by its key from `backup ls`; a gzip board file.
+The file goes to ~/Downloads unless a file is given; `holst b import` reads it.
+
+USAGE
+  holst backup get <key> [<file>] [flags]
+
+ARGUMENTS
+  key    The backup's key from `holst backup ls`
+  file   A new file, never overwritten, - for stdout; ~/Downloads by default
+
+FLAGS
+  --provider provider   Where the server keeps the backup, as `backup ls` shows; the usual place by default
+  --uncompressed        Save without gzip, which adds .gz to the file name
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst backup get 1761552000
+  $ holst backup get 1761552000 roadmap.ydoc --uncompressed
+
+LEARN MORE
+  Exit codes: `holst help exit-codes`.

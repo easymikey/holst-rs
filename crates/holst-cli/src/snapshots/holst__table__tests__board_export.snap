@@ -1,0 +1,29 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Save the whole board as a board file, gzip by default; `holst b import` writes it back.
+The file goes to ~/Downloads/<name>-<id>.ydoc.gz unless a file is given; it only reads the board.
+
+USAGE
+  holst board export <board> [<file>] [flags]
+
+ARGUMENTS
+  board   The board to save
+  file    A new file, never overwritten and named as given, - for stdout; ~/Downloads/<name>-<id>.ydoc.gz by default
+
+FLAGS
+  -w, --workspace ws   Where names are looked up and new things go: a workspace id or part of its name; all of yours by default
+      --uncompressed   Save without gzip; the default file name then has no .gz
+      --object-list    Also save the objects beside the file, one per line: <file>.objects.jsonl
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst b export "Roadmap"
+  $ holst b export "Roadmap" roadmap.ydoc --uncompressed --object-list
+
+LEARN MORE
+  How a board is given: `holst b -h`.
+  Exit codes: `holst help exit-codes`.

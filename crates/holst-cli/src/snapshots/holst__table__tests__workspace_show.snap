@@ -1,0 +1,28 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Show a workspace and the parts asked for; the parts are fetched at the same time.
+Without --with it prints the name, id and member count.
+
+USAGE
+  holst workspace show [<ws>] [flags]
+
+ARGUMENTS
+  ws   The workspace: id or part of its name; your only workspace if left out
+
+FLAGS
+  --with parts   Also show these parts, comma separated: members, activity, plan, plans, sso, domains, created; none by default
+  --user user    Only this member in members, activity and created: a user id; everyone by default
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst ws show
+  $ holst ws show easy --with members,activity
+  $ holst ws show easy --with created --user 1a2b3c4d
+
+LEARN MORE
+  How a workspace is given: `holst ws -h`.
+  Exit codes: `holst help exit-codes`.

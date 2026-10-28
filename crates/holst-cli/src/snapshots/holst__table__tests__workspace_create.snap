@@ -1,0 +1,26 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+Create a workspace with this name.
+It prints the new workspace with its id.
+
+USAGE
+  holst workspace create <name> [flags]
+
+ARGUMENTS
+  name   The name of the new workspace
+
+FLAGS
+  -n, --dry-run   Show what would change; change nothing
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst ws create "Design team"
+  $ holst ws create "Design team" -n
+
+LEARN MORE
+  How a workspace is given: `holst ws -h`.
+  Exit codes: `holst help exit-codes`.

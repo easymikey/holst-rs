@@ -1,0 +1,46 @@
+---
+source: crates/holst-cli/src/help.rs
+expression: shown
+---
+Work with Holst boards from the command line.
+
+USAGE
+  holst <command> <subcommand> [flags]
+
+CORE COMMANDS
+  board:       Work with boards and folders (alias: b)
+  object:      Work with the objects on a board (alias: o)
+  search:      Find boards by name and text on boards
+  workspace:   Work with workspaces (alias: ws)
+
+MORE COMMANDS
+  auth:        Log in, log out and check the saved login
+  backup:      List, download and restore board backups
+  comment:     Read and write comment threads
+  template:    Work with board templates (alias: tpl)
+
+LOCAL COMMANDS
+  storage:     See and clean what holst keeps on this machine
+
+ADVANCED COMMANDS
+  api:         Send any request to the Holst API
+
+FLAGS
+  -o, --output format   Output format: text, json or pretty; text by default
+  -v, --verbose         Print request logs on stderr
+      --base-url url    The Holst server; https://app.holst.so by default
+      --home dir        Keep the saved login in this directory, not in the keychain
+      --no-cache        Read boards from the server, not from the board cache
+  -V, --version         Show the version
+  -h, --help            Show help for a command
+
+EXAMPLES
+  $ holst auth login
+  $ holst b ls -w easy
+  $ holst b snap "Roadmap" --frame "Q3"
+  $ holst o add sticker "Roadmap" "Ask design" -c yellow4
+  $ holst search "retro"
+
+LEARN MORE
+  Use `holst <command> <subcommand> -h` for more information about a command.
+  Learn about exit codes using `holst help exit-codes`.

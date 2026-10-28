@@ -1,0 +1,23 @@
+---
+source: crates/holst-cli/src/table.rs
+expression: help_of(line)
+---
+List your workspaces, with their organization, or with --joinable the ones you can join.
+Prints one line per workspace with its id; give the id or part of its name in the next command.
+
+USAGE
+  holst workspace ls [flags]
+
+FLAGS
+  --joinable   List the workspaces you can join, not your own
+
+INHERITED FLAGS
+  --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
+
+EXAMPLES
+  $ holst ws ls
+  $ holst ws ls --joinable
+
+LEARN MORE
+  How a workspace is given: `holst ws -h`.
+  Exit codes: `holst help exit-codes`.
