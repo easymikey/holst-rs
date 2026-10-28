@@ -1,0 +1,14 @@
+[profile.default]
+fail-fast = true
+failure-output = "immediate"
+
+[profile.ci]
+inherits = "default"
+fail-fast = false
+failure-output = "immediate-final"
+success-output = "never"
+status-level = "fail"
+final-status-level = "fail"
+
+[profile.ci.junit]
+path = "junit.xml"

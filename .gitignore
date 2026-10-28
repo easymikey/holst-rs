@@ -1,0 +1,31 @@
+# os
+.DS_Store
+Thumbs.db
+
+# build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# env
+/.env
+.env.local
+.env.*.local
+
+# editors
+/.zed
+/.vscode/
+/.idea/
+*.swp
+
+# other
+.bin/
+/coverage
+# agent work trees
+/.unlazy/
+/.claude/
+
+# holst
+*.holst
+__pycache__/
+*.profraw

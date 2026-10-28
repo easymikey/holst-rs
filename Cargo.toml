@@ -1,0 +1,176 @@
+[workspace]
+resolver = "3"
+members = ["crates/holst-core", "crates/holst-cli", "crates/holst-mcp", "crates/holst-macros", "crates/holst-fake", "crates/holst-scenarios"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+# Project policy: the target toolchain is Rust 1.96; new std features come from it.
+rust-version = "1.96"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+# Iterator adaptors std lacks: sorted, partition_map, join, chunk_by.
+itertools = "0.15"
+holst-macros = { path = "crates/holst-macros" }
+# Endpoint attributes; syn, quote and proc-macro2 are already built for derives.
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", default-features = false, features = ["full", "parsing", "printing", "proc-macro"] }
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Each crate enables only the tokio features it uses.
+tokio = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+clap = { version = "4", features = ["derive"] }
+# Lock-free reads of the MCP server's workspaces and client.
+arc-swap = "1.9"
+# Secrets (token, cookies, code, password): no value in Debug, memory zeroed.
+secrecy = "0.10"
+# Zeroed input buffer of a secret in the login form.
+zeroize = "1"
+# Enum <-> string through derive.
+strum = { version = "0.28", features = ["derive"] }
+# Newtypes without boilerplate.
+derive_more = { version = "2", features = ["into", "display", "as_ref"] }
+# Backspace by grapheme in the login form.
+unicode-segmentation = "1"
+# Board content: Yjs CRDT documents over the hud WebSocket.
+yrs = "0.28"
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+tungstenite = { version = "0.30", default-features = false }
+# Reading and writing the board socket stream; already built through tokio-tungstenite.
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+# Board snapshots as PNG with the images in them: no SVGZ, no memory-mapped fonts.
+resvg = { version = "0.48", default-features = false, features = ["text", "system-fonts", "raster-images"] }
+# Tests only: pseudo-terminal runs in cargo test.
+expectrl = "0.9"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+# No panic = "abort": with unwinding a panic in one MCP tool kills only its request.
+
+# Run once per process or per request: smaller code over speed.
+[profile.release.package.clap_builder]
+opt-level = "s"
+
+[profile.release.package.rmcp]
+opt-level = "s"
+
+[profile.release.package.schemars]
+opt-level = "s"
+
+[workspace.lints.rust]
+warnings = { level = "deny", priority = -1 }
+absolute_paths_not_starting_with_crate = "deny"
+non_ascii_idents = "deny"
+redundant_imports = "deny"
+trivial_casts = "deny"
+trivial_numeric_casts = "deny"
+unit_bindings = "deny"
+unreachable_pub = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+unstable_features = "deny"
+unused_lifetimes = "deny"
+unused_qualifications = "deny"
+unused_unsafe = "deny"
+# Strict set: on for every crate.
+missing_debug_implementations = "deny"
+rust_2018_idioms = { level = "deny", priority = -1 }
+rust_2024_compatibility = { level = "deny", priority = -1 }
+
+[workspace.lints.clippy]
+# Strict set: on for every crate.
+wildcard_enum_match_arm = "deny"
+option_if_let_else = "deny"
+needless_pass_by_ref_mut = "deny"
+shadow_unrelated = "deny"
+same_name_method = "deny"
+unused_result_ok = "deny"
+let_underscore_must_use = "deny"
+let_underscore_untyped = "deny"
+as_conversions = "deny"
+cognitive_complexity = "deny"
+# groups
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+style = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+
+# panics & aborts
+exit = "deny"
+expect_used = "deny"
+get_unwrap = "deny"
+indexing_slicing = "deny"
+panic = "deny"
+panic_in_result_fn = "deny"
+string_slice = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+unwrap_used = "deny"
+
+# debug leftovers
+dbg_macro = "deny"
+print_stderr = "deny"
+print_stdout = "deny"
+
+# numeric casts
+cast_possible_truncation = "deny"
+cast_possible_wrap = "deny"
+cast_precision_loss = "deny"
+cast_sign_loss = "deny"
+
+# ownership & cloning
+clone_on_copy = "deny"
+clone_on_ref_ptr = "deny"
+implicit_clone = "deny"
+mem_forget = "deny"
+redundant_clone = "deny"
+
+# readability & control flow
+explicit_into_iter_loop = "deny"
+explicit_iter_loop = "deny"
+if_not_else = "deny"
+match_same_arms = "deny"
+match_wildcard_for_single_variants = "deny"
+needless_continue = "deny"
+wildcard_imports = "deny"
+
+# type & API pitfalls
+empty_drop = "deny"
+empty_structs_with_brackets = "deny"
+fallible_impl_from = "deny"
+pathbuf_init_then_push = "deny"
+rc_buffer = "deny"
+rc_mutex = "deny"
+rest_pat_in_fully_bound_structs = "deny"
+
+# unsafe
+undocumented_unsafe_blocks = "deny"
+
+# public API docs
+missing_errors_doc = "deny"
+missing_panics_doc = "deny"
+
+# escape hatches
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+multiple_crate_versions = "allow"
+
+[workspace.metadata.bin]
+just = { version = "1.51.0", locked = true }
+cargo-hack = { version = "0.6.45", locked = true }
+cargo-llvm-cov = { version = "0.9.0", locked = true }
+cargo-nextest = { version = "0.9.128", locked = true }
+cargo-shear = { version = "1.6.6", locked = true }
+hyperfine = { version = "2.0.0", locked = true }
