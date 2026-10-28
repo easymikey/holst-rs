@@ -1,9 +1,11 @@
-//! A board's cover, the same on both surfaces.
+//! A board's cover and note, the same on both surfaces.
 
 use holst_core::fake::{FixtureObject, Right};
 use holst_scenarios::{
     CoverEdit,
     Given,
+    Look,
+    NoteEdit,
     ScenarioError,
     Surface,
     board_of,
@@ -134,6 +136,88 @@ async fn a_board_you_cannot_edit_keeps_its_cover(
         .await?;
     then(&by_cover).signalled_as(surface.permission_denied());
     cover_of(&holst, "Plan").is_unset();
+    assert_eq!(note_of(&holst, "Plan").as_deref(), Some("Old"));
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_markdown_note_is_set_and_read_back(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_a_plan().note("Plan", "Old").start().await?;
+    let on = holst.on(surface);
+    let observation = on
+        .edit_board_note(
+            "Plan",
+            NoteEdit::Text {
+                text: "# Agenda\n\n- [x] call\n- [ ] write",
+                format: "markdown",
+            },
+        )
+        .await?;
+    then(&observation).succeeded();
+    assert_eq!(
+        note_of(&holst, "Plan").as_deref(),
+        Some("Agenda\ncall\nwrite")
+    );
+    let shown = on
+        .show_boards(&["Plan"], &Look::new().with("note").note_format("markdown"))
+        .await?;
+    then(&shown).shows_part("note", "# Agenda\\n\\n- [x] call\\n- [ ] write");
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_template_note_is_set_and_read_back(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_a_plan().note("Plan", "Old").start().await?;
+    let on = holst.on(surface);
+    let observation = on
+        .edit_board_note("Plan", NoteEdit::Template("annotation"))
+        .await?;
+    then(&observation).succeeded();
+    let shown = on.show_boards(&["Plan"], &Look::new().with("note")).await?;
+    then(&shown).shows_part("note", "Board annotation");
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_note_dry_run_changes_nothing(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_a_plan().note("Plan", "Old").start().await?;
+    let observation = holst
+        .on(surface)
+        .dry_running()
+        .edit_board_note("Plan", NoteEdit::Template("todo"))
+        .await?;
+    then(&observation).succeeded();
+    assert_eq!(note_of(&holst, "Plan").as_deref(), Some("Old"));
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_note_of_a_board_you_cannot_edit_is_refused(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = given()
+        .saved_login()
+        .workspace("Team")
+        .board_as("Plan", "Team", Right::Viewer)
+        .note("Plan", "Old")
+        .start()
+        .await?;
+    let observation = holst
+        .on(surface)
+        .edit_board_note("Plan", NoteEdit::Template("todo"))
+        .await?;
+    then(&observation).signalled_as(surface.permission_denied());
     assert_eq!(note_of(&holst, "Plan").as_deref(), Some("Old"));
     Ok(())
 }

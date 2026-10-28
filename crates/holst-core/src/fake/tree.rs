@@ -3,16 +3,24 @@
 mod recent;
 
 use serde_json::{Map, Value, json};
-use yrs::{Doc, GetString as _, Text as _, Transact as _};
+use yrs::{Doc, Text as _, Transact as _};
 
 use self::recent::Recents;
-use crate::fake::{
-    Fake,
-    FixtureError,
-    FixtureObject,
-    board::{Board, add_objects, copied_document, fixture_document, objects_json},
-    fixture::unknown,
-    http::{Parts, Request, Response, found, refused},
+use crate::{
+    domain::{
+        board::{note_root, note_text},
+        change::fill_blocks,
+        id_source::SequentialIds,
+        rich_text::{TextFormat, lines},
+    },
+    fake::{
+        Fake,
+        FixtureError,
+        FixtureObject,
+        board::{Board, add_objects, copied_document, fixture_document, objects_json},
+        fixture::unknown,
+        http::{Parts, Request, Response, found, refused},
+    },
 };
 
 /// A board or a folder as a test sees it; the parent is a folder's name.
@@ -111,9 +119,6 @@ impl Default for Storage {
         }
     }
 }
-
-/// The root of a board document that holds its note (unverified shape).
-const NOTE: &str = "board-note";
 
 const TRASHED_AT: &str = "2026-10-01T00:00:00Z";
 
@@ -814,13 +819,13 @@ impl Tree {
     }
 }
 
-/// Replaces the note of the document with `text`.
+/// Replaces the note of the document with `text`, a paragraph to a line.
 fn write_note(document: &Doc, text: &str) {
-    let note = document.get_or_insert_text(NOTE);
+    let note = note_root(document);
     let mut txn = document.transact_mut();
     let held = note.len(&txn);
     note.remove_range(&mut txn, 0, held);
-    note.insert(&mut txn, 0, text);
+    fill_blocks(&mut txn, &note, &lines(text), &SequentialIds::new("note"));
 }
 
 impl Fake {
@@ -853,7 +858,6 @@ impl Fake {
             .id_of(board)
             .and_then(|id| state.tree.board(&id))?
             .document;
-        let note = document.get_or_insert_text(NOTE);
-        Some(note.get_string(&document.transact()))
+        Some(note_text(&document, TextFormat::Plain))
     }
 }

@@ -19,7 +19,39 @@ pub enum CoverEdit<'a> {
     Reset,
 }
 
+/// The note `board edit` is asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoteEdit<'a> {
+    /// A text, written as `format`: plain or markdown.
+    Text { text: &'a str, format: &'a str },
+    /// One of the built-in notes, by name.
+    Template(&'a str),
+}
+
 impl On<'_> {
+    /// Edits the note of the board `board`.
+    ///
+    /// # Errors
+    /// As [`ScenarioError`].
+    pub async fn edit_board_note(
+        &self,
+        board: &str,
+        note: NoteEdit<'_>,
+    ) -> Result<Observation, ScenarioError> {
+        let options = match note {
+            NoteEdit::Text { text, format } => {
+                vec![("note", text), ("note_format", format)]
+            }
+            NoteEdit::Template(name) => vec![("note_template", name)],
+        };
+        let words = Words {
+            positional: vec![("board", board)],
+            options,
+            ..Words::default()
+        };
+        self.change("edit", words).await
+    }
+
     /// Edits the board `board`, setting its cover when one is given.
     ///
     /// # Errors

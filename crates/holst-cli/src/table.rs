@@ -867,8 +867,15 @@ mod tests {
     }
 
     #[test]
-    fn a_board_edit_takes_no_note() {
-        assert!(matches("holst b edit Plan --note a").is_err());
+    fn a_board_edit_takes_a_note_with_its_format() {
+        assert_eq!(
+            parsed("holst b edit Plan --note a --note-format markdown"),
+            Some(json!({ "board": "Plan", "note": "a", "note_format": "markdown" }))
+        );
+        assert_eq!(
+            parsed("holst b edit Plan --note-template todo"),
+            Some(json!({ "board": "Plan", "note_template": "todo" }))
+        );
     }
 
     #[test]

@@ -213,6 +213,13 @@ impl McpServer {
                     .as_ref()
                     .and_then(|sharing| serde_json::to_string(sharing).ok()),
             ),
+            (
+                "note",
+                board
+                    .note
+                    .as_ref()
+                    .and_then(|note| serde_json::to_string(note).ok()),
+            ),
         ]
         .into_iter()
         .filter_map(|(name, text)| text.map(|text| format!("{name}: {text}\n")))

@@ -13,6 +13,7 @@ mod locked;
 mod many;
 mod markdown;
 mod new_kinds;
+mod note;
 mod objects;
 mod remove;
 mod reparent;

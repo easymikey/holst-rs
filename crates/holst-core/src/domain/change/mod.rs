@@ -6,6 +6,7 @@ mod check;
 mod journal;
 pub mod receipt;
 mod rich;
+#[cfg(any(test, feature = "fake"))] pub(crate) use rich::fill_blocks;
 mod stacking;
 #[cfg(test)] pub(crate) mod tests;
 pub mod value;

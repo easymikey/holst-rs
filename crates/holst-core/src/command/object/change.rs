@@ -104,14 +104,14 @@ pub(super) fn named(
 }
 
 /// What a write sends to a board and how it is let go.
-pub(super) struct Sending<'a> {
-    pub(super) board: &'a str,
-    pub(super) change: &'a BoardChange,
-    pub(super) release: ReleaseCheck,
+pub(in crate::command) struct Sending<'a> {
+    pub(in crate::command) board: &'a str,
+    pub(in crate::command) change: &'a BoardChange,
+    pub(in crate::command) release: ReleaseCheck,
 }
 
 /// Writes the change as the logged-in account.
-pub(super) async fn send<I: WriteInterpreter + ?Sized>(
+pub(in crate::command) async fn send<I: WriteInterpreter + ?Sized>(
     client: &Client,
     cache: Option<&dyn CachePort>,
     interpreter: &I,

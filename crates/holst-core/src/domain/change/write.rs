@@ -50,6 +50,7 @@ use crate::{
                 FrameEdit,
                 ImageUpload,
                 NewObject,
+                NoteContent,
                 ObjectChangeKind,
                 ObjectPatch,
                 Reparent,
@@ -125,6 +126,7 @@ pub(super) struct DocumentRoots {
     pub(super) users: MapRef,
     pub(super) journal: MapRef,
     pub(super) tags: MapRef,
+    pub(super) note: XmlTextRef,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -175,6 +177,10 @@ pub(super) fn write_change(
     checked: CheckedChange<'_>,
 ) -> Result<Vec<ChangedObject>> {
     match checked {
+        CheckedChange::Note(content) => {
+            note(transaction, &scope.roots.note, content, scope.context.ids);
+            Ok(Vec::new())
+        }
         CheckedChange::AddAll(entries) => add_all(transaction, scope, &entries),
         CheckedChange::EditAll(edits) => edit_all(transaction, scope, &edits),
         CheckedChange::RemoveAll(ids) => remove_all(transaction, scope, &ids),
@@ -190,6 +196,18 @@ pub(super) fn write_change(
         CheckedChange::Unlock(ids) => unlock(transaction, scope, &ids),
         CheckedChange::Arrange(ids, how) => arrange(transaction, scope, &ids, how),
     }
+}
+
+/// The note emptied and written again as `content`.
+fn note(
+    transaction: &mut TransactionMut<'_>,
+    root: &XmlTextRef,
+    content: &NoteContent,
+    ids: &dyn IdSource,
+) {
+    let held = root.len(transaction);
+    root.remove_range(transaction, 0, held);
+    fill_blocks(transaction, root, &content.parsed().blocks, ids);
 }
 
 /// An object just written: what it touches and the fields it holds.

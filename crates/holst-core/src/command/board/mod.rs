@@ -15,8 +15,17 @@ use serde::{Deserialize, Serialize};
 use crate::{
     command::{
         board::rights::{OnOff, Right},
-        table::{Command, CommandArgs, Confirmation, EnumArgument, NewFile, OneOrMany},
+        table::{
+            Command,
+            CommandArgs,
+            Confirmation,
+            EnumArgument,
+            NewFile,
+            OneOrMany,
+            TextOrFile,
+        },
     },
+    domain::rich_text::{TextFormat, template::NoteTemplate},
     effect::board_write::WriteMode,
 };
 
@@ -221,9 +230,15 @@ pub struct ShowArgs {
     pub workspace: Option<String>,
     #[argument(
         value_name = "parts",
-        help = "Also show these parts, comma separated: members, rights, sharing; none by default"
+        help = "Also show these parts, comma separated: members, rights, sharing, note; none by default"
     )]
     pub with: Vec<ShowPart>,
+    #[argument(
+        value_name = "format",
+        help = "How the note of --with note is shown: plain, or markdown; plain by default",
+        tool_doc = "plain or markdown."
+    )]
+    pub note_format: Option<TextFormat>,
     #[serde(flatten)]
     #[argument(flatten)]
     pub selection: AreaArgs,
@@ -240,6 +255,7 @@ pub enum ShowPart {
     Members,
     Rights,
     Sharing,
+    Note,
 }
 
 impl EnumArgument for ShowPart {}
@@ -488,11 +504,14 @@ pub struct ImportArgs {
     verb = "edit",
     risk = Write,
     block = Change,
-    about = "Change a board's cover",
-    help = "Change a board's cover; --cover is needed.\n\
-            --cover reset returns to the automatic preview, drawn by holst.",
+    about = "Change a board's cover or note",
+    help = "Change a board's cover or note; one of --cover, --note and --note-template is needed.\n\
+            --cover reset returns to the automatic preview, drawn by holst.\n\
+            --note replaces the note, --note-format markdown reads headings, lists, checkboxes, links and marks from it; --note-template starts it from a built-in note.",
     example = "holst b edit \"Roadmap\" --cover cover.png",
-    example = "holst b edit \"Roadmap\" --cover reset -n"
+    example = "holst b edit \"Roadmap\" --cover reset -n",
+    example = "holst b edit \"Roadmap\" --note @note.md --note-format markdown",
+    example = "holst b edit \"Roadmap\" --note-template agenda"
 )]
 pub struct EditArgs {
     #[argument(positional, help = "The board to change")]
@@ -507,10 +526,30 @@ pub struct EditArgs {
         value_name = "file",
         help = "The cover: a picture file, or reset for the automatic preview"
     )]
-    pub cover: String,
+    pub cover: Option<String>,
+    #[argument(
+        value_name = "text",
+        help = "The new note, replacing the old: text, @file to read a file, - for stdin",
+        tool_doc = "The new note."
+    )]
+    pub note: Option<TextOrFile>,
+    #[argument(
+        value_name = "format",
+        help = "How the note is written: plain, or markdown; plain by default",
+        tool_doc = "plain or markdown."
+    )]
+    pub note_format: Option<TextFormat>,
+    #[argument(
+        value_name = "name",
+        help = "Start the note from a built-in one: todo, agenda, summary, workshop, annotation",
+        tool_doc = "todo, agenda, summary, workshop or annotation."
+    )]
+    pub note_template: Option<NoteTemplate>,
     #[argument(letter = 'n', help = "Show what would change; change nothing")]
     pub dry_run: WriteMode,
 }
+
+impl EnumArgument for NoteTemplate {}
 
 #[derive(Debug, Deserialize, CommandArgs)]
 #[holst_command(

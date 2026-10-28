@@ -28,7 +28,7 @@ const LINK_COLOR: f64 = 1_671_390.0;
 
 /// `blocks` as the children of `root`, one `wrapper` each; a nested block is a
 /// `wrapper` after its parent's element inside the parent's `wrapper`.
-pub(super) fn fill_blocks(
+pub(crate) fn fill_blocks(
     transaction: &mut TransactionMut<'_>,
     root: &XmlTextRef,
     blocks: &[Block],

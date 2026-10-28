@@ -40,8 +40,8 @@ use crate::{reply::change, server::McpServer};
 
 const INSTRUCTIONS_MAX: usize = 660;
 
-/// The measured 11 104 bytes (wave 2 options and `auth login`) plus a tenth.
-const TOOLS_MAX: usize = 12_220;
+/// The measured 12 320 bytes (wave 2 options, note, `auth login`) plus a tenth.
+const TOOLS_MAX: usize = 13_560;
 
 const PAGE_MAX: usize = 13_000;
 

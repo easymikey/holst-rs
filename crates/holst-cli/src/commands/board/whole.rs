@@ -220,8 +220,16 @@ fn board_text(board: &BoardBrief) -> String {
     .into_iter()
     .filter_map(|(name, text)| text.map(|text| format!("\n  {name}: {text}")))
     .collect::<String>();
+    let note = board.note.as_deref().map_or_else(String::new, |note| {
+        let lines = note.lines().collect::<Vec<_>>().join("\n    ");
+        if lines.is_empty() {
+            "\n  note: (empty)".to_owned()
+        } else {
+            format!("\n  note:\n    {lines}")
+        }
+    });
     printable(&format!(
-        "{}  {}\n  {}\n  {} · {place}{trash}{area}\n  {objects}{parts}",
+        "{}  {}\n  {}\n  {} · {place}{trash}{area}\n  {objects}{parts}{note}",
         board.name,
         board.id,
         board.link,
@@ -410,6 +418,7 @@ mod tests {
             }]),
             rights: None,
             sharing: None,
+            note: None,
         };
         assert_eq!(
             board_text(&board),
@@ -434,6 +443,7 @@ mod tests {
             members: None,
             rights: None,
             sharing: None,
+            note: None,
         };
         assert!(board_text(&board).ends_with("\n  1 object"));
         let exported = Exported {

@@ -4,6 +4,8 @@
 pub(crate) const OBJECTS: &str = "objects";
 pub(crate) const DOCUMENTS: &str = "documents";
 pub(crate) const USERS_IDS: &str = "usersIds";
+// PROTOCOL: the board's note is a slate-yjs `Y.XmlText` root (bundle 241680).
+pub(crate) const BOARD_NOTE: &str = "board-note";
 
 // PROTOCOL: the room `<board>$comments`.
 pub(crate) const COMMENTS_STORE: &str = "commentsStore";

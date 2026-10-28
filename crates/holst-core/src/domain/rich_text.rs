@@ -14,6 +14,7 @@ use pulldown_cmark::{
 use serde::Deserialize;
 
 pub(crate) mod read;
+pub mod template;
 
 use crate::domain::board::ObjectKind;
 
@@ -187,6 +188,25 @@ impl Editor {
             .into_iter()
             .filter_map(|(feature, kept)| kept.then_some(feature))
             .collect(),
+        )
+    }
+}
+
+impl Editor {
+    /// The editor of a board's note: every kind of block and inline code (web
+    /// bundle: `availableBlocks: "all"` 234199, `withInlineCode` 241683).
+    #[must_use]
+    pub fn note() -> Self {
+        Self(
+            [
+                Feature::Headings,
+                Feature::Checkboxes,
+                Feature::Nesting,
+                Feature::CodeBlocks,
+                Feature::Dividers,
+                Feature::InlineCode,
+            ]
+            .into(),
         )
     }
 }
@@ -610,7 +630,7 @@ fn push(runs: &mut Vec<Run>, open: &[Span], text: &str, code: bool) {
 }
 
 /// A paragraph for each line of `text`.
-fn lines(text: &str) -> Vec<Block> {
+pub(crate) fn lines(text: &str) -> Vec<Block> {
     text.lines()
         .map(|line| Block::plain(line.trim_end()))
         .collect()

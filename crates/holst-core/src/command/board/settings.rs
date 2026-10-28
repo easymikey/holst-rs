@@ -1,7 +1,8 @@
-//! `board edit`: a board's cover.
+//! `board edit`: a board's cover and note.
 
 use std::path::PathBuf;
 
+use futures_util::future::OptionFuture;
 use serde::Serialize;
 use serde_json::json;
 
@@ -17,13 +18,16 @@ use crate::{
         change::ChangeReport,
         lookup,
         node,
+        object::change::{Sending, send},
         table::{not_value, parse},
     },
     domain::{
         board::EditRight,
+        change::value::{BoardChange, NoteContent},
         image::{ImageFormat, image_format},
+        rich_text::{kept_note, template::NoteTemplate},
     },
-    effect::{board_write::WriteMode, settings::CacheSettings},
+    effect::{board_write::WriteMode, confirmation::ALWAYS, settings::CacheSettings},
     error::{Error, Result, board_change::BoardChangeError},
     remote::{
         api::{
@@ -31,7 +35,7 @@ use crate::{
             files::{UploadBind, UploadOptions},
         },
         client::Client,
-        socket::write::{connector, open_with},
+        socket::write::{WriteOver, connector, open_with},
     },
     storage::{cache::Cache, file},
 };
@@ -55,13 +59,27 @@ pub enum CoverEdit {
     Auto { uploaded: Option<String> },
 }
 
+/// What a board's note became, or in a dry run would become.
+#[derive(Debug, Serialize)]
+pub struct NoteEdit {
+    /// The built-in note it started from.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template: Option<NoteTemplate>,
+    /// What of the markdown stayed text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
+}
+
 /// A board's changed settings.
 #[derive(Debug, Serialize)]
 pub struct Edited {
     pub board: String,
     /// Where the board opens.
     pub link: String,
-    pub cover: CoverEdit,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cover: Option<CoverEdit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<NoteEdit>,
     #[serde(flatten)]
     /// Nothing is changed or uploaded in a dry run.
     pub outcome: ChangeReport<()>,
@@ -71,17 +89,28 @@ impl Edited {
     /// What the edit did, or would do, in a line.
     #[must_use]
     pub fn phrase(&self) -> String {
-        let cover = match &self.cover {
-            CoverEdit::File { file, bytes, .. } => {
-                format!("the cover to {} ({bytes} bytes)", file.display())
-            }
-            CoverEdit::Auto { .. } => "the cover to the automatic preview".to_owned(),
-        };
         let verb = match self.outcome {
             ChangeReport::Sent => "set",
             ChangeReport::DryRun { .. } | ChangeReport::Held { .. } => "would set",
         };
-        format!("{verb} {cover}")
+        let cover = self.cover.as_ref().map(|cover| match cover {
+            CoverEdit::File { file, bytes, .. } => {
+                format!("the cover to {} ({bytes} bytes)", file.display())
+            }
+            CoverEdit::Auto { .. } => "the cover to the automatic preview".to_owned(),
+        });
+        let note = self.note.as_ref().map(|note| {
+            let from = note.template.map_or_else(String::new, |template| {
+                format!(" to the {template} template")
+            });
+            let kept = note
+                .warning
+                .as_ref()
+                .map_or_else(String::new, |warning| format!(" ({warning})"));
+            format!("the note{from}{kept}")
+        });
+        let parts: Vec<String> = cover.into_iter().chain(note).collect();
+        format!("{verb} {}", parts.join(" and "))
     }
 }
 
@@ -95,11 +124,11 @@ enum Cover {
     Auto,
 }
 
-/// Changes the cover of a board. The cover is a picture file, or `reset` for
-/// the automatic preview, which is drawn here and uploaded.
+/// Changes the cover and the note of a board. The cover is a picture file, or
+/// `reset` for the automatic preview, which is drawn here and uploaded.
 ///
 /// # Errors
-/// No cover, a cover file that is unreadable or no picture, a
+/// Nothing to change, a cover file that is unreadable or no picture, a
 /// board that is not found or read only, and errors of the requests.
 pub async fn edit(
     client: &Client,
@@ -120,7 +149,15 @@ async fn edited(
     loading: Loading<'_>,
     args: &EditArgs,
 ) -> Result<Edited> {
-    let cover = cover_of(&args.cover)?;
+    let cover = args.cover.as_deref().map(cover_of).transpose()?;
+    let (cover, note) = match (cover, note_of(args)?) {
+        (None, None) => Err(not_value(
+            EDIT,
+            "cover",
+            "given, or --note or --note-template",
+        )),
+        given => Ok(given),
+    }?;
     let id = lookup::board_id(client, &args.board, args.workspace.as_deref()).await?;
     let sending = args.dry_run == WriteMode::Send;
     // The right is read once, before anything is sent.
@@ -128,18 +165,84 @@ async fn edited(
         editable(client, loading, &id).await?;
     }
     // Uploads first: a refused upload leaves the board as it was.
-    let cover = cover_uploaded(client, loading, &id, cover, sending).await?;
-    cover_fixed(client, &id, &cover).await?;
+    let cover = OptionFuture::from(
+        cover.map(|cover| cover_uploaded(client, loading, &id, cover, sending)),
+    )
+    .await
+    .transpose()?;
+    let note = note_written(client, loading, &id, note, sending).await?;
+    if let Some(cover) = &cover {
+        cover_fixed(client, &id, cover).await?;
+    }
     Ok(Edited {
         link: client.board_link(&id),
         board: id,
         cover,
+        note,
         outcome: if sending {
             ChangeReport::Sent
         } else {
             ChangeReport::DryRun { request: () }
         },
     })
+}
+
+/// The note as given, checked before anything is sent.
+fn note_of(args: &EditArgs) -> Result<Option<NoteContent>> {
+    match (&args.note, args.note_template, args.note_format) {
+        (Some(_), Some(_), _) => {
+            Err(not_value(EDIT, "note-template", "left out with --note"))
+        }
+        (None, Some(_), Some(_)) => Err(not_value(
+            EDIT,
+            "note-format",
+            "left out with --note-template",
+        )),
+        (None, None, Some(_)) => {
+            Err(not_value(EDIT, "note-format", "given with --note"))
+        }
+        (Some(text), None, format) => Ok(Some(NoteContent::Text {
+            text: text.0.clone(),
+            format: format.unwrap_or_default(),
+        })),
+        (None, Some(template), None) => Ok(Some(NoteContent::Template(template))),
+        (None, None, None) => Ok(None),
+    }
+}
+
+/// Replaces the note; a dry run writes nothing.
+async fn note_written(
+    client: &Client,
+    loading: Loading<'_>,
+    id: &str,
+    note: Option<NoteContent>,
+    sending: bool,
+) -> Result<Option<NoteEdit>> {
+    OptionFuture::from(note.map(|content| async move {
+        let edit = NoteEdit {
+            template: match &content {
+                NoteContent::Template(template) => Some(*template),
+                NoteContent::Text { .. } => None,
+            },
+            warning: kept_note(&content.parsed().kept),
+        };
+        if sending {
+            send(
+                client,
+                loading.cache,
+                &WriteOver::sender(loading.connector),
+                Sending {
+                    board: id,
+                    change: &BoardChange::Note(content),
+                    release: ALWAYS,
+                },
+            )
+            .await?;
+        }
+        Ok::<_, Error>(edit)
+    }))
+    .await
+    .transpose()
 }
 
 fn cover_of(given: &str) -> Result<Cover> {
@@ -554,6 +657,71 @@ mod tests {
             "no error about PNG"
         );
         assert_eq!(writes(&fake).len(), 0);
+        Ok(())
+    }
+
+    #[rstest::rstest]
+    #[case::nothing(
+        json!({ "board": BOARD }),
+        "cover of `board edit` must be given, or --note or --note-template"
+    )]
+    #[case::both(
+        json!({ "board": BOARD, "note": "a", "note_template": "todo" }),
+        "note-template of `board edit` must be left out with --note"
+    )]
+    #[case::format_of_template(
+        json!({ "board": BOARD, "note_template": "todo", "note_format": "markdown" }),
+        "note-format of `board edit` must be left out with --note-template"
+    )]
+    #[case::format_alone(
+        json!({ "board": BOARD, "note_format": "markdown" }),
+        "note-format of `board edit` must be given with --note"
+    )]
+    #[tokio::test]
+    async fn a_note_asked_wrongly_is_refused_before_any_request(
+        #[case] given: Value,
+        #[case] message: &str,
+    ) -> Result<()> {
+        let (fake, done) = run(&given, [], &editable()).await?;
+        assert_eq!(
+            done.err().map(|error| error.to_string()).as_deref(),
+            Some(message)
+        );
+        assert!(fake.requests().is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_dry_run_note_reports_what_stayed_text_and_writes_nothing() -> Result<()>
+    {
+        let (fake, done) = run(
+            &json!({ "board": BOARD, "note": "> quoted", "note_format": "markdown", "dry_run": true }),
+            [channel()],
+            &editable(),
+        )
+        .await?;
+        let edited = done?;
+        assert_eq!(
+            (edited.phrase(), edited.cover.is_none()),
+            ("would set the note (kept as text: quote)".to_owned(), true)
+        );
+        assert!(
+            fake.requests()
+                .iter()
+                .all(|request| request.method.as_str() == "GET")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_template_dry_run_names_the_template() -> Result<()> {
+        let (_, done) = run(
+            &json!({ "board": BOARD, "note_template": "agenda", "dry_run": true }),
+            [channel()],
+            &editable(),
+        )
+        .await?;
+        assert_eq!(done?.phrase(), "would set the note to the agenda template");
         Ok(())
     }
 }

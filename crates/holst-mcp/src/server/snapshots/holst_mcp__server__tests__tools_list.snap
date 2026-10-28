@@ -158,6 +158,14 @@ expression: "*holst.tools"
         "max_side": {
           "type": "integer"
         },
+        "note_format": {
+          "description": "plain or markdown.",
+          "enum": [
+            "plain",
+            "markdown"
+          ],
+          "type": "string"
+        },
         "object": {
           "items": {
             "type": "string"
@@ -202,7 +210,8 @@ expression: "*holst.tools"
             "enum": [
               "members",
               "rights",
-              "sharing"
+              "sharing",
+              "note"
             ],
             "type": "string"
           },
@@ -307,6 +316,29 @@ expression: "*holst.tools"
           "type": "boolean"
         },
         "name": {
+          "type": "string"
+        },
+        "note": {
+          "description": "The new note.",
+          "type": "string"
+        },
+        "note_format": {
+          "description": "plain or markdown.",
+          "enum": [
+            "plain",
+            "markdown"
+          ],
+          "type": "string"
+        },
+        "note_template": {
+          "description": "todo, agenda, summary, workshop or annotation.",
+          "enum": [
+            "todo",
+            "agenda",
+            "summary",
+            "workshop",
+            "annotation"
+          ],
           "type": "string"
         },
         "object": {

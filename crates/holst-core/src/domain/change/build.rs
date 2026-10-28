@@ -15,7 +15,7 @@ use yrs::{
 
 use crate::{
     domain::{
-        board::any,
+        board::{any, note_root},
         change::{
             check::check,
             journal,
@@ -63,6 +63,7 @@ pub fn build_with(
         users: document.get_or_insert_map(USERS_IDS),
         journal: document.get_or_insert_map(journal::JOURNAL),
         tags: document.get_or_insert_map(TAGS_STORE),
+        note: note_root(document),
     };
     let write = |mut transaction: TransactionMut<'_>| -> Result<ChangeUpdate> {
         let states = states(&transaction, &roots.objects);

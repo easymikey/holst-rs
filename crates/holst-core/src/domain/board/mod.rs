@@ -25,6 +25,7 @@ use yrs::{
     Transact as _,
     Xml as _,
     XmlTextRef,
+    branch::{Branch, BranchPtr},
     types::{ToJson as _, text::YChange},
 };
 
@@ -32,7 +33,7 @@ use crate::{
     domain::{
         area::scene::Scene,
         geometry::{Point, Size},
-        rich_text::{Mark, read::markdown},
+        rich_text::{Mark, TextFormat, read::markdown},
     },
     error::{Error, Result, input::InputError},
     protocol::document,
@@ -828,6 +829,24 @@ pub fn markdown_text(document: &Doc, object: &Object) -> Option<String> {
             .filter(|label| !label.is_empty())
             .collect();
         Some(labels.join("\n\n"))
+    }
+}
+
+/// The board's note root, typed as the editor's slate-yjs `Y.XmlText`.
+pub(crate) fn note_root(document: &Doc) -> XmlTextRef {
+    let root = document.get_or_insert_text(document::BOARD_NOTE);
+    let branch: &Branch = root.as_ref();
+    XmlTextRef::from(BranchPtr::from(branch))
+}
+
+/// The board's note as text or as markdown.
+#[must_use]
+pub fn note_text(document: &Doc, format: TextFormat) -> String {
+    let root = note_root(document);
+    let txn = document.transact();
+    match format {
+        TextFormat::Plain => plain(&txn, &root),
+        TextFormat::Markdown => markdown(&Value::Array(slate_children(&txn, &root))),
     }
 }
 

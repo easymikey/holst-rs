@@ -51,7 +51,7 @@ pub use crate::{
         PictureFormat,
     },
     read::Search,
-    settings::{CoverEdit, cover_of, note_of},
+    settings::{CoverEdit, NoteEdit, cover_of, note_of},
     sharing::{
         RightsChange,
         id_of,

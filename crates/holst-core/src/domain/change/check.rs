@@ -20,6 +20,7 @@ use crate::{
                 BoardChange,
                 LinkTo,
                 NewObject,
+                NoteContent,
                 ObjectEdit,
                 ObjectPatch,
                 Pasted,
@@ -105,6 +106,7 @@ impl CheckedChange<'_> {
                 })
                 .flatten()
                 .collect(),
+            CheckedChange::Note(content) => content.parsed().kept,
             CheckedChange::RemoveAll(_)
             | CheckedChange::Paste(_)
             | CheckedChange::Group(_)
@@ -132,6 +134,7 @@ fn written_text(new: &NewObject) -> Option<(ObjectKind, &str)> {
 }
 
 pub(crate) enum CheckedChange<'a> {
+    Note(&'a NoteContent),
     AddAll(Vec<(NewObject, Placement)>),
     EditAll(Vec<CheckedEdit<'a>>),
     RemoveAll(Vec<String>),
@@ -223,7 +226,8 @@ pub(crate) fn check<'a>(
             on_board(edit.patch.at.as_ref(), edit.patch.size.as_ref())
         }),
         BoardChange::Paste(pasted) => pasted_on_board(pasted),
-        BoardChange::RemoveAll(_)
+        BoardChange::Note(_)
+        | BoardChange::RemoveAll(_)
         | BoardChange::Group(_)
         | BoardChange::Ungroup(_)
         | BoardChange::Lock(_)
@@ -233,6 +237,7 @@ pub(crate) fn check<'a>(
         | BoardChange::Arrange { .. } => Ok(()),
     }?;
     match change {
+        BoardChange::Note(content) => Ok(CheckedChange::Note(content)),
         BoardChange::AddAll(entries) => entries
             .iter()
             .try_fold(Vec::new(), |mut done, entry| {

@@ -22,7 +22,16 @@ use crate::{
         id_source::IdSource,
         palette::Color,
         response::LinkPreview,
-        rich_text::{Kept, Mark, TextFormat},
+        rich_text::{
+            Editor,
+            Kept,
+            Mark,
+            Parsed,
+            TextFormat,
+            lines,
+            parse,
+            template::NoteTemplate,
+        },
         text::joined,
         time::Timestamp,
     },
@@ -444,9 +453,42 @@ pub struct NewEntry {
     pub format: TextFormat,
 }
 
+/// What a board's note becomes: a text, or one of the built-in notes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NoteContent {
+    Text { text: String, format: TextFormat },
+    Template(NoteTemplate),
+}
+
+impl NoteContent {
+    /// The blocks the note is written as, and what of the markdown stays text.
+    #[must_use]
+    pub fn parsed(&self) -> Parsed {
+        match self {
+            NoteContent::Text {
+                text,
+                format: TextFormat::Markdown,
+            } => parse(text, &Editor::note()),
+            NoteContent::Text {
+                text,
+                format: TextFormat::Plain,
+            } => Parsed {
+                blocks: lines(text),
+                kept: BTreeSet::new(),
+            },
+            NoteContent::Template(template) => Parsed {
+                blocks: template.blocks(),
+                kept: BTreeSet::new(),
+            },
+        }
+    }
+}
+
 /// One change to a board.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BoardChange {
+    /// The board's note, replaced.
+    Note(NoteContent),
     /// New objects in one write, in order.
     AddAll(Vec<NewEntry>),
     EditAll(Vec<ObjectEdit>),

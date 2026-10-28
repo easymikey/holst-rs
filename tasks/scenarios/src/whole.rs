@@ -22,6 +22,7 @@ use crate::{
 #[derive(Debug, Clone, Default)]
 pub struct Look<'a> {
     with: Option<&'a str>,
+    note_format: Option<&'a str>,
     frame: Option<&'a str>,
     rectangle: Option<&'a str>,
     objects: Vec<&'a str>,
@@ -44,6 +45,15 @@ impl<'a> Look<'a> {
     pub fn with(self, parts: &'a str) -> Self {
         Self {
             with: Some(parts),
+            ..self
+        }
+    }
+
+    /// Shows the note, with `--with note`, as `format`: plain or markdown.
+    #[must_use]
+    pub fn note_format(self, format: &'a str) -> Self {
+        Self {
+            note_format: Some(format),
             ..self
         }
     }
@@ -137,6 +147,7 @@ impl<'a> Look<'a> {
         let words = Words {
             options: [
                 ("with", self.with),
+                ("note_format", self.note_format),
                 ("frame", self.frame),
                 ("rectangle", self.rectangle),
                 ("padding", padding.as_deref()),
@@ -217,6 +228,7 @@ struct ShownOnCli {
     members: Option<Value>,
     rights: Option<Value>,
     sharing: Option<Value>,
+    note: Option<Value>,
 }
 
 impl From<ShownOnCli> for ShownBoard {
@@ -234,6 +246,7 @@ impl From<ShownOnCli> for ShownBoard {
                 ("members", board.members),
                 ("rights", board.rights),
                 ("sharing", board.sharing),
+                ("note", board.note),
             ]
             .into_iter()
             .filter_map(|(name, part)| {
@@ -272,7 +285,7 @@ fn board_of_block(block: &str) -> Option<ShownBoard> {
         place: place.to_owned(),
         count,
         kinds,
-        parts: ["members", "rights", "sharing"]
+        parts: ["members", "rights", "sharing", "note"]
             .into_iter()
             .filter_map(|part| {
                 lines.iter().find_map(|line| {

@@ -162,12 +162,11 @@ impl McpServer {
         }
     }
 
-    /// Sets the cover; the cover file is checked as an upload is.
+    /// Sets the cover and the note; the cover file is checked as an upload is.
     async fn edit_board(&self, args: &EditArgs) -> CallToolResult {
-        let cover = if args.cover == "reset" {
-            Ok(())
-        } else {
-            LocalFile::check(Path::new(&args.cover), &self.secrets)
+        let cover = match args.cover.as_deref() {
+            None | Some("reset") => Ok(()),
+            Some(file) => LocalFile::check(Path::new(file), &self.secrets),
         };
         let call = async |client: HandedClient| {
             cover?;

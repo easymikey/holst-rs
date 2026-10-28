@@ -17,7 +17,7 @@ use crate::{
     },
     domain::{
         area::{Area, listed_area, scene::Scene},
-        board::{EditRight, Object, ObjectKind},
+        board::{EditRight, Object, ObjectKind, note_text, objects},
         geometry::Rectangle,
         id::{self, BoardId, ObjectId},
         node::{NodeBrief, Parent},
@@ -79,6 +79,8 @@ pub struct BoardBrief {
     pub rights: Option<Vec<Holder>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sharing: Option<Sharing>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// A user and the right they hold on a board.
@@ -257,20 +259,11 @@ async fn board(
         loading.cache_use,
     )
     .await?;
-    let (channel, (right, index)) = try_join(
+    let (channel, (right, objects, held_note)) = try_join(
         api::channel::get(client, &id),
-        board_load::index(
-            RemoteBoard {
-                client,
-                connector: loading.connector,
-                board: &id,
-            },
-            loading.cache,
-            loading.cache_use,
-        ),
+        read_board(client, loading, &id, args),
     )
     .await?;
-    let objects = index.objects();
     let area = chosen_area(area, id::object_in(reference), &objects)?;
     let listed = listed_area(&objects, &area, padding)?;
     let target = listed.target.map(|object| object.id.as_str());
@@ -318,6 +311,7 @@ async fn board(
         objects: by_kind,
         members: members?,
         rights: rights?,
+        note: held_note,
         sharing: args
             .with
             .contains(&ShowPart::Sharing)
@@ -325,6 +319,31 @@ async fn board(
             .flatten(),
         id,
     })
+}
+
+/// The right, the objects and, when asked for, the note of a board: the note
+/// is in the document, so the whole board loads for it.
+async fn read_board(
+    client: &Client,
+    loading: Loading<'_>,
+    id: &str,
+    args: &ShowArgs,
+) -> Result<(EditRight, Vec<Object>, Option<String>)> {
+    let link = RemoteBoard {
+        client,
+        connector: loading.connector,
+        board: id,
+    };
+    if args.with.contains(&ShowPart::Note) {
+        let (loaded, _) =
+            board_load::load(link, loading.cache, loading.cache_use).await?;
+        let note = note_text(&loaded.document, args.note_format.unwrap_or_default());
+        Ok((loaded.right, objects(&loaded.document), Some(note)))
+    } else {
+        let (right, index) =
+            board_load::index(link, loading.cache, loading.cache_use).await?;
+        Ok((right, index.objects(), None))
+    }
 }
 
 /// A board by id, link or name; offline, only by id or link.
@@ -497,6 +516,7 @@ mod tests {
                 "board",
                 "workspace",
                 "with",
+                "note_format",
                 "rectangle",
                 "frame",
                 "object",

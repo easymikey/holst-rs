@@ -1,6 +1,6 @@
 ---
 source: crates/holst-cli/src/table.rs
-expression: help_of(line)
+expression: "help_of(&format!(\"{line} -h\"))"
 ---
 Work with boards and folders.
 
@@ -19,7 +19,7 @@ LOOK
   import:      Create a board from a board file, or write it into one
 
 CHANGE
-  edit:        Change a board's cover
+  edit:        Change a board's cover or note
   rename:      Rename a board or a folder
   mv:          Move a board or a folder into a folder or /
   cp:          Copy a board
