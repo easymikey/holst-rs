@@ -38,7 +38,7 @@ holst board ls -w easy                        # boards and folders as a tree
 holst board show "Plans Q4"
 holst board snap "Roadmap" --frame "Q3"       # PNG in ~/Downloads, prints the path
 holst object add sticker "Roadmap" "Idea" --at 100,100 -c yellow4
-holst search "consent"
+holst search "release"
 ```
 
 Every write accepts `-n, --dry-run`. Irreversible actions need `-y, --yes`; without it nothing is sent and the exit code is 77.
@@ -46,7 +46,7 @@ Every write accepts `-n, --dry-run`. Irreversible actions need `-y, --yes`; with
 ## MCP
 
 ```sh
-claude mcp add holst-rs -s user -- ~/.cargo/bin/holst-mcp
+claude mcp add holst -s user -- holst-mcp
 ```
 
 ## Help
