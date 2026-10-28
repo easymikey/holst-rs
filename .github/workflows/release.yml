@@ -196,7 +196,17 @@ jobs:
             echo "::notice::CARGO_REGISTRY_TOKEN is not set, skipping the crates.io publish"
             exit 0
           fi
-          cargo publish --workspace --locked
+          pkgid=$(cargo pkgid -p holst-cli)
+          version="${pkgid##*[#@]}"
+          for name in holst-macros holst-core holst-cli holst-mcp; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -A "holst-release-workflow" \
+              "https://crates.io/api/v1/crates/$name/$version")
+            case "$code" in
+              200) echo "$name $version is already on crates.io; skipping" ;;
+              404) cargo publish -p "$name" --locked ;;
+              *) echo "::error::crates.io answered $code for $name $version"; exit 1 ;;
+            esac
+          done
 
   homebrew:
     needs: release

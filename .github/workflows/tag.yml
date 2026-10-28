@@ -2,12 +2,14 @@ name: Tag
 
 # After a green CI on main: if the Cargo version has no tag yet, tag that commit
 # and start the release. A tag pushed with GITHUB_TOKEN starts no workflow, so the
-# release is started by hand through its workflow_dispatch.
+# release is started by hand through its workflow_dispatch. A tag without a release
+# (a failed run) starts the release again.
 on:
   workflow_run:
     workflows: [CI]
     types: [completed]
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,16 +17,16 @@ permissions:
 
 jobs:
   tag:
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
-      SHA: ${{ github.event.workflow_run.head_sha }}
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: tag a new version and start its release
         shell: bash
@@ -32,7 +34,12 @@ jobs:
           pkgid=$(cargo pkgid -p holst-cli)
           tag="v${pkgid##*[#@]}"
           if gh api "repos/$REPO/git/ref/tags/$tag" >/dev/null 2>&1; then
-            echo "$tag exists; nothing to release"
+            if gh release view "$tag" --repo "$REPO" >/dev/null 2>&1; then
+              echo "$tag is released; nothing to do"
+            else
+              echo "$tag has no release; starting it again"
+              gh workflow run release.yml --repo "$REPO" -f tag="$tag"
+            fi
             exit 0
           fi
           gh api "repos/$REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$SHA" >/dev/null
