@@ -277,14 +277,14 @@ mod tests {
         let folder = Changed {
             node: ChangedNode {
                 kind: Some("folder"),
-                link: Some("https://holst/workspace/w1/folder/b1".to_owned()),
+                link: Some("https://holst/w/w1/f/b1".to_owned()),
                 ..board.node
             },
             ..board
         };
         assert_eq!(
             changed_text(&folder),
-            "created folder Plan\nhttps://holst/workspace/w1/folder/b1"
+            "created folder Plan\nhttps://holst/w/w1/f/b1"
         );
     }
 

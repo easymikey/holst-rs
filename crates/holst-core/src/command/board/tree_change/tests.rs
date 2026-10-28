@@ -92,7 +92,7 @@ async fn a_folder_is_created_and_has_a_link_in_its_workspace() -> Result<()> {
     let changed = create(&client, &args).await?;
     let link = changed.node.link.unwrap_or_default();
     assert!(
-        link.ends_with(&format!("/workspace/{}/folder/{}", uuid(1), uuid(99))),
+        link.ends_with(&format!("/w/{}/f/{}", uuid(1), uuid(99))),
         "{link}"
     );
     Ok(())

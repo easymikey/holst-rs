@@ -101,7 +101,7 @@ impl BaseUrl {
     /// let base: BaseUrl = "https://holst.example".parse()?;
     /// assert_eq!(
     ///     base.folder_link("w1", "f1"),
-    ///     "https://holst.example/workspace/w1/folder/f1"
+    ///     "https://holst.example/w/w1/f/f1"
     /// );
     /// # Ok::<(), holst_core::Error>(())
     /// ```
@@ -109,7 +109,7 @@ impl BaseUrl {
     pub fn folder_link(&self, workspace: &str, id: &str) -> String {
         let base = &self.raw;
         format!(
-            "{base}/workspace/{}/folder/{}",
+            "{base}/w/{}/f/{}",
             percent_encode(workspace),
             percent_encode(id)
         )
