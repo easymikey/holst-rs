@@ -20,6 +20,8 @@ path = "src/main.rs"
 itertools.workspace = true
 holst-core = { path = "../holst-core", version = "0.1.0", features = ["logging"] }
 thiserror.workspace = true
+# The typed code or password of `setup` and the tokens of the test sessions.
+secrecy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 # tokio::fs reads the file for upload; spawn_blocking writes a backup and
@@ -35,6 +37,9 @@ yrs.workspace = true
 # Already built through reqwest: PNG pictures go to the model as base64.
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
 
+# Echo off while a code or password is typed; already built for the CLI.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 [dev-dependencies]
 rstest = { version = "0.28", default-features = false }
 insta = { version = "1.49", features = ["json"] }
@@ -42,8 +47,6 @@ insta = { version = "1.49", features = ["json"] }
 reqwest.workspace = true
 # Labels of the login state machine in tests.
 strum.workspace = true
-# Tokens of the test sessions.
-secrecy.workspace = true
 # The fake Holst server for the board loads of the server tests.
 holst-core = { path = "../holst-core", features = ["fake"] }
 # The client that asks the built binary for its tools.

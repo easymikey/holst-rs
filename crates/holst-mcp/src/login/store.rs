@@ -31,6 +31,24 @@ impl SystemBackend {
     pub(crate) const fn new(settings: Settings) -> Self {
         Self { settings }
     }
+
+    /// Store a new login in the first store that takes it (`holst-mcp setup`).
+    pub(crate) fn save_new(
+        &self,
+        session: &Session,
+    ) -> holst_core::Result<LoginSaveReport> {
+        self.settings.location.save(session)
+    }
+
+    /// A client with no login, to log in with.
+    pub(crate) fn anonymous(&self) -> holst_core::Result<Client> {
+        holst_core::command::login::connect(
+            None,
+            self.settings.base_url.clone(),
+            holst_core::system::clock::SystemClock,
+            holst_core::system::id::RandomIds,
+        )
+    }
 }
 
 impl Backend for SystemBackend {

@@ -1281,6 +1281,7 @@ dependencies = [
  "holst-core",
  "insta",
  "itertools",
+ "libc",
  "reqwest",
  "rmcp",
  "rstest",

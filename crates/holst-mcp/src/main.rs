@@ -6,9 +6,13 @@ mod login;
 mod memory;
 mod reply;
 mod server;
+mod setup;
 mod tools;
 
-use std::{io, io::Write as _, process::ExitCode};
+use std::{
+    io::{self, IsTerminal as _, Write as _},
+    process::ExitCode,
+};
 
 use rmcp::{ServiceExt as _, service::ServerInitializeError, transport::stdio};
 
@@ -17,9 +21,18 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Debug, thiserror::Error)]
 enum StartError {
     #[error(
-        "unknown argument {arg}: the server speaks MCP on stdio and takes no arguments"
+        "unknown argument {arg}: the server speaks MCP on stdio; its only command is setup"
     )]
     UnknownArg { arg: String },
+
+    #[error(
+        "stdin is not a terminal: run holst-mcp setup in a terminal \
+         (in a container: docker exec -it <container> holst-mcp setup)"
+    )]
+    NotTerminal,
+
+    #[error("the login did not finish")]
+    Setup(#[source] setup::SetupError),
 
     #[error("could not write to stdout")]
     Stdout(#[source] io::Error),
@@ -37,9 +50,14 @@ enum StartError {
 #[tokio::main]
 async fn main() -> ExitCode {
     // Else `--version` would wait for the protocol; stdout is still free.
-    let outcome = match std::env::args().nth(1) {
-        Some(arg) => print_usage(&arg),
-        None => Box::pin(serve()).await,
+    let mut args = std::env::args().skip(1);
+    let outcome = match (args.next(), args.next()) {
+        (Some(command), None) if command == "setup" => Box::pin(log_in()).await,
+        (Some(command), Some(extra)) if command == "setup" => {
+            Err(StartError::UnknownArg { arg: extra })
+        }
+        (Some(arg), _) => print_usage(&arg),
+        (None, _) => Box::pin(serve()).await,
     };
     outcome.map_or_else(|err| report(&err), |()| ExitCode::SUCCESS)
 }
@@ -55,7 +73,7 @@ fn usage(arg: &str) -> Result<String, StartError> {
         "--version" | "-V" => Ok(format!("holst-mcp {VERSION}")),
         "--help" | "-h" => Ok(format!(
             "holst-mcp {VERSION} — the Holst MCP server on stdio.\n\
-             Log in: run `holst-mcp setup` in a terminal\n\
+             Log in: holst-mcp setup (in a terminal; in a container: docker exec -it <container> holst-mcp setup)\n\
              Connect: claude mcp add holst-rs -- holst-mcp\n\
              Environment: HOLST_HOME, HOLST_BASE_URL, HOLST_LOG, HOLST_MCP_RAW_WRITE=1"
         )),
@@ -97,6 +115,27 @@ async fn serve() -> Result<(), StartError> {
         .map_err(StartError::Stopped)
 }
 
+/// `holst-mcp setup`: the login the server uses, typed in a terminal.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "main.rs is the one place that reads the environment"
+)]
+async fn log_in() -> Result<(), StartError> {
+    io::stdin()
+        .is_terminal()
+        .then_some(())
+        .ok_or(StartError::NotTerminal)?;
+    let (settings, _) =
+        holst_core::effect::settings::Settings::checked(|name| std::env::var_os(name))
+            .map_err(StartError::Settings)?;
+    init_tracing(&settings.log);
+    let backend = login::store::SystemBackend::new(settings);
+    let mut talk = setup::Talk::new(io::stdin().lock(), io::stderr().lock(), true);
+    setup::run(&backend, &mut talk)
+        .await
+        .map_err(StartError::Setup)
+}
+
 fn warn_cache_off(err: &holst_core::Error) {
     tracing::warn!(error = %reply::chained(err), "the board cache is off");
 }
@@ -126,10 +165,11 @@ mod tests {
     fn usage_knows_version_and_help_and_rejects_the_rest() {
         assert_eq!(usage("-V").ok(), Some(format!("holst-mcp {VERSION}")));
         assert!(usage("--help").is_ok_and(|text| text.contains("HOLST_MCP_RAW_WRITE")));
+        assert!(usage("--help").is_ok_and(|text| text.contains("holst-mcp setup")));
         assert_eq!(
             usage("--port").err().map(|err| err.to_string()).as_deref(),
             Some(
-                "unknown argument --port: the server speaks MCP on stdio and takes no arguments"
+                "unknown argument --port: the server speaks MCP on stdio; its only command is setup"
             )
         );
     }
