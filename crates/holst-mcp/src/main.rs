@@ -64,14 +64,12 @@ enum StartError {
 async fn main() -> ExitCode {
     // Else `--version` would wait for the protocol; stdout is still free.
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let outcome = match args.split_first() {
-        Some((command, flags)) if command == "setup" => match setup_steps(flags) {
-            Ok(steps) => Box::pin(set_up(steps)).await,
-            Err(err) => Err(err),
-        },
-        Some((flag, rest)) if flag == "--http" => {
-            Box::pin(serve_http(rest.to_vec())).await
-        }
+    let outcome = match args
+        .split_first()
+        .map(|(first, rest)| (first.as_str(), rest))
+    {
+        Some(("setup", flags)) => Box::pin(set_up(flags)).await,
+        Some(("--http", rest)) => Box::pin(serve_http(rest.to_vec())).await,
         Some((arg, _)) => print_usage(arg),
         None => Box::pin(serve()).await,
     };
@@ -201,7 +199,8 @@ fn start_server() -> Result<server::McpServer, StartError> {
     clippy::disallowed_methods,
     reason = "main.rs is the one place that reads the environment"
 )]
-async fn set_up(steps: setup::Steps) -> Result<(), StartError> {
+async fn set_up(flags: &[String]) -> Result<(), StartError> {
+    let steps = setup_steps(flags)?;
     io::stdin()
         .is_terminal()
         .then_some(())
