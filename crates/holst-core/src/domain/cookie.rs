@@ -103,9 +103,14 @@ impl FromStr for CookieJar {
 /// What a `Set-Cookie` does to the jar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CookieChange {
-    Set { name: String, value: String },
+    Set {
+        name: String,
+        value: String,
+    },
     /// The cookie ended: empty value, `Max-Age` <= 0 or `Expires` in the past.
-    Cleared { name: String },
+    Cleared {
+        name: String,
+    },
 }
 
 impl CookieChange {

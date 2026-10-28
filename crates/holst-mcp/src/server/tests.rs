@@ -731,7 +731,7 @@ async fn auth_status_counts_the_boards_and_folders_of_each_workspace() {
     assert!(!failed, "{text}");
     assert!(text.starts_with("logged in: Ann @"), "{text}");
     assert!(text.contains("easy @"), "{text}");
-    assert!(text.contains("· 1 boards, 1 folders\n"), "{text}");
+    assert!(text.contains("· 1 board, 1 folder\n"), "{text}");
 }
 
 #[tokio::test]

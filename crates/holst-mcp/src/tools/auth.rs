@@ -115,10 +115,18 @@ impl McpServer {
         );
         match &each.counts {
             Ok(counts) => format!(
-                "{name} · {} boards, {} folders\n",
-                counts.boards, counts.folders
+                "{name} · {}, {}\n",
+                plural(counts.boards, "board"),
+                plural(counts.folders, "folder")
             ),
             Err(err) => format!("{name} · not counted: {}\n", err.on(Surface::Mcp)),
         }
+    }
+}
+
+fn plural(count: usize, noun: &str) -> String {
+    match count {
+        1 => format!("1 {noun}"),
+        many => format!("{many} {noun}s"),
     }
 }

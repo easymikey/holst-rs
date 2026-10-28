@@ -40,7 +40,6 @@ pub(crate) fn config() -> Config {
     }
 }
 
-
 fn uuid() -> impl Strategy<Value = String> {
     let lower = any::<u128>()
         .prop_map(|bits| uuid::Uuid::from_u128(bits).hyphenated().to_string());
