@@ -39,7 +39,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libclang-dev
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         id: spellcheck-cache
         with:
           path: ~/.cargo/bin/cargo-spellcheck
