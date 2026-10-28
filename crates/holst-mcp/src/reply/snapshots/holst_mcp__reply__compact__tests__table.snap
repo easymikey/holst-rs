@@ -1,0 +1,7 @@
+---
+source: crates/holst-mcp/src/reply/compact.rs
+expression: "render(input, &State::default(), false)"
+---
+id|name|role
+@1|A\|B|
+|C|editor

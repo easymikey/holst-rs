@@ -1,0 +1,8 @@
+---
+source: crates/holst-mcp/src/reply/change.rs
+expression: "written(&dry, &alias)"
+---
+would create text @t1 L/t1
+also: would change 1 frame, would change 2 sticker, would remove 1 arrow
+warning: the board is in the trash; board_write action=restore board=@b1 brings it back
+dry run, nothing sent

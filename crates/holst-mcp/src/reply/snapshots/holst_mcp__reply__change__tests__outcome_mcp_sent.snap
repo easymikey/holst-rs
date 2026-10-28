@@ -1,0 +1,7 @@
+---
+source: crates/holst-mcp/src/tools/objects.rs
+expression: "written(&sent, &alias)"
+---
+created text @t1 L/t1
+also: changed 1 frame, changed 2 sticker, removed 1 arrow
+update 42 accepted by the server

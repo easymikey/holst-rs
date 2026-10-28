@@ -1,0 +1,851 @@
+---
+source: crates/holst-mcp/src/server/tests.rs
+expression: "*holst.tools"
+---
+[
+  {
+    "name": "auth",
+    "description": "The account and its workspaces. Start here.",
+    "inputSchema": {
+      "properties": {
+        "with": {
+          "items": {
+            "enum": [
+              "tokens"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "workspace",
+    "description": "Workspaces.",
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "enum": [
+            "ls",
+            "show",
+            "create",
+            "rename",
+            "log"
+          ],
+          "type": "string"
+        },
+        "confirm": {
+          "type": "boolean"
+        },
+        "dry_run": {
+          "type": "boolean"
+        },
+        "joinable": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "query": {
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number"
+            ]
+          },
+          "type": "object"
+        },
+        "user": {
+          "description": "created: whose.",
+          "type": "string"
+        },
+        "with": {
+          "items": {
+            "enum": [
+              "members",
+              "activity",
+              "plan",
+              "plans",
+              "sso",
+              "domains",
+              "created"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workspace": {
+          "description": "Id, @N or part of its name; the only one by default.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "board",
+    "description": "Boards and folders: list, show, picture.",
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "enum": [
+            "ls",
+            "show",
+            "snap"
+          ],
+          "type": "string"
+        },
+        "board": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ]
+        },
+        "cursor": {
+          "type": "string"
+        },
+        "embed": {
+          "type": "boolean"
+        },
+        "folder": {
+          "type": "string"
+        },
+        "format": {
+          "enum": [
+            "png",
+            "svg"
+          ],
+          "type": "string"
+        },
+        "frame": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "max_side": {
+          "type": "integer"
+        },
+        "object": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "offline": {
+          "type": "boolean"
+        },
+        "output": {
+          "enum": [
+            "text",
+            "json"
+          ],
+          "type": "string"
+        },
+        "padding": {
+          "type": "number"
+        },
+        "rectangle": {
+          "type": "string"
+        },
+        "refresh": {
+          "type": "boolean"
+        },
+        "scale": {
+          "type": "number"
+        },
+        "view": {
+          "enum": [
+            "tree",
+            "trash",
+            "both",
+            "favorites",
+            "recent",
+            "sidebar"
+          ],
+          "type": "string"
+        },
+        "with": {
+          "items": {
+            "enum": [
+              "members",
+              "rights",
+              "sharing"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "board_write",
+    "description": "Change boards and folders and who may use them; save to files.",
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "enum": [
+            "create",
+            "save",
+            "export",
+            "import",
+            "edit",
+            "rename",
+            "mv",
+            "cp",
+            "rm",
+            "restore",
+            "favorite",
+            "unfavorite",
+            "touch",
+            "leave",
+            "grant",
+            "revoke",
+            "share",
+            "transfer"
+          ],
+          "type": "string"
+        },
+        "board": {
+          "type": "string"
+        },
+        "confirm": {
+          "type": "boolean"
+        },
+        "copy": {
+          "type": "string"
+        },
+        "cover": {
+          "type": "string"
+        },
+        "delete": {
+          "type": "string"
+        },
+        "dir": {
+          "type": "string"
+        },
+        "dry_run": {
+          "type": "boolean"
+        },
+        "file": {
+          "description": "export: a new file; import: a board file.",
+          "type": "string"
+        },
+        "folder": {
+          "type": "string"
+        },
+        "frame": {
+          "type": "string"
+        },
+        "index": {
+          "type": "integer"
+        },
+        "into": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "board",
+            "folder"
+          ],
+          "type": "string"
+        },
+        "link": {
+          "type": "string"
+        },
+        "lock": {
+          "type": "string"
+        },
+        "members": {
+          "type": "string"
+        },
+        "merge": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "object": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "object_list": {
+          "type": "boolean"
+        },
+        "offline": {
+          "type": "boolean"
+        },
+        "padding": {
+          "type": "number"
+        },
+        "permanently": {
+          "type": "boolean"
+        },
+        "rectangle": {
+          "type": "string"
+        },
+        "refresh": {
+          "type": "boolean"
+        },
+        "right": {
+          "type": "string"
+        },
+        "rights": {
+          "type": "boolean"
+        },
+        "template": {
+          "enum": [
+            "on",
+            "off"
+          ],
+          "type": "string"
+        },
+        "tools": {
+          "type": "string"
+        },
+        "uncompressed": {
+          "type": "boolean"
+        },
+        "user": {
+          "type": "string"
+        },
+        "with_boards": {
+          "type": "boolean"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "comment",
+    "description": "Comment threads of a board: list, start, reply, resolve, delete, mark read.",
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "enum": [
+            "ls",
+            "add",
+            "reply",
+            "resolve",
+            "rm",
+            "read"
+          ],
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "board": {
+          "type": "string"
+        },
+        "confirm": {
+          "type": "boolean"
+        },
+        "dry_run": {
+          "type": "boolean"
+        },
+        "object": {
+          "type": "string"
+        },
+        "reopen": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        },
+        "thread": {
+          "description": "E.g. weVza.",
+          "type": "string"
+        },
+        "time": {
+          "description": "ISO 8601; now by default.",
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "board"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "template",
+    "description": "Board templates.",
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "enum": [
+            "ls",
+            "show",
+            "create",
+            "edit",
+            "rm"
+          ],
+          "type": "string"
+        },
+        "board": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "confirm": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        },
+        "dry_run": {
+          "type": "boolean"
+        },
+        "for": {
+          "enum": [
+            "me",
+            "workspace"
+          ],
+          "type": "string"
+        },
+        "frame": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "object": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "template": {
+          "type": "string"
+        },
+        "view": {
+          "enum": [
+            "mine",
+            "workspace",
+            "standard",
+            "categories"
+          ],
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "backup",
+    "description": "A board's automatic backups: list, download, restore.",
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "enum": [
+            "ls",
+            "get",
+            "restore"
+          ],
+          "type": "string"
+        },
+        "board": {
+          "type": "string"
+        },
+        "confirm": {
+          "type": "boolean"
+        },
+        "dry_run": {
+          "type": "boolean"
+        },
+        "file": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "uncompressed": {
+          "type": "boolean"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "object",
+    "description": "Objects on a board or a part of it: kind, place, size, color, text.",
+    "inputSchema": {
+      "properties": {
+        "board": {
+          "type": "string"
+        },
+        "contains": {
+          "description": "Text holds this.",
+          "type": "string"
+        },
+        "frame": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "object": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "offline": {
+          "type": "boolean"
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "output": {
+          "enum": [
+            "text",
+            "json"
+          ],
+          "type": "string"
+        },
+        "padding": {
+          "type": "number"
+        },
+        "rectangle": {
+          "type": "string"
+        },
+        "refresh": {
+          "type": "boolean"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "board"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "object_write",
+    "description": "Objects on a board: add or edit many in one call, copy, remove, download.",
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "enum": [
+            "add",
+            "edit",
+            "cp",
+            "rm",
+            "get"
+          ],
+          "type": "string"
+        },
+        "at": {
+          "description": "x,y; add, cp: a free corner by default; edit: unchanged.",
+          "type": "string"
+        },
+        "board": {
+          "type": "string"
+        },
+        "color": {
+          "description": "E.g. yellow4.",
+          "type": "string"
+        },
+        "confirm": {
+          "type": "boolean"
+        },
+        "dir": {
+          "type": "string"
+        },
+        "dry_run": {
+          "type": "boolean"
+        },
+        "file": {
+          "description": "Where to save it.",
+          "type": "string"
+        },
+        "frame": {
+          "type": "string"
+        },
+        "from": {
+          "description": "Or #N: an earlier item.",
+          "type": "string"
+        },
+        "items": {
+          "description": "Many at once, each with the arguments of one; at most 100 per call.",
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "description": "Sticker by default.",
+          "enum": [
+            "sticker",
+            "text",
+            "shape",
+            "frame",
+            "arrow",
+            "link",
+            "image",
+            "file"
+          ],
+          "type": "string"
+        },
+        "no_embed": {
+          "description": "Plain card.",
+          "type": "boolean"
+        },
+        "object": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "order": {
+          "enum": [
+            "front",
+            "back"
+          ],
+          "type": "string"
+        },
+        "path": {
+          "description": "Local file.",
+          "type": "string"
+        },
+        "refresh": {
+          "type": "boolean"
+        },
+        "shape": {
+          "enum": [
+            "square",
+            "rounded_rectangle",
+            "ellipse",
+            "triangle",
+            "diamond"
+          ],
+          "type": "string"
+        },
+        "size": {
+          "description": "WxH.",
+          "type": "string"
+        },
+        "tag": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "text": {
+          "description": "Lines are paragraphs.",
+          "type": "string"
+        },
+        "to": {
+          "description": "Arrow end; cp: the target board.",
+          "type": "string"
+        },
+        "url": {
+          "description": "Page address.",
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "board"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "search",
+    "description": "Boards and folders by name, text on boards, or both; best first.",
+    "inputSchema": {
+      "properties": {
+        "board": {
+          "type": "string"
+        },
+        "kind": {
+          "description": "names: board, folder or any; board_text: an object kind.",
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "mode": {
+          "enum": [
+            "names",
+            "board_text",
+            "both"
+          ],
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "trash": {
+          "description": "names: in the trash.",
+          "type": "boolean"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "api",
+    "description": "Any Holst API endpoint; only GET unless a human set HOLST_MCP_RAW_WRITE=1.",
+    "inputSchema": {
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "confirm": {
+          "type": "boolean"
+        },
+        "dry_run": {
+          "type": "boolean"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ],
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "query": {
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number"
+            ]
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "method",
+        "path"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  }
+]

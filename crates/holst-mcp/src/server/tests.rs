@@ -1,0 +1,971 @@
+#![expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
+
+use std::{
+    future::Future as _,
+    sync::Arc,
+    task::{Context, Poll, Waker},
+    time::Duration,
+};
+
+use holst_core::{
+    Error as E,
+    domain::session::Session,
+    effect::{clock::Clock, settings::CacheSettings},
+    error,
+    storage::session_store::SessionStoreKind,
+};
+use rmcp::ServerHandler;
+
+use crate::{
+    error::{Error, Result},
+    login::{
+        HandedClient,
+        fake::{CannedResponse, Manual, Memory, Script, session, session_with},
+        machine::{RECHECK, REVOKED_RECHECK},
+        store::Backend,
+    },
+    server::McpServer,
+};
+
+impl McpServer {
+    /// A server whose network is the given replies, in order.
+    pub(crate) fn scripted(
+        replies: impl IntoIterator<Item = CannedResponse>,
+    ) -> (Self, Arc<Script>) {
+        let network = Script::new(replies);
+        let memory = Memory::new(Some(session("a")), Arc::clone(&network));
+        let holst = Self::with(Arc::new(memory), Arc::new(Manual::default()));
+        (holst, network)
+    }
+}
+
+fn server(memory: Memory) -> (McpServer, Arc<Memory>, Arc<Manual>) {
+    let memory = Arc::new(memory);
+    let clock = Arc::new(Manual::default());
+    let backend: Arc<dyn Backend> = Arc::<Memory>::clone(&memory);
+    let ticks: Arc<dyn Clock> = Arc::<Manual>::clone(&clock);
+    (McpServer::with(backend, ticks), memory, clock)
+}
+
+fn with_a(
+    replies: impl IntoIterator<Item = CannedResponse>,
+) -> (McpServer, Arc<Memory>, Arc<Manual>) {
+    server(Memory::new(Some(session("a")), Script::new(replies)))
+}
+
+fn cookie(value: &str) -> Session {
+    session_with("t", &format!("sessionToken={value}"))
+}
+
+fn rotating(
+    memory: impl FnOnce(Memory) -> Memory,
+) -> (McpServer, Arc<Memory>, Arc<Manual>) {
+    let network =
+        Script::new([CannedResponse::ok_setting("{}", "sessionToken=new; Path=/")]);
+    server(memory(Memory::new(Some(cookie("old")), network)))
+}
+
+async fn reads(holst: &McpServer) -> bool {
+    let call = async |client: HandedClient| {
+        holst_core::remote::api::user::current(&client).await?;
+        Ok(String::new())
+    };
+    holst.run(call).await.is_error == Some(false)
+}
+
+async fn refusal(holst: &McpServer) -> Option<E> {
+    match holst.client().await {
+        Err(Error::Holst(err)) => Some(err),
+        Ok(_) | Err(_) => None,
+    }
+}
+
+async fn install(holst: &McpServer) -> Result<(u64, u64)> {
+    holst
+        .client()
+        .await
+        .map(|client| (client.generation, client.epoch))
+}
+
+fn spawn_read(holst: &McpServer) -> tokio::task::JoinHandle<bool> {
+    let holst = holst.clone();
+    tokio::spawn(async move { reads(&holst).await })
+}
+
+fn cache(test: &str) -> CacheSettings {
+    let dir = std::env::temp_dir()
+        .join(format!("holst-mcp-cache-{test}-{}", std::process::id()));
+    std::fs::remove_dir_all(&dir).unwrap_or_default();
+    CacheSettings {
+        root: Some(dir.clone()),
+        roots: vec![dir],
+        host: "app.holst.so".into(),
+        ..CacheSettings::default()
+    }
+}
+
+const ALICE: &str = "aaaaaaaa-0000-4000-8000-000000000001";
+
+#[tokio::test]
+async fn the_disk_cache_is_the_logins_account() -> Result<()> {
+    let settings = cache("account");
+    let network = Script::new([CannedResponse::ok(
+        r#"{"id":"aaaaaaaa-0000-4000-8000-000000000001"}"#,
+    )]);
+    let (holst, ..) = server(Memory::new(Some(session("a")), Arc::clone(&network)));
+    let holst = holst.with_cache(settings.clone());
+    let client = holst.client().await?;
+    let first = holst.cache(&client).await;
+    let second = holst.cache(&client).await;
+    let expected = holst_core::command::board_load::account_cache(
+        &settings,
+        ALICE,
+        holst_core::system::clock::SystemClock,
+    )
+    .map(|cache| cache.dir().to_owned());
+    assert!(first.is_some() && second.is_some());
+    assert_eq!(network.seen().len(), 1, "the account was asked twice");
+    assert!(expected.is_some_and(|dir| dir.ends_with(ALICE)));
+    let (named, ..) = server(Memory::new(
+        Some(session("b").with_account_id(ALICE)),
+        Script::new([]),
+    ));
+    let named = named.with_cache(settings.clone());
+    let named_conn = named.client().await?;
+    assert!(named.cache(&named_conn).await.is_some());
+    let (off, ..) = server(Memory::new(Some(session("c")), Arc::clone(&network)));
+    let off_conn = off.client().await?;
+    assert!(off.cache(&off_conn).await.is_none());
+    assert_eq!(
+        network.seen().len(),
+        1,
+        "a cache that is off asked for the account"
+    );
+    settings
+        .roots
+        .iter()
+        .for_each(|dir| drop(std::fs::remove_dir_all(dir)));
+    Ok(())
+}
+
+#[tokio::test]
+async fn kept_indexes_are_shared_not_copied() -> Result<()> {
+    use holst_core::domain::board_text::index::BoardIndex;
+
+    use crate::memory::board_memory::KeptBoard;
+
+    const BOARD: &str = "11111111-2222-4333-8444-555555555555";
+    let holst = McpServer::offline();
+    let client = HandedClient::offline()?;
+    let index = Arc::new(BoardIndex::from_objects(&[], BOARD, Vec::new()));
+    let kept = KeptBoard {
+        index: Arc::clone(&index),
+        document: Some(Arc::from(vec![1, 2, 3])),
+        downloaded_at: std::time::Instant::now(),
+    };
+    holst
+        .state
+        .store_board(BOARD, kept, holst.state.generation());
+    let shared = holst.kept_index(&client, BOARD).await?;
+    assert!(Arc::ptr_eq(&shared, &index), "the index was copied");
+    let other = "21111111-2222-4333-8444-555555555555";
+    let alone = Arc::new(BoardIndex::from_objects(&[], other, Vec::new()));
+    holst
+        .state
+        .store_index(other, Arc::clone(&alone), holst.state.generation());
+    assert!(Arc::ptr_eq(
+        &holst.kept_index(&client, other).await?,
+        &alone
+    ));
+    assert!(
+        holst.kept_board(&client, other).await.is_err(),
+        "an index alone was served as a board"
+    );
+    Ok(())
+}
+
+/// The login the fake server accepts.
+fn fake_session() -> Session {
+    use holst_fake::{ACCEPTED_COOKIES, ACCEPTED_TOKEN};
+    use secrecy::SecretString;
+
+    Session::with_cookies(
+        SecretString::from(ACCEPTED_TOKEN),
+        ACCEPTED_COOKIES.parse().unwrap_or_default(),
+    )
+}
+
+/// A login store that holds the fake server's login and signs in to the fake.
+struct OnFake {
+    base_url: String,
+}
+
+impl Backend for OnFake {
+    fn load(&self) -> holst_core::Result<Option<(Session, SessionStoreKind)>> {
+        Ok(Some((fake_session(), SessionStoreKind::File)))
+    }
+
+    fn save(
+        &self,
+        _: &Session,
+        from: SessionStoreKind,
+    ) -> holst_core::Result<holst_core::storage::session_store::LoginSaveReport> {
+        Ok(holst_core::storage::session_store::LoginSaveReport {
+            store: from,
+            stale: None,
+        })
+    }
+
+    fn connect(
+        &self,
+        session: Session,
+    ) -> holst_core::Result<holst_core::remote::client::Client> {
+        holst_core::command::login::connect(
+            Some(session),
+            self.base_url.parse()?,
+            holst_core::system::clock::SystemClock,
+            holst_core::system::id::RandomIds,
+        )
+    }
+}
+
+/// A fake server with the board `Plans` of one sticker, and a client on it.
+async fn plans() -> holst_core::Result<(holst_fake::Fake, HandedClient, String)> {
+    use holst_core::{
+        command::{login::connect, lookup},
+        system::{clock::SystemClock, id::RandomIds},
+    };
+    use holst_fake::FixtureObject;
+
+    let seed = holst_fake::Fixture::default()
+        .workspace("Team")
+        .board_with_objects(
+            "Plans",
+            "Team",
+            vec![FixtureObject::Sticker("Roadmap".into())],
+        );
+    let fake = holst_fake::Fake::start(seed).await?;
+    let client = connect(
+        Some(fake_session()),
+        fake.base_url().parse()?,
+        SystemClock,
+        RandomIds,
+    )?;
+    let board = lookup::board_id(&client, "Plans", None).await?;
+    let client = HandedClient {
+        client,
+        generation: 0,
+        epoch: 0,
+    };
+    Ok((fake, client, board))
+}
+
+/// Adds a sticker to `board` on the fake, as another user of the board would.
+async fn add_sticker(
+    client: &HandedClient,
+    board: &str,
+    text: &str,
+) -> holst_core::Result<()> {
+    use holst_core::{
+        command::board_write::{WriteRequest, write_cached},
+        domain::{
+            change::value::{BoardChange, NewEntry, NewObject},
+            geometry::Point,
+        },
+        effect::{board_write::WriteMode, confirmation::ALWAYS},
+        remote::socket::write::interpreter,
+    };
+
+    let operation = BoardChange::AddAll(vec![NewEntry {
+        new: NewObject::Sticker {
+            text: text.into(),
+            at: Point::new(10.0, 20.0)?,
+            size: None,
+            color: None,
+        },
+        frame: None,
+    }]);
+    let user = holst_core::command::account::account_id(&client.client).await?;
+    write_cached(
+        &client.client,
+        interpreter(WriteMode::Send),
+        WriteRequest {
+            board,
+            change: &operation,
+            send_if: ALWAYS,
+            account_id: &user,
+            kept: None,
+        },
+        None,
+    )
+    .await
+    .map(|_| ())
+    .map_err(E::from)
+}
+
+/// Makes the kept copy of `board` one the server has not confirmed lately.
+fn unconfirm(holst: &McpServer, board: &str) {
+    holst.state.take_board(board).into_iter().for_each(|kept| {
+        holst
+            .state
+            .store_unconfirmed_board(board, kept, holst.state.generation());
+    });
+}
+
+fn texts(kept: &crate::memory::board_memory::KeptBoard) -> Vec<String> {
+    let mut shown: Vec<String> = (0..kept.index.len())
+        .map(|at| kept.index.text(at).to_owned())
+        .collect();
+    shown.sort();
+    shown
+}
+
+#[tokio::test]
+async fn a_board_is_loaded_without_a_cache_and_kept() -> holst_core::Result<()> {
+    let (_fake, client, board) = plans().await?;
+    let holst = McpServer::offline();
+    assert!(holst.state.board(&board).is_none());
+    let index = holst.kept_index(&client, &board).await?;
+    assert_eq!(index.len(), 1);
+    assert!(
+        holst.state.board(&board).is_some(),
+        "the board was not kept"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_unchanged_board_reuses_its_kept_copy() -> holst_core::Result<()> {
+    let (_fake, client, board) = plans().await?;
+    let holst = McpServer::offline();
+    let first = holst.kept_board(&client, &board).await?;
+    unconfirm(&holst, &board);
+    let again = holst.kept_board(&client, &board).await?;
+    assert_eq!(texts(&again), ["Roadmap"]);
+    assert!(
+        first
+            .document
+            .as_ref()
+            .zip(again.document.as_ref())
+            .is_some_and(|(before, after)| Arc::ptr_eq(before, after)),
+        "the kept copy was packed again"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_changed_board_is_read_again_into_its_new_object() -> holst_core::Result<()> {
+    let (_fake, client, board) = plans().await?;
+    let holst = McpServer::offline();
+    let first = holst.kept_board(&client, &board).await?;
+    add_sticker(&client, &board, "Buy milk").await?;
+    assert_eq!(
+        texts(&holst.kept_board(&client, &board).await?),
+        ["Roadmap"],
+        "a copy the server confirmed lately was read again"
+    );
+    unconfirm(&holst, &board);
+    let again = holst.kept_board(&client, &board).await?;
+    assert_eq!(texts(&again), ["Buy milk", "Roadmap"]);
+    assert!(
+        first
+            .document
+            .as_ref()
+            .zip(again.document.as_ref())
+            .is_some_and(|(before, after)| !Arc::ptr_eq(before, after)),
+        "the old copy was served"
+    );
+    Ok(())
+}
+
+#[test]
+fn tools_list_snapshot() {
+    let holst = McpServer::offline();
+    insta::assert_json_snapshot!("tools_list", *holst.tools);
+}
+
+#[test]
+fn the_api_tool_may_write_when_a_human_allows_raw_writes() {
+    let holst =
+        McpServer::offline().with_raw_write(crate::tools::admin::RawWrite::Allowed);
+    let hints = holst
+        .tools
+        .iter()
+        .find(|tool| tool.name == "api")
+        .and_then(|tool| tool.annotations.as_ref())
+        .map(|hints| (hints.read_only_hint, hints.destructive_hint));
+    assert_eq!(hints, Some((Some(false), Some(true))));
+}
+
+#[tokio::test]
+async fn locked_store_is_reported_and_retried() {
+    let (holst, memory, _) =
+        server(Memory::new(Some(session("a")), Script::new([])).locked());
+    assert!(matches!(
+        refusal(&holst).await,
+        Some(E::LocalData(
+            error::local_data::LocalDataError::KeychainLocked
+        ))
+    ));
+    assert!(refusal(&holst).await.is_some());
+    assert_eq!(memory.loads(), 2, "a failed read was cached");
+}
+
+#[tokio::test]
+async fn store_is_rechecked_only_after_interval() -> Result<()> {
+    let (holst, memory, clock) = with_a([]);
+    let first = install(&holst).await?;
+    install(&holst).await?;
+    assert_eq!(memory.loads(), 1, "the store was read before RECHECK");
+
+    clock.advance(RECHECK);
+    assert_eq!(
+        install(&holst).await?,
+        first,
+        "the same login dropped the cache"
+    );
+    assert_eq!(memory.loads(), 2);
+
+    memory.store(Some(session("b")));
+    clock.advance(RECHECK);
+    let (generation, epoch) = install(&holst).await?;
+    assert_ne!(generation, first.0, "a new login kept the cache");
+    assert_ne!(epoch, first.1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn revoked_login_is_refused_without_retries() {
+    let network = Script::new([CannedResponse::unauthorized()]);
+    let (holst, memory, clock) =
+        server(Memory::new(Some(session("a")), Arc::clone(&network)));
+
+    assert!(!reads(&holst).await);
+    assert_eq!((network.seen().len(), memory.loads()), (1, 1));
+    assert!(matches!(
+        refusal(&holst).await,
+        Some(E::Login(error::login::LoginError::SessionRevoked))
+    ));
+    assert_eq!(
+        memory.loads(),
+        2,
+        "the store was not read again after the 401"
+    );
+
+    assert!(!reads(&holst).await);
+    assert!(matches!(
+        refusal(&holst).await,
+        Some(E::Login(error::login::LoginError::SessionRevoked))
+    ));
+    let counts = (network.seen().len(), memory.loads());
+    assert_eq!(counts, (1, 2), "a revoked login was retried");
+
+    clock.advance(REVOKED_RECHECK);
+    assert!(refusal(&holst).await.is_some());
+    assert_eq!(
+        memory.loads(),
+        3,
+        "the store was not read after REVOKED_RECHECK"
+    );
+}
+
+#[tokio::test]
+async fn new_login_after_revocation_is_picked_up() -> Result<()> {
+    let (holst, memory, clock) = with_a([CannedResponse::unauthorized()]);
+    let before = install(&holst).await?.0;
+    assert!(!reads(&holst).await);
+
+    memory.store(Some(session("b")));
+    clock.advance(REVOKED_RECHECK);
+    let after = install(&holst).await?.0;
+    assert_ne!(after, before, "the cache of the revoked login survived");
+    assert!(reads(&holst).await);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_calls_share_one_store_read() {
+    let (holst, memory, _) = server(
+        Memory::new(Some(session("a")), Script::new([]))
+            .slow(Duration::from_millis(50)),
+    );
+    let epochs: Vec<Option<u64>> = (0..8)
+        .map(|_| {
+            let holst = holst.clone();
+            async move { install(&holst).await.ok().map(|(_, epoch)| epoch) }
+        })
+        .collect::<tokio::task::JoinSet<_>>()
+        .join_all()
+        .await;
+    assert_eq!(memory.loads(), 1, "the store was read by several calls");
+    assert!(epochs.iter().all(|epoch| *epoch == Some(1)), "{epochs:?}");
+}
+
+#[tokio::test]
+async fn rotated_cookies_are_saved_once_and_keep_the_cache() -> Result<()> {
+    let (holst, memory, clock) = rotating(|memory| memory);
+    let first = install(&holst).await?;
+
+    assert!(reads(&holst).await && reads(&holst).await);
+    assert_eq!(memory.saved(), [cookie("new")]);
+
+    clock.advance(RECHECK);
+    assert_eq!(install(&holst).await?, first, "rotation dropped the cache");
+    Ok(())
+}
+
+#[tokio::test]
+async fn rotation_is_saved_where_the_login_was_read() -> Result<()> {
+    let (holst, memory, _) = rotating(Memory::in_file);
+    install(&holst).await?;
+    assert!(reads(&holst).await);
+    assert_eq!(memory.saved_to(), [SessionStoreKind::File]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_save_keeps_the_client() -> Result<()> {
+    let (holst, memory, clock) = rotating(Memory::read_only);
+    let first = install(&holst).await?;
+
+    assert!(reads(&holst).await);
+    assert_eq!(
+        memory.saved_to().len(),
+        1,
+        "the rotation was not offered to the store"
+    );
+    assert!(memory.saved().is_empty());
+
+    clock.advance(RECHECK);
+    assert_eq!(
+        install(&holst).await?,
+        first,
+        "a failed save looked like a new login"
+    );
+    assert_eq!(holst.client().await?.session(), Some(cookie("new")));
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_save_is_retried_on_the_next_call() {
+    let (holst, memory, _) = rotating(Memory::read_only);
+
+    assert!(reads(&holst).await);
+    assert_eq!(memory.saved_to().len(), 1);
+    assert!(memory.saved().is_empty());
+
+    memory.make_writable();
+    assert!(reads(&holst).await);
+    assert_eq!(
+        memory.saved_to().len(),
+        2,
+        "the refused rotation was not offered again"
+    );
+    assert_eq!(
+        memory.saved(),
+        [cookie("new")],
+        "not stored on the second try"
+    );
+
+    assert!(reads(&holst).await);
+    assert_eq!(
+        memory.saved_to().len(),
+        2,
+        "a stored rotation was offered again"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rotation_during_a_save_is_saved_too() -> Result<()> {
+    let network = Script::new([
+        CannedResponse::ok_setting("{}", "sessionToken=s1; Path=/"),
+        CannedResponse::ok_setting("{}", "sessionToken=s2; Path=/"),
+    ]);
+    let (holst, memory, _) = server(
+        Memory::new(Some(cookie("s0")), network).slow_save(Duration::from_millis(300)),
+    );
+    install(&holst).await?;
+    let first = spawn_read(&holst);
+    memory.saving.notified().await;
+
+    assert!(reads(&holst).await);
+    assert_eq!(first.await.ok(), Some(true));
+    let last = memory.saved().last().cloned();
+    assert_eq!(
+        last,
+        Some(cookie("s2")),
+        "the newer rotation stayed in memory"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn clock_set_back_does_not_prolong_a_refusal() {
+    let (holst, memory, clock) = with_a([CannedResponse::unauthorized()]);
+    clock.advance(Duration::from_hours(2));
+    assert!(!reads(&holst).await);
+    assert!(matches!(
+        refusal(&holst).await,
+        Some(E::Login(error::login::LoginError::SessionRevoked))
+    ));
+
+    memory.store(Some(session("b")));
+    clock.rewind(Duration::from_hours(1));
+    let loads = memory.loads();
+    assert!(reads(&holst).await);
+    assert_eq!(memory.loads(), loads + 1, "the store was not read again");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn hanging_save_does_not_block_other_calls() -> Result<()> {
+    let (holst, memory, _) =
+        rotating(|memory| memory.slow_save(Duration::from_millis(300)));
+    install(&holst).await?;
+    let saving = spawn_read(&holst);
+    memory.saving.notified().await;
+
+    assert!(reads(&holst).await);
+    assert!(!saving.is_finished(), "the other call waited for the save");
+    assert_eq!(saving.await.ok(), Some(true));
+    assert_eq!(memory.saved(), [cookie("new")]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancelled_write_still_drops_the_cache() -> Result<()> {
+    let (holst, ..) = with_a([CannedResponse::Hang]);
+    let before = install(&holst).await?.0;
+    // Dropped at statement end: cancels the write.
+    let poll = std::pin::pin!(holst.write(async |client| {
+        client
+            .send_json(holst_core::remote::api::channel::rename_request("b1", "x")?)
+            .await?;
+        Ok("renamed".to_owned())
+    }))
+    .as_mut()
+    .poll(&mut Context::from_waker(Waker::noop()));
+    assert!(matches!(poll, Poll::Pending), "the request did not hang");
+
+    assert_ne!(
+        holst.state.generation(),
+        before,
+        "a cancelled write kept the cache"
+    );
+    assert!(reads(&holst).await);
+    Ok(())
+}
+
+#[tokio::test]
+async fn old_client_does_not_fill_new_cache() -> Result<()> {
+    let account = r#"{"id":"u1","name":"Me","workspaces":[]}"#;
+    let (holst, memory, clock) =
+        with_a([CannedResponse::ok(account), CannedResponse::ok(account)]);
+    let old = holst.client().await?;
+    memory.store(Some(session("b")));
+    clock.advance(RECHECK);
+    let new = holst.client().await?;
+    assert_ne!(
+        old.generation, new.generation,
+        "a login change kept the cache"
+    );
+
+    holst.workspaces(&old).await?;
+    assert!(
+        holst.state.workspaces().is_none(),
+        "the old login's workspaces are cached"
+    );
+
+    holst.workspaces(&new).await?;
+    assert!(
+        holst.state.workspaces().is_some(),
+        "the new login's workspaces are not cached"
+    );
+    Ok(())
+}
+
+const ME: &str = r#"{"id":"00000003-0000-4000-8000-000000000001","name":"Ann",
+    "workspaces":[{"id":"00000002-0000-4000-8000-000000000001","name":"easy"}]}"#;
+const TREE: &str = r#"{"channels":[
+    {"id":"00000001-0000-4000-8000-000000000001","type":"folder","name":"Plans"},
+    {"id":"00000001-0000-4000-8000-000000000002","type":"board","name":"Roadmap"},
+    {"id":"00000001-0000-4000-8000-000000000003","type":"board","name":"Old","in_trash":true}]}"#;
+
+/// What a call to a table tool replies, and whether it is a tool error.
+async fn table_call(
+    holst: &McpServer,
+    tool: &str,
+    arguments: serde_json::Value,
+) -> (bool, String) {
+    match holst.table_tool(tool) {
+        Some(found) => {
+            let result = holst
+                .call_table(found, arguments.as_object().cloned())
+                .await;
+            let text = result
+                .content
+                .iter()
+                .filter_map(|block| block.as_text())
+                .map(|block| block.text.as_str())
+                .collect();
+            (result.is_error == Some(true), text)
+        }
+        None => (true, format!("the table has no tool {tool}")),
+    }
+}
+
+#[tokio::test]
+async fn auth_status_counts_the_boards_and_folders_of_each_workspace() {
+    let (holst, ..) = with_a([CannedResponse::ok(ME), CannedResponse::ok(TREE)]);
+    let (failed, text) = table_call(&holst, "auth", serde_json::json!({})).await;
+    assert!(!failed, "{text}");
+    assert!(text.starts_with("logged in: Ann @"), "{text}");
+    assert!(text.contains("easy @"), "{text}");
+    assert!(text.contains("· 1 boards, 1 folders\n"), "{text}");
+}
+
+#[tokio::test]
+async fn auth_status_with_tokens_lists_them() {
+    let (holst, network) = McpServer::scripted([
+        CannedResponse::ok(ME),
+        CannedResponse::ok(TREE),
+        CannedResponse::ok(r#"[{"id":"p1","name":"ci"}]"#),
+    ]);
+    let (failed, text) =
+        table_call(&holst, "auth", serde_json::json!({ "with": ["tokens"] })).await;
+    assert!(!failed, "{text}");
+    assert!(text.contains("tokens:\n"), "{text}");
+    assert_eq!(network.seen().len(), 3, "{:?}", network.seen());
+}
+
+#[tokio::test]
+async fn an_argument_the_command_does_not_take_is_a_tool_error_in_our_words() {
+    let (holst, network) = McpServer::scripted([]);
+    let (failed, text) =
+        table_call(&holst, "auth", serde_json::json!({ "cover": "x.png" })).await;
+    assert!(failed);
+    assert_eq!(
+        text,
+        "\"cover\" is not an argument of `auth status`: it takes with"
+    );
+    assert!(network.seen().is_empty(), "the call went to the network");
+}
+
+#[tokio::test]
+async fn an_action_other_than_the_verb_of_a_tool_of_one_command_is_refused() {
+    let (holst, ..) = with_a([]);
+    let (failed, text) =
+        table_call(&holst, "auth", serde_json::json!({ "action": "login" })).await;
+    assert!(failed);
+    assert!(
+        text.contains("`auth` has no action \"login\"; it has: status"),
+        "{text}"
+    );
+}
+
+#[tokio::test]
+async fn workspace_ls_lists_the_workspaces_with_their_numbers() {
+    let (holst, ..) = with_a([CannedResponse::ok(ME)]);
+    let (failed, text) =
+        table_call(&holst, "workspace", serde_json::json!({ "action": "ls" })).await;
+    assert!(!failed, "{text}");
+    assert!(text.starts_with("easy @"), "{text}");
+}
+
+#[tokio::test]
+async fn workspace_rename_without_confirm_sends_nothing() {
+    let network = Script::new([CannedResponse::ok(ME)]);
+    let (holst, ..) = server(Memory::new(Some(session("a")), Arc::clone(&network)));
+    let (failed, text) = table_call(
+        &holst,
+        "workspace",
+        serde_json::json!({ "action": "rename", "workspace": "easy", "name": "Crew" }),
+    )
+    .await;
+    assert!(failed, "{text}");
+    assert!(text.contains("; confirm with confirm: true"), "{text}");
+    assert_eq!(
+        network.seen().len(),
+        1,
+        "only the lookup: {:?}",
+        network.seen()
+    );
+}
+
+#[tokio::test]
+async fn workspace_rename_with_confirm_sends_the_new_name() {
+    let network = Script::new([CannedResponse::ok(ME), CannedResponse::ok("{}")]);
+    let (holst, ..) = server(Memory::new(Some(session("a")), Arc::clone(&network)));
+    let (failed, text) = table_call(
+        &holst,
+        "workspace",
+        serde_json::json!({
+            "action": "rename", "workspace": "easy", "name": "Crew", "confirm": true
+        }),
+    )
+    .await;
+    assert!(!failed, "{text}");
+    assert!(text.starts_with("renamed easy to Crew @"), "{text}");
+    assert_eq!(network.seen().len(), 2, "{:?}", network.seen());
+}
+
+#[test]
+fn instructions_explain_the_tools_and_the_login() {
+    let instructions = McpServer::offline()
+        .get_info()
+        .instructions
+        .unwrap_or_default();
+    let wanted = [
+        "object_write",
+        "x,y,width,height",
+        "holst auth login",
+        "@N",
+        "output: json (board, object only)",
+    ];
+    assert!(
+        wanted.iter().all(|word| instructions.contains(word)),
+        "{instructions}"
+    );
+    assert!(!instructions.contains("raw: true"), "{instructions}");
+}
+
+#[rstest::rstest]
+#[case::board_show("board", serde_json::json!({ "action": "show", "board": "X", "offline": true }))]
+#[case::board_snap("board", serde_json::json!({ "action": "snap", "board": "X", "offline": true }))]
+#[case::object("object", serde_json::json!({ "board": "X", "offline": true }))]
+#[tokio::test]
+async fn offline_reads_only_the_cache(
+    #[case] tool: &str,
+    #[case] call: serde_json::Value,
+) {
+    let (holst, network) = McpServer::scripted([]);
+    let (failed, text) = table_call(&holst, tool, call).await;
+    assert!(failed, "{text}");
+    assert!(!text.contains("is not an argument"), "{text}");
+    assert!(network.seen().is_empty(), "the call went to the network");
+}
+
+#[tokio::test]
+async fn embed_gives_the_picture_inline() -> holst_core::Result<()> {
+    let (_fake, holst, _) = on_fake().await?;
+    let call = serde_json::json!({
+        "action": "snap", "board": "Plans", "format": "svg", "embed": true
+    });
+    let (failed, text) = table_call(&holst, "board", call).await;
+    assert!(!failed, "{text}");
+    assert!(text.contains("<svg"), "{text}");
+    Ok(())
+}
+
+/// What the command line prints with `-o json`.
+fn printed(reply: &impl serde::Serialize) -> holst_core::Result<String> {
+    Ok(serde_json::to_string(&serde_json::to_value(reply)?)?)
+}
+
+fn given(arguments: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+    serde_json::from_value(arguments).unwrap_or_default()
+}
+
+/// A server on the fake of `plans`, and a client of the command line's on it.
+async fn on_fake() -> holst_core::Result<(holst_fake::Fake, McpServer, HandedClient)> {
+    let (fake, client, _) = plans().await?;
+    let base_url = fake.base_url().to_owned();
+    let holst =
+        McpServer::with(Arc::new(OnFake { base_url }), Arc::new(Manual::default()));
+    Ok((fake, holst, client))
+}
+
+#[tokio::test]
+async fn object_json_is_what_the_command_line_prints() -> holst_core::Result<()> {
+    use holst_core::command::{object, table::parse};
+
+    let (_fake, holst, client) = on_fake().await?;
+    let args = parse::<object::LsArgs>(given(
+        serde_json::json!({ "board": "Plans", "limit": 100 }),
+    ))?;
+    let listing = object::list::ls(&client, &CacheSettings::default(), &args).await?;
+    let call = serde_json::json!({ "board": "Plans", "output": "json" });
+    let (failed, text) = table_call(&holst, "object", call).await;
+    assert!(!failed, "{text}");
+    assert_eq!(text, printed(&listing)?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn board_show_json_is_what_the_command_line_prints() -> holst_core::Result<()> {
+    use holst_core::command::{board, table::parse};
+
+    let (_fake, holst, client) = on_fake().await?;
+    let args =
+        parse::<board::ShowArgs>(given(serde_json::json!({ "board": "Plans" })))?;
+    let shown = board::show::show(&client, &CacheSettings::default(), &args).await?;
+    let call =
+        serde_json::json!({ "action": "show", "board": "Plans", "output": "json" });
+    let (failed, text) = table_call(&holst, "board", call).await;
+    assert!(!failed, "{text}");
+    assert_eq!(text, printed(&shown)?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn board_ls_json_is_what_the_command_line_prints() -> holst_core::Result<()> {
+    use holst_core::command::{board, table::parse};
+
+    let (_fake, holst, client) = on_fake().await?;
+    let args = parse::<board::LsArgs>(given(serde_json::json!({ "limit": 300 })))?;
+    let tree = board::tree::ls(&client, &args).await?;
+    let call = serde_json::json!({ "action": "ls", "output": "json" });
+    let (failed, text) = table_call(&holst, "board", call).await;
+    assert!(!failed, "{text}");
+    assert_eq!(text, printed(&tree)?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn output_text_is_the_default_reply() -> holst_core::Result<()> {
+    let (_fake, holst, _) = on_fake().await?;
+    let plain = serde_json::json!({ "board": "Plans" });
+    let text = serde_json::json!({ "board": "Plans", "output": "text" });
+    let (failed, listed) = table_call(&holst, "object", plain).await;
+    assert!(!failed && listed.contains("Roadmap"), "{listed}");
+    assert_eq!(table_call(&holst, "object", text).await, (false, listed));
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case::object(
+    "object",
+    serde_json::json!({ "board": "X", "output": "yaml" }),
+    "output of `object ls` must be one of text, json"
+)]
+#[case::board_show(
+    "board",
+    serde_json::json!({ "action": "show", "board": "X", "output": "yaml" }),
+    "output of `board show` must be one of text, json"
+)]
+#[case::board_snap(
+    "board",
+    serde_json::json!({ "action": "snap", "board": "X", "output": "json" }),
+    "\"output\" is not an argument of `board snap`"
+)]
+#[tokio::test]
+async fn an_output_but_text_or_json_is_refused_before_any_request(
+    #[case] tool: &str,
+    #[case] call: serde_json::Value,
+    #[case] words: &str,
+) {
+    let (holst, network) = McpServer::scripted([]);
+    let (failed, text) = table_call(&holst, tool, call).await;
+    assert!(failed && text.starts_with(words), "{text}");
+    assert!(network.seen().is_empty(), "the call went to the network");
+}
+
+#[tokio::test]
+async fn a_file_for_a_picture_is_the_command_lines() {
+    let (holst, ..) = McpServer::scripted([]);
+    let refused = async |extra: (&str, serde_json::Value)| {
+        let given =
+            serde_json::json!({ "action": "snap", "board": "b", extra.0: extra.1 });
+        table_call(&holst, "board", given).await.0
+    };
+    assert!(refused(("file", "x.png".into())).await);
+}

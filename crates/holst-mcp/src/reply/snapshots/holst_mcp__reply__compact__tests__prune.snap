@@ -1,0 +1,6 @@
+---
+source: crates/holst-mcp/src/reply/compact.rs
+expression: "compact_with(&State::default(), input)"
+---
+id: @1
+name: Board
