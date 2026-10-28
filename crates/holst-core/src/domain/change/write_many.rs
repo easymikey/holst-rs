@@ -204,7 +204,7 @@ fn kept_in_frame(
         .filter(|_| patch.at.is_none() && (dx.abs() > 0.5 || dy.abs() > 0.5))
         .map(|area| Point::new(area.x + dx, area.y + dy))
         .transpose()?;
-    at.as_ref().map_or(Ok(()), |at| on_board(Some(at), None))?;
+    on_board(at.as_ref(), None)?;
     Ok(ObjectPatch {
         at: patch.at.or(at),
         ..patch.clone()

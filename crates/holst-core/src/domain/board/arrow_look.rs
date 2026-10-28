@@ -203,13 +203,10 @@ impl FromStr for Label {
             })
         };
         // BUNDLE: no position means the middle (main.a33651a4.js 166325).
-        let (text, position) = match raw.rsplit_once('@') {
-            Some((text, place)) => place
-                .trim()
-                .parse::<f64>()
-                .map_or((raw, 0.5), |place| (text, place)),
-            None => (raw, 0.5),
-        };
+        let (text, position) = raw
+            .rsplit_once('@')
+            .and_then(|(text, place)| Some((text, place.trim().parse::<f64>().ok()?)))
+            .unwrap_or((raw, 0.5));
         ((0.0..=1.0).contains(&position) && !text.trim().is_empty())
             .then(|| Self {
                 text: text.to_owned(),

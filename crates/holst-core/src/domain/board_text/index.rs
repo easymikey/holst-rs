@@ -465,11 +465,9 @@ impl BoardIndex {
     /// [`LocalDataError::Unpack`].
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         let (stamp, packed) = header(bytes)?;
-        (if compression::is_compressed(packed) {
-            Ok(())
-        } else {
-            Err(LocalDataError::IndexCorrupt { error: None })
-        })?;
+        Some(packed)
+            .filter(|body| compression::is_compressed(body))
+            .ok_or(LocalDataError::IndexCorrupt { error: None })?;
         let body: IndexBody = postcard::from_bytes(&compression::uncompressed(packed)?)
             .map_err(|err| LocalDataError::IndexCorrupt { error: Some(err) })?;
         if body.adds_up() {
@@ -499,15 +497,13 @@ fn header(bytes: &[u8]) -> Result<(IndexStamp, &[u8])> {
     let (version, rest) = rest
         .split_first_chunk::<2>()
         .ok_or(LocalDataError::IndexCorrupt { error: None })?;
-    let found = u16::from_le_bytes(*version);
-    (if found == VERSION {
-        Ok(())
-    } else {
-        Err(LocalDataError::IndexVersion {
+    match u16::from_le_bytes(*version) {
+        VERSION => Ok(()),
+        found => Err(LocalDataError::IndexVersion {
             found,
             supported: VERSION,
-        })
-    })?;
+        }),
+    }?;
     Ok(postcard::take_from_bytes::<IndexStamp>(rest)
         .map_err(|err| LocalDataError::IndexCorrupt { error: Some(err) })?)
 }

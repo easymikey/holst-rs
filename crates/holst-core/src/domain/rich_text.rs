@@ -477,11 +477,17 @@ impl Reader<'_> {
     /// An item: its first paragraph is its text, the other blocks nest under
     /// it.
     fn item(&mut self, kind: BlockKind) -> Block {
-        let checked = match self.events.get(self.at) {
+        // a loose item opens its paragraph before the marker
+        let paragraph = matches!(
+            self.events.get(self.at),
+            Some((Event::Start(Tag::Paragraph), _))
+        );
+        let marker = self.at + usize::from(paragraph);
+        let checked = match self.events.get(marker) {
             Some((Event::TaskListMarker(done), _)) => Some(*done),
             _ => None,
         };
-        self.at += usize::from(checked.is_some());
+        checked.inspect(|_| drop(self.events.remove(marker)));
         let mut content = self.container();
         let head = content
             .first()

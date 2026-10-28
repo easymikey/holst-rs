@@ -42,6 +42,7 @@ use crate::{
             },
             journal,
             rich::{fill_blocks, restyle, tick},
+            stacking::bounds,
             value::{
                 ArrowLook,
                 Backdrop,
@@ -805,8 +806,7 @@ fn frame_resized(
             .iter()
             .filter(|(_, stored)| {
                 parent_of(stored) == Some(id)
-                    && rectangle_of(stored)
-                        .is_some_and(|rect| !rectangle.intersects(&rect))
+                    && bounds(stored).is_some_and(|rect| !rectangle.intersects(&rect))
             })
             .map(|(child, _)| child.clone())
             .sorted_unstable()
@@ -1016,18 +1016,14 @@ fn rewrite_document(
     if let Some(root) = &root {
         restyle(transaction, root, &patch.look);
     }
-    patch
-        .tick
-        .map(|asked| {
-            tick(transaction, root.as_ref(), asked).map_err(|count| {
-                Error::BoardChange(BoardChangeError::NoCheckItem {
-                    item: asked.item.get(),
-                    count,
-                })
+    patch.tick.map_or(Ok(()), |asked| {
+        tick(transaction, root.as_ref(), asked).map_err(|count| {
+            Error::BoardChange(BoardChangeError::NoCheckItem {
+                item: asked.item.get(),
+                count,
             })
         })
-        .transpose()
-        .map(|_| ())
+    })
 }
 
 /// A sticker, a stack and a text grow by `textScale` (the web client's corner

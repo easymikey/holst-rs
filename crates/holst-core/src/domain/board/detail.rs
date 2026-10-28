@@ -36,10 +36,10 @@ impl LinkCard {
         };
         let info = object.fields.get(document::LINK_INFO);
         let from_info = |key: &str| info.and_then(|info| text(info, key));
-        (object.kind == ObjectKind::Link).then_some(())?;
         Some(Self {
             url: text(&object.fields, document::LINK)
-                .or_else(|| from_info(document::LINK))?,
+                .or_else(|| from_info(document::LINK))
+                .filter(|_| object.kind == ObjectKind::Link)?,
             title: text(&object.fields, document::TITLE)
                 .or_else(|| from_info(document::TITLE)),
         })

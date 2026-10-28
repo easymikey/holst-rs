@@ -49,6 +49,19 @@ fn an_item_is_ticked_by_its_place_in_reading_order() -> Result<()> {
 }
 
 #[test]
+fn a_checklist_with_blank_lines_keeps_its_checkboxes() -> Result<()> {
+    let (document, _) = written(&added(text("- [x] a\n\n- [ ] b")?))?;
+    assert_eq!(
+        document_shape(&document, "w-1"),
+        concat!(
+            r#"wrapper[checkbox-list-item{checked=true}["a"]]"#,
+            r#"wrapper[checkbox-list-item{checked=false}["b"]]"#,
+        )
+    );
+    Ok(())
+}
+
+#[test]
 fn a_ticked_item_is_unticked_and_a_second_tick_changes_nothing() -> Result<()> {
     let (document, _) = written(&added(sticker("- [x] a\n- [ ] b")?))?;
     tick(&document, 1, false)?;

@@ -88,12 +88,11 @@ fn laid(
 /// stored (main.a33651a4.js 129607-129651).
 fn step(states: &HashMap<String, Value>, id: &str, forward: bool) -> Option<f64> {
     let own = states.get(id)?;
-    let area = bounds(own)?;
     let parent = parent_of(own);
     let ignored = parent
         .and_then(|parent| states.get(parent))
         .is_some_and(ignores_layers);
-    (!ignored).then_some(())?;
+    let area = bounds(own).filter(|_| !ignored)?;
     let mut near: Vec<f64> = states
         .iter()
         .filter(|(other, fields)| {
@@ -120,11 +119,7 @@ fn step(states: &HashMap<String, Value>, id: &str, forward: bool) -> Option<f64>
     } else {
         first - lift
     });
-    let (low, high) = if first <= second {
-        (first, second)
-    } else {
-        (second, first)
-    };
+    let (low, high) = (first.min(second), first.max(second));
     Some(low + (high - low) / 3.0)
 }
 
@@ -166,7 +161,7 @@ fn z_of(fields: &Value) -> f64 {
 }
 
 /// The box an object stands in; an arrow's is round its ends.
-fn bounds(fields: &Value) -> Option<Rectangle> {
+pub(super) fn bounds(fields: &Value) -> Option<Rectangle> {
     let kind =
         ObjectKind::of(fields.get(TYPE).and_then(Value::as_str).unwrap_or_default());
     if kind == ObjectKind::Arrow {

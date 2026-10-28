@@ -103,10 +103,10 @@ impl MatchRules {
     #[must_use]
     pub const fn of_score(score: u32) -> Self {
         match score {
-            score if score >= EXACT => MatchRules::NONE
+            EXACT.. => MatchRules::NONE
                 .with(MatchRule::ExactName)
                 .with(MatchRule::NamePart),
-            score if score >= SUBSTRING => MatchRules::NONE.with(MatchRule::NamePart),
+            SUBSTRING.. => MatchRules::NONE.with(MatchRule::NamePart),
             _ => MatchRules::NONE,
         }
     }

@@ -247,6 +247,27 @@ fn a_table_cell_a_mind_map_node_and_a_kanban_card_refuse_it() -> Result<()> {
 }
 
 #[test]
+fn a_kanban_card_in_a_group_is_refused_for_its_column() -> Result<()> {
+    let document = board()?;
+    seed(&document, &json!({ "id": "G", "type": "group" }))?;
+    seed(
+        &document,
+        &json!({ "id": "K", "type": "kanban", "parentId": "G" }),
+    )?;
+    seed(
+        &document,
+        &json!({ "id": "card", "type": "task-card", "parentId": "K", "columnId": "c1" }),
+    )?;
+    assert_eq!(
+        refusal(&document, &align(&["one", "card"], Alignment::Left)).as_deref(),
+        Some(
+            "\"card\" cannot be aligned or spread: a card in a kanban column stays in it"
+        )
+    );
+    Ok(())
+}
+
+#[test]
 fn too_few_objects_are_refused() -> Result<()> {
     let document = board()?;
     assert_eq!(

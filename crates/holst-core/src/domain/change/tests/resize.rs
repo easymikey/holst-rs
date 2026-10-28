@@ -235,3 +235,33 @@ fn a_frame_resized_releases_what_it_no_longer_meets_and_takes_in_what_it_holds()
     assert_eq!(parent_of(&document, "near").as_deref(), Some("o"));
     Ok(())
 }
+
+#[test]
+fn a_frame_resized_keeps_the_arrow_that_still_runs_inside_it() -> Result<()> {
+    let document = Doc::new();
+    seed(
+        &document,
+        &json!({
+            "id": "o", "type": "frame", "position": { "x": 1000, "y": 1000 },
+            "width": 100, "height": 100,
+        }),
+    )?;
+    seed(
+        &document,
+        &json!({
+            "id": "line", "type": "arrow", "parentId": "o",
+            "position": { "x": 0, "y": 0 },
+            "start": { "point": { "x": 1010, "y": 1010 } },
+            "end": { "point": { "x": 1050, "y": 1050 } },
+        }),
+    )?;
+    apply(
+        &document,
+        ObjectPatch {
+            size: Some(Size::new(900.0, 700.0)?),
+            ..ObjectPatch::default()
+        },
+    )?;
+    assert_eq!(parent_of(&document, "line").as_deref(), Some("o"));
+    Ok(())
+}

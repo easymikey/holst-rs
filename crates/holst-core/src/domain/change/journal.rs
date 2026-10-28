@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
+use itertools::Itertools as _;
 use serde_json::{Map as Fields, Value, json};
 use yrs::{Any, Map as _, MapPrelim, MapRef, TransactionMut};
 
@@ -55,10 +56,7 @@ pub(crate) fn entry(
         .iter()
         .filter_map(|state| state.get(TYPE).and_then(Value::as_str))
         .collect();
-    let single = match kinds.into_iter().collect::<Vec<_>>().as_slice() {
-        [kind] => Some((*kind).to_owned()),
-        _ => None,
-    };
+    let single = kinds.into_iter().exactly_one().ok().map(str::to_owned);
     let locked = snapshots
         .iter()
         .any(|state| state.get("locked") == Some(&Value::Bool(true)));

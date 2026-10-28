@@ -88,15 +88,16 @@ pub fn import_plan(
     overwrite: Overwrite,
 ) -> Result<ImportPlan> {
     let before = object_count(target);
-    let refused = matches!(overwrite, Overwrite::EmptyOnly) && before > 0;
-    (if refused {
-        Err(Error::BoardChange(BoardChangeError::NotEmpty {
-            objects: before,
-        }))
-    } else {
-        Ok(())
-    })?;
-    applied(target, board_file, saved, before)
+    match (overwrite, before) {
+        (Overwrite::EmptyOnly, 1..) => {
+            Err(Error::BoardChange(BoardChangeError::NotEmpty {
+                objects: before,
+            }))
+        }
+        (Overwrite::EmptyOnly, 0) | (Overwrite::Merge, _) => {
+            applied(target, board_file, saved, before)
+        }
+    }
 }
 
 /// Like [`import_plan`] under no limit, but every root of the document of

@@ -97,24 +97,27 @@ impl NameIndex {
     ///
     /// [`crate::error::http::HttpError::Json`] when the reply is not JSON.
     pub fn parse(text: &str) -> Result<(Self, Option<TreeFallback>)> {
-        match TreeReply::parse(text) {
-            Ok(tree) => Ok((
-                Self::build(
-                    &tree.channels,
-                    |c| IndexedNode {
-                        id: &c.id,
-                        kind: c.kind,
-                        name: c.name.as_deref().unwrap_or(""),
-                        in_trash: tree::is_trashed(c.in_trash.as_ref()),
-                        order: c.sidebar_order.unwrap_or(f64::INFINITY),
-                    },
-                    |c| c.parent_id.as_deref(),
-                ),
-                None,
-            )),
-            Err(_) => tree::parse(text)
-                .map(|parsed| (Self::from_nodes(&parsed.nodes), parsed.fallback)),
-        }
+        TreeReply::parse(text)
+            .map(|tree| {
+                (
+                    Self::build(
+                        &tree.channels,
+                        |c| IndexedNode {
+                            id: &c.id,
+                            kind: c.kind,
+                            name: c.name.as_deref().unwrap_or(""),
+                            in_trash: tree::is_trashed(c.in_trash.as_ref()),
+                            order: c.sidebar_order.unwrap_or(f64::INFINITY),
+                        },
+                        |c| c.parent_id.as_deref(),
+                    ),
+                    None,
+                )
+            })
+            .or_else(|_| {
+                tree::parse(text)
+                    .map(|parsed| (Self::from_nodes(&parsed.nodes), parsed.fallback))
+            })
     }
 
     /// The index from already parsed nodes.

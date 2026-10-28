@@ -557,8 +557,8 @@ fn refusal_to_group(
         | ObjectKind::Link => None,
     };
     by_kind
-        .or_else(|| in_group.then_some(GroupRefusal::InGroup))
         .or_else(|| held_in(states, id, &kind).map(|_| GroupRefusal::InColumn))
+        .or_else(|| in_group.then_some(GroupRefusal::InGroup))
 }
 
 /// The ids of the groups named, once each; none may be locked.
@@ -838,19 +838,25 @@ fn frame_taking(
     (id, kind): (&str, &ObjectKind),
     reference: &str,
 ) -> Result<String> {
-    let frame = frame_in(states, reference)?;
-    let named = || reference.to_owned();
-    (kind_of(states, &frame) == ObjectKind::Frame)
-        .then_some(())
-        .ok_or_else(|| {
-            Error::BoardChange(BoardChangeError::NotFrame { reference: named() })
-        })?;
-    shows_content(states, &frame).then_some(()).ok_or_else(|| {
-        Error::BoardChange(BoardChangeError::ContentHidden { reference: named() })
-    })?;
+    let frame = open_frame(states, reference)?;
     (!subtree(states, id).contains(&frame))
         .then_some(frame)
         .ok_or_else(|| not_movable(kind, "the frame lies inside it".into()))
+}
+
+/// The id of the frame named, once it is a frame that shows its content.
+fn open_frame(states: &HashMap<String, Value>, reference: &str) -> Result<String> {
+    let id = frame_in(states, reference)?;
+    let reference = reference.to_owned();
+    match (kind_of(states, &id), shows_content(states, &id)) {
+        (ObjectKind::Frame, true) => Ok(id),
+        (ObjectKind::Frame, false) => {
+            Err(Error::BoardChange(BoardChangeError::ContentHidden {
+                reference,
+            }))
+        }
+        _ => Err(Error::BoardChange(BoardChangeError::NotFrame { reference })),
+    }
 }
 
 /// The nearest frame above an object.
@@ -919,17 +925,11 @@ fn checked_in(
     let fresh = earlier_entry(frame);
     let (id, area) = fresh.map_or_else(
         || {
-            let id = frame_in(states, frame)?;
+            let id = open_frame(states, frame)?;
             let area = states
                 .get(&id)
-                .filter(|_| kind_of(states, &id) == ObjectKind::Frame)
                 .and_then(rectangle_of)
                 .ok_or_else(not_frame)?;
-            shows_content(states, &id).then_some(()).ok_or_else(|| {
-                Error::BoardChange(BoardChangeError::ContentHidden {
-                    reference: frame.to_owned(),
-                })
-            })?;
             Ok::<_, Error>((id, area))
         },
         |slot| {
@@ -1358,8 +1358,7 @@ fn framed(kind: &ObjectKind, patch: &ObjectPatch) -> Result<()> {
 
 /// Whether the kind takes the rotation the patch asks for.
 fn spins(kind: &ObjectKind, patch: &ObjectPatch) -> Result<()> {
-    let refused = patch.rotation.is_some() && !turns(kind);
-    refused.then_some(()).map_or(Ok(()), |()| {
+    patch.rotation.filter(|_| !turns(kind)).map_or(Ok(()), |_| {
         Err(Error::BoardChange(BoardChangeError::NotChangeable {
             kind: kind.as_str().to_owned(),
             field: "rotation",
@@ -1487,9 +1486,9 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
         }
         (ObjectPatch { tick: Some(_), .. }, _) if !rich => refuse("checklist"),
         (ObjectPatch { shape, arrow, .. }, _)
-            if unfit_field(kind, shape, arrow).is_some() =>
+            if let Some(field) = unfit_field(kind, shape, arrow) =>
         {
-            unfit_field(kind, shape, arrow).map_or(Ok(()), refuse)
+            refuse(field)
         }
         (
             ObjectPatch {
@@ -1559,22 +1558,24 @@ fn unfit_field(
 /// Whether the width is one the web client offers a shape (a whole 0 to 10)
 /// or an arrow (its nine widths).
 fn stroke_width_fits(kind: &ObjectKind, width: f64) -> Result<()> {
-    let arrow = *kind == ObjectKind::Arrow;
-    let shape = width.fract() == 0.0 && (0.0..=10.0).contains(&width);
-    let (fits, expected) = if arrow {
-        (
-            ARROW_WIDTHS.contains(&width),
-            "an arrow stroke width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17",
-        )
-    } else {
-        (shape, "a shape stroke width: a whole number 0 to 10")
+    let refused = |expected| {
+        let raw = format!("{width}");
+        Error::BoardChange(BoardChangeError::NotArrowLook { raw, expected })
     };
-    let raw = format!("{width}");
-    fits.then_some(())
-        .ok_or(Error::BoardChange(BoardChangeError::NotArrowLook {
-            raw,
-            expected,
-        }))
+    let whole = width.fract() == 0.0 && (0.0..=10.0).contains(&width);
+    match (
+        *kind == ObjectKind::Arrow,
+        ARROW_WIDTHS.contains(&width),
+        whole,
+    ) {
+        (true, true, _) | (false, _, true) => Ok(()),
+        (true, false, _) => Err(refused(
+            "an arrow stroke width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17",
+        )),
+        (false, _, false) => {
+            Err(refused("a shape stroke width: a whole number 0 to 10"))
+        }
+    }
 }
 
 pub(crate) fn find(states: &HashMap<String, Value>, reference: &str) -> Result<String> {
