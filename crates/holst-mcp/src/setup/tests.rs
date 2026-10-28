@@ -6,7 +6,7 @@
     reason = "the login folder of a test is made and removed here"
 )]
 
-use std::{ffi::OsString, io, path::PathBuf};
+use std::{cell::RefCell, ffi::OsString, io, path::PathBuf};
 
 use holst_core::{
     domain::session::Session,
@@ -16,7 +16,7 @@ use holst_core::{
 
 use crate::{
     login::store::{Backend as _, SystemBackend},
-    setup::{Secret, SetupError, Talk, run},
+    setup::{Program, Secret, SetupError, Steps, Talk, connect::Ran, run, set_up},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -72,11 +72,41 @@ impl Rig {
         Ok(self.backend.load()?.map(|(session, _)| session))
     }
 
+    /// Runs the given steps on `typed`, with no client program on the machine.
+    async fn steps(
+        &self,
+        typed: &str,
+        steps: Steps,
+    ) -> (Result<(), SetupError>, String, Vec<String>) {
+        let mut talk = Talk::new(typed.as_bytes(), Vec::new(), false);
+        let programs = Absent::default();
+        let outcome =
+            set_up(&self.backend, &mut talk, &programs, "/opt/holst-mcp", steps).await;
+        (
+            outcome,
+            String::from_utf8_lossy(&talk.out).into_owned(),
+            programs.asked.into_inner(),
+        )
+    }
+
     /// Runs the dialog on `typed`; returns the outcome and the terminal text.
     async fn setup(&self, typed: &str) -> (Result<(), SetupError>, String) {
         let mut talk = Talk::new(typed.as_bytes(), Vec::new(), false);
         let outcome = run(&self.backend, &mut talk).await;
         (outcome, String::from_utf8_lossy(&talk.out).into_owned())
+    }
+}
+
+/// A machine with no client on `PATH`; it remembers what was looked for.
+#[derive(Default)]
+struct Absent {
+    asked: RefCell<Vec<String>>,
+}
+
+impl Program for Absent {
+    fn run(&self, name: &str, _args: &[&str]) -> io::Result<Ran> {
+        self.asked.borrow_mut().push(name.to_owned());
+        Err(io::ErrorKind::NotFound.into())
     }
 }
 
@@ -156,5 +186,43 @@ async fn the_end_of_input_stops_the_dialog() -> Result<(), Trouble> {
     let (outcome, _) = rig.setup("ada@example.com\n").await;
     assert!(matches!(outcome, Err(SetupError::EndOfInput)));
     assert_eq!(rig.saved()?, None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn no_connect_logs_in_and_leaves_the_clients_alone() -> Result<(), Trouble> {
+    let rig = rig("no-connect").await?;
+    let (outcome, shown, asked) = rig
+        .steps("ada@example.com\n123456\n", Steps::LoginOnly)
+        .await;
+    outcome?;
+    assert!(shown.ends_with(LOGGED_IN), "{shown}");
+    assert!(asked.is_empty(), "{asked:?}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn connect_only_skips_the_login() -> Result<(), Trouble> {
+    let rig = rig("connect-only").await?;
+    let (outcome, shown, asked) = rig.steps("", Steps::ConnectOnly).await;
+    outcome?;
+    assert!(
+        shown.starts_with("Other clients: add the server by hand."),
+        "{shown}"
+    );
+    assert_eq!(asked, ["claude", "codex"]);
+    assert_eq!(rig.saved()?, None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn both_steps_log_in_then_connect() -> Result<(), Trouble> {
+    let rig = rig("both").await?;
+    let (outcome, shown, asked) =
+        rig.steps("ada@example.com\n123456\n", Steps::Both).await;
+    outcome?;
+    assert!(shown.contains(LOGGED_IN), "{shown}");
+    assert!(shown.contains("\"mcpServers\""), "{shown}");
+    assert_eq!(asked, ["claude", "codex"]);
     Ok(())
 }

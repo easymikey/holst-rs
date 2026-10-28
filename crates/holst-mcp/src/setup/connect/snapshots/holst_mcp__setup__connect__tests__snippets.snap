@@ -1,0 +1,33 @@
+---
+source: crates/holst-mcp/src/setup/connect/tests.rs
+expression: shown
+---
+Other clients: add the server by hand.
+
+Hermes, in ~/.hermes/config.yaml:
+mcp_servers:
+  holst:
+    command: "/opt/holst/holst-mcp"
+
+opencode, in opencode.json:
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "holst": {
+      "command": [
+        "/opt/holst/holst-mcp"
+      ],
+      "enabled": true,
+      "type": "local"
+    }
+  }
+}
+
+Any client that takes an mcpServers entry:
+{
+  "mcpServers": {
+    "holst": {
+      "command": "/opt/holst/holst-mcp"
+    }
+  }
+}

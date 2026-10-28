@@ -1,4 +1,4 @@
-//! `holst-mcp setup`: log in from a terminal, for every MCP client.
+//! `holst-mcp setup`: log in from a terminal and connect the MCP clients.
 
 use std::io::{self, BufRead, Write};
 
@@ -13,6 +13,9 @@ use holst_core::{
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::login::store::{Backend as _, SystemBackend};
+
+mod connect;
+pub(crate) use connect::{Program, System};
 
 /// Tries for the address and for the code or password, as the CLI allows.
 const ATTEMPTS: u8 = 3;
@@ -137,6 +140,39 @@ impl Awaiting {
             Awaiting::Password(login) => login.log_in(typed).await,
         }
     }
+}
+
+/// Which steps `holst-mcp setup` takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Steps {
+    Both,
+    /// `--no-connect`
+    LoginOnly,
+    /// `--connect-only`
+    ConnectOnly,
+}
+
+impl Steps {
+    pub(crate) const fn connects(self) -> bool {
+        !matches!(self, Steps::LoginOnly)
+    }
+}
+
+/// The steps in order: the login, then the connection of the clients.
+pub(crate) async fn set_up<R: BufRead, W: Write>(
+    backend: &SystemBackend,
+    talk: &mut Talk<R, W>,
+    programs: &impl Program,
+    binary: &str,
+    steps: Steps,
+) -> Result<(), SetupError> {
+    if !matches!(steps, Steps::ConnectOnly) {
+        run(backend, talk).await?;
+    }
+    if steps.connects() {
+        connect::connect(programs, talk, binary)?;
+    }
+    Ok(())
 }
 
 /// Logs in and saves the login for the server; asks first when one is saved.

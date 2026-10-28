@@ -31,7 +31,15 @@ enum StartError {
     )]
     NotTerminal,
 
-    #[error("the login did not finish")]
+    #[error("give setup one of --no-connect and --connect-only, once")]
+    OneFlag,
+
+    #[error(
+        "could not find the path of the running holst-mcp (it must be valid UTF-8)"
+    )]
+    Binary,
+
+    #[error("setup did not finish")]
     Setup(#[source] setup::SetupError),
 
     #[error("could not write to stdout")]
@@ -50,16 +58,33 @@ enum StartError {
 #[tokio::main]
 async fn main() -> ExitCode {
     // Else `--version` would wait for the protocol; stdout is still free.
-    let mut args = std::env::args().skip(1);
-    let outcome = match (args.next(), args.next()) {
-        (Some(command), None) if command == "setup" => Box::pin(log_in()).await,
-        (Some(command), Some(extra)) if command == "setup" => {
-            Err(StartError::UnknownArg { arg: extra })
-        }
-        (Some(arg), _) => print_usage(&arg),
-        (None, _) => Box::pin(serve()).await,
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let outcome = match args.split_first() {
+        Some((command, flags)) if command == "setup" => match setup_steps(flags) {
+            Ok(steps) => Box::pin(set_up(steps)).await,
+            Err(err) => Err(err),
+        },
+        Some((arg, _)) => print_usage(arg),
+        None => Box::pin(serve()).await,
     };
     outcome.map_or_else(|err| report(&err), |()| ExitCode::SUCCESS)
+}
+
+/// The steps the flags of `holst-mcp setup` ask for.
+fn setup_steps(flags: &[String]) -> Result<setup::Steps, StartError> {
+    let asked = flags
+        .iter()
+        .map(|flag| match flag.as_str() {
+            "--no-connect" => Ok(setup::Steps::LoginOnly),
+            "--connect-only" => Ok(setup::Steps::ConnectOnly),
+            _ => Err(StartError::UnknownArg { arg: flag.clone() }),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    match asked.as_slice() {
+        [] => Ok(setup::Steps::Both),
+        [one] => Ok(*one),
+        _ => Err(StartError::OneFlag),
+    }
 }
 
 fn print_usage(arg: &str) -> Result<(), StartError> {
@@ -73,8 +98,9 @@ fn usage(arg: &str) -> Result<String, StartError> {
         "--version" | "-V" => Ok(format!("holst-mcp {VERSION}")),
         "--help" | "-h" => Ok(format!(
             "holst-mcp {VERSION} — the Holst MCP server on stdio.\n\
-             Log in: holst-mcp setup (in a terminal; in a container: docker exec -it <container> holst-mcp setup)\n\
-             Connect: claude mcp add holst-rs -- holst-mcp\n\
+             Log in and connect Claude Code and Codex: holst-mcp setup [--no-connect | --connect-only]\n\
+             (in a terminal; in a container: docker exec -it <container> holst-mcp setup)\n\
+             Other clients: setup prints the entry to put in their config\n\
              Environment: HOLST_HOME, HOLST_BASE_URL, HOLST_LOG, HOLST_MCP_RAW_WRITE=1"
         )),
         other => Err(StartError::UnknownArg {
@@ -115,12 +141,12 @@ async fn serve() -> Result<(), StartError> {
         .map_err(StartError::Stopped)
 }
 
-/// `holst-mcp setup`: the login the server uses, typed in a terminal.
+/// `holst-mcp setup`: the login the server uses, then the MCP clients.
 #[expect(
     clippy::disallowed_methods,
     reason = "main.rs is the one place that reads the environment"
 )]
-async fn log_in() -> Result<(), StartError> {
+async fn set_up(steps: setup::Steps) -> Result<(), StartError> {
     io::stdin()
         .is_terminal()
         .then_some(())
@@ -130,8 +156,18 @@ async fn log_in() -> Result<(), StartError> {
             .map_err(StartError::Settings)?;
     init_tracing(&settings.log);
     let backend = login::store::SystemBackend::new(settings);
+    let binary = steps
+        .connects()
+        .then(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|path| path.to_str().map(str::to_owned))
+                .ok_or(StartError::Binary)
+        })
+        .transpose()?
+        .unwrap_or_default();
     let mut talk = setup::Talk::new(io::stdin().lock(), io::stderr().lock(), true);
-    setup::run(&backend, &mut talk)
+    setup::set_up(&backend, &mut talk, &setup::System, &binary, steps)
         .await
         .map_err(StartError::Setup)
 }
@@ -159,7 +195,40 @@ fn init_tracing(log: &holst_core::effect::settings::LogSettings) {
 
 #[cfg(test)]
 mod tests {
-    use crate::{VERSION, usage};
+    use crate::{VERSION, setup::Steps, setup_steps, usage};
+
+    fn flags(words: &[&str]) -> Vec<String> {
+        words.iter().map(|word| (*word).to_owned()).collect()
+    }
+
+    #[test]
+    fn setup_flags_pick_the_steps() {
+        assert_eq!(setup_steps(&flags(&[])).ok(), Some(Steps::Both));
+        assert_eq!(
+            setup_steps(&flags(&["--no-connect"])).ok(),
+            Some(Steps::LoginOnly)
+        );
+        assert_eq!(
+            setup_steps(&flags(&["--connect-only"])).ok(),
+            Some(Steps::ConnectOnly)
+        );
+    }
+
+    #[test]
+    fn setup_flags_reject_the_unknown_and_the_pair() {
+        let shown =
+            |words: &[&str]| setup_steps(&flags(words)).err().map(|e| e.to_string());
+        assert_eq!(
+            shown(&["--port"]).as_deref(),
+            Some(
+                "unknown argument --port: the server speaks MCP on stdio; its only command is setup"
+            )
+        );
+        assert_eq!(
+            shown(&["--no-connect", "--connect-only"]).as_deref(),
+            Some("give setup one of --no-connect and --connect-only, once")
+        );
+    }
 
     #[test]
     fn usage_knows_version_and_help_and_rejects_the_rest() {
