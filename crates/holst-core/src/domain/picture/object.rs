@@ -580,7 +580,7 @@ fn drawing(fields: &Value) -> String {
     let alpha = area::scene::number(fields, document::ALPHA).unwrap_or(1.0);
     let width = area::scene::stroke_width(fields);
     let scale = area::scene::number(fields, document::SCALE).unwrap_or(1.0);
-    // PROTOCOL: the drawing algorithm name, docs/board-protocol.md § Other types.
+    // PROTOCOL: the drawing algorithm name.
     let filled = matches!(
         fields.get(document::ALGORITHM).and_then(Value::as_str),
         Some("svgFill")
@@ -640,7 +640,7 @@ fn stamp(object: &Object, local: Rectangle, images: &PictureImages<'_>) -> Strin
     let text = data
         .and_then(|d| d.get(document::TEXT))
         .and_then(Value::as_str);
-    // PROTOCOL: the stamp type name, docs/board-protocol.md § Other types.
+    // PROTOCOL: the stamp type name.
     match (kind, text, image_address(object, images.storage)) {
         (Some("textStamp"), Some(text), _) => format!(
             "<text x=\"{}\" y=\"{}\" font-size=\"{}\" text-anchor=\"middle\">{}</text>",

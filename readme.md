@@ -51,7 +51,7 @@ claude mcp add holst -s user -- holst-mcp
 
 ## Help
 
-`holst -h` lists the groups, `holst <group> -h` the commands of a group, `holst help exit-codes` the exit codes. Board protocol notes and code conventions are in [docs](docs).
+`holst -h` lists the groups, `holst <group> -h` the commands of a group, `holst help exit-codes` the exit codes.
 
 ## License
 

@@ -107,7 +107,7 @@ impl Scene<'_> {
         let fields = &arrow.fields;
         let start = fields.get(document::START)?;
         let end = fields.get(document::END)?;
-        // PROTOCOL: arrow line names, docs/board-protocol.md § Other types.
+        // PROTOCOL: arrow line names.
         let line = match fields.get(document::ARROW_TYPE).and_then(Value::as_str) {
             Some("straight") => ArrowLine::Straight,
             Some("curved") => ArrowLine::Curved,

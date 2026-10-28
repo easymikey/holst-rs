@@ -100,7 +100,7 @@ impl ObjectKind {
     /// The name used in the document.
     #[must_use]
     pub fn as_str(&self) -> &str {
-        // PROTOCOL: object type names as stored, docs/board-protocol.md § Other types.
+        // PROTOCOL: object type names as stored.
         match self {
             ObjectKind::Sticker => "sticker",
             ObjectKind::StickerStack => "sticker-stack",

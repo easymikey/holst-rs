@@ -105,7 +105,7 @@ pub(super) enum StrokeStyle {
 impl StrokeStyle {
     /// The style of a stored `strokeStyle`; anything else is solid.
     pub(super) fn of(name: Option<&str>) -> Self {
-        // PROTOCOL: stroke style names, docs/board-protocol.md § Other types.
+        // PROTOCOL: stroke style names.
         match name {
             Some("dashed") => StrokeStyle::Dashed,
             Some("dotted") => StrokeStyle::Dotted,
@@ -179,7 +179,7 @@ impl TextAlign {
     pub(super) fn of(fields: &Value) -> TextAlign {
         let field = |name| fields.get(name).and_then(Value::as_str);
         TextAlign {
-            // PROTOCOL: alignment names, docs/board-protocol.md § Other types.
+            // PROTOCOL: alignment names.
             horizontal: match field(document::HORIZONTAL_ALIGN) {
                 Some("left" | "justify") => HorizontalAlign::Left,
                 Some("right") => HorizontalAlign::Right,

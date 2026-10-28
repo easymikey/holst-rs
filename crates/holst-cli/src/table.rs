@@ -1100,7 +1100,7 @@ mod tests {
             table::kinds_of,
         };
 
-        /// The sections of a command page, in the order of `help-preview.md`.
+        /// The sections of a command page in their order.
         const LEAF_ORDER: &[&[&str]] = &[
             &["USAGE"],
             &["ARGUMENTS"],

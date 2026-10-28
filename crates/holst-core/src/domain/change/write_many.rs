@@ -49,7 +49,7 @@ use crate::{
     },
 };
 
-// PROTOCOL: the colour a new tag gets, § Other types.
+// PROTOCOL: the colour a new tag gets.
 const NEW_TAG_COLOR: &str = "indigo5";
 
 /// The board's objects as the change has left them so far, and what it touched.

@@ -42,7 +42,7 @@ enum Arrowhead {
 
 impl Arrowhead {
     fn of(name: &str) -> Self {
-        // PROTOCOL: arrowhead names, docs/board-protocol.md § Other types.
+        // PROTOCOL: arrowhead names.
         match name {
             "none" => Arrowhead::None,
             "triangle" => Arrowhead::Triangle,
