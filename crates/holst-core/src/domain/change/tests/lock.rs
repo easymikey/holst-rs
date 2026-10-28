@@ -181,7 +181,7 @@ fn only_refuses_a_sticker() -> Result<()> {
     assert_eq!(
         refusal(&document, &BoardChange::LockOnly(named(&["F", "b"]))),
         Some(
-            "\"b\" cannot be locked: --only locks frames and tables, nothing else"
+            "\"b\" cannot be locked: only locks frames and tables, nothing else"
                 .to_owned()
         )
     );

@@ -77,8 +77,8 @@ fn arrangement(args: &AlignArgs) -> Result<Arrangement> {
         (None, None) => Err(not_value(
             ALIGN,
             "to",
-            "left, center, right, top, middle or bottom, unless --distribute is given",
+            "left, center, right, top, middle or bottom, unless distribute is given",
         )),
-        (Some(_), Some(_)) => Err(not_value(ALIGN, "distribute", "left out with --to")),
+        (Some(_), Some(_)) => Err(not_value(ALIGN, "distribute", "left out with to")),
     }
 }

@@ -10,12 +10,7 @@ use crate::{
         board::show::{Loading, account_cache, board_id},
         board_load::{self, CacheUse, RemoteBoard},
         board_write::{WriteRequest, write_cached},
-        object::{
-            AddArgs,
-            AddItem,
-            AddKind,
-            change::{hidden_of, refuse_hiding},
-        },
+        object::{AddArgs, AddItem, AddKind, change::refuse_hiding},
         table::not_value,
     },
     domain::{
@@ -394,7 +389,6 @@ fn read_items(args: &AddArgs) -> Result<Vec<Item>> {
         ("ratio", args.ratio.is_some()),
         ("background", args.background.is_some()),
         ("hide_content", args.hide_content),
-        ("show_content", args.show_content),
     ];
     given
         .into_iter()
@@ -423,7 +417,6 @@ fn read_items(args: &AddArgs) -> Result<Vec<Item>> {
         ratio: args.ratio,
         background: args.background,
         hide_content: args.hide_content.then_some(true),
-        show_content: args.show_content.then_some(true),
     }];
     let asked: &[AddItem] = listed.unwrap_or(&own);
     let format = args.text_format.unwrap_or_default();
@@ -493,7 +486,6 @@ impl Reader {
             ("ratio", item.ratio.is_some()),
             ("background", item.background.is_some()),
             ("hide_content", item.hide_content.is_some()),
-            ("show_content", item.show_content.is_some()),
         ]
         .into_iter()
         .find_map(|(name, given)| (given && kind != AddKind::Frame).then_some(name))
@@ -675,7 +667,7 @@ fn frame_of(item: &AddItem, (at, size): (Option<Point>, Option<Size>)) -> Result
     let look = FrameEdit {
         ratio: item.ratio,
         background: item.background,
-        hidden: hidden_of(COMMAND, item.hide_content, item.show_content)?,
+        hidden: item.hide_content.filter(|&hide| hide),
     };
     Ok(What::Frame {
         title: item.text.clone().unwrap_or_default(),

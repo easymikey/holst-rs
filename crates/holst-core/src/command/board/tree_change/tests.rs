@@ -168,8 +168,7 @@ fn plans_folder() -> HttpResponse {
 async fn a_folder_removed_without_permanently_is_deleted_for_good_as_the_web_does()
 -> Result<()> {
     let moved = json_reply(&json!({ "updatedChannelIds": [uuid(12)] }));
-    let (fake, client) =
-        client([plans_folder(), tree(), plans_folder(), tree(), moved])?;
+    let (fake, client) = client([plans_folder(), tree(), moved])?;
     let sent = rm(
         &client,
         &arguments(json!({ "board": uuid(11), "confirm": true }))?,
@@ -191,7 +190,7 @@ async fn a_folder_removed_without_permanently_is_deleted_for_good_as_the_web_doe
 
 #[tokio::test]
 async fn a_folder_removed_without_confirmation_stays_undeleted() -> Result<()> {
-    let (fake, client) = client([plans_folder(), tree(), plans_folder(), tree()])?;
+    let (fake, client) = client([plans_folder(), tree()])?;
     let held = rm(&client, &arguments(json!({ "board": uuid(11) }))?).await?;
     assert_eq!(
         (status_of(&held.outcome), writes(&asked(&fake))),

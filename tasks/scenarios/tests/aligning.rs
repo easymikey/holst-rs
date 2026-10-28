@@ -132,14 +132,14 @@ async fn a_side_or_a_spread_is_needed_but_not_both(
     let neither = call_of(&holst, &[1, 2])?;
     let unasked = holst.on(surface).object("Plans", neither).await?;
     then(&unasked)
-        .failed_saying("unless --distribute is given")
+        .failed_saying("unless distribute is given")
         .signalled_as(surface.usage());
     let both = call_of(&holst, &[1, 2, 3])?
         .with("to", "left")
         .with("distribute", "vertical");
     let observation = holst.on(surface).object("Plans", both).await?;
     then(&observation)
-        .failed_saying("left out with --to")
+        .failed_saying("left out with to")
         .signalled_as(surface.usage());
     board_of(&holst).got_no_update();
     Ok(())

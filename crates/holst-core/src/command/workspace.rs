@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use futures_util::future::join_all;
+use futures_util::future::{OptionFuture, join_all};
 use holst_macros::CommandArgs;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -601,10 +601,14 @@ pub async fn rename(client: &Client, args: &RenameArgs) -> Result<WorkspaceChang
 /// # Errors
 /// Errors of the workspace lookup and of the request.
 pub async fn log(client: &Client, args: &LogArgs) -> Result<EventLog> {
-    let workspace = lookup::workspace(client, args.workspace.as_deref()).await?;
     let own = args.query.iter().any(|each| each.name == "workspaceId");
-    let query: Vec<(&str, String)> = (!own)
-        .then(|| ("workspaceId", workspace.id.clone()))
+    let scope = OptionFuture::from(
+        (!own).then(|| lookup::workspace(client, args.workspace.as_deref())),
+    )
+    .await
+    .transpose()?;
+    let query: Vec<(&str, String)> = scope
+        .map(|workspace| ("workspaceId", workspace.id))
         .into_iter()
         .chain(
             args.query

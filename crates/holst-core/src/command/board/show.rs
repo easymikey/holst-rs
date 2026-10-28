@@ -196,16 +196,20 @@ async fn shown(
 /// The area and padding asked for, when the flags fit the number of boards.
 fn asked(args: &ShowArgs) -> Result<(Area, Option<BoardLength>)> {
     let selection = &args.selection;
-    match (args.board.0.len(), area_flag(selection)) {
-        (0, _) => Err(InputError::NoArgument {
+    let noted = args.with.contains(&ShowPart::Note);
+    match (args.board.0.len(), area_flag(selection), args.note_format) {
+        (0, _, _) => Err(InputError::NoArgument {
             command: COMMAND.to_owned(),
             name: "board",
         }
         .into()),
-        (2.., Some(flag)) => {
+        (2.., Some(flag), _) => {
             Err(not_value(COMMAND, flag, "left out with several boards"))
         }
-        (_, _) => Ok((
+        (_, _, Some(_)) if !noted => {
+            Err(not_value(COMMAND, "note_format", "given with note in with"))
+        }
+        (_, _, _) => Ok((
             explicit_area(selection)?,
             BoardLength::optional(selection.padding)?,
         )),
@@ -601,6 +605,7 @@ mod tests {
             json!({ "board": ["A", "B"], "padding": 4 }),
             json!({ "board": "A", "frame": "Q3", "rectangle": "0,0,5,5" }),
             json!({ "board": [] }),
+            json!({ "board": "A", "note_format": "markdown" }),
         ];
         let refused: Vec<_> = join_all(
             cases
@@ -625,6 +630,10 @@ mod tests {
                     ),
                     Some(crate::error::picture::PictureError::SeveralAreas.to_string()),
                     Some("board is required by `board show`".to_owned()),
+                    Some(
+                        "note_format of `board show` must be given with note in with"
+                            .to_owned()
+                    ),
                 ],
                 0
             )

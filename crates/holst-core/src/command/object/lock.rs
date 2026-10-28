@@ -114,7 +114,7 @@ fn unlock_change(args: &UnlockArgs) -> Result<BoardChange> {
     match (args.all, args.object.is_empty()) {
         (false, _) => named(&args.board, &args.object, UNLOCK).map(BoardChange::Unlock),
         (true, true) => Ok(BoardChange::UnlockAll),
-        (true, false) => Err(not_value(UNLOCK, "object", "left out with --all")),
+        (true, false) => Err(not_value(UNLOCK, "object", "left out with all")),
     }
 }
 

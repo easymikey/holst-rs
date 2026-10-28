@@ -330,6 +330,30 @@ async fn a_confirmed_folder_delete_is_for_good_and_leaves_its_boards_up(
 
 #[rstest]
 #[tokio::test]
+async fn a_folder_is_not_deleted_for_good_by_a_part_of_its_name(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = given()
+        .saved_login()
+        .workspace("Team")
+        .folder("Archive 2025", "Team")
+        .start()
+        .await?;
+    let observation = holst
+        .on(surface)
+        .confirming()
+        .delete_node("Arch", "Team")
+        .await?;
+    then(&observation)
+        .failed_saying("\"Arch\"")
+        .failed_saying("not found")
+        .signalled_as(surface.not_found());
+    tree_of(&holst, "Team").has_folder("Archive 2025", None);
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
 async fn a_folder_with_boards_is_not_moved_unconfirmed(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {

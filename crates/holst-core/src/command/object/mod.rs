@@ -330,12 +330,6 @@ pub struct AddArgs {
     )]
     pub hide_content: bool,
     #[argument(
-        help = "Show the content of a frame again",
-        tool_doc = "Show frame content.",
-        kinds = [frame]
-    )]
-    pub show_content: bool,
-    #[argument(
         value_name = "file",
         help = "Many in one write: a JSON array or JSON lines file, - for stdin; its keys are the flags of one call",
         tool_doc = "Many at once, each with the arguments of one; at most 100 per call."
@@ -370,7 +364,6 @@ pub struct AddItem {
     pub ratio: Option<FrameRatio>,
     pub background: Option<FrameBackground>,
     pub hide_content: Option<bool>,
-    pub show_content: Option<bool>,
 }
 
 impl EnumArgument for LayerOrder {}
@@ -1008,7 +1001,6 @@ mod tests {
                     ("ratio", &["frame"][..]),
                     ("background", &["frame"][..]),
                     ("hide_content", &["frame"][..]),
-                    ("show_content", &["frame"][..]),
                 ]
             )
         );
@@ -1016,7 +1008,7 @@ mod tests {
 
     #[test]
     fn the_keys_of_an_item_are_flags_of_one_call() {
-        const ADD_KEYS: [&str; 21] = [
+        const ADD_KEYS: [&str; 20] = [
             "kind",
             "text",
             "shape",
@@ -1037,9 +1029,8 @@ mod tests {
             "ratio",
             "background",
             "hide_content",
-            "show_content",
         ];
-        const EDIT_KEYS: [&str; 27] = [
+        const EDIT_KEYS: [&str; 33] = [
             "object",
             "text",
             "at",
@@ -1051,8 +1042,14 @@ mod tests {
             "stroke_style",
             "radius",
             "opacity",
+            "mark",
+            "text_color",
+            "text_bg",
             "line",
             "heads",
+            "bend",
+            "from",
+            "to",
             "label",
             "ratio",
             "background",

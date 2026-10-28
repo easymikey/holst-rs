@@ -102,7 +102,7 @@ async fn only_refuses_a_sticker(
         .switched("only");
     let observation = holst.on(surface).object("Plans", call).await?;
     then(&observation)
-        .failed_saying("--only locks frames and tables")
+        .failed_saying("only locks frames and tables")
         .signalled_as(surface.usage());
     board_of(&holst).got_no_update();
     Ok(())
@@ -259,7 +259,7 @@ async fn all_beside_an_object_is_refused(
         .switched("all");
     let observation = holst.on(surface).object("Plans", call).await?;
     then(&observation)
-        .failed_saying("--all")
+        .failed_saying("left out with all")
         .signalled_as(surface.usage());
     board_of(&holst).got_no_update();
     Ok(())

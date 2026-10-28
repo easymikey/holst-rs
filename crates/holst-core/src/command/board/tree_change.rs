@@ -24,6 +24,7 @@ use crate::{
         lookup::choice::{self, MatchCoverage},
         node::{DeleteMode, NewNode, NodeBrief, NodeKind, NodeName, RightsCopy},
         text::printable,
+        tree::name_index::build::NameIndex,
     },
     effect::{board_write::WriteMode, request::ApiRequest},
     error::{
@@ -363,7 +364,19 @@ async fn trash(client: &Client, args: &RemoveArgs) -> Result<Plan> {
         .parse()?;
     let located = node::locate(client, &id).await?;
     if located.kind == NodeKind::Folder {
-        delete_forever(client, id.to_string()).await
+        // A folder goes for good, so its name must be given whole.
+        lookup::node(
+            client,
+            &args.board,
+            args.workspace.as_deref(),
+            NodeLookup {
+                filter: choice::NODES,
+                coverage: MatchCoverage::Exact,
+            },
+        )
+        .await?;
+        let left = left_inside(located.index(), id.as_str());
+        forever(id.as_str(), &located.name, left)
     } else {
         let node = ChangedNode {
             name: Some(located.name.clone()),
@@ -376,34 +389,42 @@ async fn trash(client: &Client, args: &RemoveArgs) -> Result<Plan> {
 async fn delete_forever(client: &Client, id: String) -> Result<Plan> {
     let reply = api::channel::get(client, &id).await?;
     let brief = NodeBrief::of(&reply)?;
-    let name = brief.name().to_owned();
-    let (left_behind, left_in) = if reply.get("type").and_then(Value::as_str)
+    let left = if reply.get("type").and_then(Value::as_str)
         == Some(NodeKind::Folder.as_str())
     {
         left_by(client, &id, &brief).await?
     } else {
         (Vec::new(), None)
     };
-    let shown = if name.is_empty() { &id } else { &name };
+    forever(&id, brief.name(), left)
+}
+
+/// The plan that deletes `id` for good; `left` is what it puts up a level.
+fn forever(
+    id: &str,
+    name: &str,
+    (left_behind, left_in): (Vec<LeftBehind>, Option<String>),
+) -> Result<Plan> {
+    let shown = if name.is_empty() { id } else { name };
     let unconfirmed = Unconfirmed {
         change: format!("deleting {shown} for good").into(),
         risk: ChangeRisk::Irreversible,
     };
     let node = ChangedNode {
-        name: Some(name).filter(|name| !name.is_empty()),
+        name: Some(name.to_owned()).filter(|name| !name.is_empty()),
         left_behind,
         left_in,
-        ..node_of(Action::DeleteForever, Some(id.clone()), None)
+        ..node_of(Action::DeleteForever, Some(id.to_owned()), None)
     };
     Ok(Plan {
-        request: api::channel::delete_request(&id, DeleteMode::Permanent)?,
+        request: api::channel::delete_request(id, DeleteMode::Permanent)?,
         node,
         unconfirmed: Some(unconfirmed),
     })
 }
 
 /// What is directly inside the live folder `id`, and the folder it is in (none:
-/// the root): where a deletion for good puts the contents.
+/// the root), read from the workspace tree.
 async fn left_by(
     client: &Client,
     id: &str,
@@ -413,27 +434,32 @@ async fn left_by(
         None => Ok((Vec::new(), None)),
         Some(workspace) => {
             let index = api::workspace::tree_index(client, workspace).await?;
-            let found = index.find_id(id).filter(|&node| !index.in_trash(node));
-            Ok(found.map_or_else(
-                || (Vec::new(), None),
-                |folder| {
-                    let inside = index
-                        .nodes()
-                        .filter(|&node| {
-                            index.parent(node) == Some(folder) && !index.in_trash(node)
-                        })
-                        .map(|node| LeftBehind {
-                            id: index.id(node),
-                            name: index.name(node).to_owned(),
-                            kind: index.kind(node).as_str(),
-                        })
-                        .collect();
-                    let into = index.parent(folder).map(|up| index.name(up).to_owned());
-                    (inside, into)
-                },
-            ))
+            Ok(left_inside(&index, id))
         }
     }
+}
+
+/// Where a deletion for good puts the contents of the live folder `id`.
+fn left_inside(index: &NameIndex, id: &str) -> (Vec<LeftBehind>, Option<String>) {
+    let found = index.find_id(id).filter(|&node| !index.in_trash(node));
+    found.map_or_else(
+        || (Vec::new(), None),
+        |folder| {
+            let inside = index
+                .nodes()
+                .filter(|&node| {
+                    index.parent(node) == Some(folder) && !index.in_trash(node)
+                })
+                .map(|node| LeftBehind {
+                    id: index.id(node),
+                    name: index.name(node).to_owned(),
+                    kind: index.kind(node).as_str(),
+                })
+                .collect();
+            let into = index.parent(folder).map(|up| index.name(up).to_owned());
+            (inside, into)
+        },
+    )
 }
 
 /// Brings a board or a folder back from the trash.

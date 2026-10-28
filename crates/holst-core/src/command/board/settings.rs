@@ -151,11 +151,9 @@ async fn edited(
 ) -> Result<Edited> {
     let cover = args.cover.as_deref().map(cover_of).transpose()?;
     let (cover, note) = match (cover, note_of(args)?) {
-        (None, None) => Err(not_value(
-            EDIT,
-            "cover",
-            "given, or --note or --note-template",
-        )),
+        (None, None) => {
+            Err(not_value(EDIT, "cover", "given, or note or note-template"))
+        }
         given => Ok(given),
     }?;
     let id = lookup::board_id(client, &args.board, args.workspace.as_deref()).await?;
@@ -170,10 +168,11 @@ async fn edited(
     )
     .await
     .transpose()?;
-    let note = note_written(client, loading, &id, note, sending).await?;
     if let Some(cover) = &cover {
         cover_fixed(client, &id, cover).await?;
     }
+    // The note goes last: an error above leaves it as it was.
+    let note = note_written(client, loading, &id, note, sending).await?;
     Ok(Edited {
         link: client.board_link(&id),
         board: id,
@@ -191,16 +190,14 @@ async fn edited(
 fn note_of(args: &EditArgs) -> Result<Option<NoteContent>> {
     match (&args.note, args.note_template, args.note_format) {
         (Some(_), Some(_), _) => {
-            Err(not_value(EDIT, "note-template", "left out with --note"))
+            Err(not_value(EDIT, "note-template", "left out with note"))
         }
         (None, Some(_), Some(_)) => Err(not_value(
             EDIT,
             "note-format",
-            "left out with --note-template",
+            "left out with note-template",
         )),
-        (None, None, Some(_)) => {
-            Err(not_value(EDIT, "note-format", "given with --note"))
-        }
+        (None, None, Some(_)) => Err(not_value(EDIT, "note-format", "given with note")),
         (Some(text), None, format) => Ok(Some(NoteContent::Text {
             text: text.0.clone(),
             format: format.unwrap_or_default(),
@@ -606,6 +603,28 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn a_refused_cover_leaves_the_note_unwritten() -> Result<()> {
+        let file = picture("cover.png", b"\x89PNG\r\n\x1a\n....")?;
+        let (fake, done) = run(
+            &json!({ "board": BOARD, "cover": file, "note": "hello" }),
+            [
+                channel(),
+                uploaded(),
+                crate::remote::client::fake::reply(403, &[], ""),
+            ],
+            &editable(),
+        )
+        .await?;
+        // The note write starts with a read of the user: none is made.
+        let asked_for_the_user = fake
+            .requests()
+            .iter()
+            .any(|request| request.url.path() == "/gapi/current_user");
+        assert_eq!((done.is_err(), asked_for_the_user), (true, false));
+        Ok(())
+    }
+
     #[cfg(feature = "png")]
     #[tokio::test]
     async fn a_reset_preview_is_stored_under_the_boards_preview_key() -> Result<()> {
@@ -663,19 +682,19 @@ mod tests {
     #[rstest::rstest]
     #[case::nothing(
         json!({ "board": BOARD }),
-        "cover of `board edit` must be given, or --note or --note-template"
+        "cover of `board edit` must be given, or note or note-template"
     )]
     #[case::both(
         json!({ "board": BOARD, "note": "a", "note_template": "todo" }),
-        "note-template of `board edit` must be left out with --note"
+        "note-template of `board edit` must be left out with note"
     )]
     #[case::format_of_template(
         json!({ "board": BOARD, "note_template": "todo", "note_format": "markdown" }),
-        "note-format of `board edit` must be left out with --note-template"
+        "note-format of `board edit` must be left out with note-template"
     )]
     #[case::format_alone(
         json!({ "board": BOARD, "note_format": "markdown" }),
-        "note-format of `board edit` must be given with --note"
+        "note-format of `board edit` must be given with note"
     )]
     #[tokio::test]
     async fn a_note_asked_wrongly_is_refused_before_any_request(

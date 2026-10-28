@@ -22,7 +22,6 @@ FLAGS
       --ratio ratio        A frame's ratio: 16:9, 4:3, 1:1, a4 or a4-landscape; with --size the area is kept; 16:9 at 1920x1080 and the like by default
       --background style   A frame's background: fill, border or outline; border by default
       --hide-content       Hide the content of a frame; needs the board's right to hide frame content
-      --show-content       Show the content of a frame again
       --items file         Many in one write: a JSON array or JSON lines file, - for stdin; its keys are the flags of one call
   -n, --dry-run            Show what would change; change nothing
 

@@ -1408,7 +1408,7 @@ async fn a_size_and_a_scale_together_are_refused(
         .with("scale", "2");
     let observation = holst.on(surface).object("Plans", call).await?;
     then(&observation)
-        .failed_saying("left out with --size")
+        .failed_saying("left out with size")
         .signalled_as(surface.usage());
     board_of(&holst).got_no_update();
     Ok(())

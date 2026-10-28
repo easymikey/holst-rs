@@ -301,8 +301,8 @@ fn refuse_with_items(args: &EditArgs) -> Result<()> {
         ("color", args.color.is_some()),
         ("shape", args.shape.is_some()),
         ("stroke", args.stroke.is_some()),
-        ("stroke-width", args.stroke_width.is_some()),
-        ("stroke-style", args.stroke_style.is_some()),
+        ("stroke_width", args.stroke_width.is_some()),
+        ("stroke_style", args.stroke_style.is_some()),
         ("radius", args.radius.is_some()),
         ("opacity", args.opacity.is_some()),
         ("mark", args.mark.is_some()),
@@ -440,7 +440,7 @@ fn scale_of(item: &EditItem) -> Result<Option<f64>> {
     item.scale
         .map(|scale| match scale {
             _ if item.size.is_some() => {
-                Err(not_value(EDIT, "scale", "left out with --size"))
+                Err(not_value(EDIT, "scale", "left out with size"))
             }
             _ if scale.is_finite() && scale > 0.0 => Ok(scale),
             _ => Err(not_value(EDIT, "scale", "a number above 0")),
@@ -498,7 +498,7 @@ fn width_of(item: &EditItem) -> Result<Option<TextWidth>> {
         .as_deref()
         .map(|raw| match raw.trim() {
             _ if item.size.is_some() => {
-                Err(not_value(EDIT, "width", "left out with --size"))
+                Err(not_value(EDIT, "width", "left out with size"))
             }
             "auto" => Ok(TextWidth::Auto),
             number => number
@@ -514,16 +514,16 @@ fn width_of(item: &EditItem) -> Result<Option<TextWidth>> {
 /// What `--check` and `--uncheck` say: one checklist item, from 1.
 fn tick_of(item: &EditItem) -> Result<Option<Tick>> {
     let asked = match (item.check, item.uncheck) {
-        (Some(_), Some(_)) => Err(not_value(EDIT, "check", "left out with --uncheck")),
-        (Some(number), None) => Ok(Some((number, true))),
-        (None, Some(number)) => Ok(Some((number, false))),
+        (Some(_), Some(_)) => Err(not_value(EDIT, "check", "left out with uncheck")),
+        (Some(number), None) => Ok(Some((number, true, "check"))),
+        (None, Some(number)) => Ok(Some((number, false, "uncheck"))),
         (None, None) => Ok(None),
     }?;
     asked
-        .map(|(number, done)| {
+        .map(|(number, done, name)| {
             NonZeroU32::new(number)
                 .map(|nth| Tick { item: nth, done })
-                .ok_or_else(|| not_value(EDIT, "check", "an item number from 1"))
+                .ok_or_else(|| not_value(EDIT, name, "an item number from 1"))
         })
         .transpose()
 }
@@ -764,6 +764,34 @@ mod tests {
         assert_eq!(
             refused.as_deref(),
             Some("text of `object edit` must be left out with --items")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn uncheck_zero_is_refused_under_its_own_name() -> Result<()> {
+        let refused = edit_fields(json!({"object": [STICKER], "uncheck": 0}))
+            .await
+            .err()
+            .map(|error| error.to_string());
+        assert_eq!(
+            refused.as_deref(),
+            Some("uncheck of `object edit` must be an item number from 1")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_stroke_width_beside_items_is_named_as_the_tool_argument() -> Result<()> {
+        let refused = edit_fields(
+            json!({"stroke_width": 4, "items": [{"object": STICKER, "color": "blue3"}]}),
+        )
+        .await
+        .err()
+        .map(|error| error.to_string());
+        assert_eq!(
+            refused.as_deref(),
+            Some("stroke_width of `object edit` must be left out with --items")
         );
         Ok(())
     }

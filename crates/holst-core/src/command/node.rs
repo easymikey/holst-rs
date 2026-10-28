@@ -232,6 +232,12 @@ fn located(
 }
 
 impl LocatedNode {
+    /// The live tree of the node's workspace.
+    #[must_use]
+    pub const fn index(&self) -> &NameIndex {
+        &self.index
+    }
+
     /// The folder `reference` names in this node's workspace, as
     /// [`look_up_parent`].
     ///

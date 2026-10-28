@@ -113,7 +113,7 @@ impl fmt::Display for LockRefusal {
         match self {
             LockRefusal::Held => f.write_str("it is locked already"),
             LockRefusal::NotFrameOrTable => {
-                f.write_str("--only locks frames and tables, nothing else")
+                f.write_str("only locks frames and tables, nothing else")
             }
             LockRefusal::Group(why) => write!(f, "{why}"),
         }
@@ -534,6 +534,13 @@ pub(super) mod tests {
                 BoardChangeError::NotLockable {
                     reference: text(),
                     why: LockRefusal::Held,
+                },
+                None,
+            ),
+            (
+                BoardChangeError::NotLockable {
+                    reference: text(),
+                    why: LockRefusal::NotFrameOrTable,
                 },
                 None,
             ),

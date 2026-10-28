@@ -279,6 +279,21 @@ async fn create_posts_the_trimmed_name_and_refuses_a_blank_one() -> Result<()> {
 }
 
 #[tokio::test]
+async fn log_with_a_workspace_id_query_looks_up_no_workspace() -> Result<()> {
+    let (fake, client) = served(&[me(), json!({ "events": [] })])?;
+    let args = LogArgs {
+        workspace: None,
+        query: vec![QueryParameter {
+            name: "workspaceId".to_owned(),
+            value: "w9".to_owned(),
+        }],
+    };
+    log(&client, &args).await?;
+    assert_eq!(sent(&fake).len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
 async fn log_asks_for_the_workspace_given() -> Result<()> {
     let (fake, client) = served(&[me(), json!({ "events": [] })])?;
     let args = LogArgs {
