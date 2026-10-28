@@ -222,6 +222,10 @@ pub enum BoardChange {
     RemoveAll(Vec<String>),
     /// Copies of objects, new ids and all.
     Paste(Pasted),
+    /// The named objects, put into one new group.
+    Group(Vec<String>),
+    /// The named groups, dissolved; their members stay.
+    Ungroup(Vec<String>),
 }
 
 /// What happened to an object.

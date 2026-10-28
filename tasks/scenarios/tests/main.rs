@@ -6,6 +6,7 @@ mod export;
 mod files;
 mod fixtures;
 mod folders;
+mod grouping;
 mod search;
 mod session;
 mod settings;

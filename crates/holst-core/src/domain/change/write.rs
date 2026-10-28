@@ -51,6 +51,7 @@ use crate::{
                 ObjectPatch,
                 Upload,
             },
+            write_group::{dissolve_after_removal, group, ungroup},
             write_many::{edit_all, paste},
         },
         geometry::{Point, Rectangle, Size},
@@ -159,6 +160,8 @@ pub(super) fn write_change(
         CheckedChange::EditAll(edits) => edit_all(transaction, scope, &edits),
         CheckedChange::RemoveAll(ids) => remove_all(transaction, scope, &ids),
         CheckedChange::Paste(pasted) => paste(transaction, scope, pasted),
+        CheckedChange::Group(members) => group(transaction, scope, &members),
+        CheckedChange::Ungroup(groups) => ungroup(transaction, scope, &groups),
     }
 }
 
@@ -753,7 +756,7 @@ fn changed_names(
     .collect()
 }
 
-fn insert_changes(
+pub(super) fn insert_changes(
     transaction: &mut TransactionMut<'_>,
     map: &MapRef,
     changes: &[(&'static str, Value)],
@@ -1037,5 +1040,7 @@ fn remove_all(
         &roots.journal,
         journal::entry(states, &removed, stamp),
     )?;
-    Ok(touched)
+    let dissolved =
+        dissolve_after_removal(transaction, scope, &gone.iter().cloned().collect())?;
+    Ok(touched.into_iter().chain(dissolved).collect())
 }

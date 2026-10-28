@@ -2,6 +2,7 @@
 
 mod add_all;
 mod frame;
+mod group;
 mod journal;
 mod locked;
 mod many;

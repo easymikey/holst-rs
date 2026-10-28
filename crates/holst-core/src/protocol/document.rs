@@ -23,6 +23,11 @@ pub(crate) const CREATED: &str = "created";
 pub(crate) const AUTHOR_INDEX: &str = "a";
 pub(crate) const PARENT_ID: &str = "parentId";
 
+// PROTOCOL: a group keeps its members' places and is their `parentId`.
+pub(crate) const IGNORE_Z_INDEX: &str = "ignoreZIndex";
+// PROTOCOL: the table cell an object in a table sits in, copied onto its group.
+pub(crate) const ADDITIONAL_POSITION_INFO: &str = "additionalPositionInfo";
+
 // PROTOCOL: text and notes of an object.
 pub(crate) const DOCUMENT_ID: &str = "documentId";
 pub(crate) const TEXTS: &str = "texts";

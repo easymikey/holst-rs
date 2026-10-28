@@ -10,13 +10,16 @@ use holst_core::{
             CopyArgs,
             EditArgs,
             GetArgs,
+            GroupArgs,
             LsArgs,
             ObjectVerb,
             RemoveArgs,
+            UngroupArgs,
             add,
             change::{self, Removed},
             copy,
             get::{self, Downloaded},
+            group,
             list::{self, ListedObject, Listing},
         },
         table::{CommandArgs, CommandName, parse},
@@ -133,6 +136,14 @@ impl McpServer {
             ObjectVerb::Cp => {
                 let dry = |args: &CopyArgs| args.dry_run;
                 self.change_objects(arguments, dry, copy::cp).await
+            }
+            ObjectVerb::Group => {
+                let dry = |args: &GroupArgs| args.dry_run;
+                self.change_objects(arguments, dry, group::group).await
+            }
+            ObjectVerb::Ungroup => {
+                let dry = |args: &UngroupArgs| args.dry_run;
+                self.change_objects(arguments, dry, group::ungroup).await
             }
             ObjectVerb::Rm => self.remove_objects(arguments).await,
             ObjectVerb::Get => self.download_objects(arguments).await,

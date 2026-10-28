@@ -4,6 +4,7 @@ pub mod add;
 pub mod change;
 pub mod copy;
 pub mod get;
+pub mod group;
 pub mod list;
 
 use holst_macros::CommandArgs;
@@ -25,6 +26,8 @@ pub enum ObjectVerb {
     Add,
     Edit,
     Cp,
+    Group,
+    Ungroup,
     Rm,
     Get,
 }
@@ -37,6 +40,8 @@ impl ObjectVerb {
             ObjectVerb::Add => &AddArgs::COMMAND,
             ObjectVerb::Edit => &EditArgs::COMMAND,
             ObjectVerb::Cp => &CopyArgs::COMMAND,
+            ObjectVerb::Group => &GroupArgs::COMMAND,
+            ObjectVerb::Ungroup => &UngroupArgs::COMMAND,
             ObjectVerb::Rm => &RemoveArgs::COMMAND,
             ObjectVerb::Get => &GetArgs::COMMAND,
         }
@@ -413,6 +418,66 @@ pub struct CopyArgs {
         tool_doc = "x,y; add, cp: a free corner by default; edit: unchanged."
     )]
     pub at: Option<String>,
+    #[argument(letter = 'n', help = "Show what would change; change nothing")]
+    pub dry_run: WriteMode,
+}
+
+#[derive(Debug, Deserialize, CommandArgs)]
+#[holst_command(
+    group = Object,
+    verb = "group",
+    risk = Write,
+    block = Commands,
+    about = "Put objects into a group",
+    help = "Put objects into one new group, so that they are picked and moved together. The objects are the linked object and every --object, at least two.\n\
+            Frames, table cells, mind-map nodes, cards in a kanban column and objects already in a group stay out. It prints one line per changed object with @N and its link.",
+    example = "holst o group \"Roadmap\" --object a1b2c3d4 --object e5f6a7b8",
+    example = "holst o group \"Roadmap\" --object a1b2c3d4 --object e5f6a7b8 -n"
+)]
+pub struct GroupArgs {
+    #[argument(positional, help = "The board: id, link or part of its name")]
+    pub board: String,
+    #[argument(
+        value_name = "object",
+        help = "An object, repeat for several: id, link, @N or the first 8 characters of its id"
+    )]
+    pub object: Vec<String>,
+    #[argument(
+        letter = 'w',
+        value_name = "ws",
+        help = "Where names are looked up and new things go: a workspace id or part of its name; all of yours by default"
+    )]
+    pub workspace: Option<String>,
+    #[argument(letter = 'n', help = "Show what would change; change nothing")]
+    pub dry_run: WriteMode,
+}
+
+#[derive(Debug, Deserialize, CommandArgs)]
+#[holst_command(
+    group = Object,
+    verb = "ungroup",
+    risk = Write,
+    block = Commands,
+    about = "Dissolve groups; their objects stay",
+    help = "Dissolve groups: their objects stay where they are, in the group's frame if it stood in one. The groups are the linked object and every --object.\n\
+            A group left with fewer than 2 objects by `o rm` dissolves by itself. It prints one line per changed object with @N and its link.",
+    example = "holst o ungroup \"Roadmap\" --object a1b2c3d4",
+    example = "holst o ungroup \"Roadmap\" --object a1b2c3d4 -n"
+)]
+pub struct UngroupArgs {
+    #[argument(positional, help = "The board: id, link or part of its name")]
+    pub board: String,
+    #[argument(
+        value_name = "object",
+        help = "A group, repeat for several: id, link, @N or the first 8 characters of its id"
+    )]
+    pub object: Vec<String>,
+    #[argument(
+        letter = 'w',
+        value_name = "ws",
+        help = "Where names are looked up and new things go: a workspace id or part of its name; all of yours by default"
+    )]
+    pub workspace: Option<String>,
     #[argument(letter = 'n', help = "Show what would change; change nothing")]
     pub dry_run: WriteMode,
 }

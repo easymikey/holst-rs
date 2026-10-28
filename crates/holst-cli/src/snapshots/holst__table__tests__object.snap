@@ -12,6 +12,8 @@ COMMANDS
   add:         Add stickers, texts, shapes, frames, arrows, links, images or files to a board
   edit:        Change text, corner, size, color, order or tags of objects
   cp:          Copy objects on their board or onto another board
+  group:       Put objects into a group
+  ungroup:     Dissolve groups; their objects stay
   rm:          Remove objects with what a frame holds and their arrows
   get:         Download the original of an image or file object
 

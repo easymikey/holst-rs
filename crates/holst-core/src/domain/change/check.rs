@@ -29,6 +29,7 @@ use crate::{
             GivenPoint,
             GivenRectangle,
             GivenSize,
+            GroupRefusal,
             OffBoardValue,
         },
     },
@@ -57,6 +58,8 @@ const STICKY_POSITION: &str = "stickyPosition";
 const AUTHOR: &str = "a";
 /// Written on a frame whose content is hidden.
 const CONTENT_HIDDEN: &str = "isContentHidden";
+/// The type of a node of a mind map, which the web client never groups.
+const MIND_MAP_NODE: &str = "mind-map-node";
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Placement {
@@ -114,6 +117,9 @@ pub(crate) enum CheckedChange<'a> {
     EditAll(Vec<CheckedEdit<'a>>),
     RemoveAll(Vec<String>),
     Paste(&'a Pasted),
+    /// The members of a new group, once each, the top ones only.
+    Group(Vec<String>),
+    Ungroup(Vec<String>),
 }
 
 /// An edit of many with the object it names found.
@@ -177,7 +183,9 @@ pub(crate) fn check<'a>(
             on_board(edit.patch.at.as_ref(), edit.patch.size.as_ref())
         }),
         BoardChange::Paste(pasted) => pasted_on_board(pasted),
-        BoardChange::RemoveAll(_) => Ok(()),
+        BoardChange::RemoveAll(_) | BoardChange::Group(_) | BoardChange::Ungroup(_) => {
+            Ok(())
+        }
     }?;
     match change {
         BoardChange::AddAll(entries) => entries
@@ -214,24 +222,128 @@ pub(crate) fn check<'a>(
             removable(states, objects, right, mine).map(CheckedChange::RemoveAll)
         }
         BoardChange::Paste(pasted) => Ok(CheckedChange::Paste(pasted)),
+        BoardChange::Group(objects) => {
+            groupable(states, objects).map(CheckedChange::Group)
+        }
+        BoardChange::Ungroup(objects) => {
+            ungroupable(states, objects).map(CheckedChange::Ungroup)
+        }
     }
+}
+
+/// Whether the object itself carries the lock flag.
+pub(super) fn flagged(states: &HashMap<String, Value>, object: &str) -> bool {
+    states
+        .get(object)
+        .and_then(|fields| fields.get(LOCKED))
+        .and_then(Value::as_bool)
+        .unwrap_or_default()
+}
+
+/// The ids of the objects named, once each, that may go into one new group:
+/// what lies inside another named object goes with it, and the rest must be
+/// at least two, none of a kind the web client keeps out of groups.
+fn groupable(states: &HashMap<String, Value>, named: &[String]) -> Result<Vec<String>> {
+    let found = named
+        .iter()
+        .map(|reference| find(states, reference).map(|id| (reference, id)))
+        .collect::<Result<Vec<_>>>()?;
+    let asked: BTreeSet<&str> = found.iter().map(|(_, id)| id.as_str()).collect();
+    let top: Vec<_> = found
+        .iter()
+        .unique_by(|(_, id)| id)
+        .filter(|(_, id)| {
+            ancestry(states, id)
+                .iter()
+                .skip(1)
+                .all(|above| !asked.contains(above.as_str()))
+        })
+        .collect();
+    let too_few = (top.len() < 2).then(|| {
+        Error::BoardChange(BoardChangeError::TooFewToGroup { given: top.len() })
+    });
+    let refused = top.iter().find_map(|(reference, id)| {
+        refusal_to_group(states, id).map(|why| {
+            Error::BoardChange(BoardChangeError::NotGroupable {
+                reference: (*reference).clone(),
+                why,
+            })
+        })
+    });
+    too_few
+        .or(refused)
+        .map_or_else(|| Ok(top.iter().map(|(_, id)| id.clone()).collect()), Err)
+}
+
+/// Why the web client's menu will not group the object, if it will not.
+fn refusal_to_group(states: &HashMap<String, Value>, id: &str) -> Option<GroupRefusal> {
+    let in_group = ancestry(states, id)
+        .iter()
+        .skip(1)
+        .any(|above| kind_of(states, above) == ObjectKind::Group);
+    let kind = kind_of(states, id);
+    let by_kind = match &kind {
+        ObjectKind::Frame => Some(GroupRefusal::Frame),
+        ObjectKind::TableCell => Some(GroupRefusal::TableCell),
+        ObjectKind::Other(name) => {
+            (name == MIND_MAP_NODE).then_some(GroupRefusal::MindMapNode)
+        }
+        ObjectKind::Sticker
+        | ObjectKind::StickerStack
+        | ObjectKind::Text
+        | ObjectKind::Shape
+        | ObjectKind::Document
+        | ObjectKind::Arrow
+        | ObjectKind::Image
+        | ObjectKind::File
+        | ObjectKind::Stamp
+        | ObjectKind::Group
+        | ObjectKind::Table
+        | ObjectKind::Code
+        | ObjectKind::Drawing
+        | ObjectKind::Dice
+        | ObjectKind::Wheel
+        | ObjectKind::Flipcard
+        | ObjectKind::Task
+        | ObjectKind::Link => None,
+    };
+    by_kind
+        .or_else(|| in_group.then_some(GroupRefusal::InGroup))
+        .or_else(|| held_in(states, id, &kind).map(|_| GroupRefusal::InColumn))
+}
+
+/// The ids of the groups named, once each; none may be locked.
+fn ungroupable(
+    states: &HashMap<String, Value>,
+    named: &[String],
+) -> Result<Vec<String>> {
+    let found = named
+        .iter()
+        .map(|reference| find(states, reference).map(|id| (reference, id)))
+        .collect::<Result<Vec<_>>>()?;
+    found
+        .iter()
+        .unique_by(|(_, id)| id)
+        .map(|(reference, id)| {
+            if kind_of(states, id) == ObjectKind::Group {
+                unlocked(states, id, reference).map(|()| id.clone())
+            } else {
+                Err(Error::BoardChange(BoardChangeError::NotGroup {
+                    reference: (*reference).clone(),
+                }))
+            }
+        })
+        .collect()
 }
 
 /// Whether the web client keeps `id` as it is: a locked frame or table, a cell
 /// of a locked table, or anything in a locked group.
 pub(super) fn locked(states: &HashMap<String, Value>, id: &str) -> bool {
-    let flagged = |object: &str| {
-        states
-            .get(object)
-            .and_then(|fields| fields.get(LOCKED))
-            .and_then(Value::as_bool)
-            .unwrap_or_default()
-    };
     let own = match kind_of(states, id) {
-        ObjectKind::Frame | ObjectKind::Table => flagged(id),
+        ObjectKind::Frame | ObjectKind::Table => flagged(states, id),
         ObjectKind::TableCell => {
             states.get(id).and_then(parent_of).is_some_and(|table| {
-                kind_of(states, table) == ObjectKind::Table && flagged(table)
+                kind_of(states, table) == ObjectKind::Table && flagged(states, table)
             })
         }
         ObjectKind::Sticker
@@ -253,9 +365,9 @@ pub(super) fn locked(states: &HashMap<String, Value>, id: &str) -> bool {
         | ObjectKind::Link
         | ObjectKind::Other(_) => false,
     };
-    own || ancestry(states, id)
-        .iter()
-        .any(|above| kind_of(states, above) == ObjectKind::Group && flagged(above))
+    own || ancestry(states, id).iter().any(|above| {
+        kind_of(states, above) == ObjectKind::Group && flagged(states, above)
+    })
 }
 
 fn unlocked(states: &HashMap<String, Value>, id: &str, reference: &str) -> Result<()> {

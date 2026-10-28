@@ -78,6 +78,28 @@ fn short(number: f64) -> impl fmt::Display {
     })
 }
 
+/// Why an object cannot go into a group, as the web client's menu refuses it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupRefusal {
+    Frame,
+    MindMapNode,
+    TableCell,
+    InGroup,
+    InColumn,
+}
+
+impl fmt::Display for GroupRefusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            GroupRefusal::Frame => "a frame holds its content itself",
+            GroupRefusal::MindMapNode => "a mind-map node stays in its map",
+            GroupRefusal::TableCell => "a table cell stays in its table",
+            GroupRefusal::InGroup => "it is in a group already; ungroup that one first",
+            GroupRefusal::InColumn => "a card in a kanban column stays in it",
+        })
+    }
+}
+
 /// A board change that was refused, malformed or not accepted.
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(test, derive(strum::EnumDiscriminants))]
@@ -170,6 +192,18 @@ pub enum BoardChangeError {
         at: GivenPoint,
     },
 
+    #[error("a group needs at least 2 objects, not {given}: nothing was changed")]
+    TooFewToGroup { given: usize },
+
+    #[error("\"{reference}\" cannot be grouped: {why}")]
+    NotGroupable {
+        reference: String,
+        why: GroupRefusal,
+    },
+
+    #[error("\"{reference}\" is not a group: only groups can be ungrouped")]
+    NotGroup { reference: String },
+
     #[error(
         "the server did not accept the change within {seconds} s — it may or may not be on \
          the board"
@@ -205,6 +239,7 @@ impl BoardChangeError {
             }
             BoardChangeError::NoObject { .. }
             | BoardChangeError::NotFrame { .. }
+            | BoardChangeError::NotGroup { .. }
             | BoardChangeError::OutsideFrame { .. } => Some(Hint::ListObjects),
             BoardChangeError::AcceptTimeout { .. }
             | BoardChangeError::ClosedBeforeAccept => Some(Hint::CheckBeforeRetry),
@@ -221,6 +256,8 @@ impl BoardChangeError {
             | BoardChangeError::NotColor { .. }
             | BoardChangeError::NotShapeKind { .. }
             | BoardChangeError::StickerSize { .. }
+            | BoardChangeError::TooFewToGroup { .. }
+            | BoardChangeError::NotGroupable { .. }
             | BoardChangeError::ContentHidden { .. } => None,
         }
     }
@@ -260,6 +297,9 @@ impl BoardChangeError {
             | BoardChangeError::NotShapeKind { .. }
             | BoardChangeError::StickerSize { .. }
             | BoardChangeError::NotFrame { .. }
+            | BoardChangeError::TooFewToGroup { .. }
+            | BoardChangeError::NotGroupable { .. }
+            | BoardChangeError::NotGroup { .. }
             | BoardChangeError::ContentHidden { .. }
             | BoardChangeError::AcceptTimeout { .. }
             | BoardChangeError::ClosedBeforeAccept
@@ -287,6 +327,7 @@ pub(super) mod tests {
             BoardChangeErrorDiscriminants,
             GivenPoint,
             GivenRectangle,
+            GroupRefusal,
             OffBoardValue,
         },
         hint::{Hint, Surface, decided::assert_every_variant},
@@ -363,6 +404,18 @@ pub(super) mod tests {
                 Some(Hint::ListObjects),
             ),
             (BoardChangeError::ContentHidden { reference: text() }, None),
+            (BoardChangeError::TooFewToGroup { given: 1 }, None),
+            (
+                BoardChangeError::NotGroupable {
+                    reference: text(),
+                    why: GroupRefusal::Frame,
+                },
+                None,
+            ),
+            (
+                BoardChangeError::NotGroup { reference: text() },
+                Some(Hint::ListObjects),
+            ),
             (
                 BoardChangeError::OutsideFrame {
                     reference: text(),

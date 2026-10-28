@@ -8,4 +8,5 @@ mod rich;
 #[cfg(test)] pub(crate) mod tests;
 pub mod value;
 mod write;
+mod write_group;
 mod write_many;

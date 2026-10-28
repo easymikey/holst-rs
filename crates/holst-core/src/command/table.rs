@@ -399,7 +399,7 @@ const OBJECT: GroupHelp = GroupHelp {
     section: RootSection::Core,
     tools: GroupTools::ReadAndWrite {
         read: "Objects on a board or a part of it: kind, place, size, color, text.",
-        write: "Objects on a board: add or edit many in one call, copy, remove, download.",
+        write: "Objects on a board: add or edit many in one call, copy, group, remove, download.",
     },
     flags: &[GroupFlag {
         name: WORKSPACE_FLAG,

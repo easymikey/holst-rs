@@ -28,6 +28,8 @@ pub enum FixtureObject {
     FreeText(String),
     Shape(String),
     Frame(String),
+    /// A group; its members name it with `inside`.
+    Group,
     /// A kind the clients know and holst-rs has no variant for.
     MindMapNode(String),
     /// An image whose file the storage serves, by its stored name.
@@ -191,8 +193,8 @@ impl FixtureObject {
         self.set("zIndex", json!(z_index))
     }
 
-    /// Makes the object a child of the frame with this number; only its
-    /// `parentId` changes, its place stays what it is.
+    /// Makes the object a child of the frame or group with this number; only
+    /// its `parentId` changes, its place stays what it is.
     #[must_use]
     pub fn inside(self, frame: u32) -> Self {
         Self::Inside(Box::new(self), frame)
@@ -214,6 +216,7 @@ impl FixtureObject {
             | Self::FreeText(_)
             | Self::Shape(_)
             | Self::Frame(_)
+            | Self::Group
             | Self::MindMapNode(_)
             | Self::Arrow(..)
             | Self::Link(..) => None,
@@ -228,6 +231,7 @@ impl FixtureObject {
             | Self::MindMapNode(text) => Some(text),
             Self::Set(inner, ..) | Self::Inside(inner, _) => inner.text(),
             Self::Frame(_)
+            | Self::Group
             | Self::Image(_)
             | Self::RefusedImage(_)
             | Self::Arrow(..)
@@ -275,6 +279,7 @@ impl FixtureObject {
                 "type": "frame", "width": 800, "height": 600, "labelText": label,
                 "fillColor": { "color": "white3", "opacity": 1 },
             }),
+            Self::Group => json!({ "type": "group", "ignoreZIndex": true }),
             Self::Arrow(from, to) => json!({
                 "type": "arrow", "position": { "x": 0, "y": 0 },
                 "start": { "objectId": object_id(board, *from), "point": { "x": 0, "y": 0 } },

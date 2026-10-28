@@ -449,6 +449,21 @@ impl Then<'_> {
         );
     }
 
+    /// Expects exactly the objects with these texts inside a frame or a group.
+    ///
+    /// # Panics
+    /// When the observation differs.
+    pub fn lists_inside_a_parent(&self, texts: &[&str]) {
+        let inside: std::collections::BTreeSet<&str> = self
+            .objects()
+            .iter()
+            .filter(|row| row.in_frame)
+            .map(|row| row.text.as_str())
+            .collect();
+        let wanted: std::collections::BTreeSet<&str> = texts.iter().copied().collect();
+        assert_eq!(inside, wanted, "{:?}", self.observation);
+    }
+
     /// Expects no object inside a frame.
     ///
     /// # Panics

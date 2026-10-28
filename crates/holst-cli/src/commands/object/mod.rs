@@ -6,7 +6,7 @@ mod render;
 use holst_core::{
     command::{
         board::picture::Delivery,
-        object::{ObjectVerb, add, change, copy, get, list},
+        object::{ObjectVerb, add, change, copy, get, group, list},
         table::{self, CommandArgs},
     },
     domain::change::receipt::ChangeReport,
@@ -43,6 +43,8 @@ pub(crate) async fn run(
         ObjectVerb::Add => changed(arguments, run, format, add::add).await,
         ObjectVerb::Edit => changed(arguments, run, format, change::edit).await,
         ObjectVerb::Cp => changed(arguments, run, format, copy::cp).await,
+        ObjectVerb::Group => changed(arguments, run, format, group::group).await,
+        ObjectVerb::Ungroup => changed(arguments, run, format, group::ungroup).await,
         ObjectVerb::Rm => remove(arguments, run, format).await,
         ObjectVerb::Get => download(arguments, run, format).await,
     }

@@ -80,6 +80,18 @@ impl ObjectCall {
         Self::new("cp", None)
     }
 
+    /// Puts objects into a new group.
+    #[must_use]
+    pub const fn group() -> Self {
+        Self::new("group", None)
+    }
+
+    /// Dissolves groups.
+    #[must_use]
+    pub const fn ungroup() -> Self {
+        Self::new("ungroup", None)
+    }
+
     /// Removes objects.
     #[must_use]
     pub const fn remove() -> Self {
