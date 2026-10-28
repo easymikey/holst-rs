@@ -1,4 +1,4 @@
-//! MCP server for Holst over stdio or HTTP, on the login of `holst-mcp setup` or `holst auth login`.
+//! MCP server for Holst on stdio or HTTP, on the login of `setup`.
 
 #[cfg(test)] mod budget;
 mod error;
@@ -11,7 +11,7 @@ mod setup;
 mod tools;
 
 use std::{
-    io::{self, IsTerminal as _, Write as _},
+    io::{self, IsTerminal, Write as _},
     net::SocketAddr,
     process::ExitCode,
 };
@@ -23,9 +23,12 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Debug, thiserror::Error)]
 enum StartError {
     #[error(
-        "unknown argument {arg}: the server speaks MCP on stdio; its only command is setup"
+        "unknown argument {arg}: the server speaks MCP on stdio; its commands are setup and --http"
     )]
     UnknownArg { arg: String },
+
+    #[error("unknown setup flag {flag}: setup takes --no-connect or --connect-only")]
+    SetupFlag { flag: String },
 
     #[error(
         "stdin is not a terminal: run holst-mcp setup in a terminal \
@@ -73,7 +76,7 @@ async fn main() -> ExitCode {
         .map(|(first, rest)| (first.as_str(), rest))
     {
         Some(("setup", flags)) => Box::pin(set_up(flags)).await,
-        Some(("--http", rest)) => Box::pin(serve_http(rest.to_vec())).await,
+        Some(("--http", rest)) => Box::pin(serve_http(rest)).await,
         Some((arg, _)) => print_usage(arg),
         None => Box::pin(serve()).await,
     };
@@ -87,7 +90,7 @@ fn setup_steps(flags: &[String]) -> Result<setup::Steps, StartError> {
         .map(|flag| match flag.as_str() {
             "--no-connect" => Ok(setup::Steps::LoginOnly),
             "--connect-only" => Ok(setup::Steps::ConnectOnly),
-            _ => Err(StartError::UnknownArg { arg: flag.clone() }),
+            _ => Err(StartError::SetupFlag { flag: flag.clone() }),
         })
         .collect::<Result<Vec<_>, _>>()?;
     match asked.as_slice() {
@@ -148,8 +151,8 @@ async fn serve() -> Result<(), StartError> {
     clippy::disallowed_methods,
     reason = "main.rs is the one place that reads the environment"
 )]
-async fn serve_http(args: Vec<String>) -> Result<(), StartError> {
-    let options = http::Options::parse(&args)?;
+async fn serve_http(args: &[String]) -> Result<(), StartError> {
+    let options = http::Options::parse(args)?;
     let (settings, _) =
         holst_core::effect::settings::Settings::checked(|name| std::env::var_os(name))
             .map_err(StartError::Settings)?;
@@ -180,7 +183,7 @@ async fn listen(addr: SocketAddr, token: http::Token) -> Result<(), StartError> 
     tracing::info!(tools = holst.tool_count(), %addr, "starting holst-mcp on HTTP");
     writeln!(io::stderr().lock(), "holst-mcp: serving http://{addr}/mcp")
         .map_err(StartError::Stdout)?;
-    Ok(http::serve(listener, holst, token).await?)
+    match http::serve(listener, holst, token).await {}
 }
 
 #[expect(
@@ -213,9 +216,8 @@ fn start_server() -> Result<server::McpServer, StartError> {
 )]
 async fn set_up(flags: &[String]) -> Result<(), StartError> {
     let steps = setup_steps(flags)?;
-    io::stdin()
-        .is_terminal()
-        .then_some(())
+    let stdin = Some(io::stdin())
+        .filter(IsTerminal::is_terminal)
         .ok_or(StartError::NotTerminal)?;
     let (settings, _) =
         holst_core::effect::settings::Settings::checked(|name| std::env::var_os(name))
@@ -232,7 +234,7 @@ async fn set_up(flags: &[String]) -> Result<(), StartError> {
         })
         .transpose()?
         .unwrap_or_default();
-    let mut talk = setup::Talk::new(io::stdin().lock(), io::stderr().lock(), true);
+    let mut talk = setup::Talk::new(stdin.lock(), io::stderr().lock(), true);
     setup::set_up(&backend, &mut talk, &setup::System, &binary, steps)
         .await
         .map_err(StartError::Setup)
@@ -248,11 +250,12 @@ fn warn_cache_off(err: &holst_core::Error) {
 )]
 fn report(err: &StartError) -> ExitCode {
     let text = reply::chained(err);
-    writeln!(io::stderr().lock(), "holst-mcp: {text}")
-        .inspect_err(
+    drop(
+        writeln!(io::stderr().lock(), "holst-mcp: {text}").inspect_err(
             |failure| tracing::debug!(%failure, "could not write the start error"),
-        )
-        .map_or(ExitCode::FAILURE, |()| ExitCode::FAILURE)
+        ),
+    );
+    ExitCode::FAILURE
 }
 
 fn init_tracing(log: &holst_core::effect::settings::LogSettings) {
@@ -291,7 +294,7 @@ mod tests {
         assert_eq!(
             shown(&["--port"]).as_deref(),
             Some(
-                "unknown argument --port: the server speaks MCP on stdio; its only command is setup"
+                "unknown setup flag --port: setup takes --no-connect or --connect-only"
             )
         );
         assert_eq!(
@@ -308,7 +311,7 @@ mod tests {
         assert_eq!(
             usage("--port").err().map(|err| err.to_string()).as_deref(),
             Some(
-                "unknown argument --port: the server speaks MCP on stdio; its only command is setup"
+                "unknown argument --port: the server speaks MCP on stdio; its commands are setup and --http"
             )
         );
     }

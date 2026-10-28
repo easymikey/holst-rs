@@ -8,6 +8,7 @@ use holst_core::{
         login::email::{CodeSent, EmailLogin, PasswordChosen},
     },
     domain::login::Email,
+    error::hint::Surface,
     remote::client::Client,
 };
 use secrecy::{ExposeSecret as _, SecretString};
@@ -100,7 +101,11 @@ impl<R: BufRead, W: Write> Talk<R, W> {
         let mut line = String::new();
         match self.input.read_line(&mut line) {
             Ok(0) => Err(SetupError::EndOfInput),
-            Ok(_) => Ok(line.trim_end_matches(['\r', '\n']).to_owned()),
+            Ok(_) => {
+                let end = line.trim_end_matches(['\r', '\n']).len();
+                line.truncate(end);
+                Ok(line)
+            }
             Err(err) => Err(SetupError::Terminal(err)),
         }
     }
@@ -166,13 +171,14 @@ pub(crate) async fn set_up<R: BufRead, W: Write>(
     binary: &str,
     steps: Steps,
 ) -> Result<(), SetupError> {
-    if !matches!(steps, Steps::ConnectOnly) {
-        run(backend, talk).await?;
+    match steps {
+        Steps::Both => {
+            run(backend, talk).await?;
+            connect::connect(programs, talk, binary)
+        }
+        Steps::LoginOnly => run(backend, talk).await,
+        Steps::ConnectOnly => connect::connect(programs, talk, binary),
     }
-    if steps.connects() {
-        connect::connect(programs, talk, binary)?;
-    }
-    Ok(())
 }
 
 /// Logs in and saves the login for the server; asks first when one is saved.
@@ -322,11 +328,24 @@ async fn keep<R: BufRead, W: Write>(
     let session = client.rotated().or_else(|| client.session()).ok_or(
         holst_core::Error::Login(holst_core::error::login::LoginError::NoSavedLogin),
     )?;
-    backend.save_new(&session)?;
+    let saved = backend.save_new(&session)?;
     talk.say(&format!(
         "Logged in as {}. The MCP server picks the login up on its next call.",
         email.as_str()
-    ))
+    ))?;
+    saved
+        .stale
+        .as_ref()
+        .map_or(Ok(()), |stale| talk.say(&stale_warning(stale)))
+}
+
+/// An older login that the server still reads first, with what to do.
+fn stale_warning(stale: &holst_core::Error) -> String {
+    let hint = stale
+        .hint()
+        .map(|hint| format!("; {}", hint.on(Surface::Mcp)))
+        .unwrap_or_default();
+    format!("Warning: {stale}{hint}")
 }
 
 /// Echo off while a secret is typed.
@@ -334,10 +353,18 @@ async fn keep<R: BufRead, W: Write>(
 mod echo {
     use std::{io, mem::MaybeUninit};
 
-    /// Puts the terminal settings back when dropped.
+    /// Puts the terminal settings back when dropped, or on Ctrl-C.
     // GUARD: the terminal must not stay silent after the question.
-    pub(super) struct Quiet(libc::termios);
+    pub(super) struct Quiet {
+        original: libc::termios,
+        on_interrupt: tokio::task::JoinHandle<()>,
+    }
 
+    #[expect(
+        clippy::exit,
+        clippy::disallowed_methods,
+        reason = "the Ctrl-C handler ends the process once the terminal is back"
+    )]
     pub(super) fn off() -> io::Result<Quiet> {
         let mut settings = MaybeUninit::<libc::termios>::zeroed();
         // SAFETY: `tcgetattr` only writes a `termios` into a sized, aligned local.
@@ -350,7 +377,20 @@ mod echo {
         let mut quiet = original;
         quiet.c_lflag &= !libc::ECHO;
         set(&quiet)?;
-        Ok(Quiet(original))
+        // SIGINT would end the process with the terminal still silent.
+        let on_interrupt = tokio::spawn(async move {
+            match tokio::signal::ctrl_c().await {
+                Ok(()) => {
+                    drop(set(&original));
+                    std::process::exit(130);
+                }
+                Err(err) => tracing::debug!(%err, "no Ctrl-C handler"),
+            }
+        });
+        Ok(Quiet {
+            original,
+            on_interrupt,
+        })
     }
 
     fn set(settings: &libc::termios) -> io::Result<()> {
@@ -366,8 +406,9 @@ mod echo {
 
     impl Drop for Quiet {
         fn drop(&mut self) {
+            self.on_interrupt.abort();
             // Nothing to tell: the shell resets a terminal it finds silent.
-            drop(set(&self.0));
+            drop(set(&self.original));
         }
     }
 }

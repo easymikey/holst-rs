@@ -8,17 +8,22 @@ use std::{
     net::{AddrParseError, SocketAddr},
     path::Path,
     sync::Arc,
+    time::Duration,
 };
 
 use base64::Engine as _;
-use holst_core::error::local_data::LocalDataError;
+use holst_core::{
+    effect::clock::Clock as _,
+    error::local_data::LocalDataError,
+    system::clock::SystemClock,
+};
 use http_body_util::{BodyExt as _, Full, combinators::BoxBody};
 use hyper::{
     Request,
     Response,
     StatusCode,
     body::{Bytes, Incoming},
-    header::{AUTHORIZATION, WWW_AUTHENTICATE},
+    header::{AUTHORIZATION, HeaderValue, WWW_AUTHENTICATE},
     server::conn::http1,
     service::service_fn,
 };
@@ -44,6 +49,9 @@ pub(crate) const TOKEN_FILE: &str = "mcp-token";
 const HOST_NAMES: [&str; 2] = ["host.docker.internal", "host.lima.internal"];
 
 const PATH: &str = "/mcp";
+
+/// The pause after a failed accept, such as a process out of file handles.
+const ACCEPT_PAUSE: Duration = Duration::from_millis(100);
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum HttpError {
@@ -85,9 +93,6 @@ pub(crate) enum HttpError {
         #[source]
         source: io::Error,
     },
-
-    #[error("the listener stopped accepting connections")]
-    Accept,
 }
 
 /// What follows `--http` on the command line.
@@ -100,16 +105,21 @@ pub(crate) struct Options {
 impl Options {
     pub(crate) fn parse(args: &[String]) -> Result<Self, HttpError> {
         let print_config = args.iter().any(|arg| arg == "--print-config");
-        let mut rest = args.iter().filter(|arg| *arg != "--print-config");
-        let text = rest.next().ok_or(HttpError::MissingAddr)?;
-        rest.next().map_or(Ok(()), |extra| {
-            Err(HttpError::UnknownArg { arg: extra.clone() })
-        })?;
-        let addr = text.parse().map_err(|source| HttpError::BadAddr {
-            text: text.clone(),
-            source,
-        })?;
-        Ok(Self { addr, print_config })
+        let words: Vec<&String> =
+            args.iter().filter(|arg| *arg != "--print-config").collect();
+        match words.as_slice() {
+            [] => Err(HttpError::MissingAddr),
+            [text] => text
+                .parse()
+                .map(|addr| Self { addr, print_config })
+                .map_err(|source| HttpError::BadAddr {
+                    text: (*text).clone(),
+                    source,
+                }),
+            [_, extra, ..] => Err(HttpError::UnknownArg {
+                arg: (*extra).clone(),
+            }),
+        }
     }
 }
 
@@ -158,21 +168,35 @@ pub(crate) fn load_token(
     file: Option<&Path>,
     create: bool,
 ) -> Result<Option<Token>, HttpError> {
-    match variable.map(str::trim).filter(|text| !text.is_empty()) {
-        Some(text) => Ok(Some(Token::new(text))),
-        None => match (read_token(file.ok_or(HttpError::NoTokenPlace)?)?, create) {
-            (Some(token), _) => Ok(Some(token)),
-            (None, true) => make_token(file.ok_or(HttpError::NoTokenPlace)?).map(Some),
-            (None, false) => Ok(None),
-        },
+    variable
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map_or_else(
+            || token_from_file(file, create),
+            |text| Ok(Some(Token::new(text))),
+        )
+}
+
+fn token_from_file(
+    file: Option<&Path>,
+    create: bool,
+) -> Result<Option<Token>, HttpError> {
+    let path = file.ok_or(HttpError::NoTokenPlace)?;
+    match (read_token(path)?, create) {
+        (Some(token), _) => Ok(Some(token)),
+        (None, true) => make_token(path).map(Some),
+        (None, false) => Ok(None),
     }
 }
 
 fn read_token(path: &Path) -> Result<Option<Token>, HttpError> {
     match holst_core::storage::file::read(path) {
-        Ok(bytes) => Ok(Some(String::from_utf8_lossy(&bytes).trim().to_owned())
-            .filter(|text| !text.is_empty())
-            .map(|text| Token::new(&text))),
+        Ok(bytes) => {
+            let text = String::from_utf8_lossy(&bytes);
+            Ok(Some(text.trim())
+                .filter(|text| !text.is_empty())
+                .map(Token::new))
+        }
         Err(holst_core::Error::LocalData(LocalDataError::FileRead {
             error, ..
         })) if error.kind() == io::ErrorKind::NotFound => Ok(None),
@@ -213,13 +237,13 @@ type Reply = Response<BoxBody<Bytes, Infallible>>;
 
 type Mcp = StreamableHttpService<McpServer, NeverSessionManager>;
 
-/// Answers MCP over HTTP on `listener` for as long as it accepts. No session
-/// is kept: every request is complete in itself.
+/// Answers MCP over HTTP on `listener`; a failed accept is logged and tried
+/// again. No session is kept: every request is complete in itself.
 pub(crate) async fn serve(
     listener: TcpListener,
     holst: McpServer,
     token: Token,
-) -> Result<(), HttpError> {
+) -> Infallible {
     let loopback = listener
         .local_addr()
         .is_ok_and(|addr| addr.ip().is_loopback());
@@ -243,22 +267,31 @@ pub(crate) async fn serve(
     );
     let token = Arc::new(token);
     // imperative: the accept loop of a server
-    while let Ok((stream, _)) = listener.accept().await {
-        let (mcp, token) = (mcp.clone(), Arc::clone(&token));
-        tokio::spawn(async move {
-            let service = service_fn(move |request| {
+    loop {
+        match listener.accept().await {
+            Ok((stream, _)) => {
                 let (mcp, token) = (mcp.clone(), Arc::clone(&token));
-                async move { Ok::<_, Infallible>(answer(&mcp, &token, request).await) }
-            });
-            if let Err(err) = http1::Builder::new()
-                .serve_connection(TokioIo::new(stream), service)
-                .await
-            {
-                tracing::debug!(%err, "a connection ended with an error");
+                tokio::spawn(async move {
+                    let service = service_fn(move |request| {
+                        let (mcp, token) = (mcp.clone(), Arc::clone(&token));
+                        async move {
+                            Ok::<_, Infallible>(answer(&mcp, &token, request).await)
+                        }
+                    });
+                    if let Err(err) = http1::Builder::new()
+                        .serve_connection(TokioIo::new(stream), service)
+                        .await
+                    {
+                        tracing::debug!(%err, "a connection ended with an error");
+                    }
+                });
             }
-        });
+            Err(err) => {
+                tracing::warn!(%err, "accept failed");
+                SystemClock.sleep(ACCEPT_PAUSE).await;
+            }
+        }
     }
-    Err(HttpError::Accept)
 }
 
 async fn answer(mcp: &Mcp, token: &Token, request: Request<Incoming>) -> Reply {
@@ -267,9 +300,7 @@ async fn answer(mcp: &Mcp, token: &Token, request: Request<Incoming>) -> Reply {
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok());
     match (token.admits(sent), request.uri().path() == PATH) {
-        (false, _) => {
-            refusal(StatusCode::UNAUTHORIZED, "missing or wrong bearer token")
-        }
+        (false, _) => unauthorized(),
         (true, false) => refusal(StatusCode::NOT_FOUND, "the MCP endpoint is /mcp"),
         (true, true) => mcp.handle(request).await,
     }
@@ -279,12 +310,14 @@ fn refusal(status: StatusCode, text: &'static str) -> Reply {
     let mut reply =
         Response::new(Full::new(Bytes::from_static(text.as_bytes())).boxed());
     *reply.status_mut() = status;
-    if status == StatusCode::UNAUTHORIZED {
-        reply.headers_mut().insert(
-            WWW_AUTHENTICATE,
-            hyper::header::HeaderValue::from_static("Bearer"),
-        );
-    }
+    reply
+}
+
+fn unauthorized() -> Reply {
+    let mut reply = refusal(StatusCode::UNAUTHORIZED, "missing or wrong bearer token");
+    reply
+        .headers_mut()
+        .insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
     reply
 }
 
@@ -312,7 +345,7 @@ pub(crate) fn config_snippets(addr: SocketAddr, token: &Token) -> String {
          \n\
          # Log in once, never through the chat:\n\
          #   holst-mcp running on the Mac: holst-mcp setup, in a Mac terminal\n\
-         #   holst-mcp running in a container: docker exec -it <container> holst-mcp setup\n\
+         #   holst-mcp running in a container: docker exec -it <container> holst-mcp setup --no-connect\n\
          #     (keep HOLST_HOME on a volume so the login survives a restart)\n"
     )
 }

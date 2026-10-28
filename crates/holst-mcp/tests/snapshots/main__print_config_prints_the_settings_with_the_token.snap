@@ -18,5 +18,5 @@ http_headers = { Authorization = "Bearer test-token" }
 
 # Log in once, never through the chat:
 #   holst-mcp running on the Mac: holst-mcp setup, in a Mac terminal
-#   holst-mcp running in a container: docker exec -it <container> holst-mcp setup
+#   holst-mcp running in a container: docker exec -it <container> holst-mcp setup --no-connect
 #     (keep HOLST_HOME on a volume so the login survives a restart)

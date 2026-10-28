@@ -97,33 +97,18 @@ fn offer<R: BufRead, W: Write>(
     binary: &str,
     cli: Cli,
 ) -> Result<(), SetupError> {
-    if programs.run(cli.program(), &["--version"]).is_ok() {
-        offer_found(programs, talk, binary, cli)
-    } else {
-        Ok(())
-    }
-}
-
-fn offer_found<R: BufRead, W: Write>(
-    programs: &impl Program,
-    talk: &mut Talk<R, W>,
-    binary: &str,
-    cli: Cli,
-) -> Result<(), SetupError> {
-    let registered = programs
-        .run(cli.program(), &["mcp", "get", SERVER])
-        .is_ok_and(|ran| ran.success);
-    if registered {
-        talk.say(&format!(
+    match programs.run(cli.program(), &["mcp", "get", SERVER]) {
+        Err(_) => Ok(()),
+        Ok(ran) if ran.success => talk.say(&format!(
             "{} has a {SERVER} entry already; kept.",
             cli.label()
-        ))
-    } else {
-        let answer = talk.ask(&format!("Connect {}? [Y/n]", cli.label()))?;
-        if matches!(answer.trim().to_lowercase().as_str(), "" | "y" | "yes") {
-            add(programs, talk, binary, cli)
-        } else {
-            Ok(())
+        )),
+        Ok(_) => {
+            let answer = talk.ask(&format!("Connect {}? [Y/n]", cli.label()))?;
+            match answer.trim().to_lowercase().as_str() {
+                "" | "y" | "yes" => add(programs, talk, binary, cli),
+                _ => Ok(()),
+            }
         }
     }
 }
@@ -165,4 +150,4 @@ fn snippets(binary: &str) -> String {
     )
 }
 
-#[cfg(test)] mod tests;
+#[cfg(test)] pub(super) mod tests;

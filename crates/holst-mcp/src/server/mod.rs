@@ -111,7 +111,7 @@ fn only_on_mcp(
 pub(crate) struct McpServer {
     table: Arc<[TableTool]>,
     tools: Arc<[Tool]>,
-    pub(crate) login: Arc<SharedLogin>,
+    login: Arc<SharedLogin>,
     pub(crate) state: Arc<McpMemory>,
     pub(crate) raw_write: RawWrite,
     pub(crate) secrets: SecretPaths,

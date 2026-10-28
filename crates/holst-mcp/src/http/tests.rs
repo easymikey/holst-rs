@@ -105,6 +105,24 @@ async fn another_path_is_not_found_with_the_token() -> Result<(), TestError> {
     Ok(())
 }
 
+#[tokio::test]
+async fn the_host_check_stops_a_stranger_and_admits_the_docker_name()
+-> Result<(), TestError> {
+    let addr = running("sesame").await?;
+    let post = |host: String| {
+        reqwest::Client::new()
+            .post(format!("http://{addr}/mcp"))
+            .bearer_auth("sesame")
+            .header("Host", host)
+            .send()
+    };
+    let stranger = post("evil.example".to_owned()).await?;
+    let docker = post(format!("host.docker.internal:{}", addr.port())).await?;
+    assert_eq!(stranger.status(), 403);
+    assert_ne!(docker.status(), 403);
+    Ok(())
+}
+
 #[test]
 fn the_token_comes_from_the_variable_before_the_file() -> Result<(), HttpError> {
     let token = load_token(Some(" from-env \n"), None, false)?;

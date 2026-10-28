@@ -6,7 +6,7 @@
     reason = "the login folder of a test is made and removed here"
 )]
 
-use std::{cell::RefCell, ffi::OsString, io, path::PathBuf};
+use std::{ffi::OsString, io, path::PathBuf};
 
 use holst_core::{
     domain::session::Session,
@@ -16,7 +16,15 @@ use holst_core::{
 
 use crate::{
     login::store::{Backend as _, SystemBackend},
-    setup::{Program, Secret, SetupError, Steps, Talk, connect::Ran, run, set_up},
+    setup::{
+        Secret,
+        SetupError,
+        Steps,
+        Talk,
+        connect::tests::Machine,
+        set_up,
+        stale_warning,
+    },
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -79,34 +87,20 @@ impl Rig {
         steps: Steps,
     ) -> (Result<(), SetupError>, String, Vec<String>) {
         let mut talk = Talk::new(typed.as_bytes(), Vec::new(), false);
-        let programs = Absent::default();
+        let machine = Machine::with(&[]);
         let outcome =
-            set_up(&self.backend, &mut talk, &programs, "/opt/holst-mcp", steps).await;
+            set_up(&self.backend, &mut talk, &machine, "/opt/holst-mcp", steps).await;
         (
             outcome,
             String::from_utf8_lossy(&talk.out).into_owned(),
-            programs.asked.into_inner(),
+            machine.calls.take(),
         )
     }
 
     /// Runs the dialog on `typed`; returns the outcome and the terminal text.
     async fn setup(&self, typed: &str) -> (Result<(), SetupError>, String) {
-        let mut talk = Talk::new(typed.as_bytes(), Vec::new(), false);
-        let outcome = run(&self.backend, &mut talk).await;
-        (outcome, String::from_utf8_lossy(&talk.out).into_owned())
-    }
-}
-
-/// A machine with no client on `PATH`; it remembers what was looked for.
-#[derive(Default)]
-struct Absent {
-    asked: RefCell<Vec<String>>,
-}
-
-impl Program for Absent {
-    fn run(&self, name: &str, _args: &[&str]) -> io::Result<Ran> {
-        self.asked.borrow_mut().push(name.to_owned());
-        Err(io::ErrorKind::NotFound.into())
+        let (outcome, shown, _) = self.steps(typed, Steps::LoginOnly).await;
+        (outcome, shown)
     }
 }
 
@@ -210,7 +204,7 @@ async fn connect_only_skips_the_login() -> Result<(), Trouble> {
         shown.starts_with("Other clients: add the server by hand."),
         "{shown}"
     );
-    assert_eq!(asked, ["claude", "codex"]);
+    assert_eq!(asked, ["claude mcp get holst-rs", "codex mcp get holst-rs"]);
     assert_eq!(rig.saved()?, None);
     Ok(())
 }
@@ -223,6 +217,27 @@ async fn both_steps_log_in_then_connect() -> Result<(), Trouble> {
     outcome?;
     assert!(shown.contains(LOGGED_IN), "{shown}");
     assert!(shown.contains("\"mcpServers\""), "{shown}");
-    assert_eq!(asked, ["claude", "codex"]);
+    assert_eq!(asked, ["claude mcp get holst-rs", "codex mcp get holst-rs"]);
     Ok(())
+}
+
+#[test]
+fn a_stale_copy_is_warned_about_with_its_hint() {
+    let stale = holst_core::Error::LocalData(
+        holst_core::error::local_data::LocalDataError::StaleLogin {
+            session_store: "keychain",
+            error: Box::new(holst_core::Error::Login(
+                holst_core::error::login::LoginError::NoSavedLogin,
+            )),
+        },
+    );
+    let warning = stale_warning(&stale);
+    assert!(
+        warning.starts_with("Warning: an older login may be left in the keychain"),
+        "{warning}"
+    );
+    assert!(
+        warning.contains("run `holst-mcp setup` in a terminal again"),
+        "{warning}"
+    );
 }

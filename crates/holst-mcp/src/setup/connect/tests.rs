@@ -13,15 +13,17 @@ use crate::setup::{
 const BINARY: &str = "/opt/holst/holst-mcp";
 
 /// Client programs by command line; one not listed is missing from `PATH`.
-struct Machine {
-    lines: Vec<(&'static str, bool, &'static str)>,
-    calls: RefCell<Vec<String>>,
+pub(in crate::setup) struct Machine {
+    lines: &'static [(&'static str, bool, &'static str)],
+    pub(in crate::setup) calls: RefCell<Vec<String>>,
 }
 
 impl Machine {
-    fn with(lines: &[(&'static str, bool, &'static str)]) -> Self {
+    pub(in crate::setup) fn with(
+        lines: &'static [(&'static str, bool, &'static str)],
+    ) -> Self {
         Self {
-            lines: lines.to_vec(),
+            lines,
             calls: RefCell::default(),
         }
     }
@@ -52,12 +54,11 @@ fn connected(
     connect(machine, &mut talk, BINARY)?;
     Ok((
         String::from_utf8_lossy(&talk.out).into_owned(),
-        machine.calls.borrow().clone(),
+        machine.calls.take(),
     ))
 }
 
 const CLAUDE: &[(&str, bool, &str)] = &[
-    ("claude --version", true, ""),
     ("claude mcp get holst-rs", false, "No MCP server found"),
     (
         "claude mcp add --scope user holst-rs -- /opt/holst/holst-mcp",
@@ -67,7 +68,6 @@ const CLAUDE: &[(&str, bool, &str)] = &[
 ];
 
 const CODEX: &[(&str, bool, &str)] = &[
-    ("codex --version", true, ""),
     ("codex mcp get holst-rs", false, ""),
     ("codex mcp add holst-rs -- /opt/holst/holst-mcp", true, ""),
 ];
@@ -75,7 +75,7 @@ const CODEX: &[(&str, bool, &str)] = &[
 #[test]
 fn without_clients_only_the_snippets_are_printed() -> Result<(), SetupError> {
     let (shown, calls) = connected(&Machine::with(&[]), "")?;
-    assert_eq!(calls, ["claude --version", "codex --version"]);
+    assert_eq!(calls, ["claude mcp get holst-rs", "codex mcp get holst-rs"]);
     insta::assert_snapshot!("snippets", shown);
     Ok(())
 }
@@ -114,37 +114,20 @@ fn yes_connects_codex() -> Result<(), SetupError> {
 fn no_runs_nothing_but_the_checks() -> Result<(), SetupError> {
     let (shown, calls) = connected(&Machine::with(CLAUDE), "n\n")?;
     assert!(!shown.contains("Connected"), "{shown}");
-    assert_eq!(
-        calls,
-        [
-            "claude --version",
-            "claude mcp get holst-rs",
-            "codex --version"
-        ]
-    );
+    assert_eq!(calls, ["claude mcp get holst-rs", "codex mcp get holst-rs"]);
     Ok(())
 }
 
 #[test]
 fn an_existing_entry_is_kept_without_asking() -> Result<(), SetupError> {
-    let machine = Machine::with(&[
-        ("claude --version", true, ""),
-        ("claude mcp get holst-rs", true, ""),
-    ]);
+    let machine = Machine::with(&[("claude mcp get holst-rs", true, "")]);
     let (shown, calls) = connected(&machine, "")?;
     assert!(
         shown.starts_with("Claude Code has a holst-rs entry already; kept.\n"),
         "{shown}"
     );
     assert!(!shown.contains("Connect Claude Code?"), "{shown}");
-    assert_eq!(
-        calls,
-        [
-            "claude --version",
-            "claude mcp get holst-rs",
-            "codex --version"
-        ]
-    );
+    assert_eq!(calls, ["claude mcp get holst-rs", "codex mcp get holst-rs"]);
     Ok(())
 }
 
@@ -152,14 +135,12 @@ fn an_existing_entry_is_kept_without_asking() -> Result<(), SetupError> {
 fn a_failing_command_shows_its_stderr_and_the_next_client_goes_on()
 -> Result<(), SetupError> {
     let machine = Machine::with(&[
-        ("claude --version", true, ""),
         ("claude mcp get holst-rs", false, ""),
         (
             "claude mcp add --scope user holst-rs -- /opt/holst/holst-mcp",
             false,
             "boom\n",
         ),
-        ("codex --version", true, ""),
         ("codex mcp get holst-rs", false, ""),
         ("codex mcp add holst-rs -- /opt/holst/holst-mcp", true, ""),
     ]);
@@ -176,10 +157,7 @@ fn a_failing_command_shows_its_stderr_and_the_next_client_goes_on()
 
 #[test]
 fn a_command_that_cannot_start_is_told_and_skipped() -> Result<(), SetupError> {
-    let machine = Machine::with(&[
-        ("claude --version", true, ""),
-        ("claude mcp get holst-rs", false, ""),
-    ]);
+    let machine = Machine::with(&[("claude mcp get holst-rs", false, "")]);
     let (shown, _) = connected(&machine, "\n")?;
     assert!(
         shown.starts_with(
