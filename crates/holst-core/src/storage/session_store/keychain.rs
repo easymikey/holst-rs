@@ -22,11 +22,14 @@ impl Keychain {
 
 fn check_persistent() -> Result<()> {
     use keyring::credential::CredentialPersistence;
-    match keyring::default::default_credential_builder().persistence() {
-        CredentialPersistence::EntryOnly | CredentialPersistence::ProcessOnly => {
-            Err(Error::LocalData(LocalDataError::KeychainVolatile))
-        }
-        _ => Ok(()),
+    let persistence = keyring::default::default_credential_builder().persistence();
+    if matches!(
+        persistence,
+        CredentialPersistence::EntryOnly | CredentialPersistence::ProcessOnly
+    ) {
+        Err(Error::LocalData(LocalDataError::KeychainVolatile))
+    } else {
+        Ok(())
     }
 }
 
@@ -36,28 +39,28 @@ const HAS_SECRET_SERVICE: bool = cfg!(any(
     target_os = "openbsd"
 ));
 
-fn keychain_error(err: keyring::Error) -> Error {
-    match err {
-        keyring::Error::NoStorageAccess(_) => {
-            Error::LocalData(LocalDataError::KeychainLocked)
+pub(super) fn keychain_error(err: keyring::Error) -> Error {
+    // `keyring::Error` is non-exhaustive: guards instead of a wildcard arm.
+    Error::LocalData(match () {
+        () if matches!(err, keyring::Error::NoStorageAccess(_)) => {
+            LocalDataError::KeychainLocked
         }
-        keyring::Error::BadEncoding(_) => {
-            Error::LocalData(LocalDataError::SavedLoginCorrupt)
+        () if matches!(err, keyring::Error::BadEncoding(_)) => {
+            LocalDataError::SavedLoginCorrupt
         }
-        keyring::Error::PlatformFailure(cause)
-            if HAS_SECRET_SERVICE && is_unavailable(&*cause) =>
+        () if HAS_SECRET_SERVICE
+            && matches!(&err, keyring::Error::PlatformFailure(cause)
+                if is_unavailable(&**cause)) =>
         {
-            Error::LocalData(LocalDataError::NoSecretService(
-                keyring::Error::PlatformFailure(cause),
-            ))
+            LocalDataError::NoSecretService(err)
         }
-        keyring::Error::PlatformFailure(cause) if HAS_SECRET_SERVICE => {
-            Error::LocalData(LocalDataError::SecretService(
-                keyring::Error::PlatformFailure(cause),
-            ))
+        () if HAS_SECRET_SERVICE
+            && matches!(err, keyring::Error::PlatformFailure(_)) =>
+        {
+            LocalDataError::SecretService(err)
         }
-        other => Error::LocalData(LocalDataError::KeychainUnavailable(other)),
-    }
+        () => LocalDataError::KeychainUnavailable(err),
+    })
 }
 
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))]
@@ -109,12 +112,14 @@ impl SessionStore for Keychain {
         match Self::entry()?.delete_credential() {
             Ok(()) => Ok(LoginRemoval::Removed),
             Err(keyring::Error::NoEntry) => Ok(LoginRemoval::Absent),
-            Err(err) => match keychain_error(err) {
-                Error::LocalData(LocalDataError::NoSecretService(_)) => {
+            Err(err) => {
+                let err = keychain_error(err);
+                if matches!(err, Error::LocalData(LocalDataError::NoSecretService(_))) {
                     Ok(LoginRemoval::Absent)
+                } else {
+                    Err(err)
                 }
-                other => Err(other),
-            },
+            }
         }
     }
 }

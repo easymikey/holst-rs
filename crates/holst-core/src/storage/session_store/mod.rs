@@ -367,8 +367,10 @@ pub fn save_in(
             Ok(()) => ControlFlow::Break(Ok((at, store.kind()))),
             #[cfg(not(target_os = "macos"))]
             Err(
-                err @ (Error::LocalData(LocalDataError::NoSecretService(_))
-                | Error::LocalData(LocalDataError::SecretService(_))),
+                err @ Error::LocalData(
+                    LocalDataError::NoSecretService(_)
+                    | LocalDataError::SecretService(_),
+                ),
             ) => ControlFlow::Break(Err(err)),
             Err(err) => {
                 tracing::debug!("{} is unavailable ({err})", store.kind().as_str());

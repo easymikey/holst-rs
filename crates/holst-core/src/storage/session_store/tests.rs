@@ -9,7 +9,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))]
-use crate::storage::session_store::keychain_error;
+use crate::storage::session_store::keychain::keychain_error;
 use crate::{
     domain::session::Session,
     effect::settings::SessionLocation,
@@ -406,11 +406,14 @@ fn missing_secret_service_keeps_using_the_file() -> Result<()> {
     let stores: [&dyn SessionStore; 2] = [&keychain, &file];
     assert_eq!(
         found(&stores),
-        Ok(Some(("from-file".into(), StoreKind::File)))
+        Ok(Some(("from-file".into(), SessionStoreKind::File)))
     );
     let rotated = Session::new("new".into());
     let saved = save_in(starting_at(&stores, SessionStoreKind::File), &rotated)?;
-    assert_eq!((saved.kind, saved.stale.is_none()), (StoreKind::File, true));
+    assert_eq!(
+        (saved.store, saved.stale.is_none()),
+        (SessionStoreKind::File, true)
+    );
     assert_eq!(token_in(&file).as_deref(), Some("new"));
     let cleared: Vec<_> = clear_from(&stores)
         .into_iter()
@@ -419,8 +422,8 @@ fn missing_secret_service_keeps_using_the_file() -> Result<()> {
     assert_eq!(
         cleared,
         [
-            (StoreKind::Keychain, Some(Removal::Absent)),
-            (StoreKind::File, Some(Removal::Removed))
+            (SessionStoreKind::Keychain, Some(LoginRemoval::Absent)),
+            (SessionStoreKind::File, Some(LoginRemoval::Removed))
         ]
     );
     Ok(())

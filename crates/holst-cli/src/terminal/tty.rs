@@ -64,7 +64,7 @@ impl Drop for QuietedTerminal {
     fn drop(&mut self) {
         // Deliver what was written first: a later Ctrl-C would flush it.
         imp::discard_input();
-        exclusive(|| imp::put_back(&self.0));
+        exclusive(|| imp::put_back(self.0));
     }
 }
 
@@ -107,7 +107,7 @@ mod imp {
     pub(super) fn restore() {
         discard_input();
         if let Some(settings) = ORIGINAL.get() {
-            put_back(settings);
+            put_back(*settings);
         }
     }
 
@@ -116,8 +116,8 @@ mod imp {
         unsafe { libc::tcdrain(libc::STDERR_FILENO) };
     }
 
-    pub(super) fn put_back(settings: &TerminalSettings) {
-        write_settings(settings)
+    pub(super) fn put_back(settings: TerminalSettings) {
+        write_settings(&settings)
             .inspect_err(|error| {
                 crate::output::stderr_line(format_args!(
                     "warning: the terminal settings were not put back: {error}"
@@ -155,13 +155,15 @@ mod imp {
 mod imp {
     use std::io;
 
-    pub(super) type TerminalSettings = ();
+    /// None on Windows: `quiet` always fails.
+    #[derive(Clone, Copy)]
+    pub(super) enum TerminalSettings {}
 
     pub(super) fn remember() {}
 
     pub(super) fn restore() {}
 
-    pub(super) fn put_back(_: &TerminalSettings) {}
+    pub(super) fn put_back(_: TerminalSettings) {}
 
     pub(super) fn quiet(
         _: crate::terminal::tty::TerminalQuiet,

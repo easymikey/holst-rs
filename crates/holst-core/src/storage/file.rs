@@ -398,8 +398,8 @@ pub(crate) fn tighten(dir: &Path) -> io::Result<()> {
 }
 
 #[cfg(not(unix))]
-pub(crate) fn tighten(_: &Path) -> io::Result<()> {
-    Ok(())
+pub(crate) fn tighten(dir: &Path) -> io::Result<()> {
+    fs::symlink_metadata(dir).map(drop)
 }
 
 #[cfg(unix)]

@@ -246,29 +246,37 @@ mod imp {
 mod imp {
     use std::{future::pending, sync::atomic::AtomicBool};
 
+    use tokio::signal::windows::{CtrlC, ctrl_c};
+
     use crate::terminal::awaiting::optional;
 
-    pub(super) struct SignalListeners;
+    pub(super) struct SignalListeners {
+        interrupt: Option<CtrlC>,
+    }
 
     impl SignalListeners {
-        pub(super) const fn new() -> Self {
-            Self
+        pub(super) fn new() -> Self {
+            Self {
+                interrupt: ctrl_c_listener(),
+            }
         }
 
         pub(super) async fn next(&mut self) -> crate::terminal::signals::Signal {
-            let deaf = tokio::signal::ctrl_c().await.is_err();
-            optional(deaf.then(pending::<()>)).await;
+            let got = optional(self.interrupt.as_mut().map(CtrlC::recv))
+                .await
+                .flatten();
+            optional(got.is_none().then(pending::<()>)).await;
             crate::terminal::signals::Signal::Interrupt
         }
     }
 
-    pub(super) const fn ctrl_c_listener() -> Option<()> {
-        Some(())
+    pub(super) fn ctrl_c_listener() -> Option<CtrlC> {
+        ctrl_c().ok()
     }
 
-    pub(super) async fn next(listener: Option<()>) -> Result<(), ()> {
+    pub(super) async fn next(listener: Option<CtrlC>) -> Result<(), ()> {
         match listener {
-            Some(()) => tokio::signal::ctrl_c().await.map_err(drop),
+            Some(mut listener) => listener.recv().await.ok_or(()),
             None => Err(()),
         }
     }

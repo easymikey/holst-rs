@@ -233,9 +233,12 @@ impl LocalDataError {
 
 #[cfg(not(target_os = "macos"))]
 fn platform_cause(err: &keyring::Error) -> impl fmt::Display + '_ {
-    fmt::from_fn(move |f| match err {
-        keyring::Error::PlatformFailure(cause) => fmt::Display::fmt(cause, f),
-        other => fmt::Display::fmt(other, f),
+    fmt::from_fn(move |f| {
+        if let keyring::Error::PlatformFailure(cause) = err {
+            fmt::Display::fmt(cause, f)
+        } else {
+            fmt::Display::fmt(err, f)
+        }
     })
 }
 
