@@ -13,6 +13,8 @@ use pulldown_cmark::{
 };
 use serde::Deserialize;
 
+pub(crate) mod read;
+
 use crate::domain::board::ObjectKind;
 
 /// How a text is written: lines as paragraphs, or markdown as blocks and marks.

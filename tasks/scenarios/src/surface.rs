@@ -109,12 +109,9 @@ pub(crate) fn arguments(
         .positional
         .iter()
         .map(|(_, word)| (*word).to_owned())
-        .chain(
-            words
-                .options
-                .iter()
-                .flat_map(|(name, word)| [format!("--{name}"), (*word).to_owned()]),
-        )
+        .chain(words.options.iter().flat_map(|(name, word)| {
+            [format!("--{}", name.replace('_', "-")), (*word).to_owned()]
+        }))
         .chain(
             words
                 .switches

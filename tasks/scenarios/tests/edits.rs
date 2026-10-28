@@ -353,6 +353,34 @@ async fn each_object_kind_can_be_added(
     Ok(())
 }
 
+// Written as markdown, shown plain by default and as markdown on request.
+#[rstest]
+#[tokio::test]
+async fn markdown_text_is_written_and_read_back(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = two_notes().start().await?;
+    let markdown = "**Buy** [milk](https://example.com)";
+    let call = ObjectCall::add("text")
+        .with("text_format", "markdown")
+        .text(markdown);
+    holst.on(surface).object("Plans", call).await?;
+    let plain = holst.on(surface).objects("Plans").await?;
+    then(&plain).lists_objects_in_any_order(&[
+        ("sticker", "Buy milk"),
+        ("text", "Roadmap"),
+        ("text", "Buy milk"),
+    ]);
+    let listing = ObjectCall::list().with("text_format", "markdown");
+    let shown = holst.on(surface).object("Plans", listing).await?;
+    then(&shown).lists_objects_in_any_order(&[
+        ("sticker", "Buy milk"),
+        ("text", "Roadmap"),
+        ("text", markdown),
+    ]);
+    Ok(())
+}
+
 #[rstest]
 #[tokio::test]
 async fn an_arrow_joins_two_objects(

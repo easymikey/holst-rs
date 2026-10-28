@@ -287,3 +287,5 @@ fn a_frame_title_takes_no_markdown() -> Result<()> {
     assert_eq!(ObjectKind::Frame.as_str(), "frame");
     Ok(())
 }
+
+mod read;

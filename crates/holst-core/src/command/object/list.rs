@@ -23,6 +23,7 @@ use crate::{
             Object,
             ObjectKind,
             detail::{LinkCard, TagNames},
+            markdown_text,
             objects as board_objects,
             query::ObjectQuery,
         },
@@ -30,6 +31,7 @@ use crate::{
         id,
         limit::Limit,
         picture::BoardLength,
+        rich_text::TextFormat,
         tree::name_index::build::normalized,
     },
     effect::settings::CacheSettings,
@@ -151,6 +153,7 @@ async fn listing(
     let page = query.page_where(&selected.objects, |object| {
         tag.is_none_or(|tag| tags.has(object, tag))
     })?;
+    let markdown = args.text_format == Some(TextFormat::Markdown);
     let target = selected.target.map(|object| object.id.as_str());
     let base = client.base_url();
     let storage = base.storage();
@@ -176,6 +179,10 @@ async fn listing(
                 tags: tags.of_object(object),
                 object: Object {
                     fields: serde_json::Value::Null,
+                    text: markdown
+                        .then(|| markdown_text(&loaded.document, object))
+                        .flatten()
+                        .unwrap_or_else(|| object.text.clone()),
                     ..object.clone()
                 },
             })

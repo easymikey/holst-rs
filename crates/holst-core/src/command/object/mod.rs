@@ -90,6 +90,12 @@ pub struct LsArgs {
     )]
     pub contains: Option<String>,
     #[argument(
+        value_name = "format",
+        help = "How the text is shown: plain, or markdown for headings, lists, checkboxes, links, mentions and marks; plain by default",
+        tool_doc = "plain or markdown."
+    )]
+    pub text_format: Option<TextFormat>,
+    #[argument(
         value_name = "tag",
         help = "Only objects with this tag; every object by default"
     )]

@@ -29,6 +29,7 @@ use crate::{
     domain::{
         area::scene::Scene,
         geometry::{Point, Size},
+        rich_text::read::markdown,
     },
     error::{Error, Result, input::InputError},
     protocol::document,
@@ -550,7 +551,7 @@ fn arrow_text(texts: &Value) -> String {
     labels.join("\n")
 }
 
-fn slate_text(nodes: &Value) -> String {
+pub(crate) fn slate_text(nodes: &Value) -> String {
     match nodes {
         Value::Array(blocks) => blocks
             .iter()
@@ -651,6 +652,87 @@ fn plain<T: ReadTxn>(txn: &T, element: &XmlTextRef) -> String {
         .map(|(_, text)| text)
         .collect::<Vec<_>>()
         .join(separator)
+}
+
+/// The children of a text element as the Slate JSON the editor keeps: text
+/// with its marks, and elements with their attributes.
+fn slate_children<T: ReadTxn>(txn: &T, element: &XmlTextRef) -> Vec<Value> {
+    element
+        .diff(txn, YChange::identity)
+        .into_iter()
+        .map(|chunk| match chunk.insert {
+            Out::YXmlText(child) => {
+                let attributes = child
+                    .attributes(txn)
+                    .filter(|(name, _)| *name != "key")
+                    .filter_map(|(name, value)| {
+                        json(&value.to_json(txn)).map(|value| (name.to_owned(), value))
+                    });
+                let children = (
+                    document::CHILDREN.to_owned(),
+                    Value::Array(slate_children(txn, &child)),
+                );
+                Value::Object(attributes.chain(Some(children)).collect())
+            }
+            other @ (Out::Any(_)
+            | Out::YText(_)
+            | Out::YArray(_)
+            | Out::YMap(_)
+            | Out::YXmlElement(_)
+            | Out::YXmlFragment(_)
+            | Out::YDoc(_)
+            | Out::UndefinedRef(_)) => {
+                let marks = chunk
+                    .attributes
+                    .iter()
+                    .flat_map(|marks| marks.iter())
+                    .filter_map(|(name, mark)| {
+                        json(mark).map(|mark| (name.to_string(), mark))
+                    });
+                let text = (
+                    document::TEXT.to_owned(),
+                    Value::String(other.to_string(txn)),
+                );
+                Value::Object(marks.chain(Some(text)).collect())
+            }
+        })
+        .collect()
+}
+
+/// The text of an object as markdown: its text document, or the labels of an
+/// arrow. `None` for an object that holds no text.
+#[must_use]
+pub fn markdown_text(document: &Doc, object: &Object) -> Option<String> {
+    let field = |name: &str| object.fields.get(name);
+    if let Some(name) = field(document::DOCUMENT_ID).and_then(Value::as_str) {
+        let documents = document.get_or_insert_map(document::DOCUMENTS);
+        let txn = document.transact();
+        return Some(match documents.get(&txn, name) {
+            Some(Out::YXmlText(root)) => {
+                markdown(&Value::Array(slate_children(&txn, &root)))
+            }
+            _ => String::new(),
+        });
+    }
+    let labels: Vec<String> = field(document::TEXTS)?
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|label| {
+            label.get(document::EDITOR).map_or_else(
+                || {
+                    label
+                        .get(document::TEXT)
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                        .unwrap_or_default()
+                },
+                markdown,
+            )
+        })
+        .filter(|label| !label.is_empty())
+        .collect();
+    Some(labels.join("\n\n"))
 }
 
 /// The user's right on a board, as the server grants it.

@@ -603,6 +603,14 @@ expression: "*holst.tools"
         "tag": {
           "type": "string"
         },
+        "text_format": {
+          "description": "plain or markdown.",
+          "enum": [
+            "plain",
+            "markdown"
+          ],
+          "type": "string"
+        },
         "workspace": {
           "type": "string"
         }
