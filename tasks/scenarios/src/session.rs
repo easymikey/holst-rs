@@ -233,13 +233,8 @@ fn mcp_status(reply: &mcp::Reply) -> Observation {
                     .filter_map(|line| line.split_once(LISTING_SEPARATOR))
                     .map(|(head, counted)| CountedWorkspace {
                         name: name(head),
-                        boards: counted
-                            .split_once(" boards")
-                            .and_then(|(count, _)| count.parse().ok()),
-                        folders: counted
-                            .split_once(", ")
-                            .and_then(|(_, folders)| folders.strip_suffix(" folders"))
-                            .and_then(|count| count.parse().ok()),
+                        boards: leading_count(counted.split(", ").next()),
+                        folders: leading_count(counted.split(", ").nth(1)),
                     })
                     .collect(),
             }
@@ -247,4 +242,10 @@ fn mcp_status(reply: &mcp::Reply) -> Observation {
         None if text.starts_with("no login") => Observation::NotLoggedIn,
         None => Observation::LoginNotAccepted { message: text },
     }
+}
+
+/// The number before "board(s)" or "folder(s)".
+fn leading_count(part: Option<&str>) -> Option<usize> {
+    part.and_then(|part| part.split_once(' '))
+        .and_then(|(count, _)| count.parse().ok())
 }
