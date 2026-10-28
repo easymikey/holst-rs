@@ -123,6 +123,18 @@ fn a_thread_line_shows_number_state_start_replies_and_read_mark() {
                 read_at: None,
             },
             ListedThread {
+                thread: thread(
+                    "Zz9ab",
+                    ThreadAnchor::Area {
+                        x: 10.0,
+                        y: 50.5,
+                        width: 20.0,
+                        height: 30.0,
+                    },
+                ),
+                read_at: None,
+            },
+            ListedThread {
                 thread: long,
                 read_at: Some("2026-10-27T09:30:00Z".to_owned()),
             },
@@ -132,8 +144,10 @@ fn a_thread_line_shows_number_state_start_replies_and_read_mark() {
         list.lines(),
         [
             "@1  weVza  open  Why?  (no replies, unread)".to_owned(),
+            "@2  Zz9ab  open  area 10,50.5 20x30  Why?  (no replies, unread)"
+                .to_owned(),
             format!(
-                "@2  B9ckv  resolved  {}…  (1 reply, read 2026-10-27T09:30:00Z)",
+                "@3  B9ckv  resolved  {}…  (1 reply, read 2026-10-27T09:30:00Z)",
                 "x".repeat(60)
             ),
         ]

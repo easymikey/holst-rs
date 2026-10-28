@@ -301,7 +301,11 @@ fn write(
             put(store, txn, &message.id, &fields)
         }
         CommentChange::Reply { thread, message } => {
-            thread_map(store, txn, thread)?;
+            let entry = thread_map(store, txn, thread)?;
+            // The web client opens a resolved thread again before it replies.
+            if let Some(Out::Any(Any::Bool(true))) = entry.get(&*txn, RESOLVED) {
+                reopen(&entry, txn)?;
+            }
             let number = author(txn, users, &message.author)?;
             let mut fields = message_fields(message, number, ids);
             fields.push((PARENT.to_owned(), json!(thread)));
@@ -343,11 +347,7 @@ fn write(
             })
         }
         CommentChange::Reopen { thread } => {
-            let entry = thread_map(store, txn, thread)?;
-            entry.insert(txn, RESOLVED, any(&json!(false))?);
-            entry.remove(txn, RESOLVED_AT);
-            entry.remove(txn, RESOLVED_BY);
-            Ok(())
+            reopen(&thread_map(store, txn, thread)?, txn)
         }
         CommentChange::Delete { thread } => {
             thread_map(store, txn, thread)?;
@@ -369,6 +369,13 @@ fn write(
             Ok(())
         }
     }
+}
+
+fn reopen(entry: &MapRef, txn: &mut TransactionMut<'_>) -> Result<()> {
+    entry.insert(txn, RESOLVED, any(&json!(false))?);
+    entry.remove(txn, RESOLVED_AT);
+    entry.remove(txn, RESOLVED_BY);
+    Ok(())
 }
 
 fn message_fields(
@@ -930,6 +937,60 @@ mod tests {
             number
         );
         assert!(!update.is_empty());
+        Ok(())
+    }
+
+    fn reply_by(doc: &Doc, user: &str) -> Result<Vec<u8>> {
+        change(
+            doc,
+            CommentChange::Reply {
+                thread: "B9ckv".to_owned(),
+                message: NewThreadMessage {
+                    author: user.to_owned(),
+                    ..message("3fBIc", 200.5, "zz reply")
+                },
+            },
+        )
+    }
+
+    #[test]
+    fn a_reply_registers_an_author_the_room_lacks() -> Result<()> {
+        let mine = Doc::new();
+        start(&mine, "B9ckv", point())?;
+        reply_by(&mine, "other-user")?;
+        let number = registered(&mine, "other-user");
+        assert!(number.is_some());
+        assert_ne!(number, registered(&mine, USER));
+        assert_eq!(
+            entry(&mine, "3fBIc")
+                .and_then(|held| held.get("a").and_then(Value::as_u64)),
+            number
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_reply_opens_a_resolved_thread_again() -> Result<()> {
+        let mine = Doc::new();
+        start(&mine, "B9ckv", point())?;
+        change(
+            &mine,
+            CommentChange::Resolve {
+                thread: "B9ckv".to_owned(),
+                by: USER.to_owned(),
+                at: 5.5,
+            },
+        )?;
+        reply_by(&mine, USER)?;
+        let held = entry(&mine, "B9ckv");
+        let field = |name: &str| held.as_ref().and_then(|held| held.get(name));
+        assert_eq!(field("r"), Some(&json!(false)));
+        assert_eq!(field("ra"), None);
+        assert_eq!(field("rb"), None);
+        assert_eq!(
+            threads(&mine).first().map(|thread| thread.resolved),
+            Some(false)
+        );
         Ok(())
     }
 

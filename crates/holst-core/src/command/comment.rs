@@ -382,8 +382,17 @@ impl ListedThread {
             .read_at
             .as_deref()
             .map_or_else(|| "unread".to_owned(), |at| format!("read {at}"));
+        let place = match thread.anchor {
+            ThreadAnchor::Area {
+                x,
+                y,
+                width,
+                height,
+            } => format!("  area {x},{y} {width}x{height}"),
+            ThreadAnchor::Point { .. } | ThreadAnchor::Object { .. } => String::new(),
+        };
         format!(
-            "@{number}  {}  {state}  {start}  ({replies}, {read})",
+            "@{number}  {}  {state}{place}  {start}  ({replies}, {read})",
             thread.id
         )
     }

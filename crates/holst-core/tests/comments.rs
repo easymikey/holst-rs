@@ -243,7 +243,7 @@ mod verbs {
     use holst_core::{
         command::{
             change::ChangeReport,
-            comment::{AddArgs, CommentReport},
+            comment::{AddArgs, CommentReport, LsArgs, ReplyArgs},
             table::{CommandArgs, parse},
         },
         fake::{Fixture, FixtureObject, FixtureThread, ThreadAnchor},
@@ -278,6 +278,59 @@ mod verbs {
 
     async fn add(client: &Client, given: Value) -> holst_core::Result<CommentReport> {
         holst_core::command::comment::add(client, &args::<AddArgs>(&given)?).await
+    }
+
+    fn rect_and_resolved() -> Fixture {
+        seeded()
+            .thread(
+                "Plans",
+                FixtureThread::new("RcT01", 13, "Here").in_area(10.0, 50.0, 20.0, 30.0),
+            )
+            .thread("Plans", FixtureThread::new("ReS01", 11, "Fixed").resolved())
+    }
+
+    #[tokio::test]
+    async fn a_thread_pinned_to_a_rectangle_is_listed_with_it() -> holst_core::Result<()>
+    {
+        let (_fake, client, _) = started(rect_and_resolved()).await?;
+        let listed = holst_core::command::comment::ls(
+            &client,
+            &args::<LsArgs>(&json!({ "board": "Plans" }))?,
+        )
+        .await?;
+        assert_eq!(listed.threads.len(), 4);
+        let line = listed
+            .lines()
+            .into_iter()
+            .find(|line| line.contains("RcT01"))
+            .unwrap_or_default();
+        assert!(line.contains("area 10,50 20x30"), "{line}");
+        let value = serde_json::to_value(&listed)?;
+        assert_eq!(
+            value.pointer("/threads/2/anchor"),
+            Some(
+                &json!({ "area": { "x": 10.0, "y": 50.0, "width": 20.0, "height": 30.0 } })
+            )
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_reply_opens_a_resolved_thread_again() -> holst_core::Result<()> {
+        let (fake, client, _) = started(rect_and_resolved()).await?;
+        let replied = holst_core::command::comment::reply(
+            &client,
+            &args::<ReplyArgs>(
+                &json!({ "board": "Plans", "thread": "ReS01", "text": "Not yet" }),
+            )?,
+        )
+        .await?;
+        assert!(sent(&replied));
+        let held = fake.threads_of("Plans");
+        let thread = held.iter().find(|thread| thread.id == "ReS01");
+        assert_eq!(thread.map(|thread| thread.resolved), Some(false));
+        assert_eq!(thread.map(|thread| thread.messages.len()), Some(2));
+        Ok(())
     }
 
     fn sent(changed: &CommentReport) -> bool {

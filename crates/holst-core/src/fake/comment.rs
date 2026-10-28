@@ -20,6 +20,8 @@ pub enum ThreadAnchor {
     Point(f64, f64),
     /// The object with this number on the board, counting from 1.
     Object(u32),
+    /// A rectangle of the board: its corner, width and height.
+    Area(f64, f64, f64, f64),
 }
 
 /// One message of a thread.
@@ -61,6 +63,15 @@ impl FixtureThread {
     pub fn at(self, x: f64, y: f64) -> Self {
         Self {
             anchor: ThreadAnchor::Point(x, y),
+            ..self
+        }
+    }
+
+    /// Pins the thread to a rectangle of the board, as the web client can.
+    #[must_use]
+    pub fn in_area(self, x: f64, y: f64, width: f64, height: f64) -> Self {
+        Self {
+            anchor: ThreadAnchor::Area(x, y, width, height),
             ..self
         }
     }
@@ -320,6 +331,11 @@ fn filled_room(board: &str, threads: &[&FixtureThread]) -> Doc {
                     "targetId": object_id(board, *number),
                     "point": { "x": 0.5, "y": 0.5 },
                 }),
+                ThreadAnchor::Area(x, y, width, height) => json!({
+                    "type": 3,
+                    "startPoint": { "x": x, "y": y },
+                    "endPoint": { "x": x + width, "y": y + height },
+                }),
             };
             let first = thread.messages.first();
             let mut head = entry_fields(
@@ -441,7 +457,8 @@ fn read_room(doc: &Doc) -> Vec<FixtureThread> {
         .filter_map(|head| {
             let id = text(head, "id")?;
             let target = head.get("t")?;
-            let point = target.get("point")?;
+            let coordinate =
+                |point: &str, axis: &str| target.get(point)?.get(axis)?.as_f64();
             let anchor = match target.get("type").and_then(Value::as_u64) {
                 Some(1) => ThreadAnchor::Object(
                     text(target, "targetId")?
@@ -450,9 +467,21 @@ fn read_room(doc: &Doc) -> Vec<FixtureThread> {
                         .and_then(|tail| tail.parse::<u64>().ok())
                         .and_then(|ordinal| u32::try_from(ordinal % 1000).ok())?,
                 ),
+                Some(3) => {
+                    let (x, y) = (
+                        coordinate("startPoint", "x")?,
+                        coordinate("startPoint", "y")?,
+                    );
+                    ThreadAnchor::Area(
+                        x,
+                        y,
+                        coordinate("endPoint", "x")? - x,
+                        coordinate("endPoint", "y")? - y,
+                    )
+                }
                 _ => ThreadAnchor::Point(
-                    point.get("x")?.as_f64()?,
-                    point.get("y")?.as_f64()?,
+                    coordinate("point", "x")?,
+                    coordinate("point", "y")?,
                 ),
             };
             let messages =
