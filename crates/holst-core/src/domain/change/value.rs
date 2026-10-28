@@ -181,9 +181,21 @@ pub struct ObjectPatch {
     pub color: Option<Color>,
     /// Clockwise degrees to turn to; the position follows, keeping the centre.
     pub rotation: Option<f64>,
+    pub link_to: Option<LinkTo>,
     pub look: TextLook,
     pub shape: ShapeEdit,
     pub arrow: ArrowEdit,
+}
+
+/// What an object opens when clicked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LinkTo {
+    /// Takes the link away.
+    Clear,
+    /// A web address, scheme included.
+    Url(String),
+    /// Another object of the board; `share` plus `?objectId=` is its link.
+    Object { reference: String, share: String },
 }
 
 /// What stands behind the text of an object.
@@ -286,6 +298,10 @@ impl ShapeEdit {
 pub enum LayerOrder {
     Front,
     Back,
+    /// One step toward the front, past the next overlapping object.
+    Forward,
+    /// One step toward the back, past the next overlapping object.
+    Backward,
 }
 
 /// One object of an edit of many: the patch and what it cannot hold.

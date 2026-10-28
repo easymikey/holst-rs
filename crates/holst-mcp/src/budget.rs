@@ -40,8 +40,8 @@ use crate::{reply::change, server::McpServer};
 
 const INSTRUCTIONS_MAX: usize = 660;
 
-/// The measured 11 014 bytes (wave 2 options and `auth login`) plus a tenth.
-const TOOLS_MAX: usize = 12_120;
+/// The measured 11 104 bytes (wave 2 options and `auth login`) plus a tenth.
+const TOOLS_MAX: usize = 12_220;
 
 const PAGE_MAX: usize = 13_000;
 
@@ -132,6 +132,7 @@ fn plain_object(
         author: Some(id_of_author()),
         locked: false,
         rotation: 0.0,
+        link_to: None,
         file: None,
         fields: Value::Null,
     }

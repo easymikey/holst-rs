@@ -51,6 +51,7 @@ pub(crate) const TEXT_SCALE: &str = "textScale";
 pub(crate) const SHOW_AUTHOR: &str = "showAuthor";
 pub(crate) const FIXED_WIDTH: &str = "fixedWidth";
 pub(crate) const ROTATION: &str = "rotation";
+pub(crate) const LINK_TO: &str = "linkTo";
 pub(crate) const HORIZONTAL_ALIGN: &str = "horizontalAlign";
 pub(crate) const VERTICAL_ALIGN: &str = "verticalAlign";
 pub(crate) const BACKGROUND_STYLE: &str = "backgroundStyle";

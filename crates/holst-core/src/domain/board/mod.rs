@@ -294,6 +294,9 @@ pub struct Object {
     /// Clockwise degrees about the corner, 0 up to 360; left out when 0.
     #[serde(skip_serializing_if = "is_zero")]
     pub rotation: f64,
+    /// The address or object link the object opens; left out when none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_to: Option<String>,
     #[serde(skip)]
     pub file: Option<StoredFile>,
     #[serde(skip)]
@@ -551,6 +554,10 @@ fn object(
             .unwrap_or_default(),
         rotation: float(field(document::ROTATION))
             .map_or(0.0, |degrees| degrees.rem_euclid(360.0)),
+        link_to: field(document::LINK_TO)
+            .and_then(Value::as_str)
+            .filter(|link| !link.is_empty())
+            .map(str::to_owned),
         file: stored_file(&kind, &fields),
         kind,
         fields,

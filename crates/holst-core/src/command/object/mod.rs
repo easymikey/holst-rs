@@ -495,8 +495,14 @@ pub struct EditArgs {
     )]
     pub rotate: Option<f64>,
     #[argument(
+        value_name = "link",
+        help = "What the object opens on click: a web address (http:// is added without a scheme), another object of the board by id, or none to take the link away; unchanged by default",
+        tool_doc = "URL, object id, or none."
+    )]
+    pub link_to: Option<String>,
+    #[argument(
         value_name = "order",
-        help = "Where it stands among the objects: front or back; unchanged by default"
+        help = "Where it stands among the objects: front or back, or forward or backward for one step past the next overlapping object; unchanged by default"
     )]
     pub order: Option<LayerOrder>,
     #[argument(
@@ -541,6 +547,7 @@ pub struct EditItem {
     #[serde(default)]
     pub label: Vec<String>,
     pub rotate: Option<f64>,
+    pub link_to: Option<String>,
     pub order: Option<LayerOrder>,
     #[serde(default)]
     pub tag: Vec<String>,
@@ -882,7 +889,7 @@ mod tests {
             "path",
             "no_embed",
         ];
-        const EDIT_KEYS: [&str; 17] = [
+        const EDIT_KEYS: [&str; 18] = [
             "object",
             "text",
             "at",
@@ -898,6 +905,7 @@ mod tests {
             "heads",
             "label",
             "rotate",
+            "link_to",
             "order",
             "tag",
         ];

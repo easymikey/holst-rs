@@ -20,7 +20,7 @@ use crate::{
 
 pub const MAGIC: [u8; 4] = *b"HBIX";
 
-pub const VERSION: u16 = 5;
+pub const VERSION: u16 = 6;
 
 /// What an index was built from: the board and its document's state vector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -116,6 +116,7 @@ struct IndexBody {
     authors: Vec<Option<StringNumber>>,
     locked: Vec<bool>,
     rotations: Vec<f64>,
+    links: Vec<Option<StringNumber>>,
     arrows: Vec<IndexedArrow>,
     files: Vec<IndexedFile>,
     text_ends: Vec<u32>,
@@ -204,6 +205,7 @@ impl<'a> StringTables<'a> {
         let parent = object.parent.as_deref().map(|parent| self.number(parent));
         let color = object.color.as_deref().map(|color| self.number(color));
         let author = object.author.as_deref().map(|author| self.number(author));
+        let link = object.link_to.as_deref().map(|link| self.number(link));
         let arrow = object.ends.as_ref().map(|ends| {
             let drawn = ends.drawn.map(|DrawnArrowEnds { start, end }| {
                 [start.x(), start.y(), end.x(), end.y()].map(IndexNumber::of)
@@ -237,6 +239,7 @@ impl<'a> StringTables<'a> {
         body.authors.push(author);
         body.locked.push(object.locked);
         body.rotations.push(object.rotation);
+        body.links.push(link);
         body.arrows.extend(arrow);
         body.texts.push_str(&object.text);
         body.text_ends.push(saturating_u32(body.texts.len()));
@@ -378,6 +381,7 @@ impl BoardIndex {
             author: name(*body.authors.get(at)?),
             locked: *body.locked.get(at)?,
             rotation: *body.rotations.get(at)?,
+            link_to: name(*body.links.get(at)?),
             file: file.map(
                 |IndexedFile {
                      name: stored,
@@ -532,6 +536,7 @@ impl IndexBody {
             self.authors.len(),
             self.locked.len(),
             self.rotations.len(),
+            self.links.len(),
             self.text_ends.len(),
         ];
         let arrow_objects = self.arrows.iter().map(|arrow| arrow.object);
@@ -546,6 +551,7 @@ impl IndexBody {
                     .iter()
                     .chain(&self.colors)
                     .chain(&self.authors)
+                    .chain(&self.links)
                     .copied(),
             )
             .chain(

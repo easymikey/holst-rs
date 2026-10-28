@@ -166,6 +166,7 @@ mod tests {
             author: None,
             locked: false,
             rotation: 0.0,
+            link_to: None,
             file: crate::domain::board::stored_file(
                 &ObjectKind::of(fields["type"].as_str().unwrap_or_default()),
                 fields,

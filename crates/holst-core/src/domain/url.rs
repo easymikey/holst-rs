@@ -94,6 +94,23 @@ impl BaseUrl {
         format!("{base}/board/{}", percent_encode(id))
     }
 
+    /// The share address of a board, to which `?objectId=<id>` points at an
+    /// object; the form the web client writes into an object's `linkTo`.
+    ///
+    /// ```
+    /// use holst_core::domain::url::BaseUrl;
+    ///
+    /// let base: BaseUrl = "https://app.holst.so".parse()?;
+    /// assert_eq!(base.share_link("b1"), "https://app.holst.so/share/b/b1");
+    ///
+    /// # Ok::<(), holst_core::Error>(())
+    /// ```
+    #[must_use]
+    pub fn share_link(&self, board: &str) -> String {
+        let base = &self.raw;
+        format!("{base}/share/b/{}", percent_encode(board))
+    }
+
     /// Link to a folder in the web client on the same address as the API.
     ///
     /// ```

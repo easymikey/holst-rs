@@ -1339,3 +1339,158 @@ async fn a_table_is_not_rotated(
     board_of(&holst).got_no_update();
     Ok(())
 }
+
+fn three_overlapping_notes() -> Given {
+    given().saved_login().workspace("Team").board_with_objects(
+        "Plans",
+        "Team",
+        ["A", "B", "C"]
+            .into_iter()
+            .zip(1..)
+            .map(|(text, layer)| {
+                FixtureObject::Sticker(text.into())
+                    .at(100, 100)
+                    .stacked(layer)
+            })
+            .collect(),
+    )
+}
+
+/// The layers of A, B and C; a missing one is not a number, and fails a
+/// comparison.
+fn layers_of_three(holst: &Holst) -> Result<[f64; 3], ScenarioError> {
+    let layer = |number| -> Result<f64, ScenarioError> {
+        Ok(holst.stacking_of("Plans", number)?.unwrap_or(f64::NAN))
+    };
+    Ok([layer(1)?, layer(2)?, layer(3)?])
+}
+
+#[rstest]
+#[tokio::test]
+async fn one_step_forward_puts_a_note_between_the_next_two(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = three_overlapping_notes().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("order", "forward");
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
+    let [a, b, c] = layers_of_three(&holst)?;
+    assert!(b < a && a < c, "B, A, C from the back: {a:?} {b:?} {c:?}");
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn one_step_backward_puts_a_note_between_the_next_two(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = three_overlapping_notes().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 3)?)
+        .with("order", "backward");
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
+    let [a, b, c] = layers_of_three(&holst)?;
+    assert!(a < c && c < b, "A, C, B from the back: {a:?} {b:?} {c:?}");
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn several_notes_sent_to_the_front_keep_their_order(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = three_overlapping_notes().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 2)?)
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("order", "front");
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
+    let [a, b, c] = layers_of_three(&holst)?;
+    assert!(c < a && a < b, "C, A, B from the back: {a:?} {b:?} {c:?}");
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_note_at_the_front_stays_when_sent_forward(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = three_overlapping_notes().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 3)?)
+        .with("order", "forward");
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
+    assert_eq!(holst.stacking_of("Plans", 3)?, Some(3.0));
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn an_address_is_set_on_a_note_with_http_added_and_taken_away(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = two_notes().start().await?;
+    let note = holst.fixture_object("Plans", 1)?;
+    let link = |to: &'static str| {
+        ObjectCall::edit()
+            .with("object", note.clone())
+            .with("link_to", to)
+    };
+    let written = holst
+        .on(surface)
+        .object("Plans", link("example.com/a"))
+        .await?;
+    then(&written).succeeded();
+    let linked = holst.on(surface).objects("Plans").await?;
+    then(&linked).lists_object_linked("Buy milk", "http://example.com/a");
+    holst
+        .on(surface)
+        .object("Plans", link("https://x.io"))
+        .await?;
+    let secure = holst.on(surface).objects("Plans").await?;
+    then(&secure).lists_object_linked("Buy milk", "https://x.io");
+    holst.on(surface).object("Plans", link("none")).await?;
+    let cleared = holst.on(surface).objects("Plans").await?;
+    then(&cleared).lists_object_linked("Buy milk", "");
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_note_is_linked_to_another_object_of_the_board(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = two_notes().start().await?;
+    let target = holst.fixture_object("Plans", 2)?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("link_to", target.clone());
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
+    let wanted = format!("/share/b/{}?objectId={target}", holst.board_id("Plans")?);
+    let linked = holst.on(surface).objects("Plans").await?;
+    then(&linked).lists_object_linked("Buy milk", &wanted);
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_link_to_an_object_that_is_not_there_changes_nothing(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = two_notes().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("link_to", "ffffffff");
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("not found on the board")
+        .signalled_as(surface.not_found());
+    board_of(&holst).got_no_update();
+    Ok(())
+}

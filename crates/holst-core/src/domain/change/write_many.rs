@@ -18,9 +18,11 @@ use crate::{
         board::{Object, ObjectKind, any, json as stored_json},
         change::{
             check::{CheckedEdit, parent_frame, rectangle_of},
-            value::{ChangedObject, LayerOrder, ObjectChangeKind, Pasted},
+            stacking,
+            value::{ChangedObject, ObjectChangeKind, Pasted},
             write::{
                 Alongside,
+                Edge,
                 EditedObject,
                 WriteTransaction,
                 arrow_moved,
@@ -96,10 +98,11 @@ pub(super) fn edit_all(
     scope: &WriteTransaction<'_>,
     edits: &[CheckedEdit<'_>],
 ) -> Result<Vec<ChangedObject>> {
+    let ends = stacking::ends(scope.states, edits);
     edits
         .iter()
         .try_fold(Running::start(scope), |running, checked| {
-            edited(transaction, scope, running, checked)
+            edited(transaction, scope, running, (checked, &ends))
         })
         .map(|done| done.touched)
 }
@@ -108,22 +111,27 @@ fn edited(
     transaction: &mut TransactionMut<'_>,
     scope: &WriteTransaction<'_>,
     running: Running,
-    checked: &CheckedEdit<'_>,
+    (checked, ends): (&CheckedEdit<'_>, &HashMap<String, f64>),
 ) -> Result<Running> {
     let CheckedEdit {
         id,
         kind,
         edit: asked,
+        link_to,
     } = checked;
     let layer = asked
         .stacking
-        .map(|stacking| beyond(&running.states, id, stacking));
+        .and_then(|order| stacking::layer(&running.states, id, order, ends));
     let tag_ids = asked
         .tags
         .as_ref()
         .map(|titles| tag_ids(transaction, scope, titles))
         .transpose()?;
-    let also = Alongside { layer, tag_ids };
+    let also = Alongside {
+        layer,
+        tag_ids,
+        link_to: link_to.clone(),
+    };
     let now = WriteTransaction {
         roots: scope.roots,
         states: &running.states,
@@ -285,9 +293,9 @@ impl Pasting<'_> {
         let placed =
             Value::Object(base.clone().into_iter().chain(moved.clone()).collect());
         let stacking = if object.kind == ObjectKind::Frame {
-            LayerOrder::Back
+            Edge::Back
         } else {
-            LayerOrder::Front
+            Edge::Front
         };
         let own = [
             (ID.to_owned(), json!(id)),

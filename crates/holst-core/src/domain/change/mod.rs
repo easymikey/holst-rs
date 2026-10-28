@@ -5,6 +5,7 @@ mod check;
 mod journal;
 pub mod receipt;
 mod rich;
+mod stacking;
 #[cfg(test)] pub(crate) mod tests;
 pub mod value;
 mod write;

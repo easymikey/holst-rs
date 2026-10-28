@@ -59,7 +59,15 @@ const LIST_DEFAULT_JSON: u32 = 25;
 const LIST_MAX: u32 = 1_000;
 const TEXT_MAX_CHARS: usize = 120;
 /// The arguments that name a board, a frame or an object.
-const REFERENCES: [&str; 6] = ["board", "workspace", "frame", "object", "from", "to"];
+const REFERENCES: [&str; 7] = [
+    "board",
+    "workspace",
+    "frame",
+    "object",
+    "from",
+    "to",
+    "link_to",
+];
 
 impl McpServer {
     pub(super) async fn object_command(
@@ -357,6 +365,10 @@ impl McpServer {
         } else {
             format!("  {}°", (object.rotation * 100.0).round() / 100.0)
         };
+        let linked = object
+            .link_to
+            .as_deref()
+            .map_or_else(String::new, |link| format!("  link-to={link}"));
         let text = shorten(&one_line(&object.text));
         let quoted = if text.is_empty() {
             String::new()
@@ -364,7 +376,7 @@ impl McpServer {
             format!("  \"{}\"", printable(&text))
         };
         format!(
-            "{} {:<7} {corner}{size}{inside}{color}{look}{style}{ends}{padlock}{turn}{tags}{quoted}",
+            "{} {:<7} {corner}{size}{inside}{color}{look}{style}{ends}{padlock}{turn}{linked}{tags}{quoted}",
             alias(&object.id),
             object.kind.short_name(),
         )

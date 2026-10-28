@@ -38,6 +38,8 @@ struct Listed {
     #[serde(default)]
     rotation: f64,
     #[serde(default)]
+    link_to: Option<String>,
+    #[serde(default)]
     tags: Vec<String>,
     #[serde(default)]
     marks: Vec<String>,
@@ -301,6 +303,7 @@ pub(crate) fn cli_objects(stdout: &[u8]) -> Result<Observation, ScenarioError> {
                 in_frame: listed.parent.is_some(),
                 locked: listed.locked,
                 rotation: (listed.rotation != 0.0).then(|| listed.rotation.to_string()),
+                link_to: listed.link_to,
                 size: listed
                     .width
                     .zip(listed.height)
@@ -372,6 +375,7 @@ fn listed_object(line: &str) -> Option<ListedObject> {
                 && !word.contains('×')
                 && !word.starts_with(['#', '{'])
                 && !word.ends_with('°')
+                && !word.starts_with("link-to=")
         })
         .skip(1)
         .map(|(_, word)| *word)
@@ -387,6 +391,10 @@ fn listed_object(line: &str) -> Option<ListedObject> {
             .iter()
             .find_map(|word| word.strip_suffix('°'))
             .map(str::to_owned),
+        link_to: rest
+            .iter()
+            .find_map(|word| word.strip_prefix("link-to="))
+            .map(str::to_owned),
         text: text.to_owned(),
         size: rest
             .iter()
@@ -401,6 +409,7 @@ fn listed_object(line: &str) -> Option<ListedObject> {
                     && !word.starts_with(['#', '{'])
                     && **word != "locked"
                     && !word.ends_with('°')
+                    && !word.starts_with("link-to=")
             })
             .map(|(_, word)| (*word).to_owned()),
         look: Some(look).filter(|look| !look.is_empty()),
@@ -522,6 +531,23 @@ impl Then<'_> {
                 .iter()
                 .any(|row| row.text == text && row.rotation.as_deref() == Some(degrees)),
             "expected {text:?} turned {degrees}, got {:?}",
+            self.observation
+        );
+    }
+
+    /// Expects the object with this text to be shown linked to an address that
+    /// ends in `tail`, or to none when `tail` is empty.
+    ///
+    /// # Panics
+    /// When there is none, or it differs.
+    pub fn lists_object_linked(&self, text: &str, tail: &str) {
+        assert!(
+            self.objects().iter().any(|row| {
+                row.text == text
+                    && row.link_to.as_deref().unwrap_or_default().ends_with(tail)
+                    && row.link_to.is_some() != tail.is_empty()
+            }),
+            "expected {text:?} linked to {tail:?}, got {:?}",
             self.observation
         );
     }

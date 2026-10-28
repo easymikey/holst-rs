@@ -5,6 +5,7 @@ mod arrow_edit;
 mod frame;
 mod group;
 mod journal;
+mod link;
 mod lock;
 mod locked;
 mod many;

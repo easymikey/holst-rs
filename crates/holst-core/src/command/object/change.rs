@@ -20,6 +20,7 @@ use crate::{
                 ArrowEdit,
                 Backdrop,
                 BoardChange,
+                LinkTo,
                 ObjectEdit,
                 ObjectPatch,
                 ShapeEdit,
@@ -156,8 +157,8 @@ pub(super) fn reported(
     written.report(board, |object| base.object_link(board, object))
 }
 
-/// Changes text, corner, size, color, rotation, order or tags of objects, in
-/// one write.
+/// Changes text, corner, size, color, rotation, link, order or tags of
+/// objects, in one write.
 ///
 /// # Errors
 /// An item that is not valid, an object that is not found or has no such
@@ -184,7 +185,6 @@ async fn edited<I: WriteInterpreter + ?Sized>(
     interpreter: &I,
     args: &EditArgs,
 ) -> Result<ChangeReport> {
-    let change = BoardChange::EditAll(read_edits(args)?);
     let board = board_id(
         client,
         &args.board,
@@ -192,6 +192,8 @@ async fn edited<I: WriteInterpreter + ?Sized>(
         CacheUse::Use,
     )
     .await?;
+    let change =
+        BoardChange::EditAll(read_edits(args, &client.base_url().share_link(&board))?);
     let written = send(
         client,
         cache,
@@ -208,7 +210,7 @@ async fn edited<I: WriteInterpreter + ?Sized>(
 
 /// The edits: those of `--items`, or the one the flags describe for each
 /// object named.
-fn read_edits(args: &EditArgs) -> Result<Vec<ObjectEdit>> {
+fn read_edits(args: &EditArgs, share: &str) -> Result<Vec<ObjectEdit>> {
     let linked = id::object_in(&args.board).map(|linked| linked.as_str().to_owned());
     if args.items.0.is_empty() {
         let patch = patch_of(
@@ -234,10 +236,12 @@ fn read_edits(args: &EditArgs) -> Result<Vec<ObjectEdit>> {
                 to: args.to.clone(),
                 label: args.label.clone(),
                 rotate: args.rotate,
+                link_to: args.link_to.clone(),
                 order: None,
                 tag: Vec::new(),
             },
             args.text_format.unwrap_or_default(),
+            share,
         )?;
         named(&args.board, &args.object, EDIT)?
             .into_iter()
@@ -261,7 +265,7 @@ fn read_edits(args: &EditArgs) -> Result<Vec<ObjectEdit>> {
                     item,
                     linked.as_deref(),
                     slot,
-                    args.text_format.unwrap_or_default(),
+                    (args.text_format.unwrap_or_default(), share),
                 )
             })
             .collect()
@@ -292,6 +296,7 @@ fn refuse_with_items(args: &EditArgs) -> Result<()> {
         ("to", args.to.is_some()),
         ("label", !args.label.is_empty()),
         ("rotate", args.rotate.is_some()),
+        ("link_to", args.link_to.is_some()),
         ("order", args.order.is_some()),
         ("tag", !args.tag.is_empty()),
     ]
@@ -307,20 +312,20 @@ fn item_edit(
     item: &EditItem,
     linked: Option<&str>,
     slot: usize,
-    format: TextFormat,
+    (format, share): (TextFormat, &str),
 ) -> Result<ObjectEdit> {
     let object = item.object.as_deref().or(linked).ok_or_else(|| {
         not_value(EDIT, "object", &format!("given, in item {}", slot + 1))
     })?;
     Ok(ObjectEdit {
         object: object.to_owned(),
-        patch: patch_of(item, format)?,
+        patch: patch_of(item, format, share)?,
         stacking: item.order,
         tags: tags_of(&item.tag),
     })
 }
 
-fn patch_of(item: &EditItem, format: TextFormat) -> Result<ObjectPatch> {
+fn patch_of(item: &EditItem, format: TextFormat, address: &str) -> Result<ObjectPatch> {
     // The kind decides later: a shape takes 0 to 10, an arrow its nine widths.
     let stroke_width = item
         .stroke_width
@@ -360,6 +365,11 @@ fn patch_of(item: &EditItem, format: TextFormat) -> Result<ObjectPatch> {
                     .ok_or_else(|| not_value(EDIT, "rotate", "a number of degrees"))
             })
             .transpose()?,
+        link_to: item
+            .link_to
+            .as_deref()
+            .map(|raw| link_of(raw, address))
+            .transpose()?,
         shape: ShapeEdit {
             kind: item.shape,
             stroke: item.stroke.as_deref().map(str::parse).transpose()?,
@@ -386,6 +396,31 @@ fn patch_of(item: &EditItem, format: TextFormat) -> Result<ObjectPatch> {
                 .collect::<Result<_>>()?,
         },
     })
+}
+
+/// What `--link-to` says: `none`, an address, or an object of the board.
+fn link_of(raw: &str, share: &str) -> Result<LinkTo> {
+    let raw = raw.trim();
+    let address = raw.contains(['.', ':', '/']);
+    match raw {
+        "" => Err(not_value(EDIT, "link-to", "an address, an object or none")),
+        "none" => Ok(LinkTo::Clear),
+        _ if address => Ok(LinkTo::Url(with_scheme(raw))),
+        _ => Ok(LinkTo::Object {
+            reference: raw.to_owned(),
+            share: share.to_owned(),
+        }),
+    }
+}
+
+/// BUNDLE: `http://` goes before an address with no http or https scheme
+/// (main.a33651a4.js 220331).
+fn with_scheme(address: &str) -> String {
+    if address.starts_with("http://") || address.starts_with("https://") {
+        address.to_owned()
+    } else {
+        format!("http://{address}")
+    }
 }
 
 /// The marks and colors of the whole text the flags ask for.

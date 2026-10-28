@@ -17,6 +17,7 @@ use crate::{
             value::{
                 ArrowEdit,
                 BoardChange,
+                LinkTo,
                 NewObject,
                 ObjectEdit,
                 ObjectPatch,
@@ -158,6 +159,8 @@ pub(crate) struct CheckedEdit<'a> {
     pub(super) id: String,
     pub(super) kind: ObjectKind,
     pub(super) edit: &'a ObjectEdit,
+    /// The `linkTo` to store, the object it names found.
+    pub(super) link_to: Option<String>,
 }
 
 pub(crate) fn on_board(at: Option<&Point>, size: Option<&Size>) -> Result<()> {
@@ -245,9 +248,20 @@ pub(crate) fn check<'a>(
                 unlocked(states, &id, &edit.object)?;
                 let kind = kind_of(states, &id);
                 let held = held_in(states, &id, &kind);
-                changeable_edit(&kind, held, edit)
-                    .and_then(|()| arrow_fits(states, &id, &edit.patch.arrow))
-                    .map(|()| CheckedEdit { id, kind, edit })
+                changeable_edit(&kind, held, edit)?;
+                arrow_fits(states, &id, &edit.patch.arrow)?;
+                let link_to = edit
+                    .patch
+                    .link_to
+                    .as_ref()
+                    .map(|link| link_text(states, link))
+                    .transpose()?;
+                Ok(CheckedEdit {
+                    id,
+                    kind,
+                    edit,
+                    link_to,
+                })
             })
             .collect::<Result<Vec<_>>>()
             .map(CheckedChange::EditAll),
@@ -1033,6 +1047,7 @@ fn changeable_edit(
                 size: None,
                 color: None,
                 rotation: None,
+                link_to: None,
                 format: _,
                 look:
                     TextLook {
@@ -1082,6 +1097,17 @@ fn arrow_fits(
     };
     bend.and_then(|()| boxed(&arrow.from))
         .and_then(|()| boxed(&arrow.to))
+}
+
+/// The text stored as `linkTo`: empty to take the link away.
+fn link_text(states: &HashMap<String, Value>, link: &LinkTo) -> Result<String> {
+    match link {
+        LinkTo::Clear => Ok(String::new()),
+        LinkTo::Url(address) => Ok(address.clone()),
+        LinkTo::Object { reference, share } => {
+            find(states, reference).map(|id| format!("{share}?objectId={id}"))
+        }
+    }
 }
 
 /// An object and the container that places it.

@@ -90,6 +90,10 @@ fn object_line(listed: &ListedObject) -> String {
     } else {
         format!("  {}°", (object.rotation * 100.0).round() / 100.0)
     };
+    let linked = object
+        .link_to
+        .as_deref()
+        .map_or_else(String::new, |link| format!("  link-to={link}"));
     let text = shorten(&one_line(&object.text));
     let quoted = if text.is_empty() {
         String::new()
@@ -97,7 +101,7 @@ fn object_line(listed: &ListedObject) -> String {
         format!("  \"{text}\"")
     };
     format!(
-        "@{} {:<7} {corner}{size}{inside}{color}{look}{style}{ends}{padlock}{turn}{tags}{quoted}  {}",
+        "@{} {:<7} {corner}{size}{inside}{color}{look}{style}{ends}{padlock}{turn}{linked}{tags}{quoted}  {}",
         short(&object.id),
         object.kind.short_name(),
         listed.link
@@ -180,6 +184,7 @@ mod tests {
             author: None,
             locked: false,
             rotation: 0.0,
+            link_to: None,
             file: None,
             fields: Value::Null,
         }

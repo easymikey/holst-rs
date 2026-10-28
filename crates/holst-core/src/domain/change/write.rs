@@ -48,7 +48,6 @@ use crate::{
                 ChangeSources,
                 ChangedObject,
                 ImageUpload,
-                LayerOrder,
                 NewObject,
                 ObjectChangeKind,
                 ObjectPatch,
@@ -82,6 +81,7 @@ use crate::{
         LABEL_TEXT,
         LINK,
         LINK_INFO,
+        LINK_TO,
         NAME,
         OBJECT_ID,
         OPACITY,
@@ -108,7 +108,7 @@ use crate::{
     },
 };
 
-const LAYER_STEP: f64 = 1000.0;
+pub(super) const LAYER_STEP: f64 = 1000.0;
 /// The short side of a sticker before `textScale`; the long one is twice it.
 const STICKER_SIDE: f64 = 192.0;
 
@@ -143,11 +143,13 @@ pub(super) struct WriteTransaction<'a> {
     pub(super) context: &'a ChangeSources<'a>,
 }
 
-/// What an edit of many sets beside the patch: the layer and the tags' ids.
+/// What an edit of many sets beside the patch: layer, tag ids, link.
 #[derive(Debug, Default)]
 pub(super) struct Alongside {
     pub(super) layer: Option<f64>,
     pub(super) tag_ids: Option<Vec<String>>,
+    /// The text of `linkTo`, empty to take the link away.
+    pub(super) link_to: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -317,33 +319,36 @@ fn add(
     })
 }
 
+/// An end of the stack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Edge {
+    Front,
+    Back,
+}
+
 /// The layer of `id` past every other object's, in front or at the back.
-pub(super) fn beyond(
-    states: &HashMap<String, Value>,
-    id: &str,
-    stacking: LayerOrder,
-) -> f64 {
+pub(super) fn beyond(states: &HashMap<String, Value>, id: &str, stacking: Edge) -> f64 {
     let layers = states
         .iter()
         .filter(|(other, _)| other.as_str() != id)
         .filter_map(|(_, fields)| fields.get(Z_INDEX).and_then(Value::as_f64));
     let lift = LAYER_STEP + LAYER_STEP * jitter(id);
     match stacking {
-        LayerOrder::Back => layers.reduce(f64::min).unwrap_or(0.0) - lift,
-        LayerOrder::Front => layers.reduce(f64::max).unwrap_or(0.0) + lift,
+        Edge::Back => layers.reduce(f64::min).unwrap_or(0.0) - lift,
+        Edge::Front => layers.reduce(f64::max).unwrap_or(0.0) + lift,
     }
 }
 
 fn layer(states: &HashMap<String, Value>, new: &NewObject, id: &str) -> f64 {
     let stacking = match new {
-        NewObject::Frame { .. } => LayerOrder::Back,
+        NewObject::Frame { .. } => Edge::Back,
         NewObject::Sticker { .. }
         | NewObject::Text { .. }
         | NewObject::Shape { .. }
         | NewObject::Arrow { .. }
         | NewObject::Link { .. }
         | NewObject::Image { .. }
-        | NewObject::File { .. } => LayerOrder::Front,
+        | NewObject::File { .. } => Edge::Front,
     };
     beyond(states, id, stacking)
 }
@@ -619,6 +624,7 @@ pub(super) fn edit(
         .chain(reparented.as_ref().map(|name| (PARENT_ID, json!(name))))
         .chain(also.layer.map(|layer| (Z_INDEX, json!(layer))))
         .chain(also.tag_ids.as_ref().map(|ids| (TAG_IDS, json!(ids))))
+        .chain(also.link_to.as_ref().map(|link| (LINK_TO, json!(link))))
         .chain([("updated", scope.stamp.json())])
         .collect();
     insert_changes(transaction, &map, &changed)?;
@@ -889,6 +895,7 @@ fn changed_names(
         patch.look.background.as_ref().map(|_| "text background"),
         also.layer.map(|_| "order"),
         also.tag_ids.as_ref().map(|_| "tags"),
+        also.link_to.as_ref().map(|_| "link"),
         reparented,
     ]
     .into_iter()

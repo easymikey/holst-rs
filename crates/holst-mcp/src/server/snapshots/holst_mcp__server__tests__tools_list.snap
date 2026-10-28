@@ -734,6 +734,10 @@ expression: "*holst.tools"
           ],
           "type": "string"
         },
+        "link_to": {
+          "description": "URL, object id, or none.",
+          "type": "string"
+        },
         "mark": {
           "description": "Whole text: bold,italic,underline,strikethrough,code or none.",
           "type": "string"
@@ -758,7 +762,9 @@ expression: "*holst.tools"
         "order": {
           "enum": [
             "front",
-            "back"
+            "back",
+            "forward",
+            "backward"
           ],
           "type": "string"
         },
