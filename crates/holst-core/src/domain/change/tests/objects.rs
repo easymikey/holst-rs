@@ -88,9 +88,14 @@ fn a_new_object_is_refused_in_a_frame_that_hides_its_content() -> Result<()> {
     };
     let refused = built(&document, &ids, &add_in(new, "h".into()));
     assert!(matches!(
-        refused,
-        Err(Error::BoardChange(BoardChangeError::ContentHidden { reference })) if reference == "h"
+        &refused,
+        Err(Error::BoardChange(BoardChangeError::ContentHidden { .. }))
     ));
+    assert!(
+        refused
+            .err()
+            .is_some_and(|error| error.to_string().contains("\"h\""))
+    );
     assert_eq!(count(&document), before);
     Ok(())
 }

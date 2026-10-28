@@ -93,7 +93,10 @@ impl CheckedChange<'_> {
                 })
                 .flatten()
                 .collect(),
-            CheckedChange::RemoveAll(_) | CheckedChange::Paste(_) => BTreeSet::new(),
+            CheckedChange::RemoveAll(_)
+            | CheckedChange::Paste(_)
+            | CheckedChange::Group(_)
+            | CheckedChange::Ungroup(_) => BTreeSet::new(),
         }
     }
 }
