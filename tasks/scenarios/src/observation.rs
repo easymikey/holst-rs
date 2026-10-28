@@ -139,6 +139,8 @@ pub struct ListedObject {
     pub in_frame: bool,
     /// Shown with the lock flag.
     pub locked: bool,
+    /// The clockwise degrees it is shown turned by, when not 0.
+    pub rotation: Option<String>,
     /// The size as `WxH`, when the object has one.
     pub size: Option<String>,
     pub color: Option<String>,

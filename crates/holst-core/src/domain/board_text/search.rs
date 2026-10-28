@@ -187,6 +187,7 @@ impl TextCorpus<'_> {
     ///     ends: None,
     ///     author: None,
     ///     locked: false,
+    ///     rotation: 0.0,
     ///     file: None,
     ///     fields: serde_json::Value::Null,
     /// };

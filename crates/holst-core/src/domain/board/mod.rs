@@ -261,6 +261,15 @@ pub struct DrawnArrowEnds {
     pub end: Point,
 }
 
+/// Whether a number is zero, for `skip_serializing_if`.
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde passes a reference"
+)]
+fn is_zero(number: &f64) -> bool {
+    *number == 0.0
+}
+
 /// One object of a board, as much as the listing needs.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Object {
@@ -282,6 +291,9 @@ pub struct Object {
     /// Whether the object itself carries the lock flag.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub locked: bool,
+    /// Clockwise degrees about the corner, 0 up to 360; left out when 0.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub rotation: f64,
     #[serde(skip)]
     pub file: Option<StoredFile>,
     #[serde(skip)]
@@ -537,6 +549,8 @@ fn object(
         locked: field(document::LOCKED)
             .and_then(Value::as_bool)
             .unwrap_or_default(),
+        rotation: float(field(document::ROTATION))
+            .map_or(0.0, |degrees| degrees.rem_euclid(360.0)),
         file: stored_file(&kind, &fields),
         kind,
         fields,

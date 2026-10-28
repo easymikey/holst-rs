@@ -30,6 +30,7 @@ FLAGS
       --text-bg color        The background of the whole text of a sticker, text or shape: a palette token, e.g. yellow4, or none; unchanged by default
       --line line            An arrow's line: straight, elbow or curved; unchanged by default
       --heads start,end      An arrow's heads, e.g. none,triangle-filled: none, figma, miro, arc, triangle-filled, triangle, circle-filled, circle, rhombus-filled, rhombus, stick, stick-stick, triadius, triadius-stick, triadius-circle, stick-circle or slash; an empty side keeps that end; unchanged by default
+      --rotate deg           Turn to this angle in clockwise degrees, any number taken modulo 360; the corner moves so that the object turns about its centre; not for a frame, a table, a table cell, a group or an arrow; unchanged by default
       --order order          Where it stands among the objects: front or back; unchanged by default
       --tag tag              The object's tags, repeat for several; a new tag is made, '' clears; unchanged by default
       --items file           Many in one write: a JSON array or JSON lines file, - for stdin; its keys are the flags of one call

@@ -1027,6 +1027,7 @@ fn changeable_edit(
                 at: None,
                 size: None,
                 color: None,
+                rotation: None,
                 format: _,
                 look:
                     TextLook {
@@ -1042,7 +1043,7 @@ fn changeable_edit(
         ) if shape.first_field().is_none() && arrow.fields().is_empty() => {
             Err(Error::BoardChange(BoardChangeError::NothingToChange))
         }
-        (patch, _, _) => fits(kind, held, patch).and(tags),
+        (patch, _, _) => fits(kind, held, patch).and(spins(kind, patch)).and(tags),
     }
 }
 
@@ -1094,6 +1095,30 @@ fn held_in(
         | ObjectKind::Link
         | ObjectKind::Other(_) => None,
     }
+}
+
+/// Whether the kind takes the rotation the patch asks for.
+fn spins(kind: &ObjectKind, patch: &ObjectPatch) -> Result<()> {
+    let refused = patch.rotation.is_some() && !turns(kind);
+    refused.then_some(()).map_or(Ok(()), |()| {
+        Err(Error::BoardChange(BoardChangeError::NotChangeable {
+            kind: kind.as_str().to_owned(),
+            field: "rotation",
+        }))
+    })
+}
+
+/// Whether the kind has a rotation.
+fn turns(kind: &ObjectKind) -> bool {
+    // BUNDLE: no rotation for these (main.a33651a4.js 204237, 206092, 171083).
+    !matches!(
+        kind,
+        ObjectKind::Table
+            | ObjectKind::TableCell
+            | ObjectKind::Frame
+            | ObjectKind::Arrow
+            | ObjectKind::Group
+    )
 }
 
 /// Whether the kind has what the patch changes.

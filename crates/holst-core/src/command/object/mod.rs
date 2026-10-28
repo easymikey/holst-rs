@@ -454,6 +454,12 @@ pub struct EditArgs {
     )]
     pub heads: Option<String>,
     #[argument(
+        value_name = "deg",
+        help = "Turn to this angle in clockwise degrees, any number taken modulo 360; the corner moves so that the object turns about its centre; not for a frame, a table, a table cell, a group or an arrow; unchanged by default",
+        tool_doc = "Degrees clockwise; not frame, table, group, arrow."
+    )]
+    pub rotate: Option<f64>,
+    #[argument(
         value_name = "order",
         help = "Where it stands among the objects: front or back; unchanged by default"
     )]
@@ -494,6 +500,7 @@ pub struct EditItem {
     pub text_bg: Option<String>,
     pub line: Option<ArrowType>,
     pub heads: Option<String>,
+    pub rotate: Option<f64>,
     pub order: Option<LayerOrder>,
     #[serde(default)]
     pub tag: Vec<String>,
@@ -833,7 +840,7 @@ mod tests {
             "path",
             "no_embed",
         ];
-        const EDIT_KEYS: [&str; 15] = [
+        const EDIT_KEYS: [&str; 16] = [
             "object",
             "text",
             "at",
@@ -847,6 +854,7 @@ mod tests {
             "opacity",
             "line",
             "heads",
+            "rotate",
             "order",
             "tag",
         ];

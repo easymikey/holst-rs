@@ -285,6 +285,7 @@ mod tests {
             ends: None,
             author: None,
             locked: false,
+            rotation: 0.0,
             file: Some(StoredFile {
                 name: name.into(),
                 original: original.map(str::to_owned),

@@ -751,6 +751,10 @@ expression: "*holst.tools"
         "refresh": {
           "type": "boolean"
         },
+        "rotate": {
+          "description": "Degrees clockwise; not frame, table, group, arrow.",
+          "type": "number"
+        },
         "shape": {
           "description": "Shape kind.",
           "enum": [

@@ -1106,3 +1106,87 @@ async fn a_missing_kind_is_not_reported_as_a_missing_board() -> Result<(), Scena
     names_the_missing_kind(&holst.first_of_kind("Plans", "image"));
     Ok(())
 }
+
+#[rstest]
+#[tokio::test]
+async fn a_rotation_turns_a_note_about_its_centre_and_is_read_back(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = two_notes().start().await?;
+    let note = holst.fixture_object("Plans", 1)?;
+    let call = ObjectCall::edit().with("object", note).with("rotate", "90");
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
+    let observation = holst.on(surface).objects("Plans").await?;
+    then(&observation).lists_object_turned("Buy milk", "90");
+    then(&observation).lists_object_at("Buy milk", (292, 100));
+    then(&observation).lists_object_sized("Buy milk", "192x192");
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_rotation_past_a_turn_is_read_back_below_a_turn(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = two_notes().start().await?;
+    let note = holst.fixture_object("Plans", 1)?;
+    let call = ObjectCall::edit()
+        .with("object", note)
+        .with("rotate", "-90");
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
+    let observation = holst.on(surface).objects("Plans").await?;
+    then(&observation).lists_object_turned("Buy milk", "270");
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_rotation_of_many_turns_each_object(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = two_notes().start().await?;
+    let note = holst.fixture_object("Plans", 1)?;
+    let text = holst.fixture_object("Plans", 2)?;
+    let call = ObjectCall::edit().items(vec![
+        json!({ "object": note, "rotate": 45 }),
+        json!({ "object": text, "rotate": 180 }),
+    ]);
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
+    let observation = holst.on(surface).objects("Plans").await?;
+    then(&observation).lists_object_turned("Buy milk", "45");
+    then(&observation).lists_object_turned("Roadmap", "180");
+    Ok(())
+}
+
+fn one_table() -> Given {
+    given().saved_login().workspace("Team").board_with_objects(
+        "Plans",
+        "Team",
+        vec![FixtureObject::Set(
+            Box::new(FixtureObject::Sticker("Grid".into())),
+            "type".into(),
+            json!("table"),
+        )],
+    )
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_table_is_not_rotated(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = one_table().start().await?;
+    let table = holst.fixture_object("Plans", 1)?;
+    let call = ObjectCall::edit()
+        .with("object", table)
+        .with("rotate", "30");
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("table objects have no rotation to change")
+        .signalled_as(surface.usage());
+    board_of(&holst).got_no_update();
+    Ok(())
+}

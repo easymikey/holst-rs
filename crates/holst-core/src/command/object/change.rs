@@ -156,7 +156,8 @@ pub(super) fn reported(
     written.report(board, |object| base.object_link(board, object))
 }
 
-/// Changes text, corner, size, color, order or tags of objects, in one write.
+/// Changes text, corner, size, color, rotation, order or tags of objects, in
+/// one write.
 ///
 /// # Errors
 /// An item that is not valid, an object that is not found or has no such
@@ -228,6 +229,7 @@ fn read_edits(args: &EditArgs) -> Result<Vec<ObjectEdit>> {
                 text_bg: args.text_bg.clone(),
                 line: args.line,
                 heads: args.heads.clone(),
+                rotate: args.rotate,
                 order: None,
                 tag: Vec::new(),
             },
@@ -281,6 +283,7 @@ fn refuse_with_items(args: &EditArgs) -> Result<()> {
         ("text_bg", args.text_bg.is_some()),
         ("line", args.line.is_some()),
         ("heads", args.heads.is_some()),
+        ("rotate", args.rotate.is_some()),
         ("order", args.order.is_some()),
         ("tag", !args.tag.is_empty()),
     ]
@@ -340,6 +343,15 @@ fn patch_of(item: &EditItem, format: TextFormat) -> Result<ObjectPatch> {
         at: item.at.as_deref().map(str::parse).transpose()?,
         size: item.size.as_deref().map(str::parse).transpose()?,
         color: item.color.as_deref().map(str::parse).transpose()?,
+        rotation: item
+            .rotate
+            .map(|degrees| {
+                degrees
+                    .is_finite()
+                    .then_some(degrees)
+                    .ok_or_else(|| not_value(EDIT, "rotate", "a number of degrees"))
+            })
+            .transpose()?,
         shape: ShapeEdit {
             kind: item.shape,
             stroke: item.stroke.as_deref().map(str::parse).transpose()?,

@@ -90,6 +90,7 @@ use crate::{
         POINT,
         POSITION,
         RELATIVE_POINT,
+        ROTATION,
         SHAPE_TYPE,
         SHOW_AUTHOR,
         START,
@@ -669,7 +670,17 @@ fn content_changes(
     text.into_iter()
         .chain(shape_changes(&patch.shape, fields, patch.size, patch.color.is_some()))
         .chain(arrow_changes(&patch.arrow))
-        .chain(patch.at.map(|at| (POSITION, json!(at))))
+        .chain(
+            patch
+                .at
+                .filter(|_| patch.rotation.is_none())
+                .map(|at| (POSITION, json!(at))),
+        )
+        .chain(
+            patch.rotation.into_iter().flat_map(|degrees| {
+                turn_changes(&*transaction, scope, fields, patch, degrees)
+            }),
+        )
         .chain(
             patch.size.into_iter().flat_map(|size| {
                 size_changes(&*transaction, scope, kind, fields, size)
@@ -696,6 +707,52 @@ fn content_changes(
             (TEXT_BACKGROUND_COLOR, painted(color))
         }))
         .collect()
+}
+
+/// The new `rotation` and the `position` that keeps the object about its
+/// centre. BUNDLE: the web writes `{rotation, position}` with the position
+/// turned by the difference about the pivot (main.a33651a4.js 220279-220283,
+/// 148343-148360); the pivot here is the object's centre as drawn, as when
+/// the handle is dragged (148300-148323).
+fn turn_changes(
+    transaction: &TransactionMut<'_>,
+    scope: &WriteTransaction<'_>,
+    fields: &Value,
+    patch: &ObjectPatch,
+    degrees: f64,
+) -> Vec<(&'static str, Value)> {
+    let target = degrees.rem_euclid(360.0);
+    let current = fields
+        .get(ROTATION)
+        .and_then(Value::as_f64)
+        .unwrap_or_default();
+    let object = object_with_text(fields.clone(), transaction, &scope.roots.documents);
+    let drawn = object.as_ref().and_then(|object| {
+        Scene::new(std::slice::from_ref(object)).rectangle_of(object)
+    });
+    let (width, height) = patch.size.map_or_else(
+        || drawn.map_or((0.0, 0.0), |rectangle| (rectangle.width, rectangle.height)),
+        |size| (size.width(), size.height()),
+    );
+    let corner = patch
+        .at
+        .map(|at| (at.x(), at.y()))
+        .or_else(|| rectangle_of(fields).map(|stored| (stored.x, stored.y)))
+        .unwrap_or_default();
+    let half = |turned: f64| {
+        let (sin, cos) = turned.to_radians().sin_cos();
+        (
+            width / 2.0 * cos - height / 2.0 * sin,
+            width / 2.0 * sin + height / 2.0 * cos,
+        )
+    };
+    let (before, after) = (half(current), half(target));
+    let x = corner.0 + before.0 - after.0;
+    let y = corner.1 + before.1 - after.1;
+    vec![
+        (ROTATION, json!(target)),
+        (POSITION, json!({ (X): x, (Y): y })),
+    ]
 }
 
 /// A colour field as the web client stores it; none is transparent.
@@ -827,6 +884,7 @@ fn changed_names(
         patch.at.map(|_| "position"),
         patch.size.map(|_| "size"),
         patch.color.as_ref().map(|_| "color"),
+        patch.rotation.map(|_| "rotation"),
         patch.look.marks.as_ref().map(|_| "marks"),
         patch.look.color.as_ref().map(|_| "text color"),
         patch.look.background.as_ref().map(|_| "text background"),

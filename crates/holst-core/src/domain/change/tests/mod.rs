@@ -12,6 +12,7 @@ mod markdown;
 mod new_kinds;
 mod objects;
 mod remove;
+mod rotation;
 mod shape_edit;
 
 use std::collections::HashMap;

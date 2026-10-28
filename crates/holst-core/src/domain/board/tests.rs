@@ -47,6 +47,7 @@ pub(crate) fn plain_object(id: &str, kind: ObjectKind, text: &str) -> Object {
         ends: None,
         author: None,
         locked: false,
+        rotation: 0.0,
         file: None,
         fields: serde_json::Value::Null,
     }
@@ -107,6 +108,7 @@ fn sticker_fields_are_read() {
             ends: None,
             author: Some("u1".into()),
             locked: false,
+            rotation: 0.0,
             file: None,
             fields,
         })

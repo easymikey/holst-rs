@@ -85,6 +85,11 @@ fn object_line(listed: &ListedObject) -> String {
         format!("  #{}", listed.tags.join(" #"))
     };
     let padlock = if object.locked { "  locked" } else { "" };
+    let turn = if object.rotation == 0.0 {
+        String::new()
+    } else {
+        format!("  {}°", (object.rotation * 100.0).round() / 100.0)
+    };
     let text = shorten(&one_line(&object.text));
     let quoted = if text.is_empty() {
         String::new()
@@ -92,7 +97,7 @@ fn object_line(listed: &ListedObject) -> String {
         format!("  \"{text}\"")
     };
     format!(
-        "@{} {:<7} {corner}{size}{inside}{color}{look}{style}{ends}{padlock}{tags}{quoted}  {}",
+        "@{} {:<7} {corner}{size}{inside}{color}{look}{style}{ends}{padlock}{turn}{tags}{quoted}  {}",
         short(&object.id),
         object.kind.short_name(),
         listed.link
@@ -174,6 +179,7 @@ mod tests {
             ends: None,
             author: None,
             locked: false,
+            rotation: 0.0,
             file: None,
             fields: Value::Null,
         }

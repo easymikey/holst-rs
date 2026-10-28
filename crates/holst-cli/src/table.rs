@@ -228,6 +228,7 @@ fn flag(argument: &Argument) -> Arg {
         | ValueKind::Choice(_)
         | ValueKind::Scale(_) => lettered
             .action(ArgAction::Set)
+            .allow_negative_numbers(argument.kind == ValueKind::Number)
             .value_parser(value_parser(argument.kind)),
         ValueKind::QueryParameter => lettered
             .action(ArgAction::Append)

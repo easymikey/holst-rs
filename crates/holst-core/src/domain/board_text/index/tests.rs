@@ -36,6 +36,7 @@ fn object(id: &str, kind: ObjectKind, text: &str) -> Object {
         ends: None,
         author: Some("author-1".to_owned()),
         locked: false,
+        rotation: 0.0,
         file: None,
         fields: Value::Null,
     }
@@ -218,6 +219,7 @@ fn any_object() -> impl Strategy<Value = Object> {
                     }),
                     author,
                     locked: false,
+                    rotation: 0.0,
                     file,
                     fields: Value::Null,
                 }

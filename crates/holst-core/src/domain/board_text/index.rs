@@ -20,7 +20,7 @@ use crate::{
 
 pub const MAGIC: [u8; 4] = *b"HBIX";
 
-pub const VERSION: u16 = 4;
+pub const VERSION: u16 = 5;
 
 /// What an index was built from: the board and its document's state vector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -115,6 +115,7 @@ struct IndexBody {
     colors: Vec<Option<StringNumber>>,
     authors: Vec<Option<StringNumber>>,
     locked: Vec<bool>,
+    rotations: Vec<f64>,
     arrows: Vec<IndexedArrow>,
     files: Vec<IndexedFile>,
     text_ends: Vec<u32>,
@@ -235,6 +236,7 @@ impl<'a> StringTables<'a> {
         body.colors.push(color);
         body.authors.push(author);
         body.locked.push(object.locked);
+        body.rotations.push(object.rotation);
         body.arrows.extend(arrow);
         body.texts.push_str(&object.text);
         body.text_ends.push(saturating_u32(body.texts.len()));
@@ -375,6 +377,7 @@ impl BoardIndex {
             ),
             author: name(*body.authors.get(at)?),
             locked: *body.locked.get(at)?,
+            rotation: *body.rotations.get(at)?,
             file: file.map(
                 |IndexedFile {
                      name: stored,
@@ -528,6 +531,7 @@ impl IndexBody {
             self.colors.len(),
             self.authors.len(),
             self.locked.len(),
+            self.rotations.len(),
             self.text_ends.len(),
         ];
         let arrow_objects = self.arrows.iter().map(|arrow| arrow.object);

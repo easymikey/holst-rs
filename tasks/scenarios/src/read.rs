@@ -36,6 +36,8 @@ struct Listed {
     #[serde(default)]
     locked: bool,
     #[serde(default)]
+    rotation: f64,
+    #[serde(default)]
     tags: Vec<String>,
     #[serde(default)]
     marks: Vec<String>,
@@ -298,6 +300,8 @@ pub(crate) fn cli_objects(stdout: &[u8]) -> Result<Observation, ScenarioError> {
                 ),
                 in_frame: listed.parent.is_some(),
                 locked: listed.locked,
+                rotation: Some(listed.rotation.to_string())
+                    .filter(|_| listed.rotation != 0.0),
                 size: listed
                     .width
                     .zip(listed.height)
@@ -368,6 +372,7 @@ fn listed_object(line: &str) -> Option<ListedObject> {
             !spoken_for.contains(at)
                 && !word.contains('×')
                 && !word.starts_with(['#', '{'])
+                && !word.ends_with('°')
         })
         .skip(1)
         .map(|(_, word)| *word)
@@ -379,6 +384,10 @@ fn listed_object(line: &str) -> Option<ListedObject> {
         corner,
         in_frame: parent.is_some(),
         locked: rest.contains(&"locked"),
+        rotation: rest
+            .iter()
+            .find_map(|word| word.strip_suffix('°'))
+            .map(str::to_owned),
         text: text.to_owned(),
         size: rest
             .iter()
@@ -392,6 +401,7 @@ fn listed_object(line: &str) -> Option<ListedObject> {
                     && !word.contains('×')
                     && !word.starts_with(['#', '{'])
                     && **word != "locked"
+                    && !word.ends_with('°')
             })
             .map(|(_, word)| (*word).to_owned()),
         look: Some(look).filter(|look| !look.is_empty()),
@@ -501,6 +511,20 @@ impl Then<'_> {
             .collect();
         let wanted: std::collections::BTreeSet<&str> = texts.iter().copied().collect();
         assert_eq!(inside, wanted, "{:?}", self.observation);
+    }
+
+    /// Expects the object with this text to be shown turned by these degrees.
+    ///
+    /// # Panics
+    /// When there is none, or it differs.
+    pub fn lists_object_turned(&self, text: &str, degrees: &str) {
+        assert!(
+            self.objects()
+                .iter()
+                .any(|row| row.text == text && row.rotation.as_deref() == Some(degrees)),
+            "expected {text:?} turned {degrees}, got {:?}",
+            self.observation
+        );
     }
 
     /// Expects exactly the objects with these texts to be shown locked.

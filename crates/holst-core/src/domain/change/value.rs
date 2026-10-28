@@ -179,6 +179,8 @@ pub struct ObjectPatch {
     pub at: Option<Point>,
     pub size: Option<Size>,
     pub color: Option<Color>,
+    /// Clockwise degrees to turn to; the position follows, keeping the centre.
+    pub rotation: Option<f64>,
     pub look: TextLook,
     pub shape: ShapeEdit,
     pub arrow: ArrowEdit,
