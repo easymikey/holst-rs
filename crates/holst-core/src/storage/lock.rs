@@ -26,6 +26,10 @@ const fn lock_tries(wait_millis: u64, retry_millis: u64) -> u64 {
 /// The name of the lock file beside what it guards.
 pub(crate) const LOCK_FILE: &str = "LOCK";
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a synchronous retry loop with no runtime or clock: the pause blocks the thread"
+)]
 /// Creates or opens `path` and locks it, retrying for `wait_millis`; `None`
 /// when it stayed busy. The lock is released when the file is dropped.
 ///

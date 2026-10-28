@@ -32,6 +32,10 @@ pub(crate) fn refused(refusal: Option<&Unconfirmed>) -> Result<()> {
 }
 
 /// Runs a command of the table with the arguments the command line gave it.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the command runner hands the process's stdin to the body-file readers"
+)]
 pub(crate) async fn run(
     name: CommandName,
     mut arguments: Map<String, Value>,

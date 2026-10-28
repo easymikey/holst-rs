@@ -7,6 +7,10 @@ pub use tracing_subscriber::filter::{LevelFilter, Targets};
 use crate::effect::settings::{ColorPreference, LogSettings, TerminalType};
 
 /// Install the global subscriber; a bad `HOLST_LOG` falls back to `default`.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the log subscriber is the one door to stderr for diagnostics"
+)]
 pub fn init(log: &LogSettings, default: Targets) {
     use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
 

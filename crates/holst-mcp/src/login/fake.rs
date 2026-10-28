@@ -1,4 +1,8 @@
 //! Deterministic stand-ins for the store, the clock and the network.
+#![expect(
+    clippy::disallowed_methods,
+    reason = "the fake store is a synchronous `Backend`: its slowness blocks the thread"
+)]
 
 use std::{
     collections::VecDeque,

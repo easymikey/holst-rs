@@ -34,6 +34,10 @@ pub(crate) enum OutputFormat {
     Text,
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the output module is the one door to stdout"
+)]
 fn to_stdout(
     write: impl FnOnce(&mut BufWriter<StdoutLock<'_>>) -> io::Result<()>,
 ) -> Result<()> {
@@ -58,6 +62,10 @@ fn write_bytes(bytes: &[u8]) -> Result<()> {
     to_stdout(|out| out.write_all(bytes))
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the output module is the one door to stderr"
+)]
 pub(crate) fn stderr_line(text: impl Display) {
     // A stderr that cannot be written has nowhere to report to.
     writeln!(io::stderr().lock(), "{text}").unwrap_or_default();
@@ -184,6 +192,10 @@ impl OutputTarget {
 }
 
 /// Tells whether stdout is a terminal or redirected.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the output module is the one door to stdout"
+)]
 pub(crate) fn stdout_kind() -> StreamKind {
     StreamKind::terminal_if(io::stdout().is_terminal())
 }

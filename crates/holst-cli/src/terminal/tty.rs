@@ -16,6 +16,10 @@ pub(crate) fn exclusive<R>(work: impl FnOnce() -> R) -> R {
 }
 
 #[must_use = "the terminal is owned only while the guard lives"]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "called from the signal thread, outside the async runtime: the wait blocks the thread"
+)]
 pub(crate) fn seize(patience: Duration) -> Option<MutexGuard<'static, ()>> {
     let tries = patience.as_millis() / SEIZE_STEP.as_millis();
     (0..=tries).find_map(|_| match TERMINAL.try_lock() {

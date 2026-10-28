@@ -72,6 +72,10 @@ pub(crate) struct Console {
 
 impl Console {
     #[must_use]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the form console is where the CLI asks whether stdin is a terminal"
+    )]
     pub(crate) fn detect(term_type: TerminalType) -> Self {
         tty::remember();
         let stderr = Term::stderr();
@@ -140,6 +144,10 @@ impl Terminal for Console {
             .and_then(|()| self.stderr.flush())
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a blocking terminal read loop with no clock: the grace pause blocks the thread"
+    )]
     fn keystroke(&self) -> io::Result<Keystroke> {
         // `console` reports a read cut by a signal as Ctrl-C: skip it after a pause.
         std::iter::repeat_with(|| tty::exclusive(|| self.stderr.read_key_raw()))
@@ -155,6 +163,10 @@ impl Terminal for Console {
             .map(keystroke_of)
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the form console is where the CLI reads answers from stdin"
+    )]
     fn line(&self) -> io::Result<Option<String>> {
         io::stdin()
             .lines()

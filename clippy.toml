@@ -76,6 +76,20 @@ disallowed-methods = [
     { path = "std::env::vars", reason = "read the environment only in main.rs and holst_core::effect::settings; take the value as a parameter" },
     { path = "std::env::vars_os", reason = "read the environment only in main.rs and holst_core::effect::settings; take the value as a parameter" },
     { path = "std::env::home_dir", reason = "read the environment only in main.rs and holst_core::effect::settings; take the value as a parameter" },
+    { path = "std::env::args", reason = "read the process arguments only in main.rs; take the value as a parameter" },
+    { path = "std::env::args_os", reason = "read the process arguments only in main.rs; take the value as a parameter" },
+    { path = "std::env::current_exe", reason = "the running binary's path is process state; read it once at the entry point and pass it in" },
+    { path = "std::env::current_dir", reason = "the working directory is process state; read it once at the entry point and pass it in" },
+    { path = "std::env::set_current_dir", reason = "the working directory is process state; change it only at the entry point" },
+    { path = "std::env::temp_dir", reason = "reads TMPDIR from the environment; take the directory from settings or as a parameter" },
+    { path = "std::env::set_var", reason = "mutating the environment is process state; do it only at the entry point" },
+    { path = "std::env::remove_var", reason = "mutating the environment is process state; do it only at the entry point" },
+    { path = "std::io::stdout", reason = "write to stdout only through the CLI output module (holst-cli::output); elsewhere return the text" },
+    { path = "std::io::stderr", reason = "write to stderr only through the CLI output module (holst-cli::output) or the logging setup" },
+    { path = "std::io::stdin", reason = "read stdin only in the CLI terminal and form modules; elsewhere take the input as a parameter" },
+    { path = "std::thread::sleep", reason = "sleep through the clock (holst_core::effect::clock::Clock); a blocking sleep outside the runtime needs its own reason" },
+    { path = "std::process::exit", reason = "return an exit code from main; exit directly only in the signal handler" },
+    { path = "std::process::Command::new", reason = "spawning a process is an effect; do it only in the named shells (setup connect, session store, pager)" },
 ]
 
 disallowed-macros = [

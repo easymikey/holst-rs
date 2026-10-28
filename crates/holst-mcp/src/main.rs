@@ -61,6 +61,10 @@ enum StartError {
 }
 
 #[tokio::main]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "main.rs is the one place that reads the process arguments"
+)]
 async fn main() -> ExitCode {
     // Else `--version` would wait for the protocol; stdout is still free.
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -93,6 +97,10 @@ fn setup_steps(flags: &[String]) -> Result<setup::Steps, StartError> {
     }
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "`--help` and `--version` answer on stdout before the protocol starts"
+)]
 fn print_usage(arg: &str) -> Result<(), StartError> {
     usage(arg).and_then(|text| {
         writeln!(io::stdout().lock(), "{text}").map_err(StartError::Stdout)
@@ -162,6 +170,10 @@ async fn serve_http(args: Vec<String>) -> Result<(), StartError> {
     }
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the listening address goes to stderr, as stdout carries the protocol"
+)]
 async fn listen(addr: SocketAddr, token: http::Token) -> Result<(), StartError> {
     let holst = start_server()?;
     let listener = http::bind(addr).await?;
@@ -230,6 +242,10 @@ fn warn_cache_off(err: &holst_core::Error) {
     tracing::warn!(error = %reply::chained(err), "the board cache is off");
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a start error goes to stderr, as stdout carries the protocol"
+)]
 fn report(err: &StartError) -> ExitCode {
     let text = reply::chained(err);
     writeln!(io::stderr().lock(), "holst-mcp: {text}")

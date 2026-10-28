@@ -70,6 +70,10 @@ impl SecurityTool {
         }
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the keychain is reached only through the macOS `security` program"
+    )]
     fn run(
         &self,
         arguments: &[OsString],
@@ -131,6 +135,10 @@ fn feed(child: &mut Child, input: Option<&[u8]>) -> io::Result<()> {
         .map_or(Ok(()), |(mut stdin, input)| stdin.write_all(input))
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a synchronous poll of a child process with no runtime or clock: the pause blocks the thread"
+)]
 fn settle(child: &mut Child, wait: Duration) -> io::Result<Option<ExitStatus>> {
     let start = Instant::now();
     std::iter::repeat_with(|| child.try_wait())

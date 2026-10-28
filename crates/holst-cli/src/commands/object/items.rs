@@ -8,6 +8,10 @@ use crate::{
 };
 
 /// Replaces the file named by `items` with the objects in it.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "`-` names the process's stdin as the items file"
+)]
 pub(super) fn read(arguments: &mut Map<String, Value>) -> Result<()> {
     let source = arguments
         .get("items")

@@ -20,6 +20,10 @@ use self::{error::Error, run::RunSettings};
 use crate::{cli::Cli, exit::report, terminal::detect::TerminalType};
 
 #[tokio::main(flavor = "current_thread")]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "main.rs is the one place that reads the process arguments"
+)]
 async fn main() -> ExitCode {
     // First of all: from here on a Ctrl-C is counted, not fatal.
     terminal::signals::note_arrivals();

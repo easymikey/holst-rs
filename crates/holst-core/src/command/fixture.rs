@@ -125,6 +125,10 @@ pub(in crate::command) fn signed_in_hud() -> Result<(Arc<Fake>, Client)> {
 }
 
 /// A new empty directory under the system's temporary one.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a test fixture: the system temporary directory is the scratch space"
+)]
 pub(in crate::command) fn directory() -> Result<PathBuf> {
     static COUNT: AtomicU32 = AtomicU32::new(0);
     let dir = std::env::temp_dir().join(format!(

@@ -163,6 +163,7 @@ const SEIZE_PATIENCE: std::time::Duration = std::time::Duration::from_millis(500
 
 #[expect(
     clippy::exit,
+    clippy::disallowed_methods,
     reason = "a signal ends the process from outside the command: nothing else can stop a blocking read"
 )]
 fn leave(signal: Signal) -> Infallible {

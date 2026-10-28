@@ -27,6 +27,10 @@ pub(crate) trait Program {
 pub(crate) struct System;
 
 impl Program for System {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "setup runs the clients' own `mcp add` commands; this is the one door"
+    )]
     fn run(&self, name: &str, args: &[&str]) -> io::Result<Ran> {
         Command::new(name)
             .args(args)
