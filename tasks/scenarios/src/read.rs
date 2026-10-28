@@ -300,8 +300,7 @@ pub(crate) fn cli_objects(stdout: &[u8]) -> Result<Observation, ScenarioError> {
                 ),
                 in_frame: listed.parent.is_some(),
                 locked: listed.locked,
-                rotation: Some(listed.rotation.to_string())
-                    .filter(|_| listed.rotation != 0.0),
+                rotation: (listed.rotation != 0.0).then(|| listed.rotation.to_string()),
                 size: listed
                     .width
                     .zip(listed.height)
