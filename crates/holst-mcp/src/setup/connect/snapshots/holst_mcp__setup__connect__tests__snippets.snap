@@ -6,14 +6,14 @@ Other clients: add the server by hand.
 
 Hermes, in ~/.hermes/config.yaml:
 mcp_servers:
-  holst:
+  holst-rs:
     command: "/opt/holst/holst-mcp"
 
 opencode, in opencode.json:
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "holst": {
+    "holst-rs": {
       "command": [
         "/opt/holst/holst-mcp"
       ],
@@ -26,7 +26,7 @@ opencode, in opencode.json:
 Any client that takes an mcpServers entry:
 {
   "mcpServers": {
-    "holst": {
+    "holst-rs": {
       "command": "/opt/holst/holst-mcp"
     }
   }

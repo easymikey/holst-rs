@@ -58,9 +58,9 @@ fn connected(
 
 const CLAUDE: &[(&str, bool, &str)] = &[
     ("claude --version", true, ""),
-    ("claude mcp get holst", false, "No MCP server found"),
+    ("claude mcp get holst-rs", false, "No MCP server found"),
     (
-        "claude mcp add --scope user holst -- /opt/holst/holst-mcp",
+        "claude mcp add --scope user holst-rs -- /opt/holst/holst-mcp",
         true,
         "",
     ),
@@ -68,8 +68,8 @@ const CLAUDE: &[(&str, bool, &str)] = &[
 
 const CODEX: &[(&str, bool, &str)] = &[
     ("codex --version", true, ""),
-    ("codex mcp get holst", false, ""),
-    ("codex mcp add holst -- /opt/holst/holst-mcp", true, ""),
+    ("codex mcp get holst-rs", false, ""),
+    ("codex mcp add holst-rs -- /opt/holst/holst-mcp", true, ""),
 ];
 
 #[test]
@@ -89,7 +89,7 @@ fn enter_connects_claude_code_with_the_binary_path() -> Result<(), SetupError> {
     );
     assert!(
         calls.contains(
-            &"claude mcp add --scope user holst -- /opt/holst/holst-mcp".to_owned()
+            &"claude mcp add --scope user holst-rs -- /opt/holst/holst-mcp".to_owned()
         ),
         "{calls:?}"
     );
@@ -105,7 +105,7 @@ fn yes_connects_codex() -> Result<(), SetupError> {
     );
     assert_eq!(
         calls.last().map(String::as_str),
-        Some("codex mcp add holst -- /opt/holst/holst-mcp")
+        Some("codex mcp add holst-rs -- /opt/holst/holst-mcp")
     );
     Ok(())
 }
@@ -118,7 +118,7 @@ fn no_runs_nothing_but_the_checks() -> Result<(), SetupError> {
         calls,
         [
             "claude --version",
-            "claude mcp get holst",
+            "claude mcp get holst-rs",
             "codex --version"
         ]
     );
@@ -129,11 +129,11 @@ fn no_runs_nothing_but_the_checks() -> Result<(), SetupError> {
 fn an_existing_entry_is_kept_without_asking() -> Result<(), SetupError> {
     let machine = Machine::with(&[
         ("claude --version", true, ""),
-        ("claude mcp get holst", true, ""),
+        ("claude mcp get holst-rs", true, ""),
     ]);
     let (shown, calls) = connected(&machine, "")?;
     assert!(
-        shown.starts_with("Claude Code has a holst entry already; kept.\n"),
+        shown.starts_with("Claude Code has a holst-rs entry already; kept.\n"),
         "{shown}"
     );
     assert!(!shown.contains("Connect Claude Code?"), "{shown}");
@@ -141,7 +141,7 @@ fn an_existing_entry_is_kept_without_asking() -> Result<(), SetupError> {
         calls,
         [
             "claude --version",
-            "claude mcp get holst",
+            "claude mcp get holst-rs",
             "codex --version"
         ]
     );
@@ -153,15 +153,15 @@ fn a_failing_command_shows_its_stderr_and_the_next_client_goes_on()
 -> Result<(), SetupError> {
     let machine = Machine::with(&[
         ("claude --version", true, ""),
-        ("claude mcp get holst", false, ""),
+        ("claude mcp get holst-rs", false, ""),
         (
-            "claude mcp add --scope user holst -- /opt/holst/holst-mcp",
+            "claude mcp add --scope user holst-rs -- /opt/holst/holst-mcp",
             false,
             "boom\n",
         ),
         ("codex --version", true, ""),
-        ("codex mcp get holst", false, ""),
-        ("codex mcp add holst -- /opt/holst/holst-mcp", true, ""),
+        ("codex mcp get holst-rs", false, ""),
+        ("codex mcp add holst-rs -- /opt/holst/holst-mcp", true, ""),
     ]);
     let (shown, _) = connected(&machine, "y\ny\n")?;
     assert!(
@@ -178,7 +178,7 @@ fn a_failing_command_shows_its_stderr_and_the_next_client_goes_on()
 fn a_command_that_cannot_start_is_told_and_skipped() -> Result<(), SetupError> {
     let machine = Machine::with(&[
         ("claude --version", true, ""),
-        ("claude mcp get holst", false, ""),
+        ("claude mcp get holst-rs", false, ""),
     ]);
     let (shown, _) = connected(&machine, "\n")?;
     assert!(

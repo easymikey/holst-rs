@@ -10,7 +10,7 @@ use serde_json::json;
 use super::{SetupError, Talk};
 
 /// The name the server is registered under in every client.
-const SERVER: &str = "holst";
+const SERVER: &str = "holst-rs";
 
 /// What a client command did: whether it succeeded, and what it said on stderr.
 pub(crate) struct Ran {
