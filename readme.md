@@ -5,6 +5,14 @@ An unofficial CLI and MCP server for [Holst](https://app.holst.so), written in R
 - `holst`: a CLI for the terminal and scripts.
 - `holst-mcp`: an MCP server on stdio, with 11 tools and short replies (`@N` aliases instead of UUIDs, lists as tables).
 
+## Why
+
+Holst has no public API and no CLI: everything happens in the browser, one click at a time. holst-rs makes boards scriptable and lets AI agents work on them.
+
+- Scripts: list, search, export and back up boards, add and edit objects from the shell.
+- Agents: an assistant such as Claude Code reads a board and adds stickers, text and comments through MCP. Replies are short, so they cost the agent little context.
+- Safe by default: every write has a dry run, and irreversible ones need `--yes`.
+
 ## Install
 
 Homebrew (macOS and Linux):
