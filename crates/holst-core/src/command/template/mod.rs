@@ -24,6 +24,7 @@ use crate::{
     domain::{
         lookup::choice,
         template::{Template, TemplateCategory, Templates, category_slug},
+        text::counted,
     },
     effect::{board_write::WriteMode, request::ApiRequest},
     error::{
@@ -300,7 +301,7 @@ impl Changed {
             .unwrap_or_default();
         let objects = self
             .objects
-            .map(|count| format!(" with {count} objects"))
+            .map(|count| format!(" with {}", counted(count, "object")))
             .unwrap_or_default();
         let (verb, part) = match (self.action, would) {
             (Action::Create, false) => ("created", "template"),

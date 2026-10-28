@@ -6,6 +6,22 @@ use serde_json::Value;
 
 pub const EMPTY: &str = "(empty)";
 
+/// A count with its noun, plural unless the count is one.
+///
+/// ```
+/// use holst_core::domain::text::counted;
+/// assert_eq!(counted(1_usize, "object"), "1 object");
+/// assert_eq!(counted(0_usize, "object"), "0 objects");
+/// ```
+#[must_use]
+pub fn counted<N>(count: N, noun: &str) -> String
+where
+    N: Copy + fmt::Display + PartialEq + From<u8>,
+{
+    let s = if count == N::from(1) { "" } else { "s" };
+    format!("{count} {noun}{s}")
+}
+
 /// Items joined by `separator`, written lazily; can be displayed repeatedly.
 ///
 /// ```

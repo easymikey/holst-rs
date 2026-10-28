@@ -13,7 +13,7 @@ use holst_core::{
         change::{ChangeReport, PlannedRequest},
         table,
     },
-    domain::text::printable,
+    domain::text::{counted, printable},
     error::lookup::{LookupError, LookupKind, LookupMiss},
 };
 use serde_json::{Map, Value};
@@ -186,9 +186,9 @@ fn board_text(board: &BoardBrief) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     let objects = if kinds.is_empty() {
-        format!("{} objects", board.count)
+        counted(board.count, "object")
     } else {
-        format!("{} objects: {kinds}", board.count)
+        format!("{}: {kinds}", counted(board.count, "object"))
     };
     let area = board
         .rectangle
@@ -232,8 +232,12 @@ fn board_text(board: &BoardBrief) -> String {
 
 fn picture_line(snapped: &Snapped) -> String {
     format!(
-        "rectangle {} · {} objects · {}×{} px · {}",
-        snapped.rectangle, snapped.objects, snapped.width, snapped.height, snapped.link
+        "rectangle {} · {} · {}×{} px · {}",
+        snapped.rectangle,
+        counted(snapped.objects, "object"),
+        snapped.width,
+        snapped.height,
+        snapped.link
     )
 }
 
@@ -310,7 +314,8 @@ fn exported_text(exported: &Exported) -> String {
         format!("\nlisting: {} bytes: {}", list.bytes, list.file.display())
     });
     printable(&format!(
-        "exported {objects} objects, {bytes} bytes{before}{place}{}",
+        "exported {}, {bytes} bytes{before}{place}{}",
+        counted(objects, "object"),
         listing.collect::<String>()
     ))
     .into_owned()
@@ -327,8 +332,8 @@ fn imported_text(imported: &Imported) -> String {
         ChangeReport::Held { .. } => ("would import", Vec::new(), None),
     };
     let head = format!(
-        "{verb} {} objects into {} / {}; the board had {}, now {}",
-        imported.saved_objects,
+        "{verb} {} into {} / {}; the board had {}, now {}",
+        counted(imported.saved_objects, "object"),
         imported.workspace_name,
         imported.name,
         imported.objects_before,
@@ -410,6 +415,39 @@ mod tests {
             board_text(&board),
             "Plan  b1\n  https://holst/b1\n  editable · Team / Work · in trash\n  \
              3 objects: frame 1, sticker 2\n  members: [{\"user\":\"ann\",\"right\":\"editor\"}]"
+        );
+    }
+
+    #[test]
+    fn one_object_is_not_plural() {
+        let board = BoardBrief {
+            id: "b1".to_owned(),
+            name: "Plan".to_owned(),
+            link: "L".to_owned(),
+            workspace: None,
+            folder: None,
+            in_trash: false,
+            edit_right: EditRight::Editable,
+            rectangle: None,
+            count: 1,
+            objects: BTreeMap::new(),
+            members: None,
+            rights: None,
+            sharing: None,
+        };
+        assert!(board_text(&board).ends_with("\n  1 object"));
+        let exported = Exported {
+            board: "b1".to_owned(),
+            objects: 1,
+            state_bytes: 30,
+            bytes: 30,
+            file: PathBuf::from("out.ydoc.gz"),
+            object_list: None,
+            inline: None,
+        };
+        assert_eq!(
+            exported_text(&exported),
+            "exported 1 object, 30 bytes: out.ydoc.gz"
         );
     }
 

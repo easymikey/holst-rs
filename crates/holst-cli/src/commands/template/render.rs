@@ -7,7 +7,7 @@ use holst_core::{
     },
     domain::{
         template::{Template, TemplateCategory},
-        text::{EMPTY, joined},
+        text::{EMPTY, counted, joined},
     },
 };
 use serde_json::Value;
@@ -55,7 +55,7 @@ fn template_line(listed: &ListedTemplate) -> String {
 fn category_line(category: &TemplateCategory) -> String {
     let count = category
         .template_count
-        .map(|count| format!(", {count} templates"))
+        .map(|count| format!(", {}", counted(count, "template")))
         .unwrap_or_default();
     format!(
         "{}  {}  ({}{count})",

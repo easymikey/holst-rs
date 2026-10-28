@@ -8,7 +8,7 @@ use holst_core::{
             list::{ListedObject, Listing},
         },
     },
-    domain::text::one_line,
+    domain::text::{counted, one_line},
 };
 
 use crate::output::view::size_text;
@@ -25,8 +25,8 @@ fn short(id: &str) -> &str {
 pub(super) fn listing_text(listing: &Listing) -> String {
     let rectangle = listing.rectangle.map(|rect| format!("rectangle {rect}"));
     let head = format!(
-        "{} objects · {}",
-        listing.matched,
+        "{} · {}",
+        counted(listing.matched, "object"),
         listing.edit_right.as_str()
     );
     let lines = listing.objects.iter().map(object_line);
@@ -192,6 +192,20 @@ mod tests {
             objects,
             next,
         }
+    }
+
+    #[test]
+    fn one_matched_object_is_not_plural() {
+        let one = Listing {
+            matched: 1,
+            ..listing(Vec::new(), None)
+        };
+        assert!(listing_text(&one).starts_with("1 object · editable"));
+        let none = Listing {
+            matched: 0,
+            ..listing(Vec::new(), None)
+        };
+        assert!(listing_text(&none).starts_with("0 objects · editable"));
     }
 
     #[test]
