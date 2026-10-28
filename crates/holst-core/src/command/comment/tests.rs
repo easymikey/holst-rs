@@ -184,7 +184,6 @@ fn milliseconds_keep_their_fraction_digits() {
 }
 
 mod object_references {
-    use holst_fake::{ACCEPTED_COOKIES, ACCEPTED_TOKEN, Fake, Fixture, FixtureObject};
     use secrecy::SecretString;
     use serde_json::json;
 
@@ -196,6 +195,7 @@ mod object_references {
             Error,
             lookup::{LookupError, LookupKind, LookupMiss},
         },
+        fake::{ACCEPTED_COOKIES, ACCEPTED_TOKEN, Fake, Fixture, FixtureObject},
         system::{clock::SystemClock, id::RandomIds},
     };
 

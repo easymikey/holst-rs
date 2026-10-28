@@ -84,7 +84,7 @@ fn assert_rotation_saved_or_warned(
 #[cfg(unix)]
 #[test]
 fn unsaved_rotation_is_a_warning_not_a_failure() -> TestResult {
-    let fake = holst_fake::Fake::start_blocking(fake::easy().rotating_cookie())?;
+    let fake = holst_core::fake::Fake::start_blocking(fake::easy().rotating_cookie())?;
     let before = accepted();
     let args = ["-o", "json", "api", "GET", "/gapi/current_user"];
     let (out, dir, denial) = holst_read_only(fake.base_url(), &before, &args)?;

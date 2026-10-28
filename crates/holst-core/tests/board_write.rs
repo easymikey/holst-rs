@@ -14,13 +14,13 @@ use holst_core::{
     },
     effect::{board_write::WriteMode, confirmation::ALWAYS},
     error::Error,
+    fake::{ACCEPTED_COOKIES, ACCEPTED_TOKEN, Fake, Fixture, FixtureObject},
     remote::{
         client::Client,
         socket::{load::load, write::interpreter},
     },
     system::{clock::SystemClock, id::RandomIds},
 };
-use holst_fake::{ACCEPTED_COOKIES, ACCEPTED_TOKEN, Fake, Fixture, FixtureObject};
 use secrecy::SecretString;
 
 async fn started(seed: Fixture) -> holst_core::Result<(Fake, Client, String)> {

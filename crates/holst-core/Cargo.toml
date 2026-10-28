@@ -63,8 +63,8 @@ insta = { version = "1.49", features = ["json"] }
 # tests are deterministic and fast, no process per case.
 proptest = { version = "1.11", default-features = false, features = ["std", "bit-set"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "time", "test-util"] }
-# The stateful fake server the client is tested against.
-holst-fake = { path = "../holst-fake" }
+# The stateful fake server (`src/fake`) the integration tests run the client against: a self dev-dependency turns the feature on for the test targets only, so `cargo test -p holst-core` works alone.
+holst-core = { path = ".", features = ["fake"] }
 
 [[test]]
 name = "main"
@@ -91,6 +91,8 @@ harness = false
 logging = ["dep:tracing-subscriber"]
 # Board snapshots as PNG (resvg, about 2 MB of binary); SVG works without it.
 png = ["dep:resvg"]
+# The stateful fake Holst server `holst_core::fake` for tests; it uses only the dependencies above.
+fake = []
 
 # Without a backend for its OS keyring silently uses a mock store, so the
 # backend is enabled explicitly per OS. On Linux — Secret Service over zbus

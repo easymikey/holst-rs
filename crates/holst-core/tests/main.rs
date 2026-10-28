@@ -9,6 +9,7 @@ mod board_read;
 mod board_write;
 mod comments;
 mod common;
+mod fake_routes;
 mod resolve;
 mod session_on_fake;
 mod shared_cache;

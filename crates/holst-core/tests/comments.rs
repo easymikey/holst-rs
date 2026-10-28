@@ -12,16 +12,16 @@ use holst_core::{
         change::build::author_number,
         session::Session,
     },
+    fake::{
+        ACCEPTED_COOKIES,
+        ACCEPTED_TOKEN,
+        Fake,
+        Fixture,
+        FixtureThread,
+        ThreadAnchor,
+    },
     remote::{client::Client, socket::comments::open},
     system::{clock::SystemClock, id::RandomIds},
-};
-use holst_fake::{
-    ACCEPTED_COOKIES,
-    ACCEPTED_TOKEN,
-    Fake,
-    Fixture,
-    FixtureThread,
-    ThreadAnchor,
 };
 use secrecy::SecretString;
 
@@ -240,12 +240,14 @@ async fn a_change_to_an_unknown_thread_sends_nothing() -> holst_core::Result<()>
 }
 
 mod verbs {
-    use holst_core::command::{
-        change::ChangeReport,
-        comment::{AddArgs, CommentReport},
-        table::{CommandArgs, parse},
+    use holst_core::{
+        command::{
+            change::ChangeReport,
+            comment::{AddArgs, CommentReport},
+            table::{CommandArgs, parse},
+        },
+        fake::{Fixture, FixtureObject, FixtureThread, ThreadAnchor},
     };
-    use holst_fake::{Fixture, FixtureObject, FixtureThread, ThreadAnchor};
     use serde_json::{Value, json};
 
     use super::{Client, started};

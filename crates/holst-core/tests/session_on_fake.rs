@@ -6,10 +6,10 @@ use holst_core::{
         login::{ServerSessionEnd, email::EmailLogin, logout},
     },
     domain::session::{Session, SessionStatus},
+    fake::{Fake, Fixture, LOGIN_CODE},
     remote::client::Client,
     system::{clock::SystemClock, id::RandomIds},
 };
-use holst_fake::{Fake, Fixture, LOGIN_CODE};
 use secrecy::SecretString;
 
 fn connect(

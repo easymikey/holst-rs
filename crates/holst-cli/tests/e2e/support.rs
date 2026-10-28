@@ -17,8 +17,8 @@ pub(crate) const REVOKED: &str = r#"{"token":"csrf-old","cookies":"sessionToken=
 pub(crate) fn accepted() -> String {
     format!(
         r#"{{"token":"{}","cookies":"{}"}}"#,
-        holst_fake::ACCEPTED_TOKEN,
-        holst_fake::ACCEPTED_COOKIES
+        holst_core::fake::ACCEPTED_TOKEN,
+        holst_core::fake::ACCEPTED_COOKIES
     )
 }
 

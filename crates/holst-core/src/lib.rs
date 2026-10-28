@@ -23,6 +23,9 @@ pub mod command;
 pub mod domain;
 pub mod effect;
 pub mod error;
+#[cfg(any(test, feature = "fake"))]
+#[doc(hidden)]
+pub mod fake;
 #[cfg(test)] mod laws;
 pub mod protocol;
 pub mod remote;

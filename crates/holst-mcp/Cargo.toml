@@ -44,7 +44,7 @@ reqwest.workspace = true
 # Labels of the login state machine in tests.
 strum.workspace = true
 # The fake Holst server for the board loads of the server tests.
-holst-fake = { path = "../holst-fake" }
+holst-core = { path = "../holst-core", features = ["fake"] }
 # The client that asks the built binary for its tools.
 rmcp = { version = "3.6", default-features = false, features = ["client", "transport-child-process"] }
 

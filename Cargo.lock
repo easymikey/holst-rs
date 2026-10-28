@@ -1206,7 +1206,6 @@ dependencies = [
  "derive_more",
  "expectrl",
  "holst-core",
- "holst-fake",
  "insta",
  "libc",
  "proptest",
@@ -1231,7 +1230,7 @@ dependencies = [
  "divan",
  "flate2",
  "futures-util",
- "holst-fake",
+ "holst-core",
  "holst-macros",
  "hyper-util",
  "icu_normalizer",
@@ -1263,19 +1262,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "holst-fake"
-version = "0.1.0"
-dependencies = [
- "flate2",
- "futures-util",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-tungstenite",
- "yrs",
-]
-
-[[package]]
 name = "holst-macros"
 version = "0.1.0"
 dependencies = [
@@ -1292,7 +1278,6 @@ dependencies = [
  "arc-swap",
  "base64 0.22.1",
  "holst-core",
- "holst-fake",
  "insta",
  "itertools",
  "reqwest",
@@ -1312,7 +1297,7 @@ dependencies = [
 name = "holst-scenarios"
 version = "0.1.0"
 dependencies = [
- "holst-fake",
+ "holst-core",
  "rmcp",
  "rstest",
  "serde",

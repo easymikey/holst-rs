@@ -23,7 +23,7 @@ fn login_through_a_pipe() -> TestResult {
     assert_eq!(text.matches("mock@example.com").count(), 1, "{text}");
     assert!(text.ends_with("└  Done\n\n"), "{text}");
     assert!(
-        !text.contains(holst_fake::LOGIN_CODE),
+        !text.contains(holst_core::fake::LOGIN_CODE),
         "the code was printed:\n{text}"
     );
     assert!(text.contains("◇  Code\n│  ▪▪▪▪▪▪"), "{text}");

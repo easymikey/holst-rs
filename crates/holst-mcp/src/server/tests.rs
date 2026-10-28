@@ -186,7 +186,7 @@ async fn kept_indexes_are_shared_not_copied() -> Result<()> {
 
 /// The login the fake server accepts.
 fn fake_session() -> Session {
-    use holst_fake::{ACCEPTED_COOKIES, ACCEPTED_TOKEN};
+    use holst_core::fake::{ACCEPTED_COOKIES, ACCEPTED_TOKEN};
     use secrecy::SecretString;
 
     Session::with_cookies(
@@ -230,21 +230,21 @@ impl Backend for OnFake {
 }
 
 /// A fake server with the board `Plans` of one sticker, and a client on it.
-async fn plans() -> holst_core::Result<(holst_fake::Fake, HandedClient, String)> {
+async fn plans() -> holst_core::Result<(holst_core::fake::Fake, HandedClient, String)> {
     use holst_core::{
         command::{login::connect, lookup},
+        fake::FixtureObject,
         system::{clock::SystemClock, id::RandomIds},
     };
-    use holst_fake::FixtureObject;
 
-    let seed = holst_fake::Fixture::default()
+    let seed = holst_core::fake::Fixture::default()
         .workspace("Team")
         .board_with_objects(
             "Plans",
             "Team",
             vec![FixtureObject::Sticker("Roadmap".into())],
         );
-    let fake = holst_fake::Fake::start(seed).await?;
+    let fake = holst_core::fake::Fake::start(seed).await?;
     let client = connect(
         Some(fake_session()),
         fake.base_url().parse()?,
@@ -866,7 +866,8 @@ fn given(arguments: serde_json::Value) -> serde_json::Map<String, serde_json::Va
 }
 
 /// A server on the fake of `plans`, and a client of the command line's on it.
-async fn on_fake() -> holst_core::Result<(holst_fake::Fake, McpServer, HandedClient)> {
+async fn on_fake()
+-> holst_core::Result<(holst_core::fake::Fake, McpServer, HandedClient)> {
     let (fake, client, _) = plans().await?;
     let base_url = fake.base_url().to_owned();
     let holst =

@@ -8,10 +8,10 @@ use holst_core::{
         limit::Limit,
         session::Session,
     },
+    fake::{ACCEPTED_COOKIES, ACCEPTED_TOKEN, Fake, Fixture, FixtureObject},
     remote::client::Client,
     system::{clock::SystemClock, id::RandomIds},
 };
-use holst_fake::{ACCEPTED_COOKIES, ACCEPTED_TOKEN, Fake, Fixture, FixtureObject};
 use secrecy::SecretString;
 
 async fn started() -> holst_core::Result<(Fake, Client)> {

@@ -209,7 +209,7 @@ fn typos_backspace_and_a_retry_then_success() -> TestResult {
     form.wait_for("enter an address like you@example.com")?;
     form.press("mock@example.comXY\x7f\x7f\r")?;
     form.wait_for("◆  Code")?;
-    form.press(&format!("{}\r", holst_fake::LOGIN_CODE))?;
+    form.press(&format!("{}\r", holst_core::fake::LOGIN_CODE))?;
     form.wait_for("└  Done")?;
     let (code, seen) = form.finish()?;
     let shown = printed(&seen);
@@ -218,7 +218,7 @@ fn typos_backspace_and_a_retry_then_success() -> TestResult {
     assert!(shown.contains("mock@example.com"), "{shown}");
     assert!(!shown.contains("mock@example.comXY\n"), "{shown}");
     assert!(
-        !shown.contains(holst_fake::LOGIN_CODE),
+        !shown.contains(holst_core::fake::LOGIN_CODE),
         "the code was on screen:\n{shown}"
     );
     assert!(shown.contains("▪▪▪▪▪▪"), "{shown}");
@@ -322,7 +322,7 @@ fn rest_of_a_paste_does_not_reach_the_shell() -> TestResult {
     form.wait_for("◆  Email")?;
     form.press("mock@example.com\r")?;
     form.wait_for("◆  Code")?;
-    form.press(&format!("{}\necho LEAK\n", holst_fake::LOGIN_CODE))?;
+    form.press(&format!("{}\necho LEAK\n", holst_core::fake::LOGIN_CODE))?;
     let (_, seen) = form.finish()?;
     let shown = printed(&seen);
     assert!(shown.contains("│  Fake User"), "{shown}");

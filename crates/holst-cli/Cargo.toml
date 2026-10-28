@@ -38,7 +38,7 @@ signal-hook-registry = "1.4"
 
 [dev-dependencies]
 # The server the integration tests run the built binary against.
-holst-fake = { path = "../holst-fake" }
+holst-core = { path = "../holst-core", features = ["fake"] }
 # A board document for the export tests.
 yrs.workspace = true
 proptest = { version = "1.11", default-features = false, features = ["std", "bit-set"] }

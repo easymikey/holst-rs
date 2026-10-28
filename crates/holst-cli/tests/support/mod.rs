@@ -6,7 +6,7 @@ use std::{
     process::Command,
 };
 
-use holst_fake::{Fake, Fixture};
+use holst_core::fake::{Fake, Fixture};
 
 /// The only variables a test command takes from the developer's environment.
 const KEPT_VARIABLES: [&str; 3] = ["PATH", "SystemRoot", "LLVM_PROFILE_FILE"];

@@ -3,6 +3,7 @@
 use holst_core::{
     command::{login::connect, stored_file},
     domain::{response::Uploaded, session::Session, template::Template},
+    fake::{ACCEPTED_COOKIES, ACCEPTED_TOKEN, Fake, Fixture},
     remote::{
         api::{
             self,
@@ -12,7 +13,6 @@ use holst_core::{
     },
     system::{clock::SystemClock, id::RandomIds},
 };
-use holst_fake::{ACCEPTED_COOKIES, ACCEPTED_TOKEN, Fake, Fixture};
 use secrecy::SecretString;
 
 async fn started(seed: Fixture) -> holst_core::Result<(Fake, Client)> {
