@@ -2,6 +2,7 @@
 
 #[cfg(test)] mod budget;
 mod error;
+mod http;
 mod login;
 mod memory;
 mod reply;
@@ -11,6 +12,7 @@ mod tools;
 
 use std::{
     io::{self, IsTerminal as _, Write as _},
+    net::SocketAddr,
     process::ExitCode,
 };
 
@@ -39,6 +41,9 @@ enum StartError {
     )]
     Binary,
 
+    #[error(transparent)]
+    Http(#[from] http::HttpError),
+
     #[error("setup did not finish")]
     Setup(#[source] setup::SetupError),
 
@@ -64,6 +69,9 @@ async fn main() -> ExitCode {
             Ok(steps) => Box::pin(set_up(steps)).await,
             Err(err) => Err(err),
         },
+        Some((flag, rest)) if flag == "--http" => {
+            Box::pin(serve_http(rest.to_vec())).await
+        }
         Some((arg, _)) => print_usage(arg),
         None => Box::pin(serve()).await,
     };
@@ -101,6 +109,13 @@ fn usage(arg: &str) -> Result<String, StartError> {
              Log in and connect Claude Code and Codex: holst-mcp setup [--no-connect | --connect-only]\n\
              (in a terminal; in a container: docker exec -it <container> holst-mcp setup)\n\
              Other clients: setup prints the entry to put in their config\n\
+             HTTP, for agents in containers: holst-mcp --http 127.0.0.1:<port> [--print-config]\n\
+             \x20 serves http://<addr>/mcp for the bearer token of HOLST_MCP_TOKEN or <holst home>/mcp-token;\n\
+             \x20 --print-config prints the claude, Codex and JSON settings with that token;\n\
+             \x20 a container reaches the Mac's loopback as host.docker.internal (Docker Desktop, Colima)\n\
+             \x20 or host.lima.internal (Colima); a non-loopback address needs an existing token\n\
+             Log in for HTTP: holst-mcp setup in a Mac terminal when holst-mcp runs on the Mac;\n\
+             \x20 docker exec -it <container> holst-mcp setup when it runs in a container (HOLST_HOME on a volume)\n\
              Environment: HOLST_HOME, HOLST_BASE_URL, HOLST_LOG, HOLST_MCP_RAW_WRITE=1"
         )),
         other => Err(StartError::UnknownArg {
@@ -109,11 +124,60 @@ fn usage(arg: &str) -> Result<String, StartError> {
     }
 }
 
+async fn serve() -> Result<(), StartError> {
+    let holst = start_server()?;
+    let service = holst
+        .serve(stdio())
+        .await
+        .map_err(|err| StartError::Serve(Box::new(err)))?;
+    service
+        .waiting()
+        .await
+        .map(drop)
+        .map_err(StartError::Stopped)
+}
+
+/// `holst-mcp --http <addr>`: the same server on streamable HTTP.
 #[expect(
     clippy::disallowed_methods,
     reason = "main.rs is the one place that reads the environment"
 )]
-async fn serve() -> Result<(), StartError> {
+async fn serve_http(args: Vec<String>) -> Result<(), StartError> {
+    let options = http::Options::parse(&args)?;
+    let (settings, _) =
+        holst_core::effect::settings::Settings::checked(|name| std::env::var_os(name))
+            .map_err(StartError::Settings)?;
+    let file = settings
+        .location
+        .file()
+        .map(|file| file.with_file_name(http::TOKEN_FILE));
+    let variable = std::env::var(http::TOKEN_VAR).ok();
+    let loopback = options.addr.ip().is_loopback();
+    let create = loopback || options.print_config;
+    let token = http::load_token(variable.as_deref(), file.as_deref(), create)?
+        .ok_or(http::HttpError::NoToken { addr: options.addr })?;
+    if options.print_config {
+        let snippets = http::config_snippets(options.addr, &token);
+        write!(io::stdout().lock(), "{snippets}").map_err(StartError::Stdout)
+    } else {
+        listen(options.addr, token).await
+    }
+}
+
+async fn listen(addr: SocketAddr, token: http::Token) -> Result<(), StartError> {
+    let holst = start_server()?;
+    let listener = http::bind(addr).await?;
+    tracing::info!(tools = holst.tool_count(), %addr, "starting holst-mcp on HTTP");
+    writeln!(io::stderr().lock(), "holst-mcp: serving http://{addr}/mcp")
+        .map_err(StartError::Stdout)?;
+    Ok(http::serve(listener, holst, token).await?)
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "main.rs is the one place that reads the environment"
+)]
+fn start_server() -> Result<server::McpServer, StartError> {
     let (settings, refused) =
         holst_core::effect::settings::Settings::checked(|name| std::env::var_os(name))
             .map_err(StartError::Settings)?;
@@ -129,16 +193,7 @@ async fn serve() -> Result<(), StartError> {
     );
     let mut holst = server::McpServer::new(settings, raw_write, secrets);
     holst.downloads = std::env::home_dir().map(|home| home.join("Downloads"));
-    tracing::info!(tools = holst.tool_count(), "starting holst-mcp");
-    let service = holst
-        .serve(stdio())
-        .await
-        .map_err(|err| StartError::Serve(Box::new(err)))?;
-    service
-        .waiting()
-        .await
-        .map(drop)
-        .map_err(StartError::Stopped)
+    Ok(holst)
 }
 
 /// `holst-mcp setup`: the login the server uses, then the MCP clients.

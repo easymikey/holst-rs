@@ -37,22 +37,28 @@ enum WireError {
     Snapshot(#[from] serde_json::Error),
 }
 
-#[tokio::test]
-async fn the_tools_are_listed_over_the_wire() -> Result<(), WireError> {
+/// The binary with an environment of its own: no login, no token, no cache.
+fn isolated(name: &str) -> Command {
     let root =
-        std::env::temp_dir().join(format!("holst-mcp-list-{}", std::process::id()));
+        std::env::temp_dir().join(format!("holst-mcp-{name}-{}", std::process::id()));
     let mut command = Command::new(env!("CARGO_BIN_EXE_holst-mcp"));
     command
         .env_clear()
-        .envs(std::env::vars_os().filter(|(name, _)| {
+        .envs(std::env::vars_os().filter(|(var, _)| {
             ["PATH", "SystemRoot", "LLVM_PROFILE_FILE"]
                 .iter()
-                .any(|kept| name.eq_ignore_ascii_case(kept))
+                .any(|kept| var.eq_ignore_ascii_case(kept))
         }))
         .env("HOME", root.join("home"))
         .env("USERPROFILE", root.join("home"))
         .env("HOLST_HOME", root.join("holst"))
         .env("HOLST_CACHE_DIR", root.join("cache"));
+    command
+}
+
+#[tokio::test]
+async fn the_tools_are_listed_over_the_wire() -> Result<(), WireError> {
+    let command = isolated("list");
     let client = ()
         .serve(TokioChildProcess::new(tokio::process::Command::from(
             command,
@@ -70,5 +76,38 @@ async fn the_tools_are_listed_over_the_wire() -> Result<(), WireError> {
     expected.sort();
     assert!(!expected.is_empty());
     assert_eq!(names, expected);
+    Ok(())
+}
+
+#[test]
+fn a_public_address_without_a_token_does_not_start() -> Result<(), WireError> {
+    let output = isolated("public").args(["--http", "0.0.0.0:0"]).output()?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success());
+    assert!(
+        stderr.contains("0.0.0.0:0 is not a loopback address"),
+        "{stderr}"
+    );
+    Ok(())
+}
+
+#[test]
+fn print_config_prints_the_settings_with_the_token() -> Result<(), WireError> {
+    let output = isolated("config")
+        .env("HOLST_MCP_TOKEN", "test-token")
+        .args(["--http", "127.0.0.1:8808", "--print-config"])
+        .output()?;
+    assert!(output.status.success());
+    insta::assert_snapshot!(String::from_utf8_lossy(&output.stdout));
+    Ok(())
+}
+
+#[test]
+fn print_config_creates_the_token_file_for_a_public_address() -> Result<(), WireError> {
+    let output = isolated("created")
+        .args(["--http", "0.0.0.0:8808", "--print-config"])
+        .output()?;
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Authorization: Bearer "));
     Ok(())
 }
