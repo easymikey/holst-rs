@@ -6,7 +6,7 @@ use serde_json::Value;
 use crate::{
     domain::{
         board::{
-            arrow_look::Bend,
+            arrow_look::{ArrowType, Bend, EndSide},
             frame_look::{FrameBackground, FrameRatio},
         },
         geometry::Size,
@@ -474,8 +474,8 @@ impl ShapeLook {
             background: fields
                 .get(BACKGROUND_STYLE)
                 .and_then(Value::as_u64)
-                .and_then(FrameBackground::name_of_stored)
-                .map(str::to_owned),
+                .and_then(FrameBackground::of_stored)
+                .map(|background| <&str>::from(background).to_owned()),
             hidden: fields
                 .get(CONTENT_HIDDEN)
                 .and_then(Value::as_bool)
@@ -529,14 +529,10 @@ impl ShapeLook {
 
 /// The controls an arrow bends at, those of its line kind.
 fn bend_of(fields: &Value) -> Vec<String> {
-    let name = if fields
-        .get(ARROW_TYPE)
-        .and_then(Value::as_str)
-        .is_some_and(|line| line != "elbow")
-    {
-        MIDWAY_CONTROLS
-    } else {
-        ELBOW_MIDWAY_CONTROLS
+    let line = ArrowType::of_stored(fields.get(ARROW_TYPE).and_then(Value::as_str));
+    let name = match line {
+        ArrowType::Elbow => ELBOW_MIDWAY_CONTROLS,
+        ArrowType::Straight | ArrowType::Curved => MIDWAY_CONTROLS,
     };
     let axis = |control: &Value, axis: &str| control.get(axis).and_then(Value::as_f64);
     fields
@@ -576,9 +572,7 @@ fn sides_of(fields: &Value) -> Option<String> {
         let end = fields.get(name)?;
         let control = end.get(CONTROL).and_then(Value::as_u64)?;
         end.get(OBJECT_ID)?;
-        ["top", "right", "bottom", "left"]
-            .get(usize::try_from(control).ok()?.checked_sub(1)?)
-            .copied()
+        EndSide::of_control(control).map(<&str>::from)
     };
     let rest = |name: &str| {
         let on_object = fields.get(name).and_then(|end| end.get(OBJECT_ID));
@@ -646,5 +640,17 @@ mod tests {
         let bpmn = SHAPES.iter().filter(|(kind, ..)| kind.is_bpmn()).count();
         assert_eq!(bpmn, 18);
         assert!(ShapeType::BpmnMessage.is_bpmn() && !ShapeType::Square.is_bpmn());
+    }
+
+    #[test]
+    fn an_unknown_line_name_bends_at_the_elbow_controls() {
+        let fields = serde_json::json!({
+            "arrowType": "spline",
+            "strokeColor": { "color": "#111111" },
+            "elbowMidwayControls": [{ "x": 3.0, "y": 4.0 }],
+            "midwayControls": [{ "x": 7.0, "y": 8.0 }],
+        });
+        let bend = ShapeLook::of(&fields).map(|look| look.bend);
+        assert_eq!(bend, Some(vec!["3,4".to_owned()]));
     }
 }

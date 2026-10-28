@@ -16,12 +16,13 @@ use yrs::{
     Xml as _,
     XmlTextPrelim,
     XmlTextRef,
+    types::ToJson as _,
 };
 
 use crate::{
     domain::{
         area::scene::{Scene, drawn_scale, table_size, text_scale},
-        board::{ObjectKind, any, object_with_text},
+        board::{ObjectKind, any, json as stored_json, object_with_text},
         change::{
             build::author_number,
             check::{
@@ -811,21 +812,16 @@ fn frame_resized(
             .map(|(child, _)| child.clone())
             .sorted_unstable()
             .collect();
-        let WriteTransaction { roots, stamp, .. } = *scope;
         let released = freed
             .into_iter()
             .map(|child| {
-                let child_kind = kind_of(states, &child);
-                let map = object_map(transaction, &roots.objects, &child, &child_kind)?;
-                map.insert(transaction, PARENT_ID, any(&json!(parent))?);
-                map.insert(transaction, "updated", any(&stamp.json())?);
-                Ok(ChangedObject {
-                    id: child,
-                    kind: child_kind,
-                    change: ObjectChangeKind::Changed,
-                    fields: vec!["parent"],
-                    link: None,
-                })
+                changed(
+                    transaction,
+                    scope,
+                    child,
+                    &[(PARENT_ID, json!(parent))],
+                    vec!["parent"],
+                )
             })
             .collect::<Result<Vec<_>>>()?;
         let taken = if shows_content(states, id) {
@@ -1198,6 +1194,42 @@ pub(super) fn insert_changes(
     })
 }
 
+/// The fields of the object as the document holds them now.
+pub(super) fn stored_now<T: ReadTxn>(
+    transaction: &T,
+    scope: &WriteTransaction<'_>,
+    id: &str,
+) -> Option<Value> {
+    let fields = scope
+        .roots
+        .objects
+        .get(transaction, id)?
+        .to_json(transaction);
+    stored_json(&fields)
+}
+
+/// Writes `changes` and the `updated` stamp on the object `id`; reports it
+/// changed.
+pub(super) fn changed(
+    transaction: &mut TransactionMut<'_>,
+    scope: &WriteTransaction<'_>,
+    id: String,
+    changes: &[(&'static str, Value)],
+    fields: Vec<&'static str>,
+) -> Result<ChangedObject> {
+    let kind = kind_of(scope.states, &id);
+    let map = object_map(transaction, &scope.roots.objects, &id, &kind)?;
+    insert_changes(transaction, &map, changes)?;
+    insert_changes(transaction, &map, &[("updated", scope.stamp.json())])?;
+    Ok(ChangedObject {
+        id,
+        kind,
+        change: ObjectChangeKind::Changed,
+        fields,
+        link: None,
+    })
+}
+
 struct MovedFrame<'a> {
     frame: &'a str,
     rectangle: Rectangle,
@@ -1226,12 +1258,7 @@ fn adopt(
     scope: &WriteTransaction<'_>,
     around: &MovedFrame<'_>,
 ) -> Result<Vec<ChangedObject>> {
-    let WriteTransaction {
-        roots,
-        states,
-        stamp,
-        ..
-    } = *scope;
+    let states = scope.states;
     let held = subtree(states, around.frame);
     let beside = |fields: &Value| parent_of(fields) == around.parent.as_deref();
     states
@@ -1246,17 +1273,13 @@ fn adopt(
         .map(|(id, _)| id.clone())
         .sorted_unstable()
         .map(|id| {
-            let kind = kind_of(states, &id);
-            let map = object_map(transaction, &roots.objects, &id, &kind)?;
-            map.insert(transaction, PARENT_ID, around.frame);
-            map.insert(transaction, "updated", any(&stamp.json())?);
-            Ok(ChangedObject {
+            changed(
+                transaction,
+                scope,
                 id,
-                kind,
-                change: ObjectChangeKind::Changed,
-                fields: vec!["parent"],
-                link: None,
-            })
+                &[(PARENT_ID, json!(around.frame))],
+                vec!["parent"],
+            )
         })
         .collect()
 }
@@ -1344,12 +1367,7 @@ pub(super) fn shift_objects(
     except: Option<&str>,
     shift: (f64, f64),
 ) -> Result<Vec<ChangedObject>> {
-    let WriteTransaction {
-        roots,
-        states,
-        stamp,
-        ..
-    } = *scope;
+    let states = scope.states;
     moving
         .iter()
         .filter(|id| Some(id.as_str()) != except)
@@ -1361,20 +1379,9 @@ pub(super) fn shift_objects(
             } else {
                 vec![(POSITION, shifted(stored.get(POSITION)?, shift))]
             };
-            Some((id.clone(), kind, changes))
+            Some((id.clone(), vec![moved_field(&kind)], changes))
         })
-        .map(|(id, kind, changes)| {
-            let map = object_map(transaction, &roots.objects, &id, &kind)?;
-            insert_changes(transaction, &map, &changes)?;
-            map.insert(transaction, "updated", any(&stamp.json())?);
-            Ok(ChangedObject {
-                id,
-                fields: vec![moved_field(&kind)],
-                kind,
-                change: ObjectChangeKind::Changed,
-                link: None,
-            })
-        })
+        .map(|(id, fields, changes)| changed(transaction, scope, id, &changes, fields))
         .collect()
 }
 

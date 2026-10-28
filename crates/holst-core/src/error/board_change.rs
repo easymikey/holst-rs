@@ -208,9 +208,6 @@ pub enum BoardChangeError {
     #[error("\"{raw}\" is not {expected}")]
     NotArrowLook { raw: String, expected: &'static str },
 
-    #[error("\"{raw}\" is not a shape kind: expected {known}")]
-    NotShapeKind { raw: String, known: &'static str },
-
     #[error("a sticker is square or twice as wide as tall, not {width}×{height}")]
     StickerSize { width: f64, height: f64 },
 
@@ -323,7 +320,6 @@ impl BoardChangeError {
             | BoardChangeError::OffBoard { .. }
             | BoardChangeError::NotSize { .. }
             | BoardChangeError::NotColor { .. }
-            | BoardChangeError::NotShapeKind { .. }
             | BoardChangeError::NotArrowLook { .. }
             | BoardChangeError::StickerSize { .. }
             | BoardChangeError::TooFewToGroup { .. }
@@ -372,7 +368,6 @@ impl BoardChangeError {
             | BoardChangeError::OffBoard { .. }
             | BoardChangeError::NotSize { .. }
             | BoardChangeError::NotColor { .. }
-            | BoardChangeError::NotShapeKind { .. }
             | BoardChangeError::NotArrowLook { .. }
             | BoardChangeError::StickerSize { .. }
             | BoardChangeError::NotFrame { .. }
@@ -476,13 +471,6 @@ pub(super) mod tests {
                 BoardChangeError::NotArrowLook {
                     raw: text(),
                     expected: "x",
-                },
-                None,
-            ),
-            (
-                BoardChangeError::NotShapeKind {
-                    raw: text(),
-                    known: "ellipse",
                 },
                 None,
             ),

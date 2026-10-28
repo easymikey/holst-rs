@@ -165,7 +165,7 @@ mod tests {
             ends: None,
             author: None,
             locked: false,
-            rotation: 0.0,
+            rotation: float("rotation").unwrap_or_default(),
             link_to: None,
             file: crate::domain::board::stored_file(
                 &ObjectKind::of(fields["type"].as_str().unwrap_or_default()),
@@ -592,5 +592,20 @@ mod tests {
         assert_eq!(table, Some(Rectangle::new(100.0, 100.0, 500.0, 120.0)));
         let cell = scene.get("c").and_then(|c| scene.rectangle_of(c));
         assert_eq!(cell, Some(Rectangle::new(300.0, 150.0, 300.0, 70.0)));
+    }
+
+    #[test]
+    fn a_turned_object_covers_its_turned_box_from_the_rotation_it_holds() {
+        let plain = object(
+            &json!({"id": "h", "type": "shape", "position": {"x": 0, "y": 0}, "width": 400, "height": 100}),
+        );
+        let turned = Object {
+            rotation: 90.0,
+            ..plain.clone()
+        };
+        let covered = |object: &Object| {
+            Scene::new(std::slice::from_ref(object)).covered_by(object)
+        };
+        assert_ne!(covered(&turned), covered(&plain));
     }
 }

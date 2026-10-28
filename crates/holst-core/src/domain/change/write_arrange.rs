@@ -3,12 +3,12 @@
 use std::collections::HashMap;
 
 use serde_json::{Value, json};
-use yrs::{Map as _, ReadTxn, TransactionMut, types::ToJson as _};
+use yrs::TransactionMut;
 
 use crate::{
     domain::{
         area::scene::{Scene, rotated, rotation},
-        board::{Object, ObjectKind, json as stored_json, object_with_text},
+        board::{Object, ObjectKind, object_with_text},
         change::{
             arrange::{aligned, distributed},
             check::{kind_of, parent_frame, parent_of, subtree},
@@ -19,6 +19,7 @@ use crate::{
                 moving_with,
                 object_map,
                 shift_objects,
+                stored_now,
             },
         },
         geometry::Rectangle,
@@ -72,20 +73,6 @@ fn bounds(scene: &Scene<'_>, object: &Object, depth: usize) -> Option<Rectangle>
         | ObjectKind::Link
         | ObjectKind::Other(_) => own(),
     }
-}
-
-/// The fields of the object as the document holds them now.
-fn stored_now<T: ReadTxn>(
-    transaction: &T,
-    scope: &WriteTransaction<'_>,
-    id: &str,
-) -> Option<Value> {
-    let fields = scope
-        .roots
-        .objects
-        .get(transaction, id)?
-        .to_json(transaction);
-    stored_json(&fields)
 }
 
 /// Moves the objects against each other as the web client's align and

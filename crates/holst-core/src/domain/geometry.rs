@@ -430,10 +430,55 @@ fn number(raw: &str) -> Option<f64> {
     raw.trim().parse::<f64>().ok()
 }
 
+const MANTISSA_BITS: u32 = 52;
+const EXPONENT_BIAS: u32 = 1023;
+const EXPONENT_MASK: u64 = 0x7ff;
+const IMPLICIT_ONE: u64 = 1 << MANTISSA_BITS;
+
+/// Whether a rounded `value` is negative and its magnitude, read from its bits
+/// (no cast, no text); `None` for NaN, infinity or a magnitude beyond `u64`.
+fn whole_parts(value: f64) -> Option<(bool, u64)> {
+    let bits = value.to_bits();
+    let exponent = u32::try_from((bits >> MANTISSA_BITS) & EXPONENT_MASK).ok()?;
+    let magnitude = match exponent.checked_sub(EXPONENT_BIAS) {
+        // Below one a rounded value is zero.
+        None => 0,
+        Some(power) => ((bits & (IMPLICIT_ONE - 1)) | IMPLICIT_ONE)
+            .checked_shr(MANTISSA_BITS.checked_sub(power)?)?,
+    };
+    Some((bits >> 63 != 0, magnitude))
+}
+
+/// The `i32` a rounded `value` equals; `None` for NaN, infinity or a
+/// magnitude beyond `i32`.
+pub(crate) fn whole_i32(value: f64) -> Option<i32> {
+    let (negative, magnitude) = whole_parts(value)?;
+    match (negative, i32::try_from(magnitude).ok()?) {
+        (true, magnitude) => magnitude.checked_neg(),
+        (false, magnitude) => Some(magnitude),
+    }
+}
+
+/// The `u32` a rounded `value` equals; `None` for NaN, infinity, a magnitude
+/// beyond `u32` or a negative value.
+pub(crate) fn whole_u32(value: f64) -> Option<u32> {
+    let (negative, magnitude) = whole_parts(value)?;
+    u32::try_from(magnitude)
+        .ok()
+        .filter(|&magnitude| !negative || magnitude == 0)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
-        domain::geometry::{Finite, Positive, Rectangle, StoredPoint},
+        domain::geometry::{
+            Finite,
+            Positive,
+            Rectangle,
+            StoredPoint,
+            whole_i32,
+            whole_u32,
+        },
         error::{Error, Result, check_all::both, hint::Surface, input::InputError},
     };
 
@@ -511,5 +556,17 @@ mod tests {
         let values = both(Finite::new(1.0), Positive::new(2.0))
             .map(|(first, second)| (first.get(), second.get()));
         assert_eq!(values.ok(), Some((1.0, 2.0)));
+    }
+
+    #[test]
+    fn a_whole_float_becomes_an_integer_or_nothing() {
+        assert_eq!(whole_u32(3.0), Some(3));
+        assert_eq!(whole_u32(-0.0), Some(0));
+        assert_eq!(whole_u32(f64::from(u32::MAX)), Some(u32::MAX));
+        assert_eq!(whole_u32(f64::from(u32::MAX) + 1.0), None);
+        assert_eq!(whole_u32(-3.0), None);
+        assert_eq!(whole_u32(1e21), None);
+        assert_eq!(whole_i32(-3.0), Some(-3));
+        assert_eq!(whole_i32(f64::NAN), None);
     }
 }

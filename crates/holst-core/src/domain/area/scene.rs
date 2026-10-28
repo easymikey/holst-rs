@@ -407,7 +407,7 @@ pub fn drawn_scale(object: &Object) -> f64 {
 /// Rotation in degrees, clockwise about the stored position.
 #[must_use]
 pub fn rotation(object: &Object) -> f64 {
-    number(&object.fields, document::ROTATION).unwrap_or_default()
+    object.rotation
 }
 
 /// The `strokeWidth` field of an arrow or a shape's outline, 2 unless set.

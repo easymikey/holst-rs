@@ -6,8 +6,8 @@ use serde_json::Value;
 use crate::{
     domain::{
         area,
-        area::route::{ArrowLine, ArrowRoute, ObjectSide},
-        board::Object,
+        area::route::{ArrowRoute, ObjectSide},
+        board::{Object, arrow_look::ArrowType},
         geometry::{Direction, Rectangle, StoredPoint},
         palette,
         palette::TEXT_COLOR,
@@ -174,7 +174,7 @@ fn route_path(route: &ArrowRoute, points: &[StoredPoint]) -> String {
     let first = points.first().copied().unwrap_or_default();
     let last = points.last().copied().unwrap_or_default();
     match route.line {
-        ArrowLine::Curved => {
+        ArrowType::Curved => {
             let reach = 0.4 * first.distance_to(last);
             let handle =
                 |end: &area::route::ArrowEnd, at: StoredPoint, other: StoredPoint| {
@@ -196,7 +196,7 @@ fn route_path(route: &ArrowRoute, points: &[StoredPoint]) -> String {
                 format_number(last.y)
             )
         }
-        ArrowLine::Straight | ArrowLine::Elbow => {
+        ArrowType::Straight | ArrowType::Elbow => {
             let corners = rounded_corners(points);
             format!(
                 "M{} {}{corners} L{} {}",
@@ -274,7 +274,7 @@ fn end_directions(route: &ArrowRoute) -> EndDirections {
     let points = &route.points;
     let first = points.first().copied().unwrap_or_default();
     let last = points.last().copied().unwrap_or_default();
-    let curved = matches!(route.line, ArrowLine::Curved);
+    let curved = matches!(route.line, ArrowType::Curved);
     let before_last = if curved {
         first
     } else {

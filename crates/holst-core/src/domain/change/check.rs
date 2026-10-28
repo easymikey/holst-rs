@@ -315,10 +315,7 @@ fn arrangeable(
     states: &HashMap<String, Value>,
     named: &[String],
 ) -> Result<Vec<String>> {
-    let found = named
-        .iter()
-        .map(|reference| find(states, reference).map(|id| (reference, id)))
-        .collect::<Result<Vec<_>>>()?;
+    let found = resolve(states, named)?;
     let refused = found.iter().find_map(|(reference, id)| {
         let kept = refusal_to_group(states, id, Grouping::Locked).filter(|why| {
             matches!(
@@ -340,12 +337,11 @@ fn arrangeable(
     });
     refused.map_or_else(
         || {
-            top_named(states, named).map(|top| {
-                top.into_iter()
-                    .map(|(_, id)| id)
-                    .filter(|id| !joined_arrow(states, id))
-                    .collect()
-            })
+            Ok(top_named(states, found)
+                .into_iter()
+                .map(|(_, id)| id)
+                .filter(|id| !joined_arrow(states, id))
+                .collect())
         },
         |error| Err(Error::BoardChange(error)),
     )
@@ -373,18 +369,25 @@ pub(super) fn flagged(states: &HashMap<String, Value>, object: &str) -> bool {
         .unwrap_or_default()
 }
 
-/// The objects named, once each, the top ones only: what lies inside another
-/// named object goes with it. Each is the id with the reference that named it.
+/// Each reference with the id it names.
+fn resolve<'a>(
+    states: &HashMap<String, Value>,
+    named: impl IntoIterator<Item = &'a String>,
+) -> Result<Vec<(&'a String, String)>> {
+    named
+        .into_iter()
+        .map(|reference| find(states, reference).map(|id| (reference, id)))
+        .collect()
+}
+
+/// The objects found, once each, the top ones only: what lies inside another
+/// found object goes with it. Each is the id with the reference that named it.
 fn top_named<'a>(
     states: &HashMap<String, Value>,
-    named: &'a [String],
-) -> Result<Vec<(&'a String, String)>> {
-    let found = named
-        .iter()
-        .map(|reference| find(states, reference).map(|id| (reference, id)))
-        .collect::<Result<Vec<_>>>()?;
+    found: Vec<(&'a String, String)>,
+) -> Vec<(&'a String, String)> {
     let asked: BTreeSet<String> = found.iter().map(|(_, id)| id.clone()).collect();
-    Ok(found
+    found
         .into_iter()
         .unique_by(|(_, id)| id.clone())
         .filter(|(_, id)| {
@@ -393,13 +396,13 @@ fn top_named<'a>(
                 .skip(1)
                 .all(|above| !asked.contains(above.as_str()))
         })
-        .collect())
+        .collect()
 }
 
 /// The ids of the objects named, once each, that may go into one new group:
 /// at least two, none of a kind the web client keeps out of groups.
 fn groupable(states: &HashMap<String, Value>, named: &[String]) -> Result<Vec<String>> {
-    let top = top_named(states, named)?;
+    let top = top_named(states, resolve(states, named)?);
     let too_few = (top.len() < 2).then(|| {
         Error::BoardChange(BoardChangeError::TooFewToGroup { given: top.len() })
     });
@@ -419,7 +422,7 @@ fn groupable(states: &HashMap<String, Value>, named: &[String]) -> Result<Vec<St
 /// The ids of the objects named, once each, that may go into one new locked
 /// group: any number, frames included, none locked or kept out of groups.
 fn lockable(states: &HashMap<String, Value>, named: &[String]) -> Result<Vec<String>> {
-    let top = top_named(states, named)?;
+    let top = top_named(states, resolve(states, named)?);
     let refused = top.iter().find_map(|(reference, id)| {
         refusal_to_lock(states, id).map(|why| {
             Error::BoardChange(BoardChangeError::NotLockable {
@@ -441,10 +444,7 @@ fn refusal_to_lock(states: &HashMap<String, Value>, id: &str) -> Option<LockRefu
 
 /// The ids of the frames and tables named, once each, that are not locked.
 fn flaggable(states: &HashMap<String, Value>, named: &[String]) -> Result<Vec<String>> {
-    let found = named
-        .iter()
-        .map(|reference| find(states, reference).map(|id| (reference, id)))
-        .collect::<Result<Vec<_>>>()?;
+    let found = resolve(states, named)?;
     found
         .iter()
         .unique_by(|(_, id)| id)
@@ -484,10 +484,7 @@ fn unlockable(
     states: &HashMap<String, Value>,
     named: &[String],
 ) -> Result<Vec<String>> {
-    let found = named
-        .iter()
-        .map(|reference| find(states, reference).map(|id| (reference, id)))
-        .collect::<Result<Vec<_>>>()?;
+    let found = resolve(states, named)?;
     found
         .iter()
         .unique_by(|(_, id)| id)
@@ -566,10 +563,7 @@ fn ungroupable(
     states: &HashMap<String, Value>,
     named: &[String],
 ) -> Result<Vec<String>> {
-    let found = named
-        .iter()
-        .map(|reference| find(states, reference).map(|id| (reference, id)))
-        .collect::<Result<Vec<_>>>()?;
+    let found = resolve(states, named)?;
     found
         .iter()
         .unique_by(|(_, id)| id)
@@ -637,10 +631,7 @@ fn removable<'a>(
     right: RemoveRight,
     mine: Option<u32>,
 ) -> Result<Vec<String>> {
-    let named = named
-        .into_iter()
-        .map(|reference| find(states, reference).map(|id| (reference, id)))
-        .collect::<Result<Vec<_>>>()?;
+    let named = resolve(states, named)?;
     let blocked = named.iter().find_map(|(reference, id)| {
         removal(states, std::slice::from_ref(id))
             .into_iter()

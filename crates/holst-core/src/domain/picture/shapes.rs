@@ -657,15 +657,4 @@ mod tests {
     fn stored_names_map_to_one_kind(#[case] name: &str, #[case] kind: ShapeKind) {
         assert_eq!(ShapeKind::from_stored_name(name), kind);
     }
-
-    #[test]
-    fn a_kind_keeps_its_name_through_the_document() {
-        let kinds = NAMES.map(ShapeKind::from_stored_name);
-        assert!(
-            kinds
-                .iter()
-                .filter(|kind| **kind != ShapeKind::Unlisted)
-                .all(|kind| ShapeKind::from_stored_name(kind.stored_name()) == *kind)
-        );
-    }
 }

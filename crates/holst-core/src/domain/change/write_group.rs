@@ -17,7 +17,7 @@ use crate::{
             check::{Grouping, kind_of, parent_of, shows_content},
             journal,
             value::{ChangedObject, ObjectChangeKind},
-            write::{WriteTransaction, insert_changes, object_map},
+            write::{WriteTransaction, changed},
         },
         geometry::Rectangle,
     },
@@ -82,20 +82,13 @@ pub(super) fn group(
     let moved = members
         .iter()
         .map(|member| {
-            let kind = kind_of(states, member);
-            let map = object_map(transaction, &roots.objects, member, &kind)?;
-            insert_changes(
+            changed(
                 transaction,
-                &map,
-                &[(PARENT_ID, json!(id)), ("updated", stamp.json())],
-            )?;
-            Ok(ChangedObject {
-                id: member.clone(),
-                kind,
-                change: ObjectChangeKind::Changed,
-                fields: vec!["parent"],
-                link: None,
-            })
+                scope,
+                member.clone(),
+                &[(PARENT_ID, json!(id))],
+                vec!["parent"],
+            )
         })
         .collect::<Result<Vec<_>>>()?;
     Ok(iter::once(ChangedObject {
@@ -240,20 +233,13 @@ impl Dissolution {
             .iter()
             .filter(|(member, _)| !self.groups.contains(*member))
             .map(|(member, up)| {
-                let kind = kind_of(states, member);
-                let map = object_map(transaction, &roots.objects, member, &kind)?;
-                insert_changes(
+                changed(
                     transaction,
-                    &map,
-                    &[(PARENT_ID, json!(up)), ("updated", stamp.json())],
-                )?;
-                Ok(ChangedObject {
-                    id: member.clone(),
-                    kind,
-                    change: ObjectChangeKind::Changed,
-                    fields: vec!["parent"],
-                    link: None,
-                })
+                    scope,
+                    member.clone(),
+                    &[(PARENT_ID, json!(up))],
+                    vec!["parent"],
+                )
             })
             .collect::<Result<Vec<_>>>()?;
         let removed: Vec<ChangedObject> = self
@@ -362,28 +348,15 @@ fn flagged(
     ids: &[String],
     locked: bool,
 ) -> Result<Vec<ChangedObject>> {
-    let WriteTransaction {
-        roots,
-        states,
-        stamp,
-        ..
-    } = *scope;
     ids.iter()
         .map(|id| {
-            let kind = kind_of(states, id);
-            let map = object_map(transaction, &roots.objects, id, &kind)?;
-            insert_changes(
+            changed(
                 transaction,
-                &map,
-                &[(LOCKED, json!(locked)), ("updated", stamp.json())],
-            )?;
-            Ok(ChangedObject {
-                id: id.clone(),
-                kind,
-                change: ObjectChangeKind::Changed,
-                fields: vec![LOCKED],
-                link: None,
-            })
+                scope,
+                id.clone(),
+                &[(LOCKED, json!(locked))],
+                vec![LOCKED],
+            )
         })
         .collect()
 }

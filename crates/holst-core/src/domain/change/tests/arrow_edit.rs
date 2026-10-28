@@ -6,7 +6,10 @@ use yrs::Doc;
 use super::{ME, add, board as seeded, edit, fields_of};
 use crate::{
     domain::{
-        board::{arrow_look::ArrowType, shape_type::StrokeStyle},
+        board::{
+            arrow_look::{ARROW_WIDTHS, ArrowType},
+            shape_type::StrokeStyle,
+        },
         change::{
             build::build,
             check::rectangle_of,
@@ -143,6 +146,31 @@ fn an_arrow_takes_only_the_widths_the_web_offers() -> Result<()> {
         refused,
         Err(Error::BoardChange(BoardChangeError::NotArrowLook { .. }))
     ));
+    Ok(())
+}
+
+#[test]
+fn the_refused_width_names_every_width_the_web_offers() -> Result<()> {
+    let document = seeded()?;
+    let id = arrow(&document, ArrowLook::default())?;
+    let message = apply(
+        &document,
+        &edit(
+            id,
+            ObjectPatch {
+                shape: ShapeEdit {
+                    stroke_width: Some(3.0),
+                    ..ShapeEdit::default()
+                },
+                ..ObjectPatch::default()
+            },
+        ),
+    )
+    .err()
+    .map(|error| error.to_string().replace(" or ", ", "))
+    .unwrap_or_default();
+    let widths = ARROW_WIDTHS.map(|width| width.to_string()).join(", ");
+    assert!(message.contains(&widths));
     Ok(())
 }
 

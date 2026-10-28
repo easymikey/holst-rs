@@ -7,7 +7,10 @@ use std::{
 
 use serde::Serialize;
 
-use crate::error::{Error, Result, picture::PictureError};
+use crate::{
+    domain::geometry::whole_u32,
+    error::{Error, Result, picture::PictureError},
+};
 
 /// The longest side a picture may have, in pixels.
 pub(super) const MAX_SIDE: f64 = 16_384.0;
@@ -84,8 +87,7 @@ impl PixelsPerUnit {
     #[must_use]
     pub fn pixels(self, length: f64) -> u32 {
         let clamped = (length * self.0).round().clamp(1.0, MAX_SIDE);
-        // A whole float in [1, 16384] displays as its digits; no cast needed.
-        clamped.to_string().parse().unwrap_or_default()
+        whole_u32(clamped).unwrap_or_default()
     }
 }
 

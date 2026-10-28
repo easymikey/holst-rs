@@ -98,7 +98,16 @@ impl FrameRatio {
 }
 
 /// BUNDLE: `backgroundStyle` 1 fill, 2 border (default), 3 outline (171263).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, strum::VariantNames)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Deserialize,
+    strum::VariantNames,
+    strum::IntoStaticStr,
+)]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum FrameBackground {
@@ -118,13 +127,13 @@ impl FrameBackground {
         }
     }
 
-    /// The name as `object edit` words it, for a stored number.
+    /// The background a stored `backgroundStyle` number names.
     #[must_use]
-    pub const fn name_of_stored(number: u64) -> Option<&'static str> {
+    pub const fn of_stored(number: u64) -> Option<Self> {
         match number {
-            1 => Some("fill"),
-            2 => Some("border"),
-            3 => Some("outline"),
+            1 => Some(FrameBackground::Fill),
+            2 => Some(FrameBackground::Border),
+            3 => Some(FrameBackground::Outline),
             _ => None,
         }
     }

@@ -1,11 +1,5 @@
 //! Shape kinds: the outlines a shape on the board can have.
 
-use std::str::FromStr;
-
-use crate::error::{Error, Result, board_change::BoardChangeError};
-
-const SHAPE_KINDS: &str = "square, rounded-rectangle, ellipse, triangle, diamond";
-
 /// The outline of a shape: what a person creates and what the document holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ShapeKind {
@@ -41,40 +35,6 @@ pub enum ShapeKind {
 }
 
 impl ShapeKind {
-    /// The name the document stores in `shapeType`; `Unlisted` is never made
-    /// by a person, so it stores the default.
-    #[must_use]
-    pub const fn stored_name(self) -> &'static str {
-        match self {
-            ShapeKind::Square | ShapeKind::Unlisted => "square",
-            ShapeKind::RoundedRectangle => "roundedRectangle",
-            ShapeKind::Ellipse => "ellipse",
-            ShapeKind::Triangle => "triangle",
-            ShapeKind::Diamond => "diamond",
-            ShapeKind::InvertedTriangle => "invertedTriangle",
-            ShapeKind::RightParallelogram => "rightParallelogram",
-            ShapeKind::LeftParallelogram => "leftParallelogram",
-            ShapeKind::Trapezoid => "basic-trapezoid",
-            ShapeKind::ManualInput => "flowchart-manual-input",
-            ShapeKind::OffPageConnector => "flowchart-off-page-connector",
-            ShapeKind::Pentagon => "basic-pentagon",
-            ShapeKind::Hexagon => "basic-hexagon",
-            ShapeKind::Octagon => "basic-octagon",
-            ShapeKind::Star => "basic-star",
-            ShapeKind::Cross => "basic-cross",
-            ShapeKind::ArrowRight => "basic-arrow-right",
-            ShapeKind::ArrowLeft => "basic-arrow-left",
-            ShapeKind::ArrowLeftRight => "basic-arrow-left-right",
-            ShapeKind::SpeechBubble => "basic-speech-bubble",
-            ShapeKind::Terminator => "flowchart-terminator",
-            ShapeKind::Process => "flowchart-process",
-            ShapeKind::PredefinedProcess => "flowchart-predefined-process",
-            ShapeKind::Document => "flowchart-document",
-            ShapeKind::Database => "flowchart-database",
-            ShapeKind::BpmnTask => "bpmn-task",
-        }
-    }
-
     /// The kind of a stored `shapeType`; the names the web client draws alike
     /// map to one kind, and a name nobody here draws is `Unlisted`.
     #[must_use]
@@ -115,24 +75,6 @@ impl ShapeKind {
             "flowchart-database" | "bpmn-data-store" => ShapeKind::Database,
             other if other.starts_with("bpmn-") => ShapeKind::BpmnTask,
             _ => ShapeKind::Unlisted,
-        }
-    }
-}
-
-impl FromStr for ShapeKind {
-    type Err = Error;
-
-    fn from_str(raw: &str) -> Result<Self> {
-        match raw.trim().to_ascii_lowercase().as_str() {
-            "square" | "rectangle" => Ok(ShapeKind::Square),
-            "rounded-rectangle" | "roundedrectangle" => Ok(ShapeKind::RoundedRectangle),
-            "ellipse" | "circle" => Ok(ShapeKind::Ellipse),
-            "triangle" => Ok(ShapeKind::Triangle),
-            "diamond" => Ok(ShapeKind::Diamond),
-            _ => Err(Error::BoardChange(BoardChangeError::NotShapeKind {
-                raw: raw.into(),
-                known: SHAPE_KINDS,
-            })),
         }
     }
 }

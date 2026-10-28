@@ -29,6 +29,16 @@ impl ArrowType {
             ArrowType::Curved => "curved",
         }
     }
+
+    /// The line a stored `arrowType` names; an absent or unknown name is elbow.
+    #[must_use]
+    pub fn of_stored(name: Option<&str>) -> Self {
+        match name {
+            Some("straight") => ArrowType::Straight,
+            Some("curved") => ArrowType::Curved,
+            _ => ArrowType::Elbow,
+        }
+    }
 }
 
 /// BUNDLE: the thickness picker of an arrow (main.a33651a4.js 166235).
@@ -217,7 +227,10 @@ impl FromStr for Label {
 }
 
 /// A side of a box an arrow end sticks to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, strum::EnumString, strum::IntoStaticStr,
+)]
+#[strum(serialize_all = "snake_case")]
 pub enum EndSide {
     Top,
     Right,
@@ -226,12 +239,14 @@ pub enum EndSide {
 }
 
 impl EndSide {
-    fn named(name: &str) -> Option<Self> {
-        match name {
-            "top" => Some(EndSide::Top),
-            "right" => Some(EndSide::Right),
-            "bottom" => Some(EndSide::Bottom),
-            "left" => Some(EndSide::Left),
+    /// The side a stored `control` number names.
+    #[must_use]
+    pub const fn of_control(control: u64) -> Option<Self> {
+        match control {
+            1 => Some(EndSide::Top),
+            2 => Some(EndSide::Right),
+            3 => Some(EndSide::Bottom),
+            4 => Some(EndSide::Left),
             _ => None,
         }
     }
@@ -280,7 +295,7 @@ impl FromStr for ArrowEndEdit {
         };
         match raw.rsplit_once(':') {
             Some((object, side)) => {
-                let side = EndSide::named(side.trim()).ok_or_else(bad)?;
+                let side = side.trim().parse::<EndSide>().map_err(|_| bad())?;
                 let object = object.trim();
                 (!object.is_empty())
                     .then(|| ArrowEndEdit::Side {
@@ -309,6 +324,16 @@ mod tests {
         let at = "120,-80.5".parse::<Bend>().ok();
         assert_eq!(at.map(|bend| bend.suits(ArrowType::Straight)), Some(true));
         assert_eq!(at.map(|bend| bend.suits(ArrowType::Elbow)), Some(false));
+    }
+
+    #[test]
+    fn the_refused_heads_name_every_head() {
+        let message = "bogus,bogus"
+            .parse::<ArrowHeads>()
+            .err()
+            .map(|error| error.to_string().replace(" or ", ", "))
+            .unwrap_or_default();
+        assert!(message.contains(&HEADS.join(", ")));
     }
 
     #[test]

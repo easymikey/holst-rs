@@ -5,7 +5,7 @@ use serde_json::Value;
 use crate::{
     domain::{
         area::scene::{Scene, number},
-        board::{DrawnArrowEnds, Object, ObjectKind},
+        board::{DrawnArrowEnds, Object, ObjectKind, arrow_look::ArrowType},
         geometry::{Direction, Point, Rectangle, StoredPoint},
     },
     protocol::document,
@@ -82,18 +82,10 @@ pub struct ArrowEnd {
     pub side: Option<ObjectSide>,
 }
 
-/// How an arrow runs between its ends.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ArrowLine {
-    Straight,
-    Elbow,
-    Curved,
-}
-
 /// An arrow's path: its ends and the points between.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArrowRoute {
-    pub line: ArrowLine,
+    pub line: ArrowType,
     pub points: Vec<StoredPoint>,
     pub start: ArrowEnd,
     pub end: ArrowEnd,
@@ -108,19 +100,17 @@ impl Scene<'_> {
         let start = fields.get(document::START)?;
         let end = fields.get(document::END)?;
         // PROTOCOL: arrow line names.
-        let line = match fields.get(document::ARROW_TYPE).and_then(Value::as_str) {
-            Some("straight") => ArrowLine::Straight,
-            Some("curved") => ArrowLine::Curved,
-            _ => ArrowLine::Elbow,
-        };
+        let line = ArrowType::of_stored(
+            fields.get(document::ARROW_TYPE).and_then(Value::as_str),
+        );
         let (start_box, end_box) = match (self.end_hold(start), self.end_hold(end)) {
             (ArrowEndHold::Missing, _) | (_, ArrowEndHold::Missing) => None,
             (start, end) => Some((start.rectangle(), end.rectangle())),
         }?;
         let RoutedEnds { start, end } = routed_ends(start, start_box, end, end_box);
         let points = match line {
-            ArrowLine::Elbow => elbow(start, end),
-            ArrowLine::Straight | ArrowLine::Curved => vec![start.at, end.at],
+            ArrowType::Elbow => elbow(start, end),
+            ArrowType::Straight | ArrowType::Curved => vec![start.at, end.at],
         };
         Some(ArrowRoute {
             line,

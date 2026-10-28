@@ -36,7 +36,7 @@ fn object(id: &str, kind: ObjectKind, text: &str) -> Object {
         ends: None,
         author: Some("author-1".to_owned()),
         locked: false,
-        rotation: 0.0,
+        rotation: -12.5,
         link_to: None,
         file: None,
         fields: Value::Null,
@@ -189,6 +189,7 @@ fn any_object() -> impl Strategy<Value = Object> {
         ),
         (
             any::<f64>(),
+            any::<f64>(),
             text(),
             option::of("[a-z0-9]{1,8}"),
             ends,
@@ -199,7 +200,7 @@ fn any_object() -> impl Strategy<Value = Object> {
             |(
                 (id, kind, parent, file),
                 (x, y, width, height),
-                (z_index, text, color, ends, author),
+                (z_index, rotation, text, color, ends, author),
             )| {
                 Object {
                     id,
@@ -220,7 +221,7 @@ fn any_object() -> impl Strategy<Value = Object> {
                     }),
                     author,
                     locked: false,
-                    rotation: 0.0,
+                    rotation,
                     link_to: None,
                     file,
                     fields: Value::Null,

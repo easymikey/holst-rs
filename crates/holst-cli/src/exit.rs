@@ -365,7 +365,6 @@ fn board_write_code(error: &BoardChangeError) -> u8 {
         | BoardChangeError::OffBoard { .. }
         | BoardChangeError::NotSize { .. }
         | BoardChangeError::NotColor { .. }
-        | BoardChangeError::NotShapeKind { .. }
         | BoardChangeError::NotArrowLook { .. }
         | BoardChangeError::StickerSize { .. }
         | BoardChangeError::NotFrame { .. }

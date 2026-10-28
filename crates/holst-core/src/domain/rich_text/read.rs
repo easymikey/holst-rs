@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 use super::{BlockKind, Mark};
-use crate::domain::board::slate_text;
+use crate::domain::{board::slate_text, geometry::whole_u32};
 
 /// A stretch of a line: text with marks, a link around pieces, a mention.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,11 +96,11 @@ fn kind_of(node: &Value) -> BlockKind {
         Some("heading-two") => BlockKind::HeadingTwo,
         Some("heading-three") => BlockKind::HeadingThree,
         Some("ul-list-item") => BlockKind::Bullet,
-        // the number is stored as a float: 3 prints as "3"
+        // the number is stored as a float
         Some("ol-list-item") => BlockKind::Numbered(
             node.get("counter")
                 .and_then(Value::as_f64)
-                .and_then(|number| format!("{number}").parse().ok()),
+                .and_then(whole_u32),
         ),
         Some("checkbox-list-item") => {
             BlockKind::Check(node.get("checked").and_then(Value::as_bool) == Some(true))

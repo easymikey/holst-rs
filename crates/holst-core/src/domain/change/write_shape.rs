@@ -14,7 +14,7 @@ use crate::{
             check::{find, rectangle_of},
             value::{ArrowEdit, ShapeEdit},
         },
-        geometry::Size,
+        geometry::{Size, whole_u32},
         id_source::IdSource,
     },
     protocol::document::{
@@ -101,10 +101,8 @@ pub(super) fn shape_changes(
 
 /// The line an arrow has: the one an edit gives, else the stored, else elbow.
 pub(super) fn line_of(chosen: Option<ArrowType>, fields: &Value) -> ArrowType {
-    chosen.unwrap_or_else(|| match fields.get(ARROW_TYPE).and_then(Value::as_str) {
-        Some("straight") => ArrowType::Straight,
-        Some("curved") => ArrowType::Curved,
-        _ => ArrowType::Elbow,
+    chosen.unwrap_or_else(|| {
+        ArrowType::of_stored(fields.get(ARROW_TYPE).and_then(Value::as_str))
     })
 }
 
@@ -244,7 +242,6 @@ fn max_radius(edit: &ShapeEdit, fields: &Value, size: Option<Size>) -> u32 {
         let rounded = (width.min(height) / divisor)
             .floor()
             .clamp(0.0, f64::from(u32::MAX));
-        // A whole float in [0, u32::MAX] displays as its digits; no cast needed.
-        rounded.to_string().parse().unwrap_or_default()
+        whole_u32(rounded).unwrap_or_default()
     })
 }

@@ -116,71 +116,21 @@ impl NewObject {
     /// [`crate::error::input::InputError::NotFinite`] when the corner
     /// overflows.
     pub fn shifted(&self, dx: f64, dy: f64) -> Result<NewObject> {
-        let moved = |at: &Point| at.shifted(dx, dy);
-        Ok(match self {
-            NewObject::Sticker {
-                text,
-                at,
-                size,
-                color,
-            } => NewObject::Sticker {
-                text: text.clone(),
-                at: moved(at)?,
-                size: *size,
-                color: color.clone(),
-            },
-            NewObject::Text { text, at } => NewObject::Text {
-                text: text.clone(),
-                at: moved(at)?,
-            },
-            NewObject::Shape {
-                text,
-                at,
-                size,
-                color,
-                kind,
-            } => NewObject::Shape {
-                text: text.clone(),
-                at: moved(at)?,
-                size: *size,
-                color: color.clone(),
-                kind: *kind,
-            },
-            NewObject::Frame {
-                title: label,
-                at,
-                size,
-                color,
-                look,
-            } => NewObject::Frame {
-                title: label.clone(),
-                at: moved(at)?,
-                size: *size,
-                color: color.clone(),
-                look: *look,
-            },
-            NewObject::Arrow { .. } => self.clone(),
-            NewObject::Link {
-                url,
-                at,
-                preview,
-                embed,
-            } => NewObject::Link {
-                url: url.clone(),
-                at: moved(at)?,
-                preview: preview.clone(),
-                embed: *embed,
-            },
-            NewObject::Image { upload, at, size } => NewObject::Image {
-                upload: upload.clone(),
-                at: moved(at)?,
-                size: *size,
-            },
-            NewObject::File { upload, at } => NewObject::File {
-                upload: upload.clone(),
-                at: moved(at)?,
-            },
-        })
+        let mut moved = self.clone();
+        let corner = match &mut moved {
+            NewObject::Sticker { at, .. }
+            | NewObject::Text { at, .. }
+            | NewObject::Shape { at, .. }
+            | NewObject::Frame { at, .. }
+            | NewObject::Link { at, .. }
+            | NewObject::Image { at, .. }
+            | NewObject::File { at, .. } => Some(at),
+            NewObject::Arrow { .. } => None,
+        };
+        corner
+            .map(|at| at.shifted(dx, dy).map(|to| *at = to))
+            .transpose()?;
+        Ok(moved)
     }
 }
 

@@ -40,6 +40,7 @@ use crate::{
                 edit,
                 fill_text,
                 shifted,
+                stored_now,
             },
         },
         geometry::Point,
@@ -174,12 +175,10 @@ fn edited(
     let read = touched
         .iter()
         .filter_map(|changed| {
-            let fields = scope
-                .roots
-                .objects
-                .get(&*transaction, &changed.id)?
-                .to_json(&*transaction);
-            Some((changed.id.clone(), stored_json(&fields)?))
+            Some((
+                changed.id.clone(),
+                stored_now(&*transaction, scope, &changed.id)?,
+            ))
         })
         .collect();
     Ok(running.after(read, touched))
