@@ -7,6 +7,8 @@ An unofficial CLI and MCP server for [Holst](https://app.holst.so), written in R
 
 Each works on its own: install only the CLI, only the MCP server, or both. Installed together, they share one login.
 
+The command layout (`holst board ls`, `holst auth login`, `-o json`) is inspired by GitHub's [`gh`](https://cli.github.com) 🍦.
+
 ## Why
 
 Holst has no public API and no CLI: everything happens in the browser, one click at a time. holst-rs makes boards scriptable and lets AI agents work on them.
@@ -14,8 +16,6 @@ Holst has no public API and no CLI: everything happens in the browser, one click
 - Scripts: list, search, export and back up boards, add and edit objects from the shell.
 - Agents: an assistant such as Claude Code reads a board and adds stickers, text and comments through MCP. Replies are short, so they cost the agent little context.
 - Safe by default: every write has a dry run, and irreversible ones need `--yes`.
-
-The command layout (`holst board ls`, `holst auth login`, `-o json`) is inspired by GitHub's [`gh`](https://cli.github.com) 🍦.
 
 ## Install
 
