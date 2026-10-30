@@ -626,7 +626,7 @@ mod tests {
         let path = dir.join(&name);
         write_new(&path, b"payload")?;
         assert_eq!(fs::read(&path)?, b"payload");
-        assert!(leftovers(&dir)?.is_empty());
+        assert_eq!(leftovers(&dir)?, Vec::<String>::new());
         fs::remove_dir_all(&dir)?;
         Ok(())
     }
@@ -645,7 +645,7 @@ mod tests {
             ))
         );
         assert_eq!(fs::read(&path)?, b"first");
-        assert!(leftovers(&dir)?.is_empty());
+        assert_eq!(leftovers(&dir)?, Vec::<String>::new());
         fs::remove_dir_all(&dir)?;
         Ok(())
     }
@@ -660,14 +660,14 @@ mod tests {
             Some(format!("could not write {}", path.display()))
         );
         assert!(!path.exists());
-        assert!(leftovers(&dir)?.is_empty());
+        assert_eq!(leftovers(&dir)?, Vec::<String>::new());
 
         // A directory at the target: the link fails after the temporary file.
         let taken = dir.join("taken");
         fs::create_dir(&taken)?;
         assert!(write_new(&taken, b"payload").is_err());
         assert!(taken.is_dir());
-        assert!(leftovers(&dir)?.is_empty());
+        assert_eq!(leftovers(&dir)?, Vec::<String>::new());
         fs::remove_dir_all(&dir)?;
         Ok(())
     }
@@ -706,7 +706,7 @@ mod tests {
             use std::os::unix::fs::PermissionsExt as _;
             assert_eq!(fs::metadata(&path)?.permissions().mode() & 0o777, 0o600);
         }
-        assert!(leftovers(&dir)?.is_empty());
+        assert_eq!(leftovers(&dir)?, Vec::<String>::new());
         fs::remove_dir_all(&dir)?;
         Ok(())
     }
@@ -747,14 +747,14 @@ mod tests {
             Some(format!("could not write {}", path.display()))
         );
         assert_eq!(fs::read(&path)?, b"old");
-        assert!(leftovers(&dir)?.is_empty());
+        assert_eq!(leftovers(&dir)?, Vec::<String>::new());
 
         // A directory in the way: the rename fails after the temporary file.
         let taken = dir.join("taken");
         fs::create_dir_all(taken.join("inside"))?;
         assert!(replace_private(&taken, &[b"x"]).is_err());
         assert!(taken.join("inside").is_dir());
-        assert!(leftovers(&dir)?.is_empty());
+        assert_eq!(leftovers(&dir)?, Vec::<String>::new());
         fs::remove_dir_all(&dir)?;
         Ok(())
     }

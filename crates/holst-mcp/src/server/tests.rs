@@ -632,7 +632,7 @@ async fn failed_save_keeps_the_client() -> Result<()> {
         1,
         "the rotation was not offered to the store"
     );
-    assert!(memory.saved().is_empty());
+    assert_eq!(memory.saved(), Vec::<Session>::new());
 
     clock.advance(RECHECK);
     assert_eq!(
@@ -650,7 +650,7 @@ async fn failed_save_is_retried_on_the_next_call() {
 
     assert!(reads(&holst).await);
     assert_eq!(memory.saved_to().len(), 1);
-    assert!(memory.saved().is_empty());
+    assert_eq!(memory.saved(), Vec::<Session>::new());
 
     memory.make_writable();
     assert!(reads(&holst).await);

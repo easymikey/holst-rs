@@ -218,8 +218,8 @@ async fn every_change_reaches_the_server() -> holst_core::Result<()> {
         },
     )
     .await?;
-    assert!(fake.threads_of("Plans").is_empty());
-    assert!(threads(&client, &board).await?.is_empty());
+    assert_eq!(fake.threads_of("Plans"), Vec::<FixtureThread>::new());
+    assert_eq!(threads(&client, &board).await?, Vec::<Thread>::new());
     Ok(())
 }
 

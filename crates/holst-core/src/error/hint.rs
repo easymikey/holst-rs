@@ -293,7 +293,7 @@ mod tests {
                     .collect::<Vec<_>>()
             })
             .collect();
-        assert!(!named.is_empty());
+        assert_ne!(named, Vec::<String>::new());
         assert!(
             named.iter().all(|cmd| COMMANDS.contains(&cmd.as_str())),
             "{named:?}"

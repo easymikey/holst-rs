@@ -6,7 +6,7 @@
 cargo build
 ```
 
-The toolchain is pinned in `rust-toolchain.toml` (Rust 1.96.0). Formatting and clippy use the nightly named in `justfile`.
+The toolchain is pinned in `rust-toolchain.toml` (Rust 1.99.1). Clippy runs on that stable toolchain; the nightly named in `justfile` is used only for formatting.
 
 ## Tools and checks
 
@@ -14,7 +14,7 @@ Every tool is pinned in `[workspace.metadata.bin]` of `Cargo.toml` and run throu
 
 ```sh
 cargo install --locked cargo-run-bin
-rustup toolchain install nightly-2026-05-22 -c rustfmt,clippy
+rustup toolchain install nightly-2026-10-30 -c rustfmt --profile minimal
 ```
 
 The commands live in `justfile`, one recipe per CI job (`.github/workflows/ci.yml` runs the same recipes):

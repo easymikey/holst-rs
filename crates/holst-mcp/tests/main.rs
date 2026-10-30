@@ -74,7 +74,7 @@ async fn the_tools_are_listed_over_the_wire() -> Result<(), WireError> {
     let mut expected = snapshot_names()?;
     names.sort();
     expected.sort();
-    assert!(!expected.is_empty());
+    assert_ne!(expected, Vec::<String>::new());
     assert_eq!(names, expected);
     Ok(())
 }

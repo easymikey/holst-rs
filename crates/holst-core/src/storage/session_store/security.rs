@@ -188,15 +188,14 @@ pub fn unhex(text: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
     text.len()
         .is_multiple_of(2)
         .then_some(text)?
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .try_fold(
             Zeroizing::new(Vec::with_capacity(text.len() / 2)),
-            |out, pair| {
-                let byte = pair
-                    .first()
-                    .copied()
-                    .and_then(nibble)
-                    .zip(pair.get(1).copied().and_then(nibble))
+            |out, &[high, low]| {
+                let byte = nibble(high)
+                    .zip(nibble(low))
                     .map(|(high, low)| (high << 4) | low)?;
                 Some(appended(out, |bytes| bytes.push(byte)))
             },

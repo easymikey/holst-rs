@@ -504,11 +504,11 @@ impl ServerHandler for McpServer {
     }
 
     /// Our own `tools/list`: the tools of the table.
-    async fn list_tools(
+    fn list_tools(
         &self,
         _: Option<PaginatedRequestParams>,
         _: RequestContext<RoleServer>,
-    ) -> Result<ListToolsResult, ErrorData> {
-        Ok(ListToolsResult::with_all_items(self.tools.to_vec()))
+    ) -> impl Future<Output = Result<ListToolsResult, ErrorData>> + Send + '_ {
+        std::future::ready(Ok(ListToolsResult::with_all_items(self.tools.to_vec())))
     }
 }

@@ -1054,6 +1054,6 @@ mod tests {
     #[test]
     fn placeholders_are_read_in_order() {
         assert_eq!(placeholders("a/{x}/b/{y}"), ["x", "y"]);
-        assert!(placeholders("plain/path").is_empty());
+        assert_eq!(placeholders("plain/path"), Vec::<String>::new());
     }
 }

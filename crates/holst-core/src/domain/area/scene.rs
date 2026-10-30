@@ -602,10 +602,8 @@ fn drawing_rectangle(fields: &Value) -> Option<Rectangle> {
             Vec::new()
         }
     };
-    let points = numbers.chunks_exact(2).filter_map(|pair| match pair {
-        [x, y] => Some(StoredPoint::new(x * scale, y * scale)),
-        _ => None,
-    });
+    let points = (numbers.as_chunks::<2>().0.iter())
+        .map(|[x, y]| StoredPoint::new(x * scale, y * scale));
     Rectangle::around(points).map(|rectangle| {
         Rectangle::new(
             0.0,

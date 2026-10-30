@@ -178,7 +178,7 @@ fn filters_keep_one_board_or_one_kind() {
     };
     assert_eq!(objects(only_mixed), ["mixed/f0"]);
     assert_eq!(objects(only_frames), ["mixed/f0"]);
-    assert!(objects(nowhere).is_empty());
+    assert_eq!(objects(nowhere), Vec::<String>::new());
 }
 
 #[test]

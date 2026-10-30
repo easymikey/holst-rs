@@ -227,7 +227,7 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(ids(Rectangle::new(100.0, 300.0, 50.0, 50.0)), ["a1"]);
-        assert!(ids(Rectangle::new(0.0, 0.0, 50.0, 50.0)).is_empty());
+        assert_eq!(ids(Rectangle::new(0.0, 0.0, 50.0, 50.0)), Vec::<String>::new());
     }
 
     #[test]

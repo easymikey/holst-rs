@@ -3,8 +3,9 @@ description: Rust toolchains and the pinned tools of `[workspace.metadata.bin]`,
 
 inputs:
   components:
-    description: Components of the justfile's nightly, comma separated.
-    required: true
+    description: Components of the justfile's nightly, comma separated; empty skips the nightly.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -31,4 +32,6 @@ runs:
       shell: bash
       run: |
         rustup toolchain install
-        rustup toolchain install "$(cargo bin just --evaluate nightly)" --profile minimal -c ${{ inputs.components }}
+        if [ -n "${{ inputs.components }}" ]; then
+          rustup toolchain install "$(cargo bin just --evaluate nightly)" --profile minimal -c ${{ inputs.components }}
+        fi

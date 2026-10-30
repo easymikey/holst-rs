@@ -15,7 +15,13 @@ use crate::{
         board::{note_root, note_text},
         change::{
             build::build,
-            value::{BoardChange, ChangeSources, ChangeUpdate, NoteContent},
+            value::{
+                BoardChange,
+                ChangeSources,
+                ChangeUpdate,
+                ChangedObject,
+                NoteContent,
+            },
         },
         id_source::SequentialIds,
         rich_text::{Kept, TextFormat, template::NoteTemplate},
@@ -93,7 +99,7 @@ fn what_the_note_cannot_hold_is_reported_as_kept() -> Result<()> {
     let document = Doc::new();
     let built = write(&document, text("> quoted\n", TextFormat::Markdown))?;
     assert_eq!(built.kept, [Kept::Quote].into());
-    assert!(built.objects.is_empty());
+    assert_eq!(built.objects, Vec::<ChangedObject>::new());
     Ok(())
 }
 

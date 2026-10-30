@@ -997,9 +997,9 @@ mod tests {
     #[test]
     fn nothing_picked_shows_none() -> Result<()> {
         let form = Form::bare(Script::new(TerminalKind::Live, [Keystroke::Enter], []));
-        assert!(
-            form.multiselect("Which?", plans(), vec![], false)?
-                .is_empty()
+        assert_eq!(
+            form.multiselect("Which?", plans(), vec![], false)?,
+            Vec::<usize>::new()
         );
         assert!(
             form.terminal()

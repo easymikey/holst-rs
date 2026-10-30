@@ -525,7 +525,7 @@ fn text_layout(document: &Doc, id: &str) -> Vec<(String, Vec<(String, String)>)>
         .collect::<Vec<_>>()
         .iter()
         .map(|wrapper| {
-            assert!(!attribute(wrapper, "key").is_empty());
+            assert_ne!(attribute(wrapper, "key"), "");
             let blocks = embeds(wrapper)
                 .iter()
                 .map(|block| (attribute(block, "type"), block.get_string(&transaction)))

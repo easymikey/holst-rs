@@ -296,27 +296,16 @@ mod tests {
         assert!(matches!(one_line("plain текст"), Cow::Borrowed(_)));
     }
 
-    #[derive(Debug, PartialEq, Eq)]
-    enum Blankness {
-        Blank,
-        Shown,
-    }
-
     #[rstest]
-    #[case::null(Value::Null, Blankness::Blank)]
-    #[case::empty_list(json!([]), Blankness::Blank)]
-    #[case::wrapped_empty_list(json!({ "channels": [], "cursor": null }), Blankness::Blank)]
-    #[case::nested(json!({ "a": { "b": "" } }), Blankness::Blank)]
-    #[case::zero(json!({ "count": 0 }), Blankness::Shown)]
-    #[case::false_flag(json!(false), Blankness::Shown)]
-    #[case::one_item(json!({ "channels": [{}] }), Blankness::Shown)]
-    fn blank_means_nothing_to_show(#[case] value: Value, #[case] blank: Blankness) {
-        assert_eq!(
-            is_blank(&value)
-                .then_some(Blankness::Blank)
-                .map_or(Blankness::Shown, |kind| kind),
-            blank
-        );
+    #[case::null(Value::Null, true)]
+    #[case::empty_list(json!([]), true)]
+    #[case::wrapped_empty_list(json!({ "channels": [], "cursor": null }), true)]
+    #[case::nested(json!({ "a": { "b": "" } }), true)]
+    #[case::zero(json!({ "count": 0 }), false)]
+    #[case::false_flag(json!(false), false)]
+    #[case::one_item(json!({ "channels": [{}] }), false)]
+    fn blank_means_nothing_to_show(#[case] value: Value, #[case] blank: bool) {
+        assert_eq!(is_blank(&value), blank);
     }
 
     #[rstest]

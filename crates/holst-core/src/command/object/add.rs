@@ -3090,7 +3090,7 @@ mod tests {
             refused("s1")?,
             "parent of `object add` must be a mind-map node"
         );
-        assert!(!refused("nowhere")?.is_empty());
+        assert_ne!(refused("nowhere")?, "");
         Ok(())
     }
 
@@ -3248,7 +3248,7 @@ mod tests {
             refused("f1")?,
             "on of `object add` must be a shape, sticker, document, task or image"
         );
-        assert!(!refused("nowhere")?.is_empty());
+        assert_ne!(refused("nowhere")?, "");
         assert_eq!(refused("s1")?, "");
         Ok(())
     }

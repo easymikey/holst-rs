@@ -679,11 +679,10 @@ fn image(object: &Object, local: Rectangle, images: &PictureImages<'_>) -> Strin
 /// pair.
 fn polyline(numbers: &[f64]) -> String {
     let points: Vec<String> = numbers
-        .chunks_exact(2)
-        .filter_map(|pair| match pair {
-            [x, y] => Some(format!("{} {}", format_number(*x), format_number(*y))),
-            _ => None,
-        })
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|[x, y]| format!("{} {}", format_number(*x), format_number(*y)))
         .collect();
     Some(points.join(" L"))
         .filter(|path| !path.is_empty())

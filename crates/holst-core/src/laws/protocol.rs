@@ -130,7 +130,7 @@ proptest! {
     /// LEB128 is minimal: 7 value bits per byte, at least one byte.
     #[test]
     fn var_uint_is_minimal(value in any::<u64>()) {
-        let bits = u64::BITS - value.leading_zeros();
+        let bits = value.bit_width();
         let expected = usize::try_from(bits.div_ceil(7).max(1)).unwrap_or(usize::MAX);
         prop_assert_eq!(lib0::var_uint(value).len(), expected);
     }

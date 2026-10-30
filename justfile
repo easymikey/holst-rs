@@ -1,4 +1,4 @@
-nightly := "nightly-2026-05-22"
+nightly := "nightly-2026-10-30"
 
 [private]
 default:
@@ -15,7 +15,7 @@ lint:
 
 # CI job `check`: clippy, tests and doctests.
 check:
-    cargo +{{ nightly }} clippy --workspace --all-targets --all-features --locked -- -D warnings
+    cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
     cargo bin cargo-nextest run --workspace --all-features --locked --profile ci
     cargo test --workspace --all-features --locked --doc
 

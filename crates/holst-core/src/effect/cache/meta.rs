@@ -152,10 +152,12 @@ pub fn unhex(text: &str) -> Option<Vec<u8>> {
     let digits = text.as_bytes();
     if digits.len().is_multiple_of(2) {
         digits
-            .chunks_exact(2)
-            .map(|pair| {
-                let high = char::from(*pair.first()?).to_digit(16)?;
-                let low = char::from(*pair.get(1)?).to_digit(16)?;
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|[high, low]| {
+                let high = char::from(*high).to_digit(16)?;
+                let low = char::from(*low).to_digit(16)?;
                 u8::try_from(high * 16 + low).ok()
             })
             .collect()

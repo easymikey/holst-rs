@@ -244,12 +244,6 @@ mod tests {
         Unused,
     }
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    enum Trash {
-        Kept,
-        Trashed,
-    }
-
     #[rstest]
     #[case::spec_shape(
         json!({ "workspace": { "id": "w" }, "spaces": [], "channels": [
@@ -311,32 +305,26 @@ mod tests {
     }
 
     #[rstest]
-    #[case::absent(json!({ "id": "b" }), Trash::Kept)]
-    #[case::null(json!({ "id": "b", "in_trash": null }), Trash::Kept)]
-    #[case::explicit_false(json!({ "id": "b", "in_trash": false }), Trash::Kept)]
-    #[case::date(json!({ "id": "b", "in_trash": "2026-10-21" }), Trash::Trashed)]
-    #[case::explicit_true(json!({ "id": "b", "in_trash": true }), Trash::Trashed)]
-    fn trash_flag_reads_every_form(#[case] node: Value, #[case] trashed: Trash) {
+    #[case::absent(json!({ "id": "b" }), false)]
+    #[case::null(json!({ "id": "b", "in_trash": null }), false)]
+    #[case::explicit_false(json!({ "id": "b", "in_trash": false }), false)]
+    #[case::date(json!({ "id": "b", "in_trash": "2026-10-21" }), true)]
+    #[case::explicit_true(json!({ "id": "b", "in_trash": true }), true)]
+    fn trash_flag_reads_every_form(#[case] node: Value, #[case] trashed: bool) {
         let spec = parse(&json!({ "channels": [&node] }).to_string());
         let heuristic = flatten(&json!([node]));
         assert_eq!(
             spec.ok().map(|parsed| parsed
                 .nodes
                 .iter()
-                .map(|item| item
-                    .in_trash
-                    .then_some(Trash::Trashed)
-                    .map_or(Trash::Kept, |kind| kind))
+                .map(|item| item.in_trash)
                 .collect::<Vec<_>>()),
             Some(vec![trashed])
         );
         assert_eq!(
             heuristic
                 .iter()
-                .map(|item| item
-                    .in_trash
-                    .then_some(Trash::Trashed)
-                    .map_or(Trash::Kept, |kind| kind))
+                .map(|item| item.in_trash)
                 .collect::<Vec<_>>(),
             [trashed]
         );

@@ -74,7 +74,7 @@ async fn a_template_is_created_listed_and_deleted() -> holst_core::Result<()> {
     client
         .send_json(api::template::delete_request(&id)?)
         .await?;
-    assert!(fake.personal_templates().is_empty());
+    assert_eq!(fake.personal_templates(), Vec::<String>::new());
     Ok(())
 }
 

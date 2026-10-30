@@ -230,7 +230,7 @@ async fn a_dry_run_share_tells_what_each_setting_was_and_becomes() -> Result<()>
             { "setting": "copy", "was": "viewer", "becomes": "editor" },
         ]))
     );
-    assert!(written(&fake).is_empty());
+    assert_eq!(written(&fake), Vec::<(String, Value)>::new());
     Ok(())
 }
 

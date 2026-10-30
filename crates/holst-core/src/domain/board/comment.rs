@@ -1091,7 +1091,7 @@ mod tests {
                 .and_then(|held| held.get("rb").and_then(Value::as_u64)),
             number
         );
-        assert!(!update.is_empty());
+        assert_ne!(update, Vec::<u8>::new());
         Ok(())
     }
 

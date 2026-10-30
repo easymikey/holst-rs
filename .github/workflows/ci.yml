@@ -43,8 +43,6 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: ./.github/actions/tools
-        with:
-          components: rustfmt
 
       - uses: Swatinem/rust-cache@v2
 
@@ -65,8 +63,6 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: ./.github/actions/tools
-        with:
-          components: clippy
 
       - uses: Swatinem/rust-cache@v2
 

@@ -1369,7 +1369,7 @@ async fn fixture_threads_are_read_back_and_their_read_marks_are_listed() -> Outc
     assert_eq!(first.messages.len(), 2);
     assert_eq!(second.anchor, ThreadAnchor::Object(2));
     assert!(second.resolved);
-    assert!(fake.threads_of("Bare").is_empty());
+    assert_eq!(fake.threads_of("Bare"), Vec::<FixtureThread>::new());
     assert_eq!(
         fake.thread_read_at("Plan", "9YSRw").as_deref(),
         Some("2026-10-27T12:27:28.401Z")
