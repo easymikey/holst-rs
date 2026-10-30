@@ -129,7 +129,7 @@ pub struct AddArgs {
     #[argument(
         value_name = "file",
         help = "Many in one write: a JSON array or JSON lines file, - for stdin; its keys are the flags of one call",
-        tool_doc = "Many at once, each with the arguments of one; at most 100 per call."
+        tool_doc = "Many at once, each with one call's arguments; at most 100 per call."
     )]
     pub items: Option<Items<AddItem>>,
     #[argument(letter = 'n', help = "Show what would change; change nothing")]

@@ -360,7 +360,7 @@ pub struct AlignArgs {
     #[argument(
         value_name = "axis",
         help = "Spread the objects so that the gaps between them are equal: horizontal or vertical; use instead of --side",
-        tool_doc = "Spread evenly; align instead with side: left, center, right, top, middle, bottom."
+        tool_doc = "Spread evenly; or align by side: left, center, right, top, middle, bottom."
     )]
     pub distribute: Option<Axis>,
     #[argument(

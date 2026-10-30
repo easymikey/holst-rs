@@ -394,7 +394,7 @@ const OBJECT: GroupHelp = GroupHelp {
     about: "Work with the objects on a board",
     section: RootSection::Core,
     tools: GroupTools::ReadAndWrite {
-        read: "Objects on a board or a part of it: kind, place, size, color, text.",
+        read: "Objects on a board or part of it: kind, place, size, color, text.",
         write: "Objects on a board; add and edit take many in one call.",
     },
     flags: &[GroupFlag {

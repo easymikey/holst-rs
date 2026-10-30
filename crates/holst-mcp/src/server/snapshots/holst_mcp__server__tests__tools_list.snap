@@ -631,7 +631,7 @@ expression: "*holst.tools"
   },
   {
     "name": "object",
-    "description": "Objects on a board or a part of it: kind, place, size, color, text.",
+    "description": "Objects on a board or part of it: kind, place, size, color, text.",
     "inputSchema": {
       "properties": {
         "board": {
@@ -832,7 +832,7 @@ expression: "*holst.tools"
           "type": "string"
         },
         "distribute": {
-          "description": "Spread evenly; align instead with side: left, center, right, top, middle, bottom.",
+          "description": "Spread evenly; or align by side: left, center, right, top, middle, bottom.",
           "enum": [
             "horizontal",
             "vertical"
@@ -912,7 +912,7 @@ expression: "*holst.tools"
           "type": "string"
         },
         "items": {
-          "description": "Many at once, each with the arguments of one; at most 100 per call.",
+          "description": "Many at once, each with one call's arguments; at most 100 per call.",
           "items": {
             "type": "object"
           },
