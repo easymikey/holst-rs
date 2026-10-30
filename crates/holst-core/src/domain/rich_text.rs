@@ -1,6 +1,6 @@
 //! Markdown as the blocks and marks of the web editor's rich text; no I/O.
 
-use std::{collections::BTreeSet, ops::Range};
+use std::{collections::BTreeSet, iter, ops::Range};
 
 use pulldown_cmark::{
     CodeBlockKind,
@@ -344,8 +344,7 @@ const fn heading(level: HeadingLevel) -> BlockKind {
     }
 }
 
-/// The language of a fence; the editor shows `plaintext` for none it knows
-/// (bundle line 241380-241383).
+/// The language of a fence, `plaintext` if unknown (bundle line 241380-241383).
 fn language(kind: &CodeBlockKind<'_>) -> String {
     match kind {
         CodeBlockKind::Fenced(info) => info
@@ -356,8 +355,7 @@ fn language(kind: &CodeBlockKind<'_>) -> String {
     }
 }
 
-/// The address as the editor keeps it: `http://` is added to one with no
-/// scheme it knows (bundle lines 240364-240366, 241291-241296).
+/// The address with `http://` added when it lacks a scheme (bundle 240364-240366).
 fn link_target(url: &str) -> String {
     let known = ["http://", "https://", "mailto:"]
         .iter()
@@ -459,22 +457,24 @@ impl Reader<'_> {
     /// The items of a list: the first of a numbered one carries its number.
     fn list(&mut self, first: Option<u64>) -> Vec<Block> {
         let mut number = first.map(|first| u32::try_from(first).unwrap_or(u32::MAX));
-        let mut items = Vec::new();
-        // imperative: the cursor walks the items of the list
-        while matches!(self.events.get(self.at), Some((Event::Start(Tag::Item), _))) {
-            self.at += 1;
-            let kind = match first {
-                Some(_) => BlockKind::Numbered(number.take()),
-                None => BlockKind::Bullet,
-            };
-            items.push(self.item(kind));
-        }
+        let items = iter::from_fn(|| {
+            matches!(self.events.get(self.at), Some((Event::Start(Tag::Item), _))).then(
+                || {
+                    self.at += 1;
+                    let kind = match first {
+                        Some(_) => BlockKind::Numbered(number.take()),
+                        None => BlockKind::Bullet,
+                    };
+                    self.item(kind)
+                },
+            )
+        })
+        .collect();
         self.end();
         items
     }
 
-    /// An item: its first paragraph is its text, the other blocks nest under
-    /// it.
+    /// An item: its first paragraph is its text, other blocks nest under it.
     fn item(&mut self, kind: BlockKind) -> Block {
         // a loose item opens its paragraph before the marker
         let paragraph = matches!(
@@ -499,8 +499,7 @@ impl Reader<'_> {
         }
     }
 
-    /// The text of the events up to the end of the tag just opened, and its
-    /// end.
+    /// The text of the events up to the end of the tag just opened.
     fn raw(&mut self) -> String {
         let rest = self.events.get(self.at..).unwrap_or_default();
         let used = rest
@@ -700,7 +699,7 @@ fn adapted(
             let mark = Run::plain(if done { "[x] " } else { "[ ] " });
             vec![Block::new(
                 BlockKind::Paragraph,
-                merged(std::iter::once(mark).chain(runs).collect()),
+                merged(iter::once(mark).chain(runs).collect()),
             )]
         }
         BlockKind::Code { .. } if !editor.keeps(Feature::CodeBlocks) => {

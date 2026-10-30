@@ -83,8 +83,6 @@ impl SecurityTool {
             program: self.program.clone(),
             error: source,
         };
-        // imperative: the pipes are taken and the child waited on through
-        // `&mut`.
         let mut child = Command::new(&self.program)
             .args(arguments)
             .stdin(input.map_or_else(Stdio::null, |_| Stdio::piped()))
@@ -115,7 +113,6 @@ type PipeDrain = thread::JoinHandle<io::Result<Zeroizing<Vec<u8>>>>;
 
 fn drain<R: Read + Send + 'static>(pipe: Option<R>, room: usize) -> PipeDrain {
     thread::spawn(move || {
-        // imperative: `read_to_end` fills the buffer in place.
         let mut out = Zeroizing::new(Vec::with_capacity(room));
         pipe.map_or(Ok(0), |mut pipe| pipe.read_to_end(&mut out))
             .map(|_| out)

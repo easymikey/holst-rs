@@ -134,7 +134,6 @@ impl CachePort for MemoryCache {
 
     fn store(&self, board: &str, record: &CacheRecord<'_>) -> Result<()> {
         let at = self.clock.unix_millis();
-        // imperative: the guard is mutated by the insert and the eviction
         let mut boards = self.boards();
         let previous = boards.get(board).map(|kept| kept.meta.clone());
         let meta = CacheMeta {

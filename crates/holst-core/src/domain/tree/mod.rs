@@ -185,7 +185,7 @@ pub fn is_trashed(value: Option<&Value>) -> bool {
 /// ```
 #[must_use]
 pub fn flatten(tree: &Value) -> Vec<TreeNode> {
-    // imperative: a `Vec` by value through the recursion was 14–23% slower.
+    // A `Vec` by value through the recursion was 14–23% slower.
     let mut out = Vec::new();
     collect(tree, None, &mut out);
     out

@@ -98,8 +98,7 @@ impl MatchRules {
         Self(self.0 & !other.0)
     }
 
-    /// The rules a tree search scored `score` means: a whole name holds its
-    /// part too.
+    /// The rules a tree search score means; a whole name holds its part too.
     #[must_use]
     pub const fn of_score(score: u32) -> Self {
         match score {
@@ -210,8 +209,7 @@ impl MatchOrder {
             .fold(MatchRules::NONE, |hidden, &rule| hidden.with(rule))
     }
 
-    /// Returns, in order, the items whose rules a stronger match in their
-    /// group does not hide; rules outside this order are ignored.
+    /// The items, in order, whose rules no stronger match in their group hides.
     pub fn strongest<T, G: Copy + PartialEq>(
         &self,
         matched: impl IntoIterator<Item = (T, G, MatchRules)>,
@@ -259,8 +257,8 @@ pub struct Reference {
 }
 
 impl Reference {
-    /// A board object: an id, a link with `objectId=`, an id start (also
-    /// with the `@` that `o ls` prints before it) or a title.
+    /// A board object: an id, `objectId=` link, id start (maybe `@`-led) or
+    /// title.
     #[must_use]
     pub fn object(raw: &str) -> Self {
         let trimmed = raw.trim();
@@ -299,16 +297,14 @@ impl Reference {
     }
 }
 
-/// Returns, in input order, the items `order` keeps for `reference`; each
-/// name is normalized once into one reused buffer.
+/// The items, in input order, that `order` keeps for `reference`.
 pub fn find_matches<T>(
     items: impl IntoIterator<Item = T>,
     identify: impl Fn(&T) -> (&str, &str),
     reference: &Reference,
     order: &MatchOrder,
 ) -> Vec<T> {
-    // imperative: one buffer reused for every name avoids an allocation per
-    // item.
+    // One buffer for every name: no allocation per item.
     let mut name = String::new();
     // An emoji-only name normalizes to "", which names nothing: no scan.
     if reference.is_empty() {
@@ -379,8 +375,7 @@ pub fn find_workspace<'a>(
 
 const MIN_ID_PREFIX: usize = 8;
 
-/// Whether `text` is an MCP alias: `@` and a decimal number shorter than an id
-/// prefix (`@3`). Eight or more characters after the `@` are an id start.
+/// Whether `text` is an MCP alias: `@` and fewer than eight digits (`@3`).
 #[must_use]
 pub fn is_alias(text: &str) -> bool {
     text.trim().strip_prefix('@').is_some_and(|n| {
@@ -390,8 +385,7 @@ pub fn is_alias(text: &str) -> bool {
     })
 }
 
-/// The id `reference` names: an id, a link with `objectId=`, or a long hex
-/// prefix.
+/// The id `reference` names: an id, an `objectId=` link or a long hex prefix.
 ///
 /// # Errors
 /// [`crate::error::board_change::BoardChangeError::NoObject`], or a

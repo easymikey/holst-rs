@@ -178,7 +178,6 @@ fn linked_json_adds_a_link_to_each_object() -> Result<()> {
         Some(&json!("https://x/?objectId=s1"))
     );
     assert_eq!(listed.pointer("/objects/0/start"), None);
-    // The stored position stays as it was; the drawn ends come beside it.
     assert_eq!(
         [
             listed.pointer("/objects/1/x"),
@@ -292,7 +291,6 @@ fn note_text_joins_blocks_with_newlines() {
     let document = Doc::new();
     let documents = document.get_or_insert_map("documents");
     {
-        // imperative: yrs inserts through one `&mut` transaction
         let mut txn = document.transact_mut();
         let root = documents.insert(&mut txn, "d1", XmlTextPrelim::new(""));
         let wrapper = root.insert_embed(&mut txn, 0, XmlTextPrelim::new(""));
@@ -379,7 +377,6 @@ fn an_attached_arrow_is_listed_where_it_starts_not_at_the_corner() {
     let document = Doc::new();
     let objects = document.get_or_insert_map("objects");
     {
-        // imperative: yrs inserts through one `&mut` transaction
         let mut txn = document.transact_mut();
         let all = [
             json!({"id": "s1", "type": "sticker", "position": {"x": 0, "y": 500},
@@ -391,12 +388,13 @@ fn an_attached_arrow_is_listed_where_it_starts_not_at_the_corner() {
                    "start": {"objectId": "s1", "point": {"x": 0, "y": 0}},
                    "end": {"objectId": "s2", "point": {"x": 0, "y": 0}}}),
         ];
-        // imperative: yrs inserts through one `&mut` transaction
-        for fields in all {
-            let value = Any::from_json(&fields.to_string()).unwrap_or(Any::Null);
-            let id = fields.get("id").and_then(|id| id.as_str()).unwrap_or("");
-            objects.insert(&mut txn, id, value);
-        }
+        all.into_iter()
+            .map(|fields| {
+                let value = Any::from_json(&fields.to_string()).unwrap_or(Any::Null);
+                let id = fields.get("id").and_then(|id| id.as_str()).unwrap_or("");
+                objects.insert(&mut txn, id, value);
+            })
+            .for_each(drop);
     }
     let ids: Vec<String> = crate::domain::board::objects(&document)
         .into_iter()

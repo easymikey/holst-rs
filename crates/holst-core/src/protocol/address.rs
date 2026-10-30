@@ -8,8 +8,8 @@ use crate::{
 };
 
 impl BaseUrl {
-    /// Where board images are stored: `storage-edge.` before the host, as the
-    /// web client loads them; a local mock serves `/storage/` itself.
+    /// Board images: `storage-edge.` before the host, as the web client loads
+    /// them.
     #[must_use]
     pub fn storage(&self) -> String {
         let scheme = self.url.scheme();
@@ -45,7 +45,6 @@ impl BaseUrl {
             "http" => "ws",
             _ => "wss",
         };
-        // imperative: `Url` is changed through setters only.
         let mut url = self.url.clone();
         url.set_path("/hud/ws");
         url.set_scheme(scheme).map(|()| url).map_err(|()| {
@@ -55,8 +54,7 @@ impl BaseUrl {
         })
     }
 
-    /// A snapshot link from the board server, only on the base host or below
-    /// it.
+    /// A snapshot link from the board server, on the base host or below.
     ///
     /// # Errors
     ///

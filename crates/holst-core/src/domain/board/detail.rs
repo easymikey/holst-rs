@@ -24,8 +24,7 @@ pub struct LinkCard {
 }
 
 impl LinkCard {
-    /// The `link` and `title` of a link object; an embed keeps them in
-    /// `linkInfo`. `None` for another kind, and for a link without an address.
+    /// The `link` and `title` of a link object or embed (`linkInfo`), if any.
     #[must_use]
     pub fn of(object: &Object) -> Option<Self> {
         let text = |holder: &Value, key: &str| {
@@ -66,8 +65,7 @@ pub struct TagNames {
 }
 
 impl TagNames {
-    /// The definitions in the document's tag map; a definition without a name
-    /// is left out, so its tag shows under its id.
+    /// The named definitions of the document's tag map.
     #[must_use]
     pub fn of(document: &Doc) -> Self {
         let store = document.get_or_insert_map(document::TAGS_STORE);
@@ -115,8 +113,7 @@ impl TagNames {
             .chain(card)
     }
 
-    /// The names of the tags the objects hold, by id; a tag nobody defined is
-    /// left out.
+    /// The names of the tags the objects hold, by id.
     #[must_use]
     pub fn titles_in(&self, objects: &[Object]) -> BTreeMap<String, String> {
         objects
@@ -136,8 +133,8 @@ impl TagNames {
             .collect()
     }
 
-    /// Whether the object has the tag `wanted`, by name (ignoring case and ё)
-    /// or by id.
+    /// Whether the object has the tag `wanted`, by id or name (case, ё
+    /// ignored).
     #[must_use]
     pub fn has(&self, object: &Object, wanted: &str) -> bool {
         let by_name = normalized(wanted);
@@ -260,7 +257,6 @@ mod tests {
         let document = Doc::new();
         let store = document.get_or_insert_map("task-card-tagsStore");
         {
-            // imperative: yrs inserts through one `&mut` transaction
             let mut txn = document.transact_mut();
             let definition = json!({"id": "t1", "title": "Urgent"}).to_string();
             store.insert(
@@ -298,7 +294,6 @@ mod tests {
         let tags = document.get_or_insert_map("task-card-tagsStore");
         let infos = document.get_or_insert_map("task-card-infoStore");
         {
-            // imperative: yrs inserts through one `&mut` transaction
             let mut txn = document.transact_mut();
             let definition = json!({"id": "t1", "title": "Urgent"}).to_string();
             tags.insert(
@@ -333,15 +328,15 @@ mod tests {
         let document = Doc::new();
         let store = document.get_or_insert_map("reactionsStore");
         {
-            // imperative: yrs inserts through one `&mut` transaction
             let mut txn = document.transact_mut();
-            // imperative: yrs inserts through one `&mut` transaction
-            for (entry, target, reaction) in [
+            [
                 ("r1", "o1", "like"),
                 ("r2", "o1", "like"),
                 ("r3", "o1", "fire"),
                 ("r4", "o2", "like"),
-            ] {
+            ]
+            .into_iter()
+            .map(|(entry, target, reaction)| {
                 let fields =
                     json!({"id": entry, "targetId": target, "reactionId": reaction});
                 store.insert(
@@ -349,7 +344,8 @@ mod tests {
                     entry,
                     Any::from_json(&fields.to_string()).unwrap_or(Any::Null),
                 );
-            }
+            })
+            .for_each(drop);
         }
         let counts = Reactions::of(&document);
         let first = with_fields(ObjectKind::Sticker, json!({}));

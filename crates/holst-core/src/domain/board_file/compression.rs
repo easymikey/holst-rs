@@ -42,7 +42,6 @@ pub fn compressed(bytes: &[u8], compression: Compression) -> Result<Cow<'_, [u8]
 }
 
 fn gzip(bytes: &[u8]) -> Result<Vec<u8>> {
-    // imperative: the encoder writes through `&mut self`
     let mut encoder =
         GzEncoder::new(Vec::with_capacity(bytes.len() / 3), GzipLevel::default());
     encoder
@@ -69,7 +68,6 @@ fn gunzip(bytes: &[u8], limit: u64) -> Result<Vec<u8>> {
     let guess = u64::try_from(bytes.len().saturating_mul(4))
         .unwrap_or(limit)
         .min(limit);
-    // imperative: `read_to_end` fills a caller-owned buffer
     let mut out = Vec::with_capacity(usize::try_from(guess).unwrap_or_default());
     MultiGzDecoder::new(bytes)
         .take(limit.saturating_add(1))

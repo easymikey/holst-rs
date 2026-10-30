@@ -75,8 +75,8 @@ fn object_count(doc: &Doc) -> usize {
         .count()
 }
 
-/// Apply `board_file`, which holds `saved` objects, to the loaded `target`;
-/// encode what its server lacks.
+/// Applies `board_file`, holding `saved` objects, to `target`; encodes what the
+/// server lacks.
 ///
 /// # Errors
 /// [`crate::error::board_change::BoardChangeError::NotEmpty`] under
@@ -100,10 +100,8 @@ pub fn import_plan(
     }
 }
 
-/// Like [`import_plan`] under no limit, but every root of the document of
-/// `target` becomes exactly the saved one: what the saved state lacks is
-/// removed, what it holds is brought back, in one update. The update is a
-/// revert computed as the web client does it for a version restore.
+/// Like [`import_plan`] with no limit, but `target` becomes exactly the saved
+/// state.
 ///
 /// # Errors
 /// As [`decoded`].
@@ -136,10 +134,8 @@ fn applied(
     })
 }
 
-/// The update that takes `target` back to the saved state. The saved state
-/// gets what `target` has beyond it, and an undo over every root of both then
-/// takes that back: the items only `target` has are deleted and the ones it
-/// deleted come back.
+/// The update that takes `target` back to the saved state, as a version
+/// restore.
 fn reverted(target: &Doc, board_file: &[u8]) -> Result<Vec<u8>> {
     let saved = decoded(board_file)?;
     let current = target.transact().state_vector();
@@ -156,10 +152,10 @@ fn reverted(target: &Doc, board_file: &[u8]) -> Result<Vec<u8>> {
         })
         .collect();
     let mut undo = UndoManager::<()>::new();
-    // imperative: the scope grows through `&mut`
-    for name in roots {
-        undo.expand_scope(&saved, &saved.get_or_insert_map(name));
-    }
+    roots
+        .into_iter()
+        .map(|name| undo.expand_scope(&saved, &saved.get_or_insert_map(name)))
+        .for_each(drop);
     saved
         .transact_mut()
         .apply_update(Update::decode_v2(&newer)?)?;

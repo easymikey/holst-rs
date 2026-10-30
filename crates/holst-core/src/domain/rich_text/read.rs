@@ -22,8 +22,7 @@ struct Node {
     nested: Vec<Node>,
 }
 
-/// The Slate `nodes` (wrappers, or elements) as markdown. A mention is
-/// `@` and its user id: the name is not in the board.
+/// The Slate `nodes` as markdown; a mention is `@` and its user id.
 #[must_use]
 pub(crate) fn markdown(nodes: &Value) -> String {
     lines(&blocks_of(nodes)).join("\n")
@@ -118,8 +117,7 @@ fn kind_of(node: &Value) -> BlockKind {
     }
 }
 
-/// The inline nodes as pieces; neighbouring text of one set of marks is one
-/// piece.
+/// The inline nodes as pieces; neighbouring text with equal marks is one.
 fn pieces(children: &[Value]) -> Vec<Piece> {
     let found = children.iter().flat_map(|child| match type_of(child) {
         Some("link") => vec![Piece::Link(
@@ -180,38 +178,37 @@ fn is_empty(piece: &Piece) -> bool {
     matches!(piece, Piece::Text(text, _) if text.is_empty())
 }
 
-/// The lines of sibling blocks: a blank line between them, except between
-/// the items of one list. A numbered item without a number follows the last.
+/// The lines of sibling blocks, blank between them except within one list.
 fn lines(nodes: &[Node]) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let mut before: Option<(&Node, u32)> = None;
-    // imperative: a block's number and its separator depend on the one before
-    for node in nodes.iter().filter(|node| !blank(node)) {
-        let number = match (&node.kind, before) {
-            (BlockKind::Numbered(Some(number)), _) => *number,
-            (BlockKind::Numbered(None), Some((last, number)))
-                if matches!(last.kind, BlockKind::Numbered(_)) =>
-            {
-                number.saturating_add(1)
-            }
-            (BlockKind::Numbered(None), _) => 1,
-            _ => 0,
-        };
-        let joined = before.is_some_and(|(last, last_number)| {
-            is_item(&last.kind)
-                && is_item(&node.kind)
-                && matches!(last.kind, BlockKind::Numbered(_))
-                    == matches!(node.kind, BlockKind::Numbered(_))
-                && (!matches!(node.kind, BlockKind::Numbered(_))
-                    || number == last_number.saturating_add(1))
-        });
-        if before.is_some() && !joined {
-            out.push(String::new());
-        }
-        out.extend(block(node, number));
-        before = Some((node, number));
-    }
-    out
+    nodes
+        .iter()
+        .filter(|node| !blank(node))
+        .scan(None, |before: &mut Option<(&Node, u32)>, node| {
+            let previous = *before;
+            let number = match (&node.kind, previous) {
+                (BlockKind::Numbered(Some(number)), _) => *number,
+                (BlockKind::Numbered(None), Some((last, number)))
+                    if matches!(last.kind, BlockKind::Numbered(_)) =>
+                {
+                    number.saturating_add(1)
+                }
+                (BlockKind::Numbered(None), _) => 1,
+                _ => 0,
+            };
+            let joined = previous.is_some_and(|(last, last_number)| {
+                is_item(&last.kind)
+                    && is_item(&node.kind)
+                    && matches!(last.kind, BlockKind::Numbered(_))
+                        == matches!(node.kind, BlockKind::Numbered(_))
+                    && (!matches!(node.kind, BlockKind::Numbered(_))
+                        || number == last_number.saturating_add(1))
+            });
+            *before = Some((node, number));
+            let gap = previous.filter(|_| !joined).map(|_| String::new());
+            Some(gap.into_iter().chain(block(node, number)))
+        })
+        .flatten()
+        .collect()
 }
 
 fn block(node: &Node, number: u32) -> Vec<String> {
@@ -318,8 +315,7 @@ fn inline(pieces: &[Piece]) -> String {
         .collect()
 }
 
-/// `text` with its marks; the spaces at its edges stay outside the marks,
-/// which markdown needs.
+/// `text` with its marks; edge spaces stay outside them, as markdown needs.
 fn spanned(text: &str, marks: &BTreeSet<Mark>, start: bool) -> String {
     let blank_edge = |c: char| c != '\n' && c.is_whitespace();
     let core = text.trim_matches(blank_edge);
@@ -393,8 +389,7 @@ fn linked(url: &str, inner: &[Piece]) -> String {
     }
 }
 
-/// `text` with the characters that would start markdown escaped; `start`
-/// says it begins a line.
+/// `text` with markdown-starting characters escaped; `start`: begins a line.
 fn escaped(text: &str, start: bool) -> String {
     let chars: Vec<char> = text.chars().collect();
     let line_start = |at: usize| {

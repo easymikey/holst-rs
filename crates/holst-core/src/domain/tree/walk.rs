@@ -56,10 +56,8 @@ impl<'a> Siblings<'a> {
 
     fn visits(&self, root: Option<NodeIndex>) -> Vec<(NodeIndex, usize)> {
         let start = root.map_or(self.index.len(), usize::from);
-        // imperative: the stack is the state of the walk.
         let mut stack: Vec<(NodeIndex, usize)> =
             self.of(start).rev().map(|node| (node, 0)).collect();
-        // imperative: `seen` is the state of the walk.
         let mut seen = vec![false; self.index.len()];
         std::iter::from_fn(|| {
             let (node, depth) = stack.pop()?;

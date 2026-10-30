@@ -170,9 +170,7 @@ pub fn short_id(seed: &str, taken: impl Fn(&str) -> bool) -> String {
         .unwrap_or_default()
 }
 
-/// Every thread of the store, oldest first (equal times by id); replies are
-/// grouped under their thread, and an entry that is neither a thread nor a
-/// reply of one is left out.
+/// Every thread of the store with its replies, oldest first, ties by id.
 #[must_use]
 pub fn threads(doc: &Doc) -> Vec<Thread> {
     let all = entries(doc);
@@ -284,10 +282,7 @@ pub fn author_of(doc: &Doc, user: &str) -> Option<u32> {
     known_author(&doc.transact(), &users, user)
 }
 
-/// Applies `change` to the store of `doc` in one transaction and encodes just
-/// that transaction as a v2 update. `ids` numbers the blocks of a new text.
-/// The number of an author or resolver is taken from the room's `usersIds`,
-/// and registered there when the user has none.
+/// Applies `change` in one transaction and encodes it as a v2 update.
 ///
 /// # Errors
 /// [`LookupError`] of a thread the store does not hold.
@@ -364,10 +359,10 @@ fn write(
                 })
                 .chain([thread.clone()])
                 .collect();
-            // imperative: each removal needs the transaction
-            for key in &doomed {
-                store.remove(txn, key);
-            }
+            doomed
+                .iter()
+                .map(|key| store.remove(txn, key))
+                .for_each(drop);
             Ok(())
         }
         CommentChange::DeleteReply { thread, reply } => {
@@ -483,8 +478,8 @@ fn target(anchor: &ThreadAnchor) -> Value {
     }
 }
 
-/// Inserts a message entry. Its mentions are a `Y.Array`, empty: the web
-/// client's side stores keep every array of primitives as one.
+/// Inserts a message entry; mentions are an empty `Y.Array`, as the web client
+/// keeps them.
 fn put(
     store: &MapRef,
     txn: &mut TransactionMut<'_>,
@@ -518,8 +513,7 @@ fn parent_of<T: ReadTxn>(txn: &T, entry: &MapRef) -> Option<String> {
     }
 }
 
-/// When one person read one thread, as `comment/thread_list` lists it. A mark
-/// may point at a thread deleted since.
+/// When one person read one thread, as `comment/thread_list` lists it.
 ///
 /// ```
 /// use holst_core::domain::board::comment::ReadMark;
