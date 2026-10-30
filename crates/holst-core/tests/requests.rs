@@ -1324,7 +1324,11 @@ impl World {
         let text = self
             .ids
             .iter()
-            .fold(given.to_string(), |text, (name, id)| text.replace(name, id));
+            // escaped as JSON: a Windows path holds backslashes
+            .fold(given.to_string(), |text, (name, id)| {
+                let quoted = Value::from(id.as_str()).to_string();
+                text.replace(name, quoted.trim_matches('"'))
+            });
         Ok(serde_json::from_str(&text)?)
     }
 
