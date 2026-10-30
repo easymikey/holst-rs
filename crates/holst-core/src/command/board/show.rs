@@ -330,7 +330,6 @@ async fn board(
         sharing: channel
             .as_object()
             .filter(|_| args.with.contains(&ShowPart::Sharing))
-            .cloned()
             .map(Sharing::from),
         id,
     })

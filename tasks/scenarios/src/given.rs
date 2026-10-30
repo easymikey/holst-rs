@@ -36,9 +36,10 @@ enum SavedLogin {
 }
 
 impl SavedLogin {
-    fn session_file(self) -> Option<String> {
+    fn session_file(self, base_url: &str) -> Option<String> {
         let saved = |token: &str, cookies: &str| {
-            json!({ "token": token, "cookies": cookies }).to_string()
+            json!({ "token": token, "cookies": cookies, "base_url": base_url })
+                .to_string()
         };
         match self {
             SavedLogin::Absent => None,
@@ -431,8 +432,9 @@ impl Given {
     /// As [`ScenarioError`].
     pub async fn start(self) -> Result<Holst, ScenarioError> {
         let directory = TestDirectory::create()?;
+        let fake = Fake::start(self.fixture).await?;
         self.login
-            .session_file()
+            .session_file(fake.base_url())
             .map(|text| std::fs::write(directory.join("holst").join("session"), text))
             .transpose()?;
         self.local_files.iter().try_for_each(|(path, bytes)| {
@@ -442,7 +444,6 @@ impl Given {
             }
             std::fs::write(file, bytes)
         })?;
-        let fake = Fake::start(self.fixture).await?;
         Ok(Holst::new(fake, directory))
     }
 }

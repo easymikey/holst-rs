@@ -2,7 +2,7 @@
 
 use crate::{
     fake,
-    support::{TestResult, assert_no_noise, holst, holst_in, home, stderr},
+    support::{TestResult, accepted, assert_no_noise, holst, holst_in, home, stderr},
 };
 
 #[test]
@@ -50,7 +50,7 @@ fn second_login_terminates_the_first_session_only() -> TestResult {
     assert!(text.contains("│  previous session terminated"), "{text}");
     let alive = holst_in(&base, &dir, &["auth", "status"], "")?;
     assert_eq!(alive.status.code(), Some(0), "{}", stderr(&alive));
-    let gone = holst(&base, Some(&old), &["auth", "status"], "")?;
+    let gone = holst_in(&base, &home(Some(&old))?, &["auth", "status"], "")?;
     assert_eq!(gone.status.code(), Some(77), "{}", stderr(&gone));
     Ok(())
 }
@@ -132,5 +132,49 @@ fn a_new_holst_home_is_private() -> TestResult {
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     let mode = std::fs::metadata(&dir)?.permissions().mode() & 0o777;
     assert_eq!(mode, 0o700, "the folder of the login is open to others");
+    Ok(())
+}
+
+#[test]
+fn a_login_saved_for_one_server_is_not_sent_to_another() -> TestResult {
+    let first = fake::start()?.base_url().to_owned();
+    let second = fake::start()?.base_url().to_owned();
+    let dir = home(None)?;
+    let login = holst_in(
+        &first,
+        &dir,
+        &["auth", "login"],
+        "mock@example.com\n123456\n",
+    )?;
+    assert_eq!(login.status.code(), Some(0), "{}", stderr(&login));
+    let other = holst_in(&second, &dir, &["auth", "status"], "")?;
+    let text = stderr(&other);
+    assert_eq!(other.status.code(), Some(77), "{text}");
+    assert!(
+        text.contains(&format!("the saved login is for {first}, not {second}")),
+        "{text}"
+    );
+    assert!(
+        text.contains("hint: run `holst auth login` to log in again"),
+        "{text}"
+    );
+    let same = holst_in(&first, &dir, &["auth", "status"], "")?;
+    assert_eq!(same.status.code(), Some(0), "{}", stderr(&same));
+    Ok(())
+}
+
+#[test]
+fn a_login_saved_by_0_2_0_is_for_the_production_server() -> TestResult {
+    let base = fake::start()?.base_url().to_owned();
+    let dir = home(Some(&accepted()))?;
+    let out = holst_in(&base, &dir, &["auth", "status"], "")?;
+    let text = stderr(&out);
+    assert_eq!(out.status.code(), Some(77), "{text}");
+    assert!(
+        text.contains(&format!(
+            "the saved login is for https://app.holst.so, not {base}"
+        )),
+        "{text}"
+    );
     Ok(())
 }

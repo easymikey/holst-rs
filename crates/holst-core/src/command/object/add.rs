@@ -990,6 +990,7 @@ mod tests {
         },
         effect::{http::HttpResponse, settings::CacheSettings},
         error::lookup::{LookupError, LookupMiss},
+        fake::png,
         protocol::hud::{DocumentResponse, UpdatePayload},
         remote::{
             client::{
@@ -1327,18 +1328,6 @@ mod tests {
             ["kept as text: quote", "no preview: https://example.test/x"]
         );
         Ok(())
-    }
-
-    /// A PNG header of `width` by `height` pixels.
-    fn png(width: u32, height: u32) -> Vec<u8> {
-        [
-            &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13][..],
-            b"IHDR",
-            &width.to_be_bytes(),
-            &height.to_be_bytes(),
-            &[8, 2, 0, 0, 0],
-        ]
-        .concat()
     }
 
     /// A new file in a folder of its own: its path.

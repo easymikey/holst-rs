@@ -6,12 +6,17 @@
     reason = "the login folder of a test is made and removed here"
 )]
 
-use std::{ffi::OsString, io, path::PathBuf};
+use std::{
+    ffi::OsString,
+    io,
+    path::{Path, PathBuf},
+};
 
 use holst_core::{
     command::account::SessionCheck,
     domain::session::Session,
     effect::settings::Settings,
+    error::hint::Surface,
     fake::{Fake, Fixture},
 };
 use holst_form::{
@@ -60,22 +65,26 @@ impl Drop for Rig {
     }
 }
 
+fn settings_at(home: &Path, base: &str) -> Result<Settings, holst_core::Error> {
+    let variables = [
+        ("HOLST_HOME", OsString::from(home)),
+        ("HOLST_BASE_URL", OsString::from(base)),
+    ];
+    Settings::from_variables(|name| {
+        variables
+            .iter()
+            .find(|(key, _)| *key == name)
+            .map(|(_, value)| value.clone())
+    })
+}
+
 async fn rig(test: &str) -> Result<Rig, Trouble> {
     let fake = Fake::start(Fixture::default().workspace("Team")).await?;
     let home = std::env::temp_dir()
         .join(format!("holst-mcp-setup-{test}-{}", std::process::id()));
     std::fs::remove_dir_all(&home).unwrap_or_default();
     std::fs::create_dir_all(&home)?;
-    let variables = [
-        ("HOLST_HOME", OsString::from(&home)),
-        ("HOLST_BASE_URL", OsString::from(fake.base_url())),
-    ];
-    let settings = Settings::from_variables(|name| {
-        variables
-            .iter()
-            .find(|(key, _)| *key == name)
-            .map(|(_, value)| value.clone())
-    })?;
+    let settings = settings_at(&home, fake.base_url())?;
     Ok(Rig {
         _fake: fake,
         backend: SystemBackend::new(settings),
@@ -303,6 +312,34 @@ async fn a_second_setup_ends_the_first_server_session() -> Result<(), Trouble> {
     assert!(
         matches!(check, SessionCheck::Revoked(_)),
         "the replaced login is still alive on the server: {check:?}"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_login_saved_for_another_server_is_refused_to_the_agent()
+-> Result<(), Trouble> {
+    let rig = rig("other-server").await?;
+    rig.setup(&[EMAIL, "123456"]).await.0?;
+    let staging =
+        SystemBackend::new(settings_at(&rig.home, "https://staging.example")?);
+    let saved = staging.load()?.map(|(session, _)| session);
+    let refused = saved
+        .map(|session| staging.connect(session))
+        .and_then(Result::err);
+    let advice = refused
+        .as_ref()
+        .and_then(holst_core::Error::hint)
+        .map(|hint| hint.on(Surface::Mcp).to_string());
+    assert!(refused.is_some_and(|err| {
+        err.to_string()
+            .starts_with("the saved login is for http://")
+    }));
+    assert_eq!(
+        advice.as_deref(),
+        Some(
+            "ask the user to run `holst-mcp setup` in a terminal to log in again, then call again"
+        )
     );
     Ok(())
 }

@@ -79,10 +79,10 @@ pub fn listed_area<'a>(
         }),
         area @ (Area::Rectangle(_) | Area::Frame(_) | Area::Objects(_)) => {
             let scene = Scene::new(objects);
-            let Covered {
-                rectangle,
-                objects: shown,
-            } = covered(&scene, area, padding)?;
+            let padding =
+                padding.map_or_else(|| area.default_padding(), BoardLength::get);
+            let rectangle = scene.area_rectangle(area, padding)?;
+            let shown = scene.within(&rectangle);
             let target = scene.link_target(area, &rectangle);
             Ok(ListedArea {
                 rectangle: Some(rectangle),
@@ -91,26 +91,6 @@ pub fn listed_area<'a>(
             })
         }
     }
-}
-
-/// The area a selection covers and the objects in it, in reading order.
-#[derive(Debug, Clone, PartialEq)]
-struct Covered<'a> {
-    rectangle: Rectangle,
-    objects: Vec<&'a Object>,
-}
-
-fn covered<'a>(
-    scene: &Scene<'a>,
-    area: &Area,
-    padding: Option<BoardLength>,
-) -> Result<Covered<'a>> {
-    let padding = padding.map_or_else(|| area.default_padding(), BoardLength::get);
-    let rectangle = scene.area_rectangle(area, padding)?;
-    Ok(Covered {
-        objects: scene.within(&rectangle),
-        rectangle,
-    })
 }
 
 #[cfg(test)]

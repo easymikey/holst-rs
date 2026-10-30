@@ -29,7 +29,17 @@ pub(crate) async fn logout(
     run: &RunSettings,
     format: OutputFormat,
 ) -> Result<()> {
-    let saved = saved_client(run).await;
+    let loaded = run.load().await;
+    let ended = loaded
+        .as_ref()
+        .ok()
+        .and_then(Option::as_ref)
+        .map(|(session, _)| session.clone());
+    let saved = loaded.and_then(|loaded| {
+        loaded
+            .map(|(session, _)| run.client(Some(session)))
+            .transpose()
+    });
     let account = whose_cache(
         logout.local_only,
         saved.as_ref().ok().and_then(Option::as_ref),
@@ -37,7 +47,7 @@ pub(crate) async fn logout(
     .await;
     let server = end_session(logout.local_only, saved).await;
     // Forget before printing: a closed stdout must not leave the session on disk.
-    let cleared = run.clear().await?;
+    let cleared = run.clear(ended).await?;
     forget_cache(run, account.as_deref());
     let (gone, kept) = forgotten(cleared);
     let logged_out = LogoutReport {
@@ -105,14 +115,6 @@ async fn whose_cache(scope: LogoutMode, saved: Option<&Client>) -> Option<String
             account::known_account_id(client).await
         }
     }
-}
-
-async fn saved_client(run: &RunSettings) -> Result<Option<Client>> {
-    run.load().await.and_then(|loaded| {
-        loaded
-            .map(|(session, _)| run.client(Some(session)))
-            .transpose()
-    })
 }
 
 async fn end_session(

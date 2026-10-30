@@ -164,7 +164,7 @@ impl SearchHit {
 pub struct NameMatch {
     pub id: String,
     pub name: String,
-    pub kind: &'static str,
+    pub kind: NodeKind,
     pub workspace: String,
     /// The folders it is in, joined with `/`; empty at the root.
     pub path: String,
@@ -501,7 +501,7 @@ fn name_match(
         link: (kind == NodeKind::Board).then(|| client.board_link(&id)),
         id,
         name: index.name(hit.node).to_owned(),
-        kind: kind.as_str(),
+        kind,
         workspace: workspace.name.clone(),
         path: index.folder_path(hit.node),
         in_trash: index.in_trash(hit.node),

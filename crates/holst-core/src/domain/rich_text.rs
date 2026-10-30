@@ -602,8 +602,7 @@ impl Reader<'_> {
     }
 }
 
-/// `text` as a run with the marks `open` asks for, joined to the last run
-/// when the marks and the link are the same.
+/// `text` as a run with the marks `open` asks for, joined to the last run.
 fn push(runs: &mut Vec<Run>, open: &[Span], text: &str, code: bool) {
     let marks: BTreeSet<Mark> = [
         (open.contains(&Span::Bold), Mark::Bold),
@@ -622,15 +621,23 @@ fn push(runs: &mut Vec<Run>, open: &[Span], text: &str, code: bool) {
             Span::Bold | Span::Italic | Span::Strike => None,
         })
         .filter(|url| !url.is_empty());
-    match runs.last_mut() {
-        Some(last) if last.marks == marks && last.link == link => {
-            last.text.push_str(text);
-        }
-        Some(_) | None => runs.push(Run {
+    joined(
+        runs,
+        Run {
             text: text.to_owned(),
             marks,
             link,
-        }),
+        },
+    );
+}
+
+/// `run` joined to the last run when the marks and the link are the same.
+fn joined(runs: &mut Vec<Run>, run: Run) {
+    match runs.last_mut() {
+        Some(last) if last.marks == run.marks && last.link == run.link => {
+            last.text.push_str(&run.text);
+        }
+        Some(_) | None => runs.push(run),
     }
 }
 
@@ -733,16 +740,10 @@ fn without_code(runs: Vec<Run>, kept: &mut BTreeSet<Kept>) -> Vec<Run> {
 }
 
 fn merged(runs: Vec<Run>) -> Vec<Run> {
-    runs.into_iter()
-        .fold(Vec::new(), |mut joined: Vec<Run>, run| {
-            match joined.last_mut() {
-                Some(last) if last.marks == run.marks && last.link == run.link => {
-                    last.text.push_str(&run.text);
-                }
-                Some(_) | None => joined.push(run),
-            }
-            joined
-        })
+    runs.into_iter().fold(Vec::new(), |mut runs, run| {
+        joined(&mut runs, run);
+        runs
+    })
 }
 
 #[cfg(test)]

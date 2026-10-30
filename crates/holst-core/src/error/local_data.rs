@@ -118,9 +118,6 @@ pub enum LocalDataError {
     #[error("the saved login changed while this command ran, so it was kept")]
     LoginReplaced,
 
-    #[error("the keychain keeps nothing between runs")]
-    KeychainVolatile,
-
     #[cfg(not(target_os = "macos"))]
     #[error("no Secret Service found (gnome-keyring or KWallet)")]
     NoSecretService(#[source] keyring::Error),
@@ -176,8 +173,7 @@ impl LocalDataError {
             | LocalDataError::IndexCorrupt { .. }
             | LocalDataError::IndexEncode(_)
             | LocalDataError::NoHome
-            | LocalDataError::LoginReplaced
-            | LocalDataError::KeychainVolatile => None,
+            | LocalDataError::LoginReplaced => None,
         }
     }
 
@@ -222,14 +218,13 @@ impl LocalDataError {
             | LocalDataError::IndexCorrupt { .. }
             | LocalDataError::IndexEncode(_)
             | LocalDataError::NoHome
-            | LocalDataError::LoginReplaced
-            | LocalDataError::KeychainVolatile => None,
+            | LocalDataError::LoginReplaced => None,
         }
     }
 }
 
 #[cfg(not(target_os = "macos"))]
-fn platform_cause(err: &keyring::Error) -> impl fmt::Display + '_ {
+pub(crate) fn platform_cause(err: &keyring::Error) -> impl fmt::Display + '_ {
     fmt::from_fn(move |f| {
         if let keyring::Error::PlatformFailure(cause) = err {
             fmt::Display::fmt(cause, f)
@@ -331,7 +326,6 @@ pub(super) mod tests {
             ),
             (LocalDataError::SavedLoginCorrupt, Some(Hint::LoginAgain)),
             (LocalDataError::LoginReplaced, None),
-            (LocalDataError::KeychainVolatile, None),
             (
                 LocalDataError::Keychain(KeychainError::Cancelled),
                 Some(Hint::UnlockKeychain),

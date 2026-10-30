@@ -27,6 +27,7 @@ use holst_core::{
     domain::{account::Workspace, tree::name_index::build::NameIndex},
     effect::cache::trust::Unverified,
 };
+use itertools::Itertools as _;
 
 use crate::memory::{
     alias::{Aliases, UnknownAlias, alias_text},
@@ -61,6 +62,26 @@ pub(crate) struct McpMemory {
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The ids to evict, least recently used first, until `total` fits `capacity`;
+/// never `keep`.
+fn least_used<'a>(
+    entries: impl Iterator<Item = (&'a String, u64, u64)>,
+    keep: &str,
+    total: u64,
+    capacity: u64,
+) -> Vec<String> {
+    entries
+        .filter(|&(id, ..)| id != keep)
+        .sorted_unstable_by_key(|&(_, used, _)| used)
+        .scan(total, |total, (id, _, weight)| {
+            (*total > capacity).then(|| {
+                *total = total.saturating_sub(weight);
+                id.clone()
+            })
+        })
+        .collect()
 }
 
 impl McpMemory {

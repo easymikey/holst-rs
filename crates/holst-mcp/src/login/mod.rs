@@ -6,26 +6,18 @@ use std::sync::{Arc, atomic::AtomicU64};
 
 use arc_swap::ArcSwap;
 use holst_core::{
-    domain::session::{Session, SessionStatus},
+    domain::session::Session,
     effect::clock::Clock,
     remote::client::Client,
     storage::session_store::{LoginSaveReport, SessionStoreKind},
 };
+pub(crate) use machine::{LoginPlan, LoginState, ReadyLogin};
 use tokio::sync::Mutex;
 
 use crate::{
     error::{Error, Result},
-    login::{
-        machine::{LoginClient, Milliseconds},
-        store::Backend,
-    },
+    login::{machine::Milliseconds, store::Backend},
 };
-
-pub(crate) type LoginState = machine::LoginState<Client>;
-
-pub(crate) type LoginPlan = machine::LoginPlan<Client>;
-
-pub(crate) type ReadyLogin = machine::ReadyLogin<Client>;
 
 impl LoginState {
     /// The successes the ready login's client has had.
@@ -34,14 +26,6 @@ impl LoginState {
             Self::Ready(ready) => ready.client.answered(),
             Self::Missing | Self::Revoked(_) => 0,
         }
-    }
-}
-
-impl LoginClient for Client {
-    type Store = SessionStoreKind;
-
-    fn status(&self) -> SessionStatus {
-        Self::status(self)
     }
 }
 

@@ -2,7 +2,7 @@
 
 use std::str::FromStr;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use strum::{Display, EnumIter, IntoStaticStr};
 
@@ -82,8 +82,11 @@ impl CreationStamp {
 /// assert_eq!(NodeKind::from("folder"), NodeKind::Folder);
 /// assert_eq!(NodeKind::from("sticker"), NodeKind::Other);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, IntoStaticStr, EnumIter)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Display, IntoStaticStr, EnumIter, Serialize,
+)]
 #[strum(serialize_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum NodeKind {
     Board,
     Folder,

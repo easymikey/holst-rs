@@ -16,7 +16,7 @@ use crate::{
         account::Workspace,
         id::WorkspaceId,
         lookup::choice,
-        node::NewParent,
+        node::{NewParent, NodeKind},
         tree::{
             self,
             name_index::build::{NameIndex, NodeIndex},
@@ -89,7 +89,7 @@ pub struct ListedNode {
     pub id: String,
     /// Empty for a recent board no tree holds.
     pub name: String,
-    pub kind: &'static str,
+    pub kind: NodeKind,
     pub depth: usize,
     pub in_trash: bool,
 }
@@ -281,7 +281,7 @@ fn listed(
         workspace: Some(workspace.id.clone()),
         id: index.id(node),
         name: index.name(node).to_owned(),
-        kind: index.kind(node).as_str(),
+        kind: index.kind(node),
         depth,
         in_trash: index.in_trash(node),
     }
@@ -295,7 +295,7 @@ async fn favorites(client: &Client, workspace: &Workspace) -> Result<Vec<ListedN
             workspace: Some(workspace.id.clone()),
             id: node.id,
             name: node.name,
-            kind: node.kind.as_str(),
+            kind: node.kind,
             depth: 0,
             in_trash: node.in_trash,
         })
@@ -379,7 +379,7 @@ fn recent_node(trees: &[(Workspace, NameIndex)], id: &str) -> ListedNode {
             workspace: None,
             id: id.to_owned(),
             name: String::new(),
-            kind: crate::domain::node::NodeKind::Other.as_str(),
+            kind: NodeKind::Other,
             depth: 0,
             in_trash: false,
         })
@@ -401,6 +401,7 @@ mod tests {
             fixture::uuid,
             table::parse,
         },
+        domain::node::NodeKind,
         remote::client::fake::{on_fake, reply, stored},
     };
 
@@ -475,7 +476,10 @@ mod tests {
                     "{}{}{}",
                     "  ".repeat(node.depth),
                     node.name,
-                    if node.kind == "folder" { "/" } else { "" }
+                    match node.kind {
+                        NodeKind::Folder => "/",
+                        NodeKind::Board | NodeKind::Other => "",
+                    }
                 )
             })
             .collect()

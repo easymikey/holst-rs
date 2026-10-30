@@ -10,6 +10,7 @@ use holst_core::{
         storage::{self, StorageVerb},
         table,
     },
+    domain::session::Session,
     effect::{clock::Clock, settings::SessionLocation},
     storage::{local_data::DataRoots, session_store::SessionStoreKind},
     system::clock::SystemClock,
@@ -18,18 +19,29 @@ use serde_json::{Map, Value};
 
 use crate::{
     error::{Error, Result},
-    output::OutputFormat,
+    output::{self, OutputFormat},
     run::{
         RunSettings,
         local_data::{data_roots, forgotten},
     },
 };
 
+/// The store the saved login was read from; a failed read goes to `warn`.
+fn store_read(
+    loaded: Result<Option<(Session, SessionStoreKind)>>,
+    warn: impl FnOnce(&Error),
+) -> Option<SessionStoreKind> {
+    loaded
+        .inspect_err(warn)
+        .ok()
+        .flatten()
+        .map(|(_, kind)| kind)
+}
+
 async fn roots(run: &RunSettings) -> DataRoots {
+    let warn = |err: &Error| output::warn_with("the saved login was not read", err);
     let store = match run.location() {
-        SessionLocation::System { .. } => {
-            run.load().await.ok().flatten().map(|(_, kind)| kind)
-        }
+        SessionLocation::System { .. } => store_read(run.load().await, warn),
         SessionLocation::Dir(_) => None,
     };
     data_roots(run, store)
@@ -52,7 +64,7 @@ pub(crate) async fn run(
             let args = table::parse(arguments)?;
             let cleaned = storage::clean(&roots, (run.cache(), &clock), &args);
             let forgot = if cleaned.forgets_login() {
-                Some(forgotten(run.clear().await?))
+                Some(forgotten(run.clear(None).await?))
             } else {
                 None
             };

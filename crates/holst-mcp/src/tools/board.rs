@@ -180,10 +180,9 @@ impl McpServer {
         } else {
             printable(&node.name)
         };
-        let slash = if node.kind == NodeKind::Folder.as_str() {
-            "/"
-        } else {
-            ""
+        let slash = match node.kind {
+            NodeKind::Folder => "/",
+            NodeKind::Board | NodeKind::Other => "",
         };
         let trash = if node.in_trash { " [in trash]" } else { "" };
         format!(

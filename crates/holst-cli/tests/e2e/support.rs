@@ -22,6 +22,11 @@ pub(crate) fn accepted() -> String {
     )
 }
 
+/// A saved JSON login as the run of `base` saves it; other text is kept.
+pub(crate) fn saved_for(base: &str, login: &str) -> String {
+    login.replacen('{', &format!(r#"{{"base_url":"{base}","#), 1)
+}
+
 pub(crate) fn home(saved: Option<&str>) -> std::io::Result<PathBuf> {
     static RUN: AtomicU32 = AtomicU32::new(0);
     let n = RUN.fetch_add(1, Ordering::Relaxed);
@@ -40,7 +45,12 @@ pub(crate) fn holst(
     flags: &[&str],
     stdin: &str,
 ) -> std::io::Result<Output> {
-    holst_in(base, &home(saved)?, flags, stdin)
+    holst_in(
+        base,
+        &home(saved.map(|login| saved_for(base, login)).as_deref())?,
+        flags,
+        stdin,
+    )
 }
 
 pub(crate) fn holst_in(

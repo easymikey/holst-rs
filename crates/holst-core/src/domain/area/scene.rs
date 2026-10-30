@@ -195,7 +195,7 @@ impl<'a> Scene<'a> {
             | ObjectKind::Link
             | ObjectKind::Other(_) => self
                 .rectangle_of(object)
-                .map(|rectangle| rotated(rectangle, rotation(object))),
+                .map(|rectangle| rotated(rectangle, object.rotation)),
         };
         covered.and_then(Rectangle::sane)
     }
@@ -282,7 +282,7 @@ impl<'a> Scene<'a> {
         };
         let own = || {
             self.rectangle_of(object)
-                .map(|own| rotated(own, rotation(object)))
+                .map(|own| rotated(own, object.rotation))
                 .and_then(Rectangle::sane)
         };
         match &object.kind {
@@ -448,12 +448,6 @@ pub fn drawn_scale(object: &Object) -> f64 {
     number(&object.fields, document::SCALE)
         .filter(|scale| *scale > 0.0)
         .unwrap_or(unset)
-}
-
-/// Rotation in degrees, clockwise about the stored position.
-#[must_use]
-pub fn rotation(object: &Object) -> f64 {
-    object.rotation
 }
 
 /// The `strokeWidth` field of an arrow or a shape's outline, 2 unless set.

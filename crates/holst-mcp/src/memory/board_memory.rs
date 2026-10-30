@@ -14,7 +14,8 @@ use holst_core::{
         settings::DEFAULT_CACHE_TRUST_MILLIS,
     },
 };
-use itertools::Itertools as _;
+
+use super::least_used;
 
 pub(crate) const BOARD_MEMORY_BYTES: u64 = 128 << 20;
 
@@ -234,24 +235,14 @@ impl BoardMemory {
     }
 
     fn evict(&mut self, keep: &str, capacity: u64) {
-        let over = self.total > capacity;
-        let by_use: Vec<(u64, u64, String)> = self
+        let entries = self
             .boards
             .iter()
-            .filter(|(id, _)| over && id.as_str() != keep)
-            .map(|(id, entry)| (entry.used, entry.weight, id.clone()))
-            .sorted_unstable_by_key(|&(used, ..)| used)
-            .collect();
-        let total = self.total;
-        by_use
+            .map(|(id, entry)| (id, entry.used, entry.weight));
+        least_used(entries, keep, self.total, capacity)
             .into_iter()
-            .scan(total, |total, (_, weight, id)| {
-                (*total > capacity).then(|| {
-                    *total = total.saturating_sub(weight);
-                    id
-                })
-            })
-            .for_each(|id| drop(self.remove(&id)));
+            .map(|id| self.remove(&id))
+            .for_each(drop);
     }
 }
 

@@ -108,9 +108,8 @@ async fn log_in<T: Terminal>(
             .map(|(session, _)| session),
         SaveLogin::Skip => None,
     };
-    let previous = previous
-        .map(|session| run.client(Some(session)))
-        .transpose()?;
+    // One saved for another server is not sent there to be ended.
+    let previous = previous.and_then(|session| run.client(Some(session)).ok());
     let client = log_in_by_email(form, run.client(None)?, login.email).await?;
     form.wait(
         "Checking the login",

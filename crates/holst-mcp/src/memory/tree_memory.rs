@@ -7,7 +7,8 @@ use std::{
 };
 
 use holst_core::domain::{account::Workspace, tree::name_index::build::NameIndex};
-use itertools::Itertools as _;
+
+use super::least_used;
 
 pub(super) const TREE_TRUST_WINDOW: Duration = Duration::from_mins(1);
 pub(super) const TREE_MEMORY_BYTES: u64 = 64 << 20;
@@ -87,22 +88,14 @@ impl TreeMemory {
     }
 
     fn evict(&mut self, keep: &str, capacity: u64) {
-        let total: u64 = self.trees.values().map(|tree| tree.weight).sum();
-        let oldest_first: Vec<(u64, u64, String)> = self
+        let total = self.trees.values().map(|tree| tree.weight).sum();
+        let entries = self
             .trees
             .iter()
-            .filter(|(id, _)| id.as_str() != keep)
-            .map(|(id, tree)| (tree.used, tree.weight, id.clone()))
-            .sorted_unstable_by_key(|&(used, ..)| used)
-            .collect();
-        oldest_first
+            .map(|(id, tree)| (id, tree.used, tree.weight));
+        least_used(entries, keep, total, capacity)
             .into_iter()
-            .scan(total, |total, (_, weight, id)| {
-                (*total > capacity).then(|| {
-                    *total = total.saturating_sub(weight);
-                    id
-                })
-            })
-            .for_each(|id| drop(self.trees.remove(&id)));
+            .map(|id| self.trees.remove(&id))
+            .for_each(drop);
     }
 }

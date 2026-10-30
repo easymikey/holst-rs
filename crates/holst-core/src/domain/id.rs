@@ -43,7 +43,8 @@ impl BoardId {
             link => {
                 let end = memchr::memchr2(b'?', b'#', link.as_bytes());
                 let path = end.and_then(|end| link.get(..end)).unwrap_or(link);
-                in_path(path).or_else(|| in_query(link))
+                in_path(path)
+                    .or_else(|| query_value(link, "boardId").filter(|id| is_uuid(id)))
             }
         }
         .map(Self::lowercase)
@@ -266,13 +267,12 @@ fn in_path(path: &str) -> Option<&str> {
     })
 }
 
-fn in_query(link: &str) -> Option<&str> {
+fn query_value<'a>(link: &'a str, key: &str) -> Option<&'a str> {
     let query = link.split_once('?')?.1;
     let query = query.split('#').next().unwrap_or(query);
     query
         .split('&')
-        .find_map(|pair| pair.strip_prefix("boardId="))
-        .filter(|id| is_uuid(id))
+        .find_map(|pair| pair.strip_prefix(key)?.strip_prefix('='))
 }
 
 /// Returns the `objectId=` of a link, as written, if it has a usable one.
@@ -290,12 +290,7 @@ fn in_query(link: &str) -> Option<&str> {
 /// ```
 #[must_use]
 pub fn object_in(link: &str) -> Option<ObjectId> {
-    let query = link.trim().split_once('?')?.1;
-    let query = query.split('#').next().unwrap_or(query);
-    query
-        .split('&')
-        .find_map(|pair| pair.strip_prefix("objectId="))
-        .and_then(|id| id.parse().ok())
+    query_value(link.trim(), "objectId").and_then(|id| id.parse().ok())
 }
 
 fn segment_uuid(rest: &str) -> Option<&str> {
@@ -313,13 +308,7 @@ impl FromStr for BoardId {
     ///
     /// [`crate::error::input::InputError::NotBoardId`] for anything else.
     fn from_str(raw: &str) -> Result<Self> {
-        if is_uuid(raw) {
-            Ok(Self::lowercase(raw))
-        } else {
-            Err(Error::Input(InputError::NotBoardId {
-                raw: raw.to_owned(),
-            }))
-        }
+        parse_uuid(raw, |raw| InputError::NotBoardId { raw }).map(Self)
     }
 }
 

@@ -66,10 +66,9 @@ fn name_line(found: &NameMatch) -> String {
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join("/");
-    let slash = if found.kind == NodeKind::Folder.as_str() {
-        "/"
-    } else {
-        ""
+    let slash = match found.kind {
+        NodeKind::Folder => "/",
+        NodeKind::Board | NodeKind::Other => "",
     };
     let trash = if found.in_trash { " (trash)" } else { "" };
     let link = found
@@ -134,7 +133,10 @@ fn notes(found: &Found) {
 
 #[cfg(test)]
 mod tests {
-    use holst_core::command::search::{Found, NameMatch, SearchHit, TextMatch};
+    use holst_core::{
+        command::search::{Found, NameMatch, SearchHit, TextMatch},
+        domain::node::NodeKind,
+    };
 
     use crate::{
         commands::search::{name_line, skipped_workspace, text, text_line},
@@ -186,7 +188,7 @@ mod tests {
         let board = NameMatch {
             id: "b1".to_owned(),
             name: "Road map".to_owned(),
-            kind: "board",
+            kind: NodeKind::Board,
             workspace: "Team".to_owned(),
             path: "Q3".to_owned(),
             in_trash: true,
@@ -194,7 +196,7 @@ mod tests {
             score: 900,
         };
         let folder = NameMatch {
-            kind: "folder",
+            kind: NodeKind::Folder,
             path: String::new(),
             in_trash: false,
             link: None,

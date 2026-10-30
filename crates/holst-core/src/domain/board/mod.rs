@@ -13,7 +13,7 @@ pub mod state_vector;
 use std::collections::HashMap;
 
 use itertools::Itertools as _;
-use serde::Serialize;
+use serde::{Deserialize as _, Serialize};
 use serde_json::Value;
 use yrs::{
     Any,
@@ -655,7 +655,7 @@ pub(crate) fn json(any: &Any) -> Option<Value> {
 }
 
 pub(crate) fn any(value: &Value) -> Result<Any> {
-    Ok(serde_json::from_value(value.clone())?)
+    Ok(Any::deserialize(value)?)
 }
 
 /// Writes `pairs` as a new map at `key` of `parent`.

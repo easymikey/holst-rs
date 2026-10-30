@@ -132,10 +132,15 @@ impl SessionLocation {
         resave_in(starting_at(&borrowed(&self.stores()), from), session)
     }
 
-    /// Remove the login from every store; what each one found. A lock that
-    /// cannot be created does not stop the removal; one that stays busy does.
+    /// Remove the login from every store, or only from those still holding
+    /// `ended` when given (a login saved meanwhile stays); what each one
+    /// found. A lock that cannot be created does not stop the removal; one
+    /// that stays busy does.
     #[must_use]
-    pub fn clear(&self) -> Vec<(SessionStoreKind, Result<LoginRemoval>)> {
+    pub fn clear(
+        &self,
+        ended: Option<&Session>,
+    ) -> Vec<(SessionStoreKind, Result<LoginRemoval>)> {
         let stores = self.stores();
         let lock = self.lock();
         match &lock {
@@ -152,9 +157,9 @@ impl SessionLocation {
                 .collect(),
             Err(err) => {
                 tracing::debug!(%err, "login store: logging out unlocked");
-                clear_from(&borrowed(&stores))
+                clear_from(&borrowed(&stores), ended)
             }
-            Ok(_) => clear_from(&borrowed(&stores)),
+            Ok(_) => clear_from(&borrowed(&stores), ended),
         }
     }
 }
@@ -336,12 +341,9 @@ pub fn resave_in(
     session: &Session,
 ) -> Result<LoginSaveReport> {
     let held = stores.first().map(|store| read_session(*store));
-    let token = |kept: &Session| {
-        kept.token().expose_secret() == session.token().expose_secret()
-    };
     match held {
         Some(Ok(None)) => Err(Error::LocalData(LocalDataError::LoginReplaced)),
-        Some(Ok(Some(kept))) if !token(&kept) => {
+        Some(Ok(Some(kept))) if !kept.same_login(session) => {
             Err(Error::LocalData(LocalDataError::LoginReplaced))
         }
         // An unreadable store cannot tell: the write decides, as before.
@@ -405,13 +407,28 @@ fn remove_others(stores: &[&dyn SessionStore], at: usize) -> Option<Error> {
         })
 }
 
-/// Remove the login from every store; what each one found.
+/// Remove the login from every store, or from those still holding `ended`
+/// when given; what each one found.
 #[must_use]
 pub fn clear_from(
     stores: &[&dyn SessionStore],
+    ended: Option<&Session>,
 ) -> Vec<(SessionStoreKind, Result<LoginRemoval>)> {
     stores
         .iter()
-        .map(|store| (store.kind(), store.remove()))
+        .map(|store| (store.kind(), remove_unless_replaced(*store, ended)))
         .collect()
+}
+
+/// A store now holding another login than `ended` is left alone.
+fn remove_unless_replaced(
+    store: &dyn SessionStore,
+    ended: Option<&Session>,
+) -> Result<LoginRemoval> {
+    match (ended, read_session(store)) {
+        (Some(ended), Ok(Some(held))) if !held.same_login(ended) => {
+            Ok(LoginRemoval::Absent)
+        }
+        _ => store.remove(),
+    }
 }

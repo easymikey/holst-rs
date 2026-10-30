@@ -3,7 +3,11 @@
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::{
-    error::{Error, Result, local_data::LocalDataError},
+    error::{
+        Error,
+        Result,
+        local_data::{LocalDataError, platform_cause},
+    },
     storage::session_store::{
         ACCOUNT,
         Keychain,
@@ -16,20 +20,15 @@ use crate::{
 
 impl Keychain {
     fn entry() -> Result<keyring::Entry> {
-        keyring::Entry::new(SERVICE, ACCOUNT).map_err(keychain_error)
-    }
-}
-
-fn check_persistent() -> Result<()> {
-    use keyring::credential::CredentialPersistence;
-    let persistence = keyring::default::default_credential_builder().persistence();
-    if matches!(
-        persistence,
-        CredentialPersistence::EntryOnly | CredentialPersistence::ProcessOnly
-    ) {
-        Err(Error::LocalData(LocalDataError::KeychainVolatile))
-    } else {
-        Ok(())
+        keyring::Entry::new(SERVICE, ACCOUNT).map_err(|err| {
+            // The store is opened once; `Entry::new` then only says there is none.
+            match keyring::Entry::store_status() {
+                Err(init) if matches!(err, keyring::Error::NoDefaultStore) => {
+                    init_error(init)
+                }
+                _ => keychain_error(err),
+            }
+        })
     }
 }
 
@@ -40,6 +39,25 @@ const HAS_SECRET_SERVICE: bool = cfg!(any(
 ));
 
 pub(super) fn keychain_error(err: keyring::Error) -> Error {
+    let missing = is_missing(&err);
+    classify(err, missing)
+}
+
+/// The cached opening failure cannot be moved out, so its message is carried
+/// over.
+pub(super) fn init_error(init: &keyring::Error) -> Error {
+    let cause = platform_cause(init).to_string();
+    classify(
+        keyring::Error::PlatformFailure(cause.into()),
+        is_missing(init),
+    )
+}
+
+fn is_missing(err: &keyring::Error) -> bool {
+    matches!(err, keyring::Error::PlatformFailure(cause) if is_unavailable(&**cause))
+}
+
+fn classify(err: keyring::Error, missing: bool) -> Error {
     // `keyring::Error` is non-exhaustive: guards instead of a wildcard arm.
     Error::LocalData(match () {
         () if matches!(err, keyring::Error::NoStorageAccess(_)) => {
@@ -48,12 +66,7 @@ pub(super) fn keychain_error(err: keyring::Error) -> Error {
         () if matches!(err, keyring::Error::BadEncoding(_)) => {
             LocalDataError::SavedLoginCorrupt
         }
-        () if HAS_SECRET_SERVICE
-            && matches!(&err, keyring::Error::PlatformFailure(cause)
-                if is_unavailable(&**cause)) =>
-        {
-            LocalDataError::NoSecretService(err)
-        }
+        () if HAS_SECRET_SERVICE && missing => LocalDataError::NoSecretService(err),
         () if HAS_SECRET_SERVICE
             && matches!(err, keyring::Error::PlatformFailure(_)) =>
         {
@@ -102,7 +115,6 @@ impl SessionStore for Keychain {
     }
 
     fn write(&self, stored: &SecretString) -> Result<()> {
-        check_persistent()?;
         Self::entry()?
             .set_password(stored.expose_secret())
             .map_err(keychain_error)

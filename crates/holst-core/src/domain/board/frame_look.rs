@@ -5,7 +5,16 @@ use serde::Deserialize;
 use crate::{domain::geometry::Size, error::Result};
 
 /// BUNDLE: the ratio presets and sizes (main.a33651a4.js 169925-171274).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, strum::VariantNames)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Deserialize,
+    strum::VariantNames,
+    strum::IntoStaticStr,
+)]
 pub enum FrameRatio {
     #[serde(rename = "16:9")]
     #[strum(serialize = "16:9")]
@@ -51,18 +60,6 @@ impl FrameRatio {
         Self::ALL
             .into_iter()
             .find(|ratio| u64::from(ratio.stored()) == number)
-    }
-
-    /// The name as `object edit` words it.
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            FrameRatio::Wide => "16:9",
-            FrameRatio::Standard => "4:3",
-            FrameRatio::Square => "1:1",
-            FrameRatio::A4 => "a4",
-            FrameRatio::A4Landscape => "a4_landscape",
-        }
     }
 
     const fn default_sides(self) -> (f64, f64) {

@@ -304,15 +304,6 @@ pub(super) fn dissolve_after_removal(
     dissolution.written(transaction, scope)
 }
 
-/// The frames and tables flagged locked, nothing grouped.
-pub(super) fn lock_only(
-    transaction: &mut TransactionMut<'_>,
-    scope: &WriteTransaction<'_>,
-    ids: &[String],
-) -> Result<Vec<ChangedObject>> {
-    flagged(transaction, scope, ids, true)
-}
-
 /// The locked groups dissolved, their members left where the groups stood, and
 /// the locked frames and tables unlocked.
 pub(super) fn unlock(
@@ -330,7 +321,7 @@ pub(super) fn unlock(
 }
 
 /// `locked` written on each of the objects, as the web client's `update` does.
-fn flagged(
+pub(super) fn flagged(
     transaction: &mut TransactionMut<'_>,
     scope: &WriteTransaction<'_>,
     ids: &[String],

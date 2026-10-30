@@ -9,13 +9,15 @@ use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))]
-use crate::storage::session_store::keychain::keychain_error;
+use crate::storage::session_store::keychain::{init_error, keychain_error};
 use crate::{
     domain::session::Session,
     effect::settings::SessionLocation,
     error::{Error, Result, local_data::LocalDataError},
     storage::session_store::{
+        ACCOUNT,
         LoginRemoval,
+        SERVICE,
         SessionFile,
         SessionStore,
         SessionStoreKind,
@@ -30,7 +32,6 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Health {
     Works,
-    Broken,
     Locked,
     #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))]
     Absent,
@@ -78,13 +79,12 @@ impl SessionStore for Memory {
                 target_os = "openbsd"
             ))]
             Health::Absent => Err(absent()),
-            Health::Works | Health::Broken => Ok(self.value().map(SecretString::from)),
+            Health::Works => Ok(self.value().map(SecretString::from)),
         }
     }
 
     fn write(&self, stored: &SecretString) -> Result<()> {
         match self.health {
-            Health::Broken => Err(Error::LocalData(LocalDataError::KeychainVolatile)),
             Health::Locked => Err(Error::LocalData(LocalDataError::KeychainLocked)),
             #[cfg(any(
                 target_os = "linux",
@@ -194,7 +194,7 @@ fn directory_location_never_touches_the_keychain() -> Result<()> {
     assert_eq!(location.save(&session)?.store, SessionStoreKind::File);
     assert_eq!(location.load()?, Some((session, SessionStoreKind::File)));
     assert!(matches!(
-        location.clear().as_slice(),
+        location.clear(None).as_slice(),
         [(SessionStoreKind::File, Ok(LoginRemoval::Removed))]
     ));
     fs::remove_dir_all(&dir)?;
@@ -247,7 +247,6 @@ enum Staleness {
 }
 
 #[rstest]
-#[case::broken(Health::Broken, Staleness::Absent)]
 #[case::locked(Health::Locked, Staleness::Reported)]
 fn save_falls_back_when_primary_fails(
     #[case] health: Health,
@@ -415,7 +414,7 @@ fn missing_secret_service_keeps_using_the_file() -> Result<()> {
         (SessionStoreKind::File, true)
     );
     assert_eq!(token_in(&file).as_deref(), Some("new"));
-    let cleared: Vec<_> = clear_from(&stores)
+    let cleared: Vec<_> = clear_from(&stores, None)
         .into_iter()
         .map(|(kind, removed)| (kind, removed.ok()))
         .collect();
@@ -455,13 +454,39 @@ fn secret_service_failures_are_told_apart() {
     assert_eq!(other.hint(), Some(crate::error::hint::Hint::UseHome));
 }
 
+#[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))]
+#[test]
+fn a_store_that_failed_to_open_keeps_its_cause() {
+    let opening = |cause: secret_service::Error| {
+        init_error(&keyring::Error::PlatformFailure(Box::new(cause)))
+    };
+    let missing = opening(secret_service::Error::Unavailable);
+    assert!(
+        matches!(
+            missing,
+            Error::LocalData(LocalDataError::NoSecretService(_))
+        ),
+        "{missing:?}"
+    );
+    let other = opening(secret_service::Error::Crypto("bad key"));
+    assert_eq!(
+        other.to_string(),
+        "Secret Service failed: Crypto error: bad key"
+    );
+}
+
+#[test]
+fn logins_saved_by_version_0_2_0_are_found_under_the_same_names() {
+    assert_eq!((SERVICE, ACCOUNT), ("holst-rs", "session-token"));
+}
+
 #[test]
 fn clear_reports_what_each_store_found() {
     let keychain = Memory::new(SessionStoreKind::Keychain, Some("t"));
     let file = Memory::new(SessionStoreKind::File, None);
     let locked = holding(SessionStoreKind::Keychain, Health::Locked, "t");
     let outcome = |stores: &[&dyn SessionStore]| {
-        clear_from(stores)
+        clear_from(stores, None)
             .into_iter()
             .map(|(kind, removed)| (kind, removed.ok()))
             .collect::<Vec<_>>()
@@ -474,7 +499,7 @@ fn clear_reports_what_each_store_found() {
         ]
     );
     assert!(matches!(
-        clear_from(&[&locked]).as_slice(),
+        clear_from(&[&locked], None).as_slice(),
         [(
             SessionStoreKind::Keychain,
             Err(Error::LocalData(LocalDataError::KeychainLocked))
@@ -643,7 +668,7 @@ fn a_held_lock_blocks_a_resave() -> Result<()> {
 fn a_held_lock_blocks_a_logout() -> Result<()> {
     let (dir, location) = location_with("clear-lock", &Session::new("t".into()))?;
     let holder = location.lock()?;
-    let cleared = location.clear();
+    let cleared = location.clear(None);
     drop(holder);
     assert!(
         matches!(
@@ -671,7 +696,7 @@ fn a_stale_resave_after_a_logout_leaves_no_session() -> Result<()> {
     let session = Session::new("t".into());
     let (dir, logout) = location_with("logout-then-resave", &session)?;
     let rotation = SessionLocation::Dir(dir.clone());
-    assert_eq!(logout.clear().len(), 1);
+    assert_eq!(logout.clear(None).len(), 1);
     let resaved = rotation.resave(&session, SessionStoreKind::File);
     assert!(
         matches!(
@@ -723,7 +748,7 @@ fn with_unusable_lock(test: &str) -> Result<(PathBuf, SessionLocation, Session)>
 #[test]
 fn a_lock_that_cannot_be_created_still_lets_a_person_log_out() -> Result<()> {
     let (dir, location, _) = with_unusable_lock("clear-no-lock")?;
-    let cleared = location.clear();
+    let cleared = location.clear(None);
     assert!(
         matches!(
             cleared.as_slice(),
@@ -773,4 +798,59 @@ fn write_failure<T>(result: &Result<T>) -> Option<&PathBuf> {
     } else {
         None
     }
+}
+
+fn removals(
+    cleared: Vec<(SessionStoreKind, Result<LoginRemoval>)>,
+) -> Vec<Option<LoginRemoval>> {
+    cleared
+        .into_iter()
+        .map(|(_, removed)| removed.ok())
+        .collect()
+}
+
+#[test]
+fn a_logout_leaves_the_login_another_terminal_saved_meanwhile() -> Result<()> {
+    let ended = Session::new("old".into());
+    let (dir, location) = location_with("clear-replaced", &ended)?;
+    location.save(&Session::new("new".into()))?;
+    assert_eq!(
+        removals(location.clear(Some(&ended))),
+        [Some(LoginRemoval::Absent)]
+    );
+    assert_eq!(stored_token(&location)?.as_deref(), Some("new"));
+    let new = Session::new("new".into());
+    assert_eq!(
+        removals(location.clear(Some(&new))),
+        [Some(LoginRemoval::Removed)]
+    );
+    assert_eq!(stored_token(&location)?, None);
+    fs::remove_dir_all(&dir)?;
+    Ok(())
+}
+
+#[test]
+fn a_logout_of_an_unreadable_login_removes_it() -> Result<()> {
+    let (dir, location) =
+        location_with("clear-unreadable", &Session::new("old".into()))?;
+    fs::write(dir.join("session"), r#"{"cookies":"x"}"#)?;
+    let ended = Session::new("old".into());
+    assert_eq!(
+        removals(location.clear(Some(&ended))),
+        [Some(LoginRemoval::Removed)]
+    );
+    fs::remove_dir_all(&dir)?;
+    Ok(())
+}
+
+#[test]
+fn clear_removes_only_the_stores_that_still_hold_the_ended_login() {
+    let keychain = Memory::new(SessionStoreKind::Keychain, Some("old"));
+    let file = Memory::new(SessionStoreKind::File, Some("new"));
+    let ended = Session::new("old".into());
+    assert_eq!(
+        removals(clear_from(&[&keychain, &file], Some(&ended))),
+        [Some(LoginRemoval::Removed), Some(LoginRemoval::Absent)]
+    );
+    assert_eq!(file.value().as_deref(), Some("new"));
 }

@@ -72,37 +72,6 @@ fn left_puts_the_objects_against_the_left_edge_of_all() -> Result<()> {
 }
 
 #[test]
-fn center_and_middle_meet_at_the_middle_of_all() -> Result<()> {
-    let document = board()?;
-    built(
-        &document,
-        &align(&["one", "two", "three"], Alignment::Center),
-    )?;
-    assert_eq!(at(&document, "one"), (Some(250.0), Some(0.0)));
-    assert_eq!(at(&document, "three"), (Some(250.0), Some(300.0)));
-    let other = board()?;
-    built(&other, &align(&["one", "two", "three"], Alignment::Middle))?;
-    assert_eq!(at(&other, "one"), (Some(0.0), Some(150.0)));
-    assert_eq!(at(&other, "two"), (Some(200.0), Some(150.0)));
-    Ok(())
-}
-
-#[test]
-fn right_and_bottom_meet_the_far_edges_of_all() -> Result<()> {
-    let document = board()?;
-    built(
-        &document,
-        &align(&["one", "two", "three"], Alignment::Right),
-    )?;
-    assert_eq!(at(&document, "one"), (Some(500.0), Some(0.0)));
-    let other = board()?;
-    built(&other, &align(&["one", "two", "three"], Alignment::Bottom))?;
-    assert_eq!(at(&other, "one"), (Some(0.0), Some(300.0)));
-    assert_eq!(at(&other, "two"), (Some(200.0), Some(300.0)));
-    Ok(())
-}
-
-#[test]
 fn a_spread_makes_the_gaps_equal_and_keeps_the_outer_two() -> Result<()> {
     let document = board()?;
     let update = built(

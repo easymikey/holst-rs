@@ -146,10 +146,9 @@ impl McpServer {
     }
 
     fn name_line(&self, found: &NameMatch, with_workspace: bool) -> String {
-        let slash = if found.kind == NodeKind::Folder.as_str() {
-            "/"
-        } else {
-            ""
+        let slash = match found.kind {
+            NodeKind::Folder => "/",
+            NodeKind::Board | NodeKind::Other => "",
         };
         let place = [
             with_workspace.then_some(found.workspace.as_str()),
@@ -209,12 +208,9 @@ fn unread(found: &Found) -> String {
 
 #[cfg(test)]
 mod tests {
-    use holst_core::command::search::{
-        Found,
-        NameMatch,
-        SearchHit,
-        SkippedBoard,
-        TextMatch,
+    use holst_core::{
+        command::search::{Found, NameMatch, SearchHit, SkippedBoard, TextMatch},
+        domain::node::NodeKind,
     };
 
     use crate::server::McpServer;
@@ -223,7 +219,7 @@ mod tests {
         NameMatch {
             id: id.to_owned(),
             name: name.to_owned(),
-            kind: "board",
+            kind: NodeKind::Board,
             workspace: workspace.to_owned(),
             path: path.to_owned(),
             in_trash: false,
@@ -251,7 +247,7 @@ mod tests {
             vec![
                 SearchHit::Name(name("b1", "Plan", "easy", "")),
                 SearchHit::Name(NameMatch {
-                    kind: "folder",
+                    kind: NodeKind::Folder,
                     in_trash: true,
                     ..name("f2", "Plans", "team", "Q4")
                 }),

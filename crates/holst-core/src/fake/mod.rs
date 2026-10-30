@@ -37,7 +37,7 @@ pub use crate::fake::{
     access::Right,
     board::FixtureObject,
     comment::{FixtureThread, ThreadAnchor, ThreadMessage},
-    files::Upload,
+    files::{Upload, png},
     fixture::{Fixture, FixtureError},
     helpers::{assert_none, candidates},
     login::LOGIN_CODE,

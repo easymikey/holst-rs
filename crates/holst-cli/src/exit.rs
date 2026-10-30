@@ -184,6 +184,7 @@ fn login_code(error: &LoginError) -> u8 {
     match error {
         LoginError::NoSavedLogin
         | LoginError::SessionRevoked
+        | LoginError::OtherServer { .. }
         | LoginError::BareToken { .. } => EX_NOPERM,
         LoginError::NotEmail { .. } | LoginError::NotSavedLogin => EX_DATAERR,
         LoginError::Incomplete { .. } => EX_UNAVAILABLE,
@@ -291,9 +292,7 @@ fn store_code(error: &LocalDataError) -> u8 {
         | LocalDataError::OutsideLocalData { .. }
         | LocalDataError::AccountUnknown
         | LocalDataError::KeychainLocked => EX_NOPERM,
-        LocalDataError::CacheOff
-        | LocalDataError::NoHome
-        | LocalDataError::KeychainVolatile => EX_CONFIG,
+        LocalDataError::CacheOff | LocalDataError::NoHome => EX_CONFIG,
         #[cfg(not(target_os = "macos"))]
         LocalDataError::NoSecretService(_)
         | LocalDataError::SecretService(_)

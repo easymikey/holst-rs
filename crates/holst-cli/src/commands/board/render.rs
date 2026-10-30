@@ -80,9 +80,9 @@ fn node_line(node: &ListedNode, link: &impl Fn(&str) -> String) -> String {
         printable(&node.name)
     };
     let (slash, place) = match node.kind {
-        kind if kind == NodeKind::Folder.as_str() => ("/", node.id.clone()),
-        kind if kind == NodeKind::Board.as_str() => ("", link(&node.id)),
-        _ => ("", node.id.clone()),
+        NodeKind::Folder => ("/", node.id.clone()),
+        NodeKind::Board => ("", link(&node.id)),
+        NodeKind::Other => ("", node.id.clone()),
     };
     let trash = if node.in_trash { "  [in trash]" } else { "" };
     format!(
@@ -136,18 +136,14 @@ mod tests {
             },
             change::{ChangeReport, PlannedRequest},
         },
+        domain::node::NodeKind,
         effect::request::QueryParameter,
     };
     use serde_json::json;
 
     use crate::commands::board::render::{changed_text, listing_text};
 
-    fn node(
-        depth: usize,
-        kind: &'static str,
-        name: &str,
-        workspace: &str,
-    ) -> ListedNode {
+    fn node(depth: usize, kind: NodeKind, name: &str, workspace: &str) -> ListedNode {
         ListedNode {
             workspace: Some(workspace.to_owned()),
             id: format!("id-{name}"),
@@ -188,9 +184,9 @@ mod tests {
         let page = listing(
             &["team"],
             vec![
-                node(0, "folder", "Work", "team"),
-                node(1, "board", "Plan", "team"),
-                node(0, "board", "", "team"),
+                node(0, NodeKind::Folder, "Work", "team"),
+                node(1, NodeKind::Board, "Plan", "team"),
+                node(0, NodeKind::Board, "", "team"),
             ],
             None,
         );
@@ -204,7 +200,10 @@ mod tests {
     fn several_workspaces_get_a_heading_and_a_page_names_its_cursor() {
         let page = listing(
             &["team", "ops"],
-            vec![node(0, "board", "A", "team"), node(0, "board", "B", "ops")],
+            vec![
+                node(0, NodeKind::Board, "A", "team"),
+                node(0, NodeKind::Board, "B", "ops"),
+            ],
             Some("2"),
         );
         assert_eq!(
@@ -224,7 +223,7 @@ mod tests {
                 id: Some("b1".to_owned()),
                 name: Some("Plan".to_owned()),
                 previous_name: Some("Old".to_owned()),
-                kind: Some("board"),
+                kind: Some(NodeKind::Board),
                 link: Some("https://holst/b1".to_owned()),
                 boards_along: 0,
                 left_behind: Vec::new(),
@@ -263,7 +262,7 @@ mod tests {
         let board = change(Action::Create, ChangeReport::Sent);
         let folder = Changed {
             node: ChangedNode {
-                kind: Some("folder"),
+                kind: Some(NodeKind::Folder),
                 link: Some("https://holst/w/w1/f/b1".to_owned()),
                 ..board.node
             },

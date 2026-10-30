@@ -1,6 +1,6 @@
 //! Backups and uploaded files.
 
-use holst_core::fake::FixtureObject;
+use holst_core::fake::{FixtureObject, png};
 use holst_scenarios::{
     CoverEdit,
     Given,
@@ -484,19 +484,6 @@ async fn an_original_is_not_saved_into_the_keys_folder() -> Result<(), ScenarioE
 }
 
 const PAGE: &str = "https://example.com/spec";
-
-/// The header of a png of `width` by `height` pixels, which is all the CLI
-/// and the tool read of it.
-fn png(width: u32, height: u32) -> Vec<u8> {
-    [
-        &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13][..],
-        b"IHDR",
-        &width.to_be_bytes(),
-        &height.to_be_bytes(),
-        &[8, 2, 0, 0, 0],
-    ]
-    .concat()
-}
 
 /// The call that adds a `kind` of media from what `with_media` holds.
 fn media_call(holst: &Holst, kind: &str) -> ObjectCall {

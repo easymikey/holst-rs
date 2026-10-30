@@ -192,7 +192,7 @@ impl Client {
     /// The client after a login: the token joins the cookies, on every clone.
     #[must_use]
     pub fn with_token(self, token: SecretString) -> Self {
-        self.transition(|state| state.log_in(token));
+        self.transition(|state| state.log_in(token, &self.base));
         self
     }
 

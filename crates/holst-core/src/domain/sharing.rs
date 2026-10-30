@@ -46,6 +46,18 @@ impl From<Map<String, Value>> for Sharing {
     }
 }
 
+impl From<&Map<String, Value>> for Sharing {
+    fn from(channel: &Map<String, Value>) -> Self {
+        Self(
+            channel
+                .iter()
+                .filter(|(key, _)| is_sharing_key(key))
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect(),
+        )
+    }
+}
+
 impl From<Sharing> for Map<String, Value> {
     fn from(settings: Sharing) -> Self {
         settings.0
@@ -98,6 +110,15 @@ mod tests {
             .ok()
             .and_then(|settings| serde_json::to_value(settings).ok());
         assert_eq!(settings, Some(expected));
+    }
+
+    #[test]
+    fn a_borrowed_channel_keeps_the_same_fields_as_an_owned_one() {
+        let channel = json!({ "id": "b1", "public": true, "thumbnail": "x.png" });
+        assert_eq!(
+            channel.as_object().map(Sharing::from),
+            serde_json::from_value::<Sharing>(channel).ok()
+        );
     }
 
     #[test]

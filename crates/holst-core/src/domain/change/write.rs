@@ -66,7 +66,7 @@ use crate::{
                 Upload,
             },
             write_arrange::arrange,
-            write_group::{dissolve_after_removal, group, lock_only, ungroup, unlock},
+            write_group::{dissolve_after_removal, flagged, group, ungroup, unlock},
             write_many::{edit_all, paste},
             write_shape::{arrow_changes, shape_changes},
         },
@@ -207,7 +207,7 @@ pub(super) fn write_change(
             group(transaction, scope, &members, Grouping::Locked)
         }
         CheckedChange::Ungroup(groups) => ungroup(transaction, scope, &groups),
-        CheckedChange::LockOnly(ids) => lock_only(transaction, scope, &ids),
+        CheckedChange::LockOnly(ids) => flagged(transaction, scope, &ids, true),
         CheckedChange::Unlock(ids) => unlock(transaction, scope, &ids),
         CheckedChange::Arrange(ids, how) => arrange(transaction, scope, &ids, how),
     }

@@ -4,7 +4,7 @@
     reason = "tests build and read real files in temp directories"
 )]
 
-use std::path::PathBuf;
+use std::{cell::RefCell, path::PathBuf};
 
 use holst_core::{
     command::{
@@ -24,7 +24,11 @@ use rstest::rstest;
 use serde_json::json;
 
 use crate::{
-    commands::storage::render::{cleaned_text, listed_text},
+    commands::storage::{
+        render::{cleaned_text, listed_text},
+        store_read,
+    },
+    error::Error,
     output::view::size_text,
     run::{RunSettings, local_data::forget_cache},
     terminal::detect::TerminalType,
@@ -210,4 +214,29 @@ fn logout_wipes_the_account_cache() -> holst_core::Result<()> {
     assert_eq!(left, [0, 0, 1], "the account's cache outlived the logout");
     assert_eq!(after, 0, "an unknown account's logout left a cache");
     Ok(())
+}
+
+#[test]
+fn a_refused_login_read_is_reported_not_taken_for_no_login() {
+    let refused = holst_core::Error::LocalData(
+        holst_core::error::local_data::LocalDataError::KeychainLocked,
+    );
+    let shown = RefCell::new(Vec::new());
+    let store = store_read(Err(Error::Holst(refused)), |err| {
+        shown.borrow_mut().push(err.to_string());
+    });
+    assert_eq!(
+        (store, shown.take()),
+        (
+            None,
+            vec!["the keychain is locked or access was denied".to_owned()]
+        )
+    );
+}
+
+#[test]
+fn no_saved_login_is_not_a_failure() {
+    let shown = RefCell::new(Vec::new());
+    let store = store_read(Ok(None), |err| shown.borrow_mut().push(err.to_string()));
+    assert_eq!((store, shown.take()), (None, Vec::<String>::new()));
 }

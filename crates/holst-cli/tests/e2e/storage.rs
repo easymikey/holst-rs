@@ -131,7 +131,7 @@ mod terminated {
 
     use crate::{
         fake,
-        support::{REVOKED, TestResult, home},
+        support::{REVOKED, TestResult, home, saved_for},
     };
 
     /// The first reply of the run: the category list, with a rotated cookie.
@@ -192,7 +192,7 @@ mod terminated {
 
     fn start_rotating() -> io::Result<Rotating> {
         let (base, sent) = serve_stalled()?;
-        let dir = home(Some(REVOKED))?;
+        let dir = home(Some(&saved_for(&base, REVOKED)))?;
         let lock = File::create(dir.join("LOCK"))?;
         lock.lock()?;
         let mut child = fake::isolated(env!("CARGO_BIN_EXE_holst"), &dir)

@@ -65,30 +65,28 @@ pub fn build_with(
         tags: document.get_or_insert_map(TAGS_STORE),
         note: note_root(document),
     };
-    let write = |mut transaction: TransactionMut<'_>| -> Result<ChangeUpdate> {
-        let states = states(&transaction, &roots.objects);
-        let mine = known_author(&transaction, &roots.users, user);
-        let checked = check(change, &states, right, mine)?;
-        let stamp = AuthorStamp {
-            author: author(&mut transaction, &roots.users, user)?,
-            at: context.built_at,
-        };
-        let scope = WriteTransaction {
-            roots: &roots,
-            states: &states,
-            stamp,
-            context,
-        };
-        let kept = checked.kept();
-        let touched = write_change(&mut transaction, &scope, checked)?;
-        transaction.commit();
-        Ok(ChangeUpdate {
-            update: transaction.encode_update_v2(),
-            objects: touched,
-            kept,
-        })
+    let mut transaction = document.transact_mut();
+    let states = states(&transaction, &roots.objects);
+    let mine = known_author(&transaction, &roots.users, user);
+    let checked = check(change, &states, right, mine)?;
+    let stamp = AuthorStamp {
+        author: author(&mut transaction, &roots.users, user)?,
+        at: context.built_at,
     };
-    write(document.transact_mut())
+    let scope = WriteTransaction {
+        roots: &roots,
+        states: &states,
+        stamp,
+        context,
+    };
+    let kept = checked.kept();
+    let touched = write_change(&mut transaction, &scope, checked)?;
+    transaction.commit();
+    Ok(ChangeUpdate {
+        update: transaction.encode_update_v2(),
+        objects: touched,
+        kept,
+    })
 }
 
 fn states<T: ReadTxn>(transaction: &T, objects: &MapRef) -> HashMap<String, Value> {
@@ -119,18 +117,14 @@ pub(crate) fn author(
     users: &MapRef,
     user: &str,
 ) -> Result<u32> {
-    let known: HashMap<String, u64> = users
-        .iter(transaction)
-        .filter_map(|(id, number)| {
-            crate::domain::board::json(&number.to_json(transaction))
+    let mine = known_author(&*transaction, users, user);
+    let taken: BTreeSet<u64> = users
+        .iter(&*transaction)
+        .filter_map(|(_, number)| {
+            crate::domain::board::json(&number.to_json(&*transaction))
                 .and_then(|number| number.as_u64())
-                .map(|number| (id.to_owned(), number))
         })
         .collect();
-    let mine = known
-        .get(user)
-        .and_then(|number| u32::try_from(*number).ok());
-    let taken: BTreeSet<u64> = known.values().copied().collect();
     mine.map_or_else(
         || {
             let number = (0..u32::MAX)

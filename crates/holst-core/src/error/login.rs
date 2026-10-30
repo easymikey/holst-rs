@@ -23,6 +23,9 @@ pub enum LoginError {
     )]
     NotSavedLogin,
 
+    #[error("the saved login is for {saved}, not {current}")]
+    OtherServer { saved: String, current: String },
+
     #[error("login did not finish: the reply has no {field}")]
     Incomplete { field: &'static str },
 
@@ -37,9 +40,9 @@ impl LoginError {
     #[must_use]
     pub const fn hint(&self) -> Option<Hint> {
         match self {
-            LoginError::NoSavedLogin | LoginError::SessionRevoked => {
-                Some(Hint::LoginAgain)
-            }
+            LoginError::NoSavedLogin
+            | LoginError::SessionRevoked
+            | LoginError::OtherServer { .. } => Some(Hint::LoginAgain),
             LoginError::BareToken { .. } => Some(Hint::FullLogin),
             LoginError::NotEmail { .. }
             | LoginError::NotSavedLogin
@@ -67,6 +70,13 @@ pub(super) mod tests {
         vec![
             (LoginError::NoSavedLogin, Some(Hint::LoginAgain)),
             (LoginError::SessionRevoked, Some(Hint::LoginAgain)),
+            (
+                LoginError::OtherServer {
+                    saved: "a".into(),
+                    current: "b".into(),
+                },
+                Some(Hint::LoginAgain),
+            ),
             (LoginError::NotEmail { raw: "x".into() }, None),
             (LoginError::NotSavedLogin, None),
             (LoginError::Incomplete { field: "code" }, None),

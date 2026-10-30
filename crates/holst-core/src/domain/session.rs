@@ -6,16 +6,20 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    domain::cookie::{CookieChange, CookieJar},
+    domain::{
+        cookie::{CookieChange, CookieJar},
+        url::{BaseUrl, DEFAULT_BASE},
+    },
     error::{Error, Result, login::LoginError},
 };
 
-/// A login: the Bearer token (a CSRF value) and the session cookies.
+/// A login: the Bearer token (a CSRF value), the cookies and its server.
 #[derive(Debug, Clone, Default)]
 pub struct Session {
     token: SecretString,
     cookies: CookieJar,
     account_id: Option<String>,
+    base: Option<BaseUrl>,
 }
 
 impl Session {
@@ -31,7 +35,38 @@ impl Session {
             token,
             cookies,
             account_id: None,
+            base: None,
         }
+    }
+
+    /// The same login, saved for `base`.
+    #[must_use]
+    pub fn with_base(self, base: &BaseUrl) -> Self {
+        Self {
+            base: Some(base.clone()),
+            ..self
+        }
+    }
+
+    /// This login on `base`; one saved without a server (by 0.2.0) belongs to
+    /// the production one.
+    ///
+    /// # Errors
+    /// [`LoginError::OtherServer`] when it was saved for another server.
+    pub fn on(self, base: &BaseUrl) -> Result<Self> {
+        let saved = self
+            .base
+            .as_ref()
+            .map_or(DEFAULT_BASE, BaseUrl::as_str)
+            .to_owned();
+        (saved == base.as_str())
+            .then(|| self.with_base(base))
+            .ok_or_else(|| {
+                Error::Login(LoginError::OtherServer {
+                    saved,
+                    current: base.as_str().to_owned(),
+                })
+            })
     }
 
     /// The same login, naming its account.
@@ -55,6 +90,12 @@ impl Session {
         &self.token
     }
 
+    /// Whether `other` is the same login (cookies rotate, the token does not).
+    #[must_use]
+    pub fn same_login(&self, other: &Self) -> bool {
+        self.token.expose_secret() == other.token.expose_secret()
+    }
+
     /// The session cookies.
     #[must_use]
     pub fn cookies(&self) -> &CookieJar {
@@ -72,13 +113,14 @@ impl Session {
     pub fn to_saved_login(&self) -> SecretString {
         let token = self.token.expose_secret();
         let header = self.cookies.header();
-        match (header.expose_secret(), &self.account_id) {
-            ("", None) if !token.starts_with('{') => SecretString::from(token),
-            (line, user) => SecretString::from(
+        match (header.expose_secret(), &self.account_id, &self.base) {
+            ("", None, None) if !token.starts_with('{') => SecretString::from(token),
+            (line, user, base) => SecretString::from(
                 serde_json::to_string(&SavedLoginJson {
                     token: token.into(),
                     cookies: line.into(),
                     user: user.as_deref().map(Cow::Borrowed),
+                    base_url: base.as_ref().map(|base| Cow::Borrowed(base.as_str())),
                 })
                 .unwrap_or_else(|_| token.to_owned()),
             ),
@@ -91,6 +133,8 @@ impl PartialEq for Session {
         self.token.expose_secret() == other.token.expose_secret()
             && self.cookies == other.cookies
             && self.account_id == other.account_id
+            && self.base.as_ref().map(BaseUrl::as_str)
+                == other.base.as_ref().map(BaseUrl::as_str)
     }
 }
 
@@ -104,6 +148,8 @@ struct SavedLoginJson<'a> {
     cookies: Cow<'a, str>,
     #[serde(default, borrow, skip_serializing_if = "Option::is_none")]
     user: Option<Cow<'a, str>>,
+    #[serde(default, borrow, skip_serializing_if = "Option::is_none")]
+    base_url: Option<Cow<'a, str>>,
 }
 
 impl FromStr for Session {
@@ -121,15 +167,21 @@ impl FromStr for Session {
                 serde_json::from_str::<SavedLoginJson<'_>>(json)
                     .ok()
                     .filter(|stored| !stored.token.is_empty())
-                    .map(|stored| {
+                    .and_then(|stored| {
                         let Ok(cookies) = stored.cookies.parse::<CookieJar>();
-                        Session {
+                        let base = stored
+                            .base_url
+                            .map(|text| text.parse::<BaseUrl>())
+                            .transpose()
+                            .ok()?;
+                        Some(Session {
                             account_id: stored.user.map(Cow::into_owned),
+                            base,
                             ..Session::with_cookies(
                                 SecretString::from(stored.token.as_ref()),
                                 cookies,
                             )
-                        }
+                        })
                     })
                     .ok_or(Error::Login(LoginError::NotSavedLogin))
             }
@@ -267,12 +319,14 @@ impl SessionState {
                     token,
                     cookies,
                     account_id,
+                    base,
                 } = session;
                 let after = cookies.clone().merge(fresh);
                 Self::Active {
                     rotated: rotated || after != cookies,
                     session: Session {
                         account_id,
+                        base,
                         ..Session::with_cookies(token, after)
                     },
                 }
@@ -284,16 +338,16 @@ impl SessionState {
         }
     }
 
-    /// A token arrived (login finished). The new session is rotated and keeps
-    /// only the cookies held now (after a refusal, those set since).
+    /// A token arrived (login finished) on `base`. The new session is rotated
+    /// and keeps only the cookies held now (after a refusal, those set since).
     #[must_use]
-    pub fn log_in(self, token: SecretString) -> Self {
+    pub fn log_in(self, token: SecretString, base: &BaseUrl) -> Self {
         let cookies = match self {
             Self::Missing { cookies } | Self::Revoked { cookies, .. } => cookies,
             Self::Active { session, .. } => session.cookies,
         };
         Self::Active {
-            session: Session::with_cookies(token, cookies),
+            session: Session::with_cookies(token, cookies).with_base(base),
             rotated: true,
         }
     }
@@ -353,8 +407,9 @@ mod tests {
         domain::{
             cookie::CookieChange,
             session::{Session, SessionState, SessionStatus, redact},
+            url::{BaseUrl, DEFAULT_BASE},
         },
-        error::{Error, login::LoginError},
+        error::{Error, Result, hint::Hint, login::LoginError},
         remote::client::fake::stored as session,
     };
 
@@ -384,6 +439,7 @@ mod tests {
     #[case::json_without_cookies(r#"{"token":"abc"}"#, Some(("abc", "")))]
     #[case::json_without_token(r#"{"cookies":"s=1"}"#, None)]
     #[case::broken_json("{nope", None)]
+    #[case::json_with_a_broken_server(r#"{"token":"abc","base_url":"nope"}"#, None)]
     #[case::empty("   ", None)]
     fn parse_cases(#[case] raw: &str, #[case] expected: Option<(&str, &str)>) {
         let parsed = raw.parse::<Session>().ok().map(|s| pair(&s));
@@ -442,10 +498,12 @@ mod tests {
     }
 
     #[test]
-    fn login_keeps_cookies_collected_before_the_token() {
+    #[expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
+    fn login_keeps_cookies_collected_before_the_token() -> Result<()> {
+        let production: BaseUrl = DEFAULT_BASE.parse()?;
         let state = SessionState::default()
             .absorb(vec![sid("1")])
-            .log_in(SecretString::from("tok"));
+            .log_in(SecretString::from("tok"), &production);
         let (state, rotated) = saved(state);
         assert_eq!(state.status(), SessionStatus::Active);
         assert_eq!(
@@ -456,6 +514,7 @@ mod tests {
             saved(state).1.is_none(),
             "a saved rotation is offered again"
         );
+        Ok(())
     }
 
     #[test]
@@ -494,7 +553,9 @@ mod tests {
     }
 
     #[test]
-    fn login_after_revocation_drops_the_dead_cookies() {
+    #[expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
+    fn login_after_revocation_drops_the_dead_cookies() -> Result<()> {
+        let production: BaseUrl = DEFAULT_BASE.parse()?;
         let revoked = SessionState::from(Some(session("old", "dead=1; sid=old")))
             .revoke()
             .absorb(vec![sid("new")]);
@@ -504,15 +565,18 @@ mod tests {
             .map(|v| v.expose_secret().to_owned())
             .collect();
         assert_eq!(scrubbed, ["1", "old", "new"]);
-        let (_, stored) = saved(revoked.log_in(SecretString::from("tok")));
+        let (_, stored) = saved(revoked.log_in(SecretString::from("tok"), &production));
         assert_eq!(
             stored.map(|s| pair(&s)),
             Some(("tok".into(), "sid=new".into()))
         );
+        Ok(())
     }
 
     #[test]
-    fn revoked_session_signs_nothing_until_a_new_login() {
+    #[expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
+    fn revoked_session_signs_nothing_until_a_new_login() -> Result<()> {
+        let production: BaseUrl = DEFAULT_BASE.parse()?;
         let revoked = SessionState::from(Some(session("tok", ""))).revoke();
         assert_eq!(revoked.status(), SessionStatus::Revoked);
         assert!(matches!(
@@ -520,7 +584,7 @@ mod tests {
             Err(Error::Login(LoginError::SessionRevoked))
         ));
         assert!(revoked.session().is_none());
-        let again = revoked.log_in(SecretString::from("new"));
+        let again = revoked.log_in(SecretString::from("new"), &production);
         assert_eq!(
             again
                 .active_token()
@@ -532,5 +596,70 @@ mod tests {
             SessionState::default().active_token(),
             Err(Error::Login(LoginError::NoSavedLogin))
         ));
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::bare_on_production("t", DEFAULT_BASE, true)]
+    #[case::bare_elsewhere("t", "https://staging.example", false)]
+    #[case::legacy_on_production(
+        r#"{"token":"t","cookies":"s=1"}"#,
+        DEFAULT_BASE,
+        true
+    )]
+    #[case::legacy_elsewhere(
+        r#"{"token":"t","cookies":"s=1"}"#,
+        "https://staging.example",
+        false
+    )]
+    #[case::saved_here(
+        r#"{"token":"t","base_url":"https://staging.example/"}"#,
+        "https://staging.example",
+        true
+    )]
+    #[case::saved_elsewhere(
+        r#"{"token":"t","base_url":"https://staging.example"}"#,
+        DEFAULT_BASE,
+        false
+    )]
+    fn a_login_belongs_to_the_server_it_was_saved_for(
+        #[case] raw: &str,
+        #[case] base: &str,
+        #[case] fits: bool,
+    ) {
+        let fitting = raw
+            .parse::<Session>()
+            .ok()
+            .zip(base.parse::<BaseUrl>().ok())
+            .map(|(login, base)| login.on(&base).is_ok());
+        assert_eq!(fitting, Some(fits));
+    }
+
+    #[test]
+    #[expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
+    fn the_refusal_names_both_servers_and_says_to_log_in() -> Result<()> {
+        let staging: BaseUrl = "https://staging.example".parse()?;
+        let refused = session("t", "s=1").on(&staging).err();
+        let hint = refused.as_ref().and_then(Error::hint);
+        assert_eq!(
+            refused.map(|err| err.to_string()),
+            Some("the saved login is for https://app.holst.so, not https://staging.example".to_owned())
+        );
+        assert_eq!(hint, Some(Hint::LoginAgain));
+        Ok(())
+    }
+
+    #[test]
+    #[expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
+    fn the_server_is_saved_with_the_login_and_read_back() -> Result<()> {
+        let staging: BaseUrl = "https://staging.example".parse()?;
+        let stamped = session("abc", "").with_base(&staging);
+        let stored = stamped.to_saved_login();
+        assert_eq!(
+            stored.expose_secret(),
+            r#"{"token":"abc","cookies":"","base_url":"https://staging.example"}"#
+        );
+        assert_eq!(stored.expose_secret().parse::<Session>()?, stamped);
+        Ok(())
     }
 }

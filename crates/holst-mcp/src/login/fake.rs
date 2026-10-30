@@ -41,6 +41,20 @@ pub(crate) fn session_with(token: &str, cookies: &str) -> Session {
     )
 }
 
+/// A client holding `session` whose requests go to `network`.
+pub(crate) fn client(
+    session: Session,
+    network: &Arc<Script>,
+) -> holst_core::Result<Client> {
+    Ok(holst_core::command::login::connect(
+        Some(session),
+        "http://127.0.0.1:1".parse()?,
+        holst_core::system::clock::SystemClock,
+        holst_core::system::id::RandomIds,
+    )?
+    .with_transport(Arc::clone(network)))
+}
+
 #[derive(Clone)]
 pub(crate) enum CannedResponse {
     With {
@@ -327,12 +341,6 @@ impl Backend for Memory {
     }
 
     fn connect(&self, session: Session) -> holst_core::Result<Client> {
-        Ok(holst_core::command::login::connect(
-            Some(session),
-            "http://127.0.0.1:1".parse()?,
-            holst_core::system::clock::SystemClock,
-            holst_core::system::id::RandomIds,
-        )?
-        .with_transport(Arc::clone(&self.network)))
+        client(session, &self.network)
     }
 }

@@ -70,7 +70,7 @@ pub struct ChangedNode {
     pub name: Option<String>,
     /// The name before a rename.
     pub previous_name: Option<String>,
-    pub kind: Option<&'static str>,
+    pub kind: Option<NodeKind>,
     /// Where a board opens.
     pub link: Option<String>,
     /// The live boards a folder takes along when it moves.
@@ -88,7 +88,7 @@ pub struct ChangedNode {
 pub struct LeftBehind {
     pub id: String,
     pub name: String,
-    pub kind: &'static str,
+    pub kind: NodeKind,
 }
 
 /// A request with the node it touches and the refusal it stands under.
@@ -119,7 +119,7 @@ pub(super) fn node_of(
         id,
         name: None,
         previous_name: None,
-        kind: kind.map(NodeKind::as_str),
+        kind,
         link: None,
         boards_along: 0,
         left_behind: Vec::new(),
@@ -156,7 +156,7 @@ impl ChangedNode {
         };
         match self.action {
             Action::Create => {
-                format!("{verb} {} {name}", self.kind.unwrap_or("board"))
+                format!("{verb} {} {name}", self.kind.unwrap_or(NodeKind::Board))
             }
             Action::Rename => format!(
                 "{verb} {} to {name}",
@@ -454,7 +454,7 @@ fn left_inside(index: &NameIndex, id: &str) -> (Vec<LeftBehind>, Option<String>)
                 .map(|node| LeftBehind {
                     id: index.id(node),
                     name: index.name(node).to_owned(),
-                    kind: index.kind(node).as_str(),
+                    kind: index.kind(node),
                 })
                 .collect();
             let into = index.parent(folder).map(|up| index.name(up).to_owned());
@@ -545,9 +545,7 @@ pub(super) async fn carry(
         node.learn(reply);
     }
     node.link = match (&node.id, node.kind) {
-        (Some(id), Some(kind)) if kind == NodeKind::Board.as_str() => {
-            Some(client.board_link(id))
-        }
+        (Some(id), Some(NodeKind::Board)) => Some(client.board_link(id)),
         _ => None,
     };
     Ok(Changed { node, outcome })

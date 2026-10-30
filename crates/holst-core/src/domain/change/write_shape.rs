@@ -26,13 +26,11 @@ use crate::{
         COLOR,
         CONTROL,
         EDITOR,
-        ELBOW_MIDWAY_CONTROLS,
         END,
         FILL_COLOR,
         FIXED_SIZE,
         HEIGHT,
         ID,
-        MIDWAY_CONTROLS,
         OBJECT_ID,
         OPACITY,
         POINT,
@@ -116,11 +114,7 @@ pub(super) fn arrow_changes(
 ) -> Changes {
     // BUNDLE: an elbow bends on one axis (main.a33651a4.js 162183).
     let bend = edit.bend.map(|bend| {
-        let name = if line_of(edit.line, fields) == ArrowType::Elbow {
-            ELBOW_MIDWAY_CONTROLS
-        } else {
-            MIDWAY_CONTROLS
-        };
+        let name = line_of(edit.line, fields).controls_field();
         (name, json!([{ "x": bend.x, "y": bend.y }]))
     });
     // BUNDLE: text, position, editor (main.a33651a4.js 162034-162041).

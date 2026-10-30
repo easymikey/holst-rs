@@ -46,9 +46,10 @@ impl SystemBackend {
     }
 
     fn client(&self, session: Option<Session>) -> holst_core::Result<Client> {
+        let base = &self.settings.base_url;
         holst_core::command::login::connect(
-            session,
-            self.settings.base_url.clone(),
+            session.map(|login| login.on(base)).transpose()?,
+            base.clone(),
             holst_core::system::clock::SystemClock,
             holst_core::system::id::RandomIds,
         )

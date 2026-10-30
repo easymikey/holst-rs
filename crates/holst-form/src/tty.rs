@@ -72,7 +72,7 @@ pub fn quiet(quiet: TerminalQuiet) -> io::Result<QuietedTerminal> {
 impl Drop for QuietedTerminal {
     fn drop(&mut self) {
         // Deliver what was written first: a later Ctrl-C would flush it.
-        imp::discard_input();
+        imp::flush_output();
         warn(exclusive(|| imp::put_back(self.0)));
     }
 }
@@ -125,11 +125,11 @@ mod imp {
     }
 
     pub(super) fn restore() -> Option<String> {
-        discard_input();
+        flush_output();
         ORIGINAL.get().and_then(|settings| put_back(*settings))
     }
 
-    pub(super) fn discard_input() {
+    pub(super) fn flush_output() {
         // SAFETY: `tcdrain` takes a descriptor; not a terminal is an ignored error.
         unsafe { libc::tcdrain(libc::STDERR_FILENO) };
     }
@@ -189,5 +189,5 @@ mod imp {
 
     pub(super) fn discard_typeahead() {}
 
-    pub(super) fn discard_input() {}
+    pub(super) fn flush_output() {}
 }

@@ -10,7 +10,7 @@ use crate::{
         search::{NameMatch, Plan, SearchArgs, SearchHit, merged, search},
         table::parse,
     },
-    domain::limit::Limit,
+    domain::{limit::Limit, node::NodeKind},
     remote::client::fake::{on_fake, reply, stored},
 };
 
@@ -168,7 +168,7 @@ fn name(text: &str, score: u32) -> SearchHit {
     SearchHit::Name(NameMatch {
         id: text.to_owned(),
         name: text.to_owned(),
-        kind: "board",
+        kind: NodeKind::Board,
         workspace: "easy".to_owned(),
         path: String::new(),
         in_trash: false,

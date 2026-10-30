@@ -2,15 +2,11 @@
 
 use std::time::Duration;
 
-use holst_core::domain::session::{Session, SessionStatus};
-
-pub(crate) trait LoginClient: Clone {
-    /// Where a login is kept; the machine only hands it back to the caller.
-    type Store: Copy;
-
-    /// Whether the client still signs requests: the server has not refused it.
-    fn status(&self) -> SessionStatus;
-}
+use holst_core::{
+    domain::session::{Session, SessionStatus},
+    remote::client::Client,
+    storage::session_store::SessionStoreKind,
+};
 
 pub(crate) type Milliseconds = u64;
 
@@ -19,12 +15,12 @@ pub(crate) const RECHECK: Duration = Duration::from_secs(30);
 pub(crate) const REVOKED_RECHECK: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
-pub(crate) struct ReadyLogin<C: LoginClient> {
+pub(crate) struct ReadyLogin {
     pub(crate) session: Session,
-    pub(crate) client: C,
+    pub(crate) client: Client,
     pub(crate) epoch: u64,
     pub(crate) checked_at: Milliseconds,
-    pub(crate) store: C::Store,
+    pub(crate) store: SessionStoreKind,
 }
 
 #[derive(Clone)]
@@ -34,9 +30,9 @@ pub(crate) struct RevokedLogin {
 }
 
 #[derive(Clone)]
-pub(crate) enum LoginState<C: LoginClient> {
+pub(crate) enum LoginState {
     Missing,
-    Ready(ReadyLogin<C>),
+    Ready(ReadyLogin),
     Revoked(RevokedLogin),
 }
 
@@ -47,22 +43,22 @@ pub(crate) enum LoginStep {
     Reload,
 }
 
-pub(crate) struct NewLogin<C: LoginClient> {
+pub(crate) struct NewLogin {
     pub(crate) session: Session,
-    pub(crate) store: C::Store,
+    pub(crate) store: SessionStoreKind,
 }
 
 #[cfg_attr(test, derive(strum::IntoStaticStr), strum(serialize_all = "lowercase"))]
-pub(crate) enum LoginPlan<C: LoginClient> {
-    Keep(ReadyLogin<C>),
+pub(crate) enum LoginPlan {
+    Keep(ReadyLogin),
     Refuse(RevokedLogin),
-    Install(NewLogin<C>),
+    Install(NewLogin),
     Forget,
 }
 
-impl<C: LoginClient> ReadyLogin<C> {
+impl ReadyLogin {
     #[must_use]
-    fn rechecked(&self, checked_at: Milliseconds, store: C::Store) -> Self {
+    fn rechecked(&self, checked_at: Milliseconds, store: SessionStoreKind) -> Self {
         Self {
             checked_at,
             store,
@@ -107,7 +103,7 @@ fn within(since: Milliseconds, checked_at: Milliseconds, window: Duration) -> bo
         .is_some_and(|age| u128::from(age) < window.as_millis())
 }
 
-impl<C: LoginClient> LoginState<C> {
+impl LoginState {
     #[must_use]
     pub(crate) fn next(&self, checked_at: Milliseconds) -> LoginStep {
         match self {
@@ -138,10 +134,7 @@ impl<C: LoginClient> LoginState<C> {
 
     /// A store that cannot be read does not end a working login.
     #[must_use]
-    pub(crate) fn kept_unread(
-        &self,
-        checked_at: Milliseconds,
-    ) -> Option<ReadyLogin<C>> {
+    pub(crate) fn kept_unread(&self, checked_at: Milliseconds) -> Option<ReadyLogin> {
         match self {
             LoginState::Ready(ready) if ready.is_active() => {
                 Some(ready.rechecked(checked_at, ready.store))
@@ -153,9 +146,9 @@ impl<C: LoginClient> LoginState<C> {
     #[must_use]
     pub(crate) fn plan(
         &self,
-        loaded: Option<(Session, C::Store)>,
+        loaded: Option<(Session, SessionStoreKind)>,
         checked_at: Milliseconds,
-    ) -> LoginPlan<C> {
+    ) -> LoginPlan {
         match (self, loaded) {
             (_, None) => LoginPlan::Forget,
             (LoginState::Ready(ready), Some((session, store)))
@@ -183,50 +176,43 @@ impl<C: LoginClient> LoginState<C> {
 
 #[cfg(test)]
 mod tests {
-    use holst_core::domain::session::{Session, SessionStatus};
-    use secrecy::SecretString;
+    #![expect(clippy::panic_in_result_fn, reason = "assert is the point of a test")]
 
-    use crate::login::machine::{LoginClient, LoginStep, Milliseconds, RevokedLogin};
+    use holst_core::{
+        domain::session::Session,
+        storage::session_store::SessionStoreKind,
+    };
 
-    type LoginPlan = crate::login::machine::LoginPlan<Working>;
-    type LoginState = crate::login::machine::LoginState<Working>;
-    type ReadyLogin = crate::login::machine::ReadyLogin<Working>;
-
-    #[derive(Clone)]
-    struct Working;
-
-    #[derive(Clone, Copy)]
-    enum Place {
-        Keychain,
-        File,
-    }
-
-    impl LoginClient for Working {
-        type Store = Place;
-
-        fn status(&self) -> SessionStatus {
-            SessionStatus::Active
-        }
-    }
+    use crate::login::{
+        fake::{self, Script},
+        machine::{
+            LoginPlan,
+            LoginState,
+            LoginStep,
+            Milliseconds,
+            ReadyLogin,
+            RevokedLogin,
+        },
+    };
 
     const SECOND: Milliseconds = 1_000;
 
     fn session(token: &str) -> Session {
-        Session::new(SecretString::from(token))
+        fake::session(token)
     }
 
-    fn in_keychain(token: &str) -> (Session, Place) {
-        (session(token), Place::Keychain)
+    fn in_keychain(token: &str) -> (Session, SessionStoreKind) {
+        (session(token), SessionStoreKind::Keychain)
     }
 
-    fn ready(token: &str, checked: Milliseconds) -> ReadyLogin {
-        ReadyLogin {
+    fn ready(token: &str, checked: Milliseconds) -> holst_core::Result<ReadyLogin> {
+        Ok(ReadyLogin {
             session: session(token),
-            client: Working,
+            client: fake::client(session(token), &Script::new([]))?,
             epoch: 1,
             checked_at: checked,
-            store: Place::Keychain,
-        }
+            store: SessionStoreKind::Keychain,
+        })
     }
 
     fn name(next: &LoginStep) -> &'static str {
@@ -245,10 +231,11 @@ mod tests {
     }
 
     #[test]
-    fn ready_is_used_until_recheck() {
-        let login = LoginState::Ready(ready("a", 0));
+    fn ready_is_used_until_recheck() -> holst_core::Result<()> {
+        let login = LoginState::Ready(ready("a", 0)?);
         assert_eq!(name(&login.next(29 * SECOND)), "use");
         assert_eq!(name(&login.next(30 * SECOND)), "reload");
+        Ok(())
     }
 
     #[test]
@@ -263,9 +250,9 @@ mod tests {
     }
 
     #[test]
-    fn clock_going_back_counts_as_stale() {
+    fn clock_going_back_counts_as_stale() -> holst_core::Result<()> {
         assert_eq!(
-            name(&LoginState::Ready(ready("a", 50 * SECOND)).next(0)),
+            name(&LoginState::Ready(ready("a", 50 * SECOND)?).next(0)),
             "reload"
         );
         let revoked = LoginState::Revoked(RevokedLogin {
@@ -274,11 +261,12 @@ mod tests {
         });
         assert_eq!(name(&revoked.next(10 * SECOND)), "reload");
         assert_eq!(name(&revoked.next(3_612 * SECOND)), "refuse");
+        Ok(())
     }
 
     #[test]
-    fn plan_follows_the_store() {
-        let ready = LoginState::Ready(ready("a", 0));
+    fn plan_follows_the_store() -> holst_core::Result<()> {
+        let ready = LoginState::Ready(ready("a", 0)?);
         let revoked = LoginState::Revoked(RevokedLogin {
             session: session("a"),
             checked_at: 0,
@@ -297,12 +285,14 @@ mod tests {
         let got: Vec<_> = cases.iter().map(plan).collect();
         let want: Vec<_> = cases.iter().map(|&(.., want)| want).collect();
         assert_eq!(got, want);
+        Ok(())
     }
 
     #[test]
-    fn plan_records_the_check_time() {
-        let login = LoginState::Ready(ready("a", 0));
-        let plan = login.plan(Some((session("a"), Place::File)), 7 * SECOND);
+    fn plan_records_the_check_time() -> holst_core::Result<()> {
+        let login = LoginState::Ready(ready("a", 0)?);
+        let plan = login.plan(Some((session("a"), SessionStoreKind::File)), 7 * SECOND);
         assert_eq!(kept_at(plan), Some(7 * SECOND));
+        Ok(())
     }
 }

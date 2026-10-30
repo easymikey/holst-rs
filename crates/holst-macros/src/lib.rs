@@ -52,6 +52,7 @@ use syn::{
 ///
 /// `class = Read | Write | Admin` also emits `pub(crate) const TREE: Endpoint`;
 /// `unlisted` keeps the call out of the catalogue. One of the two is required.
+/// Only an `unlisted` call may use `body = <json>` or `payload = <HttpBody>`.
 #[proc_macro_attribute]
 pub fn get(attribute: TokenStream, item: TokenStream) -> TokenStream {
     endpoint("Get", attribute, item)
@@ -116,6 +117,9 @@ const EXPECTED: &str = "expected `query(key = value, key? = option, ..)`, `query
                         `unlisted`, `anonymous` or `request_only`";
 
 const ONE_BODY: &str = "a call has one body: `body = <json>`, `payload = <HttpBody>` or one `#[body]` parameter";
+
+const UNTYPED_BODY: &str = "a listed call (`class = ..`) takes its body as a `#[body]` parameter; \
+                            `body = <json>` and `payload = <HttpBody>` are for `unlisted` calls";
 
 const BODY_REFERENCE: &str = "a `#[body]` parameter is a reference, `&Type`";
 
@@ -309,6 +313,20 @@ impl EndpointAttribute {
         })
     }
 
+    fn typed_when_listed(self) -> syn::Result<Self> {
+        match (&self.body, self.listing) {
+            (
+                Some(EndpointBody::Json(_) | EndpointBody::Payload(_)),
+                Some(
+                    EndpointListing::Read
+                    | EndpointListing::Write
+                    | EndpointListing::Admin,
+                ),
+            ) => Err(syn::Error::new_spanned(&self.path, UNTYPED_BODY)),
+            _ => Ok(self),
+        }
+    }
+
     fn bodied(self, body: EndpointBody) -> Option<Self> {
         self.body.is_none().then_some(Self {
             body: Some(body),
@@ -348,7 +366,8 @@ fn expand(method: &str, attribute: Tokens, item: Tokens) -> syn::Result<Tokens> 
         Some((param, ty)) => endpoint
             .bodied(EndpointBody::Typed { param, ty })
             .ok_or_else(|| syn::Error::new_spanned(&sig.ident, ONE_BODY)),
-    }?;
+    }?
+    .typed_when_listed()?;
     let params = parameter_names(&sig)?;
     let (client, rest) = params.split_first().ok_or_else(|| {
         syn::Error::new_spanned(&sig.ident, "the first parameter must be the client")
@@ -642,6 +661,7 @@ mod tests {
         MISSING_LISTING,
         ONE_BODY,
         Tokens,
+        UNTYPED_BODY,
         expand,
         placeholders,
     };
@@ -701,7 +721,7 @@ mod tests {
             "Post",
             quote!(
                 "user/list",
-                class = Read,
+                unlisted,
                 query(user_ids = user_ids.join(",")),
                 body = json!({})
             ),
@@ -721,7 +741,7 @@ mod tests {
         assert!(out.contains(&body), "{out}");
         assert!(out.contains("Method :: Post"), "{out}");
         let raw = get(
-            quote!("upload_file", class = Write, payload = bytes),
+            quote!("upload_file", unlisted, payload = bytes),
             quote!(
                 pub async fn up(c: &Client, bytes: HttpBody) -> Result<Value>;
             ),
@@ -810,14 +830,14 @@ mod tests {
             quote!(
                 "recent/page",
                 class = Write,
-                query(pageSize = size, cursor? = cursor),
-                body = json!({})
+                query(pageSize = size, cursor? = cursor)
             ),
             quote!(
                 pub async fn page(
                     c: &Client,
                     size: u32,
                     cursor: Option<&str>,
+                    #[body] body: &Page,
                 ) -> Result<Value>;
             ),
         )
@@ -832,7 +852,9 @@ mod tests {
                         ("pageSize", crate::remote::catalogue::Need::Required),
                         ("cursor", crate::remote::catalogue::Need::Optional)
                     ]),
-                    body: crate::remote::catalogue::Body::Json,
+                    body: crate::remote::catalogue::Body::Typed(
+                        crate::remote::catalogue::check::<Page>
+                    ),
                 };
         });
         assert!(out.contains(&wanted), "{out}");
@@ -966,6 +988,26 @@ mod tests {
         quote!("x", class = Write),
         quote!(pub async fn get(c: &Client, #[body] a: &A, #[body] b: &B) -> Result<Value>;),
         ONE_BODY
+    )]
+    #[case::listed_json_body(
+        quote!("x", class = Write, body = json!({})),
+        quote!(pub async fn get(client: &Client) -> Result<Value>;),
+        UNTYPED_BODY
+    )]
+    #[case::listed_admin_json_body(
+        quote!("x", class = Admin, body = json!({})),
+        quote!(pub async fn get(client: &Client) -> Result<Value>;),
+        UNTYPED_BODY
+    )]
+    #[case::listed_read_json_body(
+        quote!("x", class = Read, body = json!({})),
+        quote!(pub async fn get(client: &Client) -> Result<Value>;),
+        UNTYPED_BODY
+    )]
+    #[case::listed_payload(
+        quote!("x", class = Write, payload = bytes),
+        quote!(pub async fn get(client: &Client, bytes: HttpBody) -> Result<Value>;),
+        UNTYPED_BODY
     )]
     #[case::owned_body_parameter(
         quote!("x", class = Write),

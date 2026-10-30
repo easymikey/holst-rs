@@ -4,7 +4,7 @@ use std::process::Output;
 
 use serde_json::{Value, json};
 
-#[cfg(unix)] use crate::support::{REVOKED, accepted, assert_no_noise};
+#[cfg(unix)] use crate::support::{REVOKED, accepted, assert_no_noise, saved_for};
 use crate::{
     fake,
     support::{TestResult, holst_in, home, stderr},
@@ -85,7 +85,7 @@ fn assert_rotation_saved_or_warned(
 #[test]
 fn unsaved_rotation_is_a_warning_not_a_failure() -> TestResult {
     let fake = holst_core::fake::Fake::start_blocking(fake::easy().rotating_cookie())?;
-    let before = accepted();
+    let before = saved_for(fake.base_url(), &accepted());
     let args = ["-o", "json", "api", "GET", "/gapi/current_user"];
     let (out, dir, denial) = holst_read_only(fake.base_url(), &before, &args)?;
     let text = stderr(&out);
@@ -139,7 +139,8 @@ fn assert_logout_failed_or_removed(
 #[test]
 fn logout_that_cannot_remove_the_login_fails() -> TestResult {
     let base = fake::start()?.base_url().to_owned();
-    let (out, dir, denial) = holst_read_only(&base, REVOKED, &["auth", "logout"])?;
+    let (out, dir, denial) =
+        holst_read_only(&base, &saved_for(&base, REVOKED), &["auth", "logout"])?;
     assert_logout_failed_or_removed(denial, &out, &dir);
     Ok(())
 }

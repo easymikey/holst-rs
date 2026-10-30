@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::{
     fake,
-    support::{REVOKED, TestResult, holst_at, holst_in, home, stderr},
+    support::{REVOKED, TestResult, holst_at, holst_in, home, saved_for, stderr},
 };
 
 fn signed_home(base: &str) -> std::io::Result<PathBuf> {
@@ -130,7 +130,7 @@ fn tree_with_trash_shows_the_trash() -> TestResult {
 #[test]
 fn snapshot_options_out_of_range_are_listed_together() -> TestResult {
     // A saved login that is never sent: the address has no server.
-    let root = home(Some(REVOKED))?;
+    let root = home(Some(&saved_for("http://127.0.0.1:9", REVOKED)))?;
     let run = |options: &[&str]| {
         let board = ["board", "snap", "00000001-0000-4000-8000-000000000001"];
         holst_at(&root, &root, &[&board[..], options].concat())

@@ -20,10 +20,8 @@ use crate::{
         COLOR,
         CONTENT_HIDDEN,
         CONTROL,
-        ELBOW_MIDWAY_CONTROLS,
         END,
         FILL_COLOR,
-        MIDWAY_CONTROLS,
         OBJECT_ID,
         OPACITY,
         POSITION,
@@ -483,7 +481,7 @@ impl ShapeLook {
                 .get(RATIO)
                 .and_then(Value::as_u64)
                 .and_then(FrameRatio::of_stored)
-                .map(|ratio| ratio.name().to_owned()),
+                .map(|ratio| <&str>::from(ratio).to_owned()),
             background: fields
                 .get(BACKGROUND_STYLE)
                 .and_then(Value::as_u64)
@@ -543,10 +541,7 @@ impl ShapeLook {
 /// The controls an arrow bends at, those of its line kind.
 fn bend_of(fields: &Value) -> Vec<String> {
     let line = ArrowType::of_stored(fields.get(ARROW_TYPE).and_then(Value::as_str));
-    let name = match line {
-        ArrowType::Elbow => ELBOW_MIDWAY_CONTROLS,
-        ArrowType::Straight | ArrowType::Curved => MIDWAY_CONTROLS,
-    };
+    let name = line.controls_field();
     let axis = |control: &Value, axis: &str| control.get(axis).and_then(Value::as_f64);
     fields
         .get(name)

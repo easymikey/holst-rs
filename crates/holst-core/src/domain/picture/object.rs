@@ -95,7 +95,7 @@ fn placed(object: &Object, rectangle: Rectangle, images: &PictureImages<'_>) -> 
     };
     let local =
         Rectangle::new(0.0, 0.0, rectangle.width / scale, rectangle.height / scale);
-    let rotation = area::scene::rotation(object);
+    let rotation = object.rotation;
     let turn = if rotation == 0.0 {
         String::new()
     } else {
@@ -593,16 +593,14 @@ fn drawing(fields: &Value) -> String {
         }
         _ => String::new(),
     };
-    let paint = Some(()).filter(|()| filled).map_or_else(
-        || {
-            format!(
-                "fill=\"none\" stroke=\"{color}\" stroke-width=\"{}\" stroke-linecap=\"round\" \
-                 stroke-linejoin=\"round\"",
-                format_number(width)
-            )
-        },
-        |()| format!("fill=\"{color}\""),
-    );
+    let paint = match filled.then_some(()) {
+        Some(()) => format!("fill=\"{color}\""),
+        None => format!(
+            "fill=\"none\" stroke=\"{color}\" stroke-width=\"{}\" stroke-linecap=\"round\" \
+             stroke-linejoin=\"round\"",
+            format_number(width)
+        ),
+    };
     format!(
         "<path transform=\"scale({})\" d=\"{d}\" {paint} opacity=\"{}\"/>",
         format_number(scale),

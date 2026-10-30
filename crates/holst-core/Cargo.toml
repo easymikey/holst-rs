@@ -77,14 +77,14 @@ logging = ["dep:tracing-subscriber"]
 png = ["dep:resvg"]
 fake = []
 
-# Without an explicit backend per OS, keyring silently uses a mock store.
+# keyring 4's default `v1` feature wires the native store per OS; there is no mock fallback.
 [target.'cfg(windows)'.dependencies]
-keyring = { version = "3", features = ["windows-native"] }
+keyring = "4"
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))'.dependencies]
-keyring = { version = "3", features = ["async-secret-service", "async-io", "crypto-rust"] }
-secret-service = { version = "4", default-features = false }
-zbus = { version = "4", default-features = false }
+keyring = "4"
+secret-service = { version = "5", default-features = false }
+zbus = { version = "5", default-features = false }
 
 [package.metadata.cargo-machete]
 ignored = ["idna_adapter"]

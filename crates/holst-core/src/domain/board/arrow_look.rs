@@ -7,6 +7,7 @@ use serde::Deserialize;
 use crate::{
     domain::geometry::Point,
     error::{Error, Result, board_change::BoardChangeError},
+    protocol::document::{ELBOW_MIDWAY_CONTROLS, MIDWAY_CONTROLS},
 };
 
 /// The line of an arrow: what `arrowType` can hold.
@@ -27,6 +28,15 @@ impl ArrowType {
             ArrowType::Straight => "straight",
             ArrowType::Elbow => "elbow",
             ArrowType::Curved => "curved",
+        }
+    }
+
+    /// The field that holds the bend of this line: an elbow bends on its own.
+    #[must_use]
+    pub const fn controls_field(self) -> &'static str {
+        match self {
+            ArrowType::Elbow => ELBOW_MIDWAY_CONTROLS,
+            ArrowType::Straight | ArrowType::Curved => MIDWAY_CONTROLS,
         }
     }
 

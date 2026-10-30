@@ -32,6 +32,20 @@ pub struct Upload {
     pub board: Option<String>,
 }
 
+/// The header of a PNG of `width` by `height` pixels, which is all the CLI
+/// and the tool read of it.
+#[must_use]
+pub fn png(width: u32, height: u32) -> Vec<u8> {
+    [
+        &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13][..],
+        b"IHDR",
+        &width.to_be_bytes(),
+        &height.to_be_bytes(),
+        &[8, 2, 0, 0, 0],
+    ]
+    .concat()
+}
+
 /// A snapshot the fake holds when it starts, of the board called `board`.
 #[derive(Debug, Clone)]
 pub(crate) struct FixtureBackup {

@@ -144,9 +144,10 @@ impl RunSettings {
 
     pub(crate) async fn clear(
         &self,
+        ended: Option<Session>,
     ) -> Result<Vec<(SessionStoreKind, holst_core::Result<LoginRemoval>)>> {
         let location = self.location();
-        apart(move || location.clear())
+        apart(move || location.clear(ended.as_ref()))
             .await
             .ok_or(Error::SessionStoreLost)
     }
@@ -156,9 +157,10 @@ impl RunSettings {
     }
 
     pub(crate) fn client(&self, session: Option<Session>) -> Result<Client> {
+        let base = &self.settings.base_url;
         Ok(holst_core::command::login::connect(
-            session,
-            self.settings.base_url.clone(),
+            session.map(|login| login.on(base)).transpose()?,
+            base.clone(),
             holst_core::system::clock::SystemClock,
             holst_core::system::id::RandomIds,
         )?)

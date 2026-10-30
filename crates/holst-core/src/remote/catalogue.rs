@@ -580,6 +580,17 @@ mod tests {
     }
 
     #[test]
+    fn no_write_or_admin_call_takes_an_untyped_body() {
+        let untyped: Vec<_> = catalogue()
+            .into_iter()
+            .filter(|entry| matches!(entry.class, Write | Admin))
+            .filter(|entry| matches!(entry.body, Json))
+            .map(|entry| entry.template)
+            .collect();
+        assert_eq!(untyped, Vec::<&str>::new());
+    }
+
+    #[test]
     fn money_and_login_paths_are_found_by_name() {
         let entries = [
             call(
