@@ -92,6 +92,7 @@ fn part_text(part: ShowPart, fetched: &PartRead) -> String {
         |body: String| format!("{name}:\n{}", joined(body.lines().map(indented), "\n"));
     match fetched {
         PartRead::NotRead { error } => format!("{name}: could not be read: {error}"),
+        PartRead::NeedsAdmin { error } => format!("{name}: {error}"),
         PartRead::Members(members) => listed(members_text(members)),
         PartRead::Requests(rows) => listed(requests_text(rows)),
         PartRead::Plan(plan) => plan_text(plan),
@@ -330,6 +331,14 @@ mod tests {
         };
         assert_eq!(requests_text(&[row]), "Zoe  <z@x.io>  asked t1  pending");
         assert_eq!(requests_text(&[]), "(empty)");
+    }
+
+    #[test]
+    fn a_plan_without_rights_says_so() {
+        let read = holst_core::command::workspace::PartRead::NeedsAdmin {
+            error: "needs admin rights",
+        };
+        assert_eq!(super::part_text(holst_core::command::workspace::ShowPart::Plan, &read), "plan: needs admin rights");
     }
 
     #[test]

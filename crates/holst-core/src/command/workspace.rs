@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use futures_util::future::{OptionFuture, join_all};
 use holst_macros::CommandArgs;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::{
     command::{
@@ -26,6 +26,7 @@ use crate::{
     error::{
         Result,
         confirmation::{ChangeRisk, Unconfirmed},
+        http::HttpError,
         input::InputError,
         lookup::{Candidate, Candidates},
     },
@@ -319,6 +320,8 @@ pub enum PartRead {
     Plan(Plan),
     Found(Value),
     NotRead { error: String },
+    /// The plan is only read for those who manage the licence.
+    NeedsAdmin { error: &'static str },
 }
 
 /// A workspace with the parts asked for; a guest's nulls are left out.
@@ -475,12 +478,29 @@ pub async fn show(client: &Client, args: &ShowArgs) -> Result<WorkspaceBrief> {
         parts: wanted
             .into_iter()
             .zip(fetched.into_iter().map(|read| {
-                read.unwrap_or_else(|error| PartRead::NotRead {
-                    error: error.to_string(),
+                read.unwrap_or_else(|error| {
+                    if refuses_licence_management(&error) {
+                        PartRead::NeedsAdmin {
+                            error: "needs admin rights",
+                        }
+                    } else {
+                        PartRead::NotRead {
+                            error: error.to_string(),
+                        }
+                    }
                 })
             }))
             .collect(),
     })
+}
+
+fn refuses_licence_management(error: &crate::Error) -> bool {
+    matches!(
+        error,
+        crate::Error::Http(HttpError::Status { status: 403, detail, .. })
+            if serde_json::from_str::<Value>(detail)
+                .is_ok_and(|body| body.get("errCode") == Some(&json!("can-not-manage-license")))
+    )
 }
 
 /// The members a `workspace get` reply names.

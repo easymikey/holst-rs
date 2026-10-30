@@ -169,6 +169,7 @@ impl McpServer {
                     }
                     PartRead::Requests(rows) => self.part_text(&label, json!(rows)),
                     PartRead::Plan(plan) => self.part_text(&label, json!(plan)),
+                    PartRead::NeedsAdmin { error } => format!("{label}: {error}\n"),
                     PartRead::NotRead { error } => {
                         format!("{label}: not read: {error}\n")
                     }

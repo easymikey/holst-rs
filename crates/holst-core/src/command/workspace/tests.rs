@@ -527,3 +527,28 @@ fn a_query_is_an_object_of_text_or_numbers() {
         (Some(words), Some(words), Some(0))
     );
 }
+
+#[tokio::test]
+async fn a_plan_without_licence_rights_needs_admin_rights() -> Result<()> {
+    let refused = crate::remote::client::fake::reply(
+        403,
+        &[],
+        r#"{"errCode":"can-not-manage-license","msg":"","vars":null}"#,
+    );
+    let (_, client) = on_fake(
+        [json_reply(&me()), json_reply(&roster()), refused],
+        Some(stored("tok", "s=1")),
+    )?;
+    let shown = show(&client, &shown_with(vec![ShowPart::Plan], None)).await?;
+    assert_eq!(
+        shown.parts.get(&ShowPart::Plan),
+        Some(&PartRead::NeedsAdmin {
+            error: "needs admin rights"
+        })
+    );
+    assert_eq!(
+        serde_json::to_value(shown.parts.get(&ShowPart::Plan))?,
+        json!({ "error": "needs admin rights" })
+    );
+    Ok(())
+}
