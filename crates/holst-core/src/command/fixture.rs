@@ -147,13 +147,24 @@ pub(in crate::command) fn signed_in_hud() -> Result<(Arc<Fake>, Client)> {
 )]
 pub(in crate::command) fn directory() -> Result<PathBuf> {
     static COUNT: AtomicU32 = AtomicU32::new(0);
-    let dir = std::env::temp_dir().join(format!(
-        "holst-object-{}-{}",
-        std::process::id(),
-        COUNT.fetch_add(1, Ordering::Relaxed)
-    ));
-    crate::storage::file::create_dir_all(&dir)?;
-    Ok(dir)
+    let next = || {
+        std::env::temp_dir().join(format!(
+            "holst-object-{}-{}",
+            std::process::id(),
+            COUNT.fetch_add(1, Ordering::Relaxed)
+        ))
+    };
+    // skips a directory left by an earlier process with the same pid
+    std::iter::repeat_with(next)
+        .take(100)
+        .find(|dir| crate::storage::file::create_dir(dir).is_ok())
+        .map_or_else(
+            || {
+                let dir = next();
+                crate::storage::file::create_dir(&dir).map(|()| dir)
+            },
+            Ok,
+        )
 }
 
 /// An editable board holding `objects`, for one connection; every update sent

@@ -319,9 +319,13 @@ pub enum PartRead {
     Requests(Vec<JoinRequest>),
     Plan(Plan),
     Found(Value),
-    NotRead { error: String },
+    NotRead {
+        error: String,
+    },
     /// The plan is only read for those who manage the licence.
-    NeedsAdmin { error: &'static str },
+    NeedsAdmin {
+        error: &'static str,
+    },
 }
 
 /// A workspace with the parts asked for; a guest's nulls are left out.

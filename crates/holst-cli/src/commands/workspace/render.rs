@@ -338,7 +338,10 @@ mod tests {
         let read = holst_core::command::workspace::PartRead::NeedsAdmin {
             error: "needs admin rights",
         };
-        assert_eq!(super::part_text(holst_core::command::workspace::ShowPart::Plan, &read), "plan: needs admin rights");
+        assert_eq!(
+            super::part_text(holst_core::command::workspace::ShowPart::Plan, &read),
+            "plan: needs admin rights"
+        );
     }
 
     #[test]
