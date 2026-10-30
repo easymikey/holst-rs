@@ -30,6 +30,10 @@ pub async fn trash(client: &Client, workspace_id: &str) -> Result<Value>;
 #[get("workspace_user/{workspace_id}/list_last_active_dates", class = Admin)]
 pub async fn last_active_dates(client: &Client, workspace_id: &str) -> Result<Value>;
 
+/// The requests to join that wait for an answer.
+#[get("workspace/{workspace_id}/join_request", class = Admin, query(scope = "active"))]
+pub async fn join_requests(client: &Client, workspace_id: &str) -> Result<Value>;
+
 /// How many boards a user created in the workspace; `userId` is required.
 #[get("workspace/{workspace_id}/created_channels_count", class = Read, query(userId = user_id))]
 pub async fn created_channels_count(
@@ -114,6 +118,7 @@ pub(crate) const ENDPOINTS: &[Endpoint] = &[
     GET,
     TRASH,
     LAST_ACTIVE_DATES,
+    JOIN_REQUESTS,
     CREATED_CHANNELS_COUNT,
     SSO_SETTINGS,
     DOMAINS,

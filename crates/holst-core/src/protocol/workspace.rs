@@ -15,6 +15,7 @@ pub(crate) struct WorkspaceReply {
     pub(crate) users: Option<Vec<ReplyUser>>,
     #[serde(rename = "workspace_users")]
     pub(crate) seats: Option<Vec<Seat>>,
+    pub(crate) subscription_users: Option<Vec<SubscriptionUser>>,
 }
 
 /// How many users hold each role; only the guests are read.
@@ -36,8 +37,57 @@ pub(crate) struct ReplyUser {
 pub(crate) struct Seat {
     pub(crate) user_id: Option<String>,
     pub(crate) role: Option<String>,
+    pub(crate) role_reason: Option<String>,
     #[serde(rename = "last_active_at")]
     pub(crate) last_active: Option<String>,
+}
+
+/// Whether a user holds a licence of the workspace's subscription.
+#[derive(Debug, Deserialize)]
+pub(crate) struct SubscriptionUser {
+    pub(crate) user_id: Option<String>,
+    pub(crate) has_license: Option<bool>,
+}
+
+/// `GET /gapi/workspace/<id>/join_request`.
+#[derive(Debug, Deserialize)]
+pub(crate) struct JoinRequestsReply {
+    #[serde(rename = "joinRequests")]
+    pub(crate) requests: Option<Vec<JoinRequestItem>>,
+}
+
+/// One request to join.
+#[derive(Debug, Deserialize)]
+pub(crate) struct JoinRequestItem {
+    pub(crate) id: Option<String>,
+    pub(crate) user: Option<ReplyUser>,
+    #[serde(rename = "createdAt")]
+    pub(crate) created: Option<String>,
+    pub(crate) status: Option<String>,
+}
+
+/// `GET /gapi/subscription/get_subscription_with_billing_details/<id>`.
+#[derive(Debug, Deserialize)]
+pub(crate) struct SubscriptionReply {
+    pub(crate) subscription: Option<Subscription>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Subscription {
+    pub(crate) plan: Option<PlanItem>,
+    pub(crate) currency: Option<String>,
+}
+
+/// A plan as the server words it; the price is in cents.
+#[derive(Debug, Deserialize)]
+pub(crate) struct PlanItem {
+    pub(crate) name: Option<String>,
+    pub(crate) level: Option<u32>,
+    pub(crate) period: Option<String>,
+    pub(crate) price: Option<u64>,
+    pub(crate) currency: Option<String>,
+    #[serde(rename = "trialPeriodInDays")]
+    pub(crate) trial_days: Option<u32>,
 }
 
 /// `GET /gapi/current_user`: the lists that name the user's workspaces.

@@ -331,6 +331,7 @@ mod tests {
         GET /gapi/workspace/{workspace_id} Read Names([]) None
         GET /gapi/workspace/{workspace_id}/trash Read Names([]) None
         GET /gapi/workspace_user/{workspace_id}/list_last_active_dates Admin Names([]) None
+        GET /gapi/workspace/{workspace_id}/join_request Admin Names([("scope", Required)]) None
         GET /gapi/workspace/{workspace_id}/created_channels_count Read Names([("userId", Required)]) None
         GET /gapi/workspace/{workspace_id}/sso_settings Admin Names([]) None
         GET /gapi/workspace_domains/{workspace_id}/list Admin Names([]) None

@@ -3,8 +3,10 @@
 use holst_core::{
     command::workspace::{
         EventLog,
+        JoinRequest,
         Member,
         PartRead,
+        Plan,
         ShowPart,
         WorkspaceBrief,
         WorkspaceChange,
@@ -91,6 +93,8 @@ fn part_text(part: ShowPart, fetched: &PartRead) -> String {
     match fetched {
         PartRead::NotRead { error } => format!("{name}: could not be read: {error}"),
         PartRead::Members(members) => listed(members_text(members)),
+        PartRead::Requests(rows) => listed(requests_text(rows)),
+        PartRead::Plan(plan) => plan_text(plan),
         PartRead::Found(value) => listed(format!("{value:#}")),
     }
 }
@@ -107,11 +111,55 @@ fn members_text(members: &[Member]) -> String {
     }
 }
 
+fn requests_text(rows: &[JoinRequest]) -> String {
+    match rows {
+        [] => EMPTY.to_owned(),
+        _ => joined(rows.iter().map(request_line), "\n").to_string(),
+    }
+}
+
+fn request_line(row: &JoinRequest) -> String {
+    [
+        row.name.clone().or_else(|| row.id.clone()),
+        row.email.as_ref().map(|email| format!("<{email}>")),
+        row.created.as_ref().map(|when| format!("asked {when}")),
+        row.status.clone(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join("  ")
+}
+
+fn plan_text(plan: &Plan) -> String {
+    [
+        Some(format!("plan: {}", plan.name)),
+        plan.level.map(|level| format!("level {level}")),
+        plan.price_text(),
+        plan.trial_days.map(|days| format!("trial {days} days")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join("  ")
+}
+
+fn role_text(member: &Member) -> Option<String> {
+    member
+        .owner
+        .then(|| "owner".to_owned())
+        .or_else(|| member.role.clone())
+        .map(|role| match member.licence {
+            Some(true) => format!("{role} · licence"),
+            _ => role,
+        })
+}
+
 fn member_line(member: &Member) -> String {
     [
         Some(member.name.as_ref().unwrap_or(&member.id).clone()),
         member.email.as_ref().map(|email| format!("<{email}>")),
-        member.role.clone(),
+        role_text(member),
         member
             .last_active
             .as_ref()
@@ -145,13 +193,27 @@ mod tests {
     use holst_core::{
         command::{
             change::{ChangeReport, PlannedRequest},
-            workspace::{ChangeKind, EventLog, Member, WorkspaceChange, WorkspaceRow},
+            workspace::{
+                ChangeKind,
+                EventLog,
+                JoinRequest,
+                Member,
+                Plan,
+                WorkspaceChange,
+                WorkspaceRow,
+            },
         },
         error::confirmation::{ChangeRisk, Unconfirmed},
     };
     use rstest::rstest;
 
-    use crate::commands::workspace::render::{listing_text, log_text, members_text};
+    use crate::commands::workspace::render::{
+        listing_text,
+        log_text,
+        members_text,
+        plan_text,
+        requests_text,
+    };
 
     fn planned() -> PlannedRequest {
         PlannedRequest {
@@ -224,6 +286,8 @@ mod tests {
             name: name.map(str::to_owned),
             email: Some("a@x.io".to_owned()),
             role: Some("admin".to_owned()),
+            owner: false,
+            licence: None,
             last_active: last_active.map(str::to_owned),
         };
         assert_eq!(
@@ -231,6 +295,65 @@ mod tests {
             "Ann  <a@x.io>  admin  active t1\nu1  <a@x.io>  admin"
         );
         assert_eq!(members_text(&[]), "(empty)");
+    }
+
+    #[test]
+    fn the_owner_and_licence_holders_are_marked() {
+        let member = |owner: bool, licence: Option<bool>| Member {
+            id: "u1".to_owned(),
+            name: Some("Ann".to_owned()),
+            email: None,
+            role: Some("admin".to_owned()),
+            owner,
+            licence,
+            last_active: None,
+        };
+        assert_eq!(
+            members_text(&[
+                member(true, Some(true)),
+                member(false, Some(true)),
+                member(false, Some(false)),
+                member(false, None)
+            ]),
+            "Ann  owner · licence\nAnn  admin · licence\nAnn  admin\nAnn  admin"
+        );
+    }
+
+    #[test]
+    fn a_request_line_has_who_when_and_status() {
+        let row = JoinRequest {
+            id: Some("r1".to_owned()),
+            name: Some("Zoe".to_owned()),
+            email: Some("z@x.io".to_owned()),
+            created: Some("t1".to_owned()),
+            status: Some("pending".to_owned()),
+        };
+        assert_eq!(requests_text(&[row]), "Zoe  <z@x.io>  asked t1  pending");
+        assert_eq!(requests_text(&[]), "(empty)");
+    }
+
+    #[test]
+    fn a_plan_is_one_line_and_free_is_just_the_name() {
+        let plan = |name: &str, price: Option<u64>, currency: Option<&str>| Plan {
+            name: name.to_owned(),
+            level: price.map(|_| 5),
+            period: Some("Month".to_owned()),
+            price,
+            currency: currency.map(str::to_owned),
+            trial_days: price.map(|_| 14),
+        };
+        assert_eq!(
+            [
+                plan_text(&plan("Free", None, None)),
+                plan_text(&plan("Team", Some(1200), Some("USD"))),
+                plan_text(&plan("Team", Some(1200), None)),
+            ],
+            [
+                "plan: Free",
+                "plan: Team  level 5  12.00 USD/month  trial 14 days",
+                "plan: Team  level 5  price 1200  trial 14 days",
+            ]
+        );
     }
 
     #[test]

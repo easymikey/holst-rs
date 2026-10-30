@@ -32,8 +32,10 @@ use crate::{
     protocol::workspace::{
         CurrentUser,
         EventsReply,
+        JoinRequestsReply,
         JoinableReply,
         Organization,
+        SubscriptionReply,
         WorkspaceReply,
     },
     remote::{api, client::Client},
@@ -101,7 +103,7 @@ pub struct ShowArgs {
     pub workspace: Option<String>,
     #[argument(
         value_name = "parts",
-        help = "Also show these parts, comma separated: members, activity, plan, plans, sso, domains, created; none by default"
+        help = "Also show these parts, comma separated: members, requests, activity, plan, plans, sso, domains, created; none by default"
     )]
     pub with: Vec<ShowPart>,
     #[argument(
@@ -129,6 +131,7 @@ pub struct ShowArgs {
 #[strum(serialize_all = "snake_case")]
 pub enum ShowPart {
     Members,
+    Requests,
     Activity,
     Plan,
     Plans,
@@ -236,7 +239,75 @@ pub struct Member {
     pub name: Option<String>,
     pub email: Option<String>,
     pub role: Option<String>,
+    /// The admin who made the workspace.
+    pub owner: bool,
+    /// `None` when the reply has no list of licences.
+    pub licence: Option<bool>,
     pub last_active: Option<String>,
+}
+
+/// A request to join the workspace that waits for an answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct JoinRequest {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub email: Option<String>,
+    pub created: Option<String>,
+    pub status: Option<String>,
+}
+
+/// The plan of a workspace; `Free` when the reply names none.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Plan {
+    pub name: String,
+    pub level: Option<u32>,
+    pub period: Option<String>,
+    /// In cents.
+    pub price: Option<u64>,
+    pub currency: Option<String>,
+    pub trial_days: Option<u32>,
+}
+
+impl Plan {
+    fn of(reply: SubscriptionReply) -> Self {
+        reply
+            .subscription
+            .and_then(|subscription| {
+                subscription.plan.map(|plan| Self {
+                    name: plan.name.unwrap_or_default(),
+                    level: plan.level,
+                    period: plan.period,
+                    price: plan.price,
+                    currency: plan.currency.or(subscription.currency),
+                    trial_days: plan.trial_days,
+                })
+            })
+            .unwrap_or_else(|| Self {
+                name: "Free".to_owned(),
+                level: None,
+                period: None,
+                price: None,
+                currency: None,
+                trial_days: None,
+            })
+    }
+
+    /// `4.99 USD/month`; `price 499` while the reply names no currency.
+    #[must_use]
+    pub fn price_text(&self) -> Option<String> {
+        let cents = self.price?;
+        Some(self.currency.as_ref().map_or_else(
+            || format!("price {cents}"),
+            |currency| {
+                let period = self
+                    .period
+                    .as_deref()
+                    .map(|period| format!("/{}", period.to_lowercase()))
+                    .unwrap_or_default();
+                format!("{}.{:02} {currency}{period}", cents / 100, cents % 100)
+            },
+        ))
+    }
 }
 
 /// What came of one part: its reply, or why it failed; a part fails alone.
@@ -244,6 +315,8 @@ pub struct Member {
 #[serde(untagged)]
 pub enum PartRead {
     Members(Vec<Member>),
+    Requests(Vec<JoinRequest>),
+    Plan(Plan),
     Found(Value),
     NotRead { error: String },
 }
@@ -420,6 +493,7 @@ pub(crate) fn members_of(reply: Value) -> Result<Vec<Member>> {
 
 fn members_in(reply: &WorkspaceReply) -> Vec<Member> {
     let seats = reply.seats.as_deref().unwrap_or_default();
+    let licences = reply.subscription_users.as_deref();
     reply
         .users
         .iter()
@@ -433,6 +507,16 @@ fn members_in(reply: &WorkspaceReply) -> Vec<Member> {
                 name: user.name.clone().or_else(|| user.username.clone()),
                 email: user.email.clone(),
                 role: seat.and_then(|seat| seat.role.clone()),
+                owner: seat.is_some_and(|seat| {
+                    seat.role.as_deref() == Some("admin")
+                        && seat.role_reason.as_deref() == Some("by_create_workspace")
+                }),
+                licence: licences.map(|list| {
+                    list.iter().any(|each| {
+                        each.user_id.as_deref() == Some(id.as_str())
+                            && each.has_license == Some(true)
+                    })
+                }),
                 last_active: seat.and_then(|seat| seat.last_active.clone()),
                 id,
             })
@@ -516,12 +600,18 @@ async fn fetch(
     };
     match part {
         ShowPart::Members => Ok(PartRead::Members(chosen().cloned().collect())),
+        ShowPart::Requests => api::workspace::join_requests(client, workspace_id)
+            .await
+            .and_then(join_requests)
+            .map(PartRead::Requests),
         ShowPart::Activity => api::workspace::last_active_dates(client, workspace_id)
             .await
             .map(|reply| PartRead::Found(only_of(reply, who))),
         ShowPart::Plan => api::subscription::current(client, workspace_id)
             .await
-            .map(PartRead::Found),
+            .and_then(|reply| {
+                Ok(PartRead::Plan(Plan::of(serde_json::from_value(reply)?)))
+            }),
         ShowPart::Plans => api::subscription::available_plans(client)
             .await
             .map(PartRead::Found),
@@ -545,6 +635,25 @@ async fn fetch(
                 .map(|counts| PartRead::Found(Value::Object(counts)))
         }
     }
+}
+
+fn join_requests(reply: Value) -> Result<Vec<JoinRequest>> {
+    let reply: JoinRequestsReply = serde_json::from_value(reply)?;
+    Ok(reply
+        .requests
+        .into_iter()
+        .flatten()
+        .map(|item| JoinRequest {
+            id: item.id,
+            name: item
+                .user
+                .as_ref()
+                .and_then(|user| user.name.clone().or_else(|| user.username.clone())),
+            email: item.user.and_then(|user| user.email),
+            created: item.created,
+            status: item.status,
+        })
+        .collect())
 }
 
 /// The activity of `who` alone, or all of it.

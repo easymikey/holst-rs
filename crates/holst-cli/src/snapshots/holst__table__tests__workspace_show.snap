@@ -12,7 +12,7 @@ ARGUMENTS
   ws   The workspace: id or part of its name; your only workspace if left out
 
 FLAGS
-  --with parts   Also show these parts, comma separated: members, activity, plan, plans, sso, domains, created; none by default
+  --with parts   Also show these parts, comma separated: members, requests, activity, plan, plans, sso, domains, created; none by default
   --user user    Only this member in members, activity and created: a user id; everyone by default
 
 INHERITED FLAGS

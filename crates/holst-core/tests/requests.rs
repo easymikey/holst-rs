@@ -1724,6 +1724,7 @@ async fn a_login_asks_the_account_once_and_ends_the_session_it_replaces()
 #[case::auth_logout(Auth(AuthVerb::Logout), json!({}), Setup::Write, sent().other(&["POST /gapi/logout"]), sent().other(&["POST /gapi/logout"]), 0)]
 #[case::ws_ls(Workspace(WorkspaceVerb::Ls), json!({}), Setup::Read, sent().current_user(1), sent().current_user(1), 0)]
 #[case::ws_show(Workspace(WorkspaceVerb::Show), json!({ "workspace": "Team" }), Setup::Read, sent().other(&["GET /gapi/workspace/<Team>"]), sent().other(&["GET /gapi/workspace/<Team>"]), 0)]
+#[case::ws_show_requests(Workspace(WorkspaceVerb::Show), json!({ "workspace": "Team", "with": ["requests"] }), Setup::Read, sent().other(&["GET /gapi/workspace/<Team>", "GET /gapi/workspace/<Team>/join_request"]), sent().other(&["GET /gapi/workspace/<Team>", "GET /gapi/workspace/<Team>/join_request"]), 0)]
 #[case::ws_log(Workspace(WorkspaceVerb::Log), json!({ "workspace": "Team" }), Setup::Read, sent().other(&["GET /gapi/audit_events"]), sent().other(&["GET /gapi/audit_events"]), 0)]
 #[case::ws_create(Workspace(WorkspaceVerb::Create), json!({ "name": "Studio" }), Setup::Write, sent().other(&["POST /gapi/workspace/create"]), sent().other(&["POST /gapi/workspace/create"]), 0)]
 #[case::ws_create_dry(Workspace(WorkspaceVerb::Create), json!({ "name": "Studio", "dry_run": true }), Setup::Write, sent(), sent(), 0)]

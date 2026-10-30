@@ -506,7 +506,7 @@ async fn the_settings_pages_show_what_the_fixture_holds() -> Outcome<()> {
     assert_eq!(domains.text("/domains/0/domain"), Some("acme.test"));
     let requests =
         get(&fake, &format!("workspace/{id}/join_request?scope=all")).await?;
-    assert_eq!(requests.text("/joinRequests/0/name"), Some("Zoe"));
+    assert_eq!(requests.text("/joinRequests/0/user/name"), Some("Zoe"));
     let billing = get(&fake, &format!("subscription/get_billing_details/{id}")).await?;
     assert_eq!(billing.text("/billingDetails/company"), Some("Acme Ltd"));
     let current = get(

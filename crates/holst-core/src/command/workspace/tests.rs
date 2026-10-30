@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use rstest::rstest;
 use serde_json::{Map, Value, json};
 
 use crate::{
@@ -13,10 +14,12 @@ use crate::{
         table::parse,
         workspace::{
             CreateArgs,
+            JoinRequest,
             ListArgs,
             LogArgs,
             Member,
             PartRead,
+            Plan,
             ShowArgs,
             ShowPart,
             create,
@@ -96,6 +99,18 @@ fn arguments(value: &Value) -> Map<String, Value> {
     value.as_object().cloned().unwrap_or_default()
 }
 
+fn member(id: &str, name: &str, role: &str, email: Option<&str>) -> Member {
+    Member {
+        id: id.to_owned(),
+        name: Some(name.to_owned()),
+        email: email.map(str::to_owned),
+        role: Some(role.to_owned()),
+        owner: false,
+        licence: None,
+        last_active: None,
+    }
+}
+
 #[test]
 fn a_member_list_decodes_with_each_field() -> Result<()> {
     let reply = json!({
@@ -108,23 +123,184 @@ fn a_member_list_decodes_with_each_field() -> Result<()> {
             { "user_id": "u2", "role": "member" },
         ],
     });
-    let member = |id: &str,
-                  name: &str,
-                  email: Option<&str>,
-                  role: &str,
-                  last_active: Option<&str>| Member {
-        id: id.to_owned(),
-        name: Some(name.to_owned()),
-        email: email.map(str::to_owned),
-        role: Some(role.to_owned()),
-        last_active: last_active.map(str::to_owned),
-    };
     assert_eq!(
         members_of(reply)?,
         [
-            member("u1", "Ann", Some("ann@x.io"), "admin", Some("t1")),
-            member("u2", "bob", None, "member", None),
+            Member {
+                last_active: Some("t1".to_owned()),
+                ..member("u1", "Ann", "admin", Some("ann@x.io"))
+            },
+            member("u2", "bob", "member", None),
         ]
+    );
+    Ok(())
+}
+
+fn licensed(listed: &Value) -> Value {
+    json!({
+        "users": [
+            { "id": "u1", "name": "Ann" },
+            { "id": "u2", "name": "Bob" },
+            { "id": "u3", "name": "Cy" },
+        ],
+        "workspace_users": [
+            { "user_id": "u1", "role": "admin", "role_reason": "by_create_workspace" },
+            { "user_id": "u2", "role": "admin", "role_reason": "by_invite" },
+            { "user_id": "u3", "role": "member", "role_reason": "by_invite" },
+        ],
+        "subscription_users": listed,
+    })
+}
+
+#[test]
+fn the_owner_is_the_admin_who_made_the_workspace() -> Result<()> {
+    let owners: Vec<_> = members_of(licensed(&Value::Null))?
+        .into_iter()
+        .map(|each| (each.owner, each.role))
+        .collect();
+    assert_eq!(
+        owners,
+        [
+            (true, Some("admin".to_owned())),
+            (false, Some("admin".to_owned())),
+            (false, Some("member".to_owned())),
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_licence_is_held_by_the_listed_users_with_one() -> Result<()> {
+    let held = members_of(licensed(&json!([
+        { "user_id": "u1", "has_license": true },
+        { "user_id": "u2", "has_license": false },
+    ])))?;
+    assert_eq!(
+        held.iter().map(|each| each.licence).collect::<Vec<_>>(),
+        [Some(true), Some(false), Some(false)]
+    );
+    Ok(())
+}
+
+#[test]
+fn no_list_of_licences_is_no_licence_information() -> Result<()> {
+    let unknown = members_of(licensed(&Value::Null))?;
+    assert_eq!(
+        unknown.iter().map(|each| each.licence).collect::<Vec<_>>(),
+        [None, None, None]
+    );
+    Ok(())
+}
+
+async fn part_of(part: ShowPart, reply: Value) -> Result<(Vec<String>, PartRead)> {
+    let (fake, client) = served(&[me(), roster(), reply])?;
+    let mut shown = show(&client, &shown_with(vec![part], None)).await?;
+    let read = shown.parts.remove(&part).unwrap_or(PartRead::NotRead {
+        error: "missing".to_owned(),
+    });
+    Ok((sent(&fake).into_iter().skip(2).collect(), read))
+}
+
+fn request_from(name: &str) -> JoinRequest {
+    JoinRequest {
+        id: Some("r1".to_owned()),
+        name: Some(name.to_owned()),
+        email: Some("zoe@x.io".to_owned()),
+        created: Some("t1".to_owned()),
+        status: Some("pending".to_owned()),
+    }
+}
+
+#[rstest]
+#[case::none(json!({ "joinRequests": [] }), Vec::new())]
+#[case::one(
+    json!({ "joinRequests": [{
+        "id": "r1", "status": "pending", "createdAt": "t1",
+        "user": { "id": "u9", "name": "Zoe", "email": "zoe@x.io" },
+    }] }),
+    vec![request_from("Zoe")]
+)]
+#[tokio::test]
+async fn requests_are_the_active_join_requests(
+    #[case] reply: Value,
+    #[case] rows: Vec<JoinRequest>,
+) -> Result<()> {
+    let (asked, read) = part_of(ShowPart::Requests, reply).await?;
+    assert_eq!(
+        (asked, read),
+        (
+            vec!["Get /gapi/workspace/w1/join_request".to_owned()],
+            PartRead::Requests(rows)
+        )
+    );
+    Ok(())
+}
+
+fn plan_named(name: &str) -> Plan {
+    Plan {
+        name: name.to_owned(),
+        level: None,
+        period: None,
+        price: None,
+        currency: None,
+        trial_days: None,
+    }
+}
+
+fn paid(currency: Option<&str>) -> Value {
+    json!({
+        "billingDetails": null,
+        "brotherPlan": null,
+        "subscription": {
+            "currency": currency,
+            "plan": {
+                "id": "p1", "name": "Team", "trialPeriodInDays": 14,
+                "price": 1200, "period": "Month", "level": 5,
+                "brotherKey": "k",
+            },
+        },
+    })
+}
+
+#[rstest]
+#[case::free(
+    json!({ "billingDetails": null, "brotherPlan": null, "subscription": null }),
+    plan_named("Free"),
+    None
+)]
+#[case::paid_without_currency(
+    paid(None),
+    Plan {
+        level: Some(5),
+        period: Some("Month".to_owned()),
+        price: Some(1200),
+        trial_days: Some(14),
+        ..plan_named("Team")
+    },
+    Some("price 1200")
+)]
+#[case::paid_with_currency(
+    paid(Some("USD")),
+    Plan {
+        level: Some(5),
+        period: Some("Month".to_owned()),
+        price: Some(1200),
+        currency: Some("USD".to_owned()),
+        trial_days: Some(14),
+        ..plan_named("Team")
+    },
+    Some("12.00 USD/month")
+)]
+#[tokio::test]
+async fn the_plan_is_typed_and_free_without_a_subscription(
+    #[case] reply: Value,
+    #[case] plan: Plan,
+    #[case] price: Option<&str>,
+) -> Result<()> {
+    let (_, read) = part_of(ShowPart::Plan, reply).await?;
+    assert_eq!(
+        (read, plan.price_text().as_deref()),
+        (PartRead::Plan(plan.clone()), price)
     );
     Ok(())
 }

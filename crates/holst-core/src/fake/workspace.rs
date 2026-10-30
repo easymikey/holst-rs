@@ -227,7 +227,21 @@ fn plan_id(name: &str) -> String {
 }
 
 fn plan_json(name: &str) -> Value {
-    json!({ "id": plan_id(name), "name": name })
+    let (level, price) = match name {
+        "Team" => (5, 499),
+        "Business" => (10, 999),
+        "Enterprise" => (15, 1999),
+        _ => (0, 0),
+    };
+    json!({
+        "id": plan_id(name),
+        "name": name,
+        "trialPeriodInDays": 14,
+        "price": price,
+        "period": "Month",
+        "level": level,
+        "brotherKey": null,
+    })
 }
 
 /// The signed-in user, the other people and the workspaces they share.
@@ -343,7 +357,7 @@ impl Directory {
             ("GET", ["", "gapi", "workspace", id, "join_request"]) => {
                 Some(self.shown(id, |entry| {
                     json!({ "joinRequests": entry.requests.iter().enumerate().map(
-                        |(index, name)| json!({ "id": format!("request-{index}"), "name": name })
+                        |(index, name)| join_request(entry, index, name)
                     ).collect::<Vec<_>>() })
                 }))
             }
@@ -356,23 +370,35 @@ impl Directory {
             ("GET", ["", "gapi", "subscription", "get_available_plans"]) => {
                 Some(found(&json!({ "plans": PLANS.map(plan_json) })))
             }
-            ("GET", ["", "gapi", "subscription", "get_plan", wanted]) => {
-                Some(PLANS.iter().find(|name| plan_id(name) == *wanted).map_or_else(
-                    || refused(404, "not-found"),
-                    |name| found(&plan_json(name)),
-                ))
-            }
-            ("GET", ["", "gapi", "subscription", "get_billing_details", id]) => {
-                Some(self.shown(id, |entry| json!({ "billingDetails": billing(entry) })))
-            }
+            ("GET", ["", "gapi", "subscription", "get_plan", wanted]) => Some(
+                PLANS
+                    .iter()
+                    .find(|name| plan_id(name) == *wanted)
+                    .map_or_else(
+                        || refused(404, "not-found"),
+                        |name| found(&plan_json(name)),
+                    ),
+            ),
+            ("GET", ["", "gapi", "subscription", "get_billing_details", id]) => Some(
+                self.shown(id, |entry| json!({ "billingDetails": billing(entry) })),
+            ),
             (
                 "GET",
-                ["", "gapi", "subscription", "get_subscription_with_billing_details", id],
+                [
+                    "",
+                    "gapi",
+                    "subscription",
+                    "get_subscription_with_billing_details",
+                    id,
+                ],
             ) => Some(self.shown(id, |entry| {
                 json!({
                     "billingDetails": billing(entry),
                     "brotherPlan": null,
-                    "subscription": { "workspace_id": entry.id, "plan": plan_json(&entry.plan) },
+                    "subscription": (entry.plan != FREE_PLAN).then(|| json!({
+                        "workspace_id": entry.id,
+                        "plan": plan_json(&entry.plan),
+                    })),
                 })
             })),
             _ => None,
@@ -470,7 +496,7 @@ impl Directory {
                     "last_active_at": moment(position),
                 }))
                 .collect::<Vec<_>>(),
-            "subscription_users": [],
+            "subscription_users": licences(entry, &people),
         })
     }
 
@@ -575,6 +601,28 @@ impl Directory {
                 index
             })
     }
+}
+
+fn licences(entry: &Entry, people: &[(&Person, WorkspaceRole)]) -> Vec<Value> {
+    match entry.plan.as_str() {
+        FREE_PLAN => Vec::new(),
+        _ => people
+            .iter()
+            .filter(|(_, role)| *role != WorkspaceRole::Guest)
+            .map(|(person, _)| json!({ "user_id": person.id, "has_license": true }))
+            .collect(),
+    }
+}
+
+fn join_request(entry: &Entry, index: usize, name: &str) -> Value {
+    let person = Person::new(&format!("request-user-{index}"), name);
+    json!({
+        "id": format!("request-{index}"),
+        "workspaceId": entry.id,
+        "user": person.json(),
+        "status": "pending",
+        "createdAt": moment(index),
+    })
 }
 
 fn billing(entry: &Entry) -> Value {
