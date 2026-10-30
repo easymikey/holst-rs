@@ -2,19 +2,15 @@
 
 use crate::{
     command::{
-        board::show::{account_cache, board_id},
+        board::show::{board_id, through_cache},
         board_load::CacheUse,
-        object::{
-            GroupArgs,
-            UngroupArgs,
-            change::{Guard, Sending, named, refuse_withheld, reported, send},
-        },
+        board_write::{BoardWrite, Guard, change_board},
+        object::{GroupArgs, UngroupArgs, change::named},
     },
     domain::change::{receipt::ChangeReport, value::BoardChange},
     effect::{board_write::WriteMode, confirmation::ALWAYS, settings::CacheSettings},
     error::Result,
-    remote::{client::Client, socket::write::interpreter},
-    storage::cache::Cache,
+    remote::client::Client,
 };
 
 const GROUP: &str = "object group";
@@ -38,7 +34,7 @@ pub async fn group(
         cache,
         args.dry_run,
         (&args.board, args.workspace.as_deref()),
-        &BoardChange::Group(objects),
+        BoardChange::Group(objects),
         None,
     )
     .await
@@ -61,7 +57,7 @@ pub async fn ungroup(
         cache,
         args.dry_run,
         (&args.board, args.workspace.as_deref()),
-        &BoardChange::Ungroup(objects),
+        BoardChange::Ungroup(objects),
         None,
     )
     .await
@@ -74,25 +70,23 @@ pub(super) async fn written(
     cache: &CacheSettings,
     mode: WriteMode,
     (name, workspace): (&str, Option<&str>),
-    change: &BoardChange,
+    change: BoardChange,
     guard: Option<Guard>,
 ) -> Result<ChangeReport> {
-    let account = account_cache(client, cache, CacheUse::Use).await?;
-    let board = board_id(client, name, workspace, CacheUse::Use).await?;
-    match guard {
-        Some(guard) => refuse_withheld(client, &board, guard).await,
-        None => Ok(()),
-    }?;
-    let written = send(
-        client,
-        account.as_ref().map(Cache::as_port),
-        interpreter(mode),
-        Sending {
-            board: &board,
-            change,
-            release: ALWAYS,
-        },
-    )
-    .await?;
-    Ok(reported(client, &board, &written))
+    through_cache(client, cache, CacheUse::Use, async |loading| {
+        let board = board_id(client, name, workspace, CacheUse::Use).await?;
+        change_board(
+            client,
+            loading,
+            BoardWrite {
+                board: &board,
+                change,
+                release: ALWAYS,
+                guard,
+                mode,
+            },
+        )
+        .await
+    })
+    .await
 }

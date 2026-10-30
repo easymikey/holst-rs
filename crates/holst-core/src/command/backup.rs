@@ -9,7 +9,7 @@ use crate::{
     command::{
         board::{file::ImportReport, picture::Delivery},
         board_file,
-        change::ChangeReport,
+        change::{ChangeReport, gate},
         lookup,
         table::{Command, CommandArgs, Confirmation, NewFile},
     },
@@ -22,11 +22,7 @@ use crate::{
         change::receipt::UpdateReceipt,
         text::joined,
     },
-    effect::{
-        board_write::WriteMode,
-        confirmation::unless_confirmed,
-        socket::SocketConnector,
-    },
+    effect::{board_write::WriteMode, socket::SocketConnector},
     error::{
         Error,
         Result,
@@ -333,35 +329,23 @@ async fn restored(
     let snapshot = fetch(client, &args.key, provider).await?;
     let state = compression::uncompressed(snapshot.as_bytes())?;
     document::saved_objects(&state)?;
-    let mode = args.dry_run;
     let unconfirmed = Unconfirmed::new(
         "replacing the objects of a board with a backup",
         ChangeRisk::Irreversible,
     );
-    let held =
-        unless_confirmed(Some(unconfirmed), args.confirm == Confirmation::Given, mode)
-            .err();
+    let gated = gate(Some(unconfirmed), (args.dry_run, args.confirm), || None);
     let done = board_file::replace_with(
         client,
         socket,
         &target.id,
         &state,
-        if held.is_some() {
-            WriteMode::DryRun
-        } else {
-            mode
-        },
+        gated
+            .as_ref()
+            .err()
+            .map_or(WriteMode::Send, |_| WriteMode::DryRun),
     )
     .await?;
-    let outcome = match (held, args.dry_run) {
-        (Some(refusal), _) => ChangeReport::Held {
-            request: None,
-            needs: format!("{} {}", refusal.change, refusal.risk),
-            refusal,
-        },
-        (None, WriteMode::DryRun) => ChangeReport::DryRun { request: None },
-        (None, WriteMode::Send) => ChangeReport::Sent,
-    };
+    let outcome = gated.err().unwrap_or(ChangeReport::Sent);
     Ok(Restored {
         link: client.board_link(&target.id),
         board: target.id,

@@ -12,13 +12,13 @@ use crate::{
             EditArgs,
             SnapArgs,
             picture::{Delivery, snapped},
-            show::{Loading, account_cache},
+            show::{Loading, through_cache},
         },
         board_load::{CacheUse, supported},
+        board_write::{BoardWrite, change_board},
         change::ChangeReport,
         lookup,
         node,
-        object::change::{Sending, send},
         table::{not_value, parse},
     },
     domain::{
@@ -35,9 +35,9 @@ use crate::{
             files::{UploadBind, UploadOptions},
         },
         client::Client,
-        socket::write::{WriteOver, connector, open_with},
+        socket::write::open_with,
     },
-    storage::{cache::Cache, file},
+    storage::file,
 };
 
 const EDIT: &str = "board edit";
@@ -135,13 +135,10 @@ pub async fn edit(
     cache: &CacheSettings,
     args: &EditArgs,
 ) -> Result<Edited> {
-    let account = account_cache(client, cache, CacheUse::Use).await?;
-    let loading = Loading {
-        connector: connector(),
-        cache: account.as_ref().map(Cache::as_port),
-        cache_use: CacheUse::Use,
-    };
-    edited(client, loading, args).await
+    through_cache(client, cache, CacheUse::Use, async |loading| {
+        edited(client, loading, args).await
+    })
+    .await
 }
 
 async fn edited(
@@ -158,10 +155,8 @@ async fn edited(
     }?;
     let id = lookup::board_id(client, &args.board, args.workspace.as_deref()).await?;
     let sending = args.dry_run == WriteMode::Send;
-    // The right is read once, before anything is sent.
-    if sending {
-        editable(client, loading, &id).await?;
-    }
+    // The right is read once, before anything is sent or built.
+    editable(client, loading, &id).await?;
     // Uploads first: a refused upload leaves the board as it was.
     let cover = OptionFuture::from(
         cover.map(|cover| cover_uploaded(client, loading, &id, cover, sending)),
@@ -172,7 +167,7 @@ async fn edited(
         cover_fixed(client, &id, cover).await?;
     }
     // The note goes last: an error above leaves it as it was.
-    let note = note_written(client, loading, &id, note, sending).await?;
+    let note = note_written(client, loading, &id, note, args.dry_run).await?;
     Ok(Edited {
         link: client.board_link(&id),
         board: id,
@@ -207,13 +202,13 @@ fn note_of(args: &EditArgs) -> Result<Option<NoteContent>> {
     }
 }
 
-/// Replaces the note; a dry run writes nothing.
+/// Replaces the note; a dry run builds it and writes nothing.
 async fn note_written(
     client: &Client,
     loading: Loading<'_>,
     id: &str,
     note: Option<NoteContent>,
-    sending: bool,
+    mode: WriteMode,
 ) -> Result<Option<NoteEdit>> {
     OptionFuture::from(note.map(|content| async move {
         let edit = NoteEdit {
@@ -223,19 +218,18 @@ async fn note_written(
             },
             warning: kept_note(&content.parsed().kept),
         };
-        if sending {
-            send(
-                client,
-                loading.cache,
-                &WriteOver::sender(loading.connector),
-                Sending {
-                    board: id,
-                    change: &BoardChange::Note(content),
-                    release: ALWAYS,
-                },
-            )
-            .await?;
-        }
+        change_board(
+            client,
+            loading,
+            BoardWrite {
+                board: id,
+                change: BoardChange::Note(content),
+                release: ALWAYS,
+                guard: None,
+                mode,
+            },
+        )
+        .await?;
         Ok::<_, Error>(edit)
     }))
     .await
@@ -430,6 +424,7 @@ mod tests {
         },
         domain::board::EditRight,
         effect::http::HttpResponse,
+        error::{Error, board_change::BoardChangeError},
         protocol::hud::{DocumentResponse, UpdatePayload},
         remote::{
             client::fake::Fake,
@@ -464,6 +459,25 @@ mod tests {
 
     fn editable() -> Scripted {
         acking([Some(empty_board(EditRight::Editable))])
+    }
+
+    /// The connections of a dry run with a note: the right, then the build.
+    fn built() -> Scripted {
+        acking([
+            Some(empty_board(EditRight::Editable)),
+            Some(empty_board(EditRight::Editable)),
+        ])
+    }
+
+    /// The replies of a dry run with a note: the format check twice, the
+    /// account and the board of the build.
+    fn note_replies() -> [HttpResponse; 4] {
+        [
+            channel(),
+            channel(),
+            json_reply(&json!({ "id": "me" })),
+            channel(),
+        ]
     }
 
     /// Two connections to a board of one sticker: the right is read on the
@@ -714,8 +728,8 @@ mod tests {
     {
         let (fake, done) = run(
             &json!({ "board": BOARD, "note": "> quoted", "note_format": "markdown", "dry_run": true }),
-            [channel()],
-            &editable(),
+            note_replies(),
+            &built(),
         )
         .await?;
         let edited = done?;
@@ -735,11 +749,45 @@ mod tests {
     async fn a_template_dry_run_names_the_template() -> Result<()> {
         let (_, done) = run(
             &json!({ "board": BOARD, "note_template": "agenda", "dry_run": true }),
-            [channel()],
-            &editable(),
+            note_replies(),
+            &built(),
         )
         .await?;
         assert_eq!(done?.phrase(), "would set the note to the agenda template");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_dry_run_on_a_read_only_board_is_refused() -> Result<()> {
+        let file = picture("cover.png", b"\x89PNG\r\n\x1a\n....")?;
+        let (_, done) = run(
+            &json!({ "board": BOARD, "cover": file, "dry_run": true }),
+            [channel()],
+            &acking([Some(empty_board(EditRight::ReadOnly))]),
+        )
+        .await?;
+        assert!(matches!(
+            done,
+            Err(Error::BoardChange(BoardChangeError::ReadOnly))
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_dry_run_builds_the_note_so_a_refused_build_fails_it() -> Result<()> {
+        let (_, done) = run(
+            &json!({ "board": BOARD, "note": "hello", "dry_run": true }),
+            note_replies(),
+            &acking([
+                Some(empty_board(EditRight::Editable)),
+                Some(empty_board(EditRight::ReadOnly)),
+            ]),
+        )
+        .await?;
+        assert!(matches!(
+            done,
+            Err(Error::BoardChange(BoardChangeError::ReadOnly))
+        ));
         Ok(())
     }
 }

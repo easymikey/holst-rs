@@ -12,6 +12,20 @@ use crate::{
 const CLEAR: &str = "\x1b[2K";
 const UP: &str = "\x1b[1A";
 const DOWN: &str = "\x1b[1B";
+const CLEAR_BELOW: &str = "\x1b[J";
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "prompts hide the cursor from the next batch on")
+)]
+pub(crate) const HIDE_CURSOR: &str = "\x1b[?25l";
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "prompts show the cursor again from the next batch on"
+    )
+)]
+pub(crate) const SHOW_CURSOR: &str = "\x1b[?25h";
 const MASK: &str = "▪";
 const ELLIPSIS: &str = "…";
 const GUTTER: usize = 3;
@@ -78,6 +92,17 @@ pub(crate) fn update(coloring: Coloring, drawn: &DrawnInput) -> String {
 
 fn input(coloring: Coloring, drawn: &DrawnInput) -> String {
     format!("{}  {}", coloring.cyan("│"), drawn.text)
+}
+
+/// Draws `rows` over the `previous` rows above; each row ends its line.
+#[must_use]
+pub(crate) fn repaint(previous: usize, rows: &[String]) -> String {
+    let up = match previous {
+        0 => String::new(),
+        lines => format!("\x1b[{lines}A"),
+    };
+    let body: String = rows.iter().flat_map(|row| [row.as_str(), "\n"]).collect();
+    format!("\r{up}{CLEAR_BELOW}{body}")
 }
 
 #[must_use]
@@ -391,7 +416,7 @@ mod tests {
     fn line(field: QuestionKind, text: &str) -> TypedAnswer {
         text.chars().fold(TypedAnswer::new(field), |line, c| {
             match line.press(Keystroke::Char(c)) {
-                EditorStep::Typing(line) => line,
+                EditorStep::Editing(line) => line,
                 EditorStep::Submit(_) | EditorStep::Quit(_) => TypedAnswer::new(field),
             }
         })
@@ -421,7 +446,7 @@ mod tests {
         std::iter::repeat_n(Keystroke::Left, back).fold(
             line(field, text),
             |line, stroke| match line.press(stroke) {
-                EditorStep::Typing(line) => line,
+                EditorStep::Editing(line) => line,
                 EditorStep::Submit(_) | EditorStep::Quit(_) => TypedAnswer::new(field),
             },
         )
@@ -643,5 +668,25 @@ mod tests {
         let text = answered(PLAIN, "Email", "you@example.com");
         assert_eq!(text, "◇  Email\n│  you@example.com\n│\n");
         assert!(erase_active().contains(DOWN));
+    }
+
+    #[rstest]
+    #[case::first_draw(0, &["a"], "\r\x1b[Ja\n")]
+    #[case::same_height(2, &["a", "b"], "\r\x1b[2A\x1b[Ja\nb\n")]
+    #[case::shrinks(3, &["a"], "\r\x1b[3A\x1b[Ja\n")]
+    #[case::grows(1, &["a", "b", "c"], "\r\x1b[1A\x1b[Ja\nb\nc\n")]
+    fn repaint_goes_up_the_previous_rows_and_clears_below(
+        #[case] previous: usize,
+        #[case] rows: &[&str],
+        #[case] drawn: &str,
+    ) {
+        let rows: Vec<String> = rows.iter().map(|row| (*row).to_owned()).collect();
+        assert_eq!(super::repaint(previous, &rows), drawn);
+    }
+
+    #[test]
+    fn cursor_escapes_hide_and_show() {
+        assert_eq!(super::HIDE_CURSOR, "\x1b[?25l");
+        assert_eq!(super::SHOW_CURSOR, "\x1b[?25h");
     }
 }

@@ -16,6 +16,7 @@ use crate::{
         table::Confirmation,
     },
     domain::node::{NodeBrief, NodeKind},
+    effect::{board_write::WriteMode, request::ApiRequest},
     error::{Result, input::InputError},
     remote::{api, client::Client},
 };
@@ -25,18 +26,15 @@ use crate::{
 /// # Errors
 /// A board that is not found, and errors of the requests.
 pub async fn favorite(client: &Client, args: &FavoriteArgs) -> Result<Changed> {
-    let (id, node, _) = board(
+    let request = async |board: &Found| {
+        api::favorite::add_request(&board.id, args.index.unwrap_or(-1))
+    };
+    plain(
         client,
-        &args.board,
-        args.workspace.as_deref(),
+        (&args.board, args.workspace.as_deref()),
         Action::Favorite,
-    )
-    .await?;
-    let request = api::favorite::add_request(&id, args.index.unwrap_or(-1))?;
-    carry(
-        client,
-        Plan::plain(request, node),
-        (args.dry_run, Confirmation::Missing),
+        args.dry_run,
+        request,
     )
     .await
 }
@@ -46,18 +44,13 @@ pub async fn favorite(client: &Client, args: &FavoriteArgs) -> Result<Changed> {
 /// # Errors
 /// A board that is not found, and errors of the requests.
 pub async fn unfavorite(client: &Client, args: &UnfavoriteArgs) -> Result<Changed> {
-    let (id, node, _) = board(
+    let request = async |board: &Found| api::favorite::remove_request(&board.id);
+    plain(
         client,
-        &args.board,
-        args.workspace.as_deref(),
+        (&args.board, args.workspace.as_deref()),
         Action::Unfavorite,
-    )
-    .await?;
-    let request = api::favorite::remove_request(&id)?;
-    carry(
-        client,
-        Plan::plain(request, node),
-        (args.dry_run, Confirmation::Missing),
+        args.dry_run,
+        request,
     )
     .await
 }
@@ -67,18 +60,13 @@ pub async fn unfavorite(client: &Client, args: &UnfavoriteArgs) -> Result<Change
 /// # Errors
 /// A board that is not found, and errors of the requests.
 pub async fn touch(client: &Client, args: &TouchArgs) -> Result<Changed> {
-    let (id, node, _) = board(
+    let request = async |board: &Found| api::recent::set_request(&board.id);
+    plain(
         client,
-        &args.board,
-        args.workspace.as_deref(),
+        (&args.board, args.workspace.as_deref()),
         Action::Touch,
-    )
-    .await?;
-    let request = api::recent::set_request(&id)?;
-    carry(
-        client,
-        Plan::plain(request, node),
-        (args.dry_run, Confirmation::Missing),
+        args.dry_run,
+        request,
     )
     .await
 }
@@ -90,41 +78,63 @@ pub async fn touch(client: &Client, args: &TouchArgs) -> Result<Changed> {
 /// A board that is not found, [`InputError::LeaveOwnBoard`], and errors of the
 /// requests.
 pub async fn leave(client: &Client, args: &LeaveArgs) -> Result<Changed> {
-    let (id, node, reply) = board(
-        client,
-        &args.board,
-        args.workspace.as_deref(),
-        Action::Leave,
-    )
-    .await?;
-    let owned = match reply.get("author_id").and_then(Value::as_str) {
-        Some(author) => author == account::account_id(client).await?,
-        None => false,
+    let request = async |board: &Found| {
+        let owned = match board.reply.get("author_id").and_then(Value::as_str) {
+            Some(author) => author == account::account_id(client).await?,
+            None => false,
+        };
+        owned
+            .then(|| InputError::LeaveOwnBoard {
+                name: board.node.name.clone().unwrap_or_else(|| board.id.clone()),
+            })
+            .map_or_else(
+                || api::channel::leave_request(&board.id),
+                |refusal| Err(refusal.into()),
+            )
     };
-    if owned {
-        Err(InputError::LeaveOwnBoard {
-            name: node.name.unwrap_or(id),
-        }
-        .into())
-    } else {
-        let request = api::channel::leave_request(&id)?;
-        carry(
-            client,
-            Plan::plain(request, node),
-            (args.dry_run, Confirmation::Missing),
-        )
-        .await
-    }
+    plain(
+        client,
+        (&args.board, args.workspace.as_deref()),
+        Action::Leave,
+        args.dry_run,
+        request,
+    )
+    .await
 }
 
-/// A board by id, link or name: its id, the node a change of it reports, and
-/// the reply the server describes it by.
+/// A board as the server describes it, and the node a change of it reports.
+struct Found {
+    id: String,
+    node: ChangedNode,
+    reply: Value,
+}
+
+/// Finds the board, builds the one request that changes it and carries it, with
+/// no confirmation to ask for.
+async fn plain(
+    client: &Client,
+    (reference, workspace): (&str, Option<&str>),
+    action: Action,
+    dry_run: WriteMode,
+    request: impl AsyncFnOnce(&Found) -> Result<ApiRequest>,
+) -> Result<Changed> {
+    let board = board(client, reference, workspace, action).await?;
+    let request = request(&board).await?;
+    carry(
+        client,
+        Plan::plain(request, board.node),
+        (dry_run, Confirmation::Missing),
+    )
+    .await
+}
+
+/// A board by id, link or name.
 async fn board(
     client: &Client,
     reference: &str,
     workspace: Option<&str>,
     action: Action,
-) -> Result<(String, ChangedNode, Value)> {
+) -> Result<Found> {
     let id = lookup::board_id(client, reference, workspace).await?;
     let reply = api::channel::get(client, &id).await?;
     let name = NodeBrief::of(&reply)?.name().to_owned();
@@ -132,5 +142,5 @@ async fn board(
         name: Some(name).filter(|name| !name.is_empty()),
         ..node_of(action, Some(id.clone()), Some(NodeKind::Board))
     };
-    Ok((id, node, reply))
+    Ok(Found { id, node, reply })
 }

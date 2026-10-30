@@ -4,6 +4,7 @@ use zeroize::Zeroizing;
 use crate::form::line::{
     CAPACITY,
     Csi,
+    Decoder,
     EditorStep,
     EscapeTail,
     Keystroke,
@@ -27,16 +28,18 @@ enum End {
 }
 
 fn run(field: QuestionKind, strokes: impl IntoIterator<Item = Keystroke>) -> End {
-    let last = strokes
-        .into_iter()
-        .try_fold(TypedAnswer::new(field), |line, stroke| {
-            match line.press(stroke) {
-                EditorStep::Typing(line) => Ok(line),
+    let last = strokes.into_iter().try_fold(
+        (Decoder::default(), TypedAnswer::new(field)),
+        |(decoder, line), stroke| {
+            let (decoder, key) = decoder.feed(stroke);
+            match line.press(key) {
+                EditorStep::Editing(line) => Ok((decoder, line)),
                 EditorStep::Submit(text) => Err(End::Submitted(text.to_string())),
                 EditorStep::Quit(_) => Err(End::Cancelled),
             }
-        });
-    last.map_or_else(|end| end, |line| End::Typing(line.text().to_owned()))
+        },
+    );
+    last.map_or_else(|end| end, |(_, line)| End::Typing(line.text().to_owned()))
 }
 
 fn typing(
@@ -45,12 +48,19 @@ fn typing(
 ) -> TypedAnswer {
     strokes
         .into_iter()
-        .fold(TypedAnswer::new(field), |line, stroke| {
-            match line.press(stroke) {
-                EditorStep::Typing(line) => line,
-                EditorStep::Submit(_) | EditorStep::Quit(_) => TypedAnswer::new(field),
-            }
-        })
+        .fold(
+            (Decoder::default(), TypedAnswer::new(field)),
+            |(decoder, line), stroke| {
+                let (decoder, key) = decoder.feed(stroke);
+                match line.press(key) {
+                    EditorStep::Editing(line) => (decoder, line),
+                    EditorStep::Submit(_) | EditorStep::Quit(_) => {
+                        (decoder, TypedAnswer::new(field))
+                    }
+                }
+            },
+        )
+        .1
 }
 
 #[test]
@@ -230,7 +240,7 @@ fn after_keys(field: QuestionKind, text: &str, keys: &[Keystroke]) -> End {
 #[case::family_left("a👨‍👩‍👧", &[Keystroke::Left, Keystroke::Char('b')], "ab👨‍👩‍👧")]
 #[case::flag_left("🇺🇦🇫🇷", &[Keystroke::Left, Keystroke::Backspace], "🇫🇷")]
 #[case::combining_delete("cafe\u{301}!", &[Keystroke::Left, Keystroke::Left, Keystroke::Delete], "caf!")]
-#[case::up_down_ignored("ab", &[Keystroke::Ignored, Keystroke::Left, Keystroke::Ignored, Keystroke::Char('x')], "axb")]
+#[case::up_down_tab_ignored("ab", &[Keystroke::Up, Keystroke::Left, Keystroke::Down, Keystroke::Tab, Keystroke::Char('x')], "axb")]
 fn editing_at_the_cursor(
     #[case] text: &str,
     #[case] keys: &[Keystroke],
@@ -352,7 +362,7 @@ mod laws {
 
     fn typing(line: TypedAnswer, stroke: Keystroke) -> TypedAnswer {
         match line.press(stroke) {
-            EditorStep::Typing(line) => line,
+            EditorStep::Editing(line) => line,
             EditorStep::Submit(_) | EditorStep::Quit(_) => {
                 TypedAnswer::new(QuestionKind::Text)
             }
@@ -393,4 +403,26 @@ mod laws {
             prop_assert_eq!(line.text(), format!("{prefix}{text}"));
         }
     }
+}
+
+#[rstest]
+#[case::csi_up(&[Keystroke::Escape(EscapeTail::Csi(Csi::default())), Keystroke::Char('A')], Keystroke::Up)]
+#[case::csi_down(&[Keystroke::Escape(EscapeTail::Csi(Csi::default())), Keystroke::Char('B')], Keystroke::Down)]
+#[case::csi_with_modifier(&[Keystroke::Escape(EscapeTail::Csi(Csi::default().feed('1').feed(';').feed('5'))), Keystroke::Char('A')], Keystroke::Up)]
+#[case::ss3_up(&[Keystroke::Escape(EscapeTail::Ss3), Keystroke::Char('A')], Keystroke::Up)]
+#[case::ss3_down(&[Keystroke::Escape(EscapeTail::Ss3), Keystroke::Char('B')], Keystroke::Down)]
+#[case::parameter_digit_waits(&[Keystroke::Escape(EscapeTail::Csi(Csi::default())), Keystroke::Char('5')], Keystroke::Ignored)]
+#[case::finished_escape(&[Keystroke::Escape(EscapeTail::Done)], Keystroke::Ignored)]
+#[case::letter_outside_a_sequence(&[Keystroke::Char('A')], Keystroke::Char('A'))]
+#[case::enter_ends_a_sequence(&[Keystroke::Escape(EscapeTail::Ss3), Keystroke::Enter], Keystroke::Enter)]
+#[case::sequence_over(&[Keystroke::Escape(EscapeTail::Ss3), Keystroke::Char('A'), Keystroke::Char('B')], Keystroke::Char('B'))]
+fn decoder_turns_sequences_into_keys(
+    #[case] strokes: &[Keystroke],
+    #[case] key: Keystroke,
+) {
+    let (_, last) = strokes.iter().fold(
+        (Decoder::default(), Keystroke::Ignored),
+        |(decoder, _), stroke| decoder.feed(*stroke),
+    );
+    assert_eq!(last, key);
 }

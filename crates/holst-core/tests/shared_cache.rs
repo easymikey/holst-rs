@@ -7,13 +7,13 @@
 use std::{fs, thread};
 
 use holst_core::{
-    command::board_load::account_cache,
     domain::board::EditRight,
     effect::{
         cache::{CachePort, CacheRecord},
         settings::CacheSettings,
     },
     error::local_data::LocalDataError,
+    storage::cache::Cache,
     system::clock::SystemClock,
 };
 
@@ -33,8 +33,8 @@ fn two_handles_storing_the_same_board_both_succeed_and_leave_one_entry()
         trust_millis: 1_000,
     };
     let (first, second) = (
-        account_cache(&settings, USER, SystemClock),
-        account_cache(&settings, USER, SystemClock),
+        Cache::from_settings(&settings, USER, SystemClock),
+        Cache::from_settings(&settings, USER, SystemClock),
     );
     let missing = || holst_core::Error::LocalData(LocalDataError::NoHome);
     let (first, second) = (first.ok_or_else(missing)?, second.ok_or_else(missing)?);

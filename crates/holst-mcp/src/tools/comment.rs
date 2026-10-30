@@ -55,7 +55,7 @@ impl McpServer {
             CommentVerb::Add => {
                 self.parsed(arguments, async |args: AddArgs| {
                     self.sent(args.dry_run, async |client| {
-                        comment::add(&client, &args).await
+                        comment::add(&client, &self.cache, &args).await
                     })
                     .await
                 })

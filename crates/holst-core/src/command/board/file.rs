@@ -13,7 +13,7 @@ use crate::{
             tree_change::{Action, Plan, carry, node_of},
         },
         board_file::{self, ImportRequest},
-        change::{ChangeReport, PlannedRequest},
+        change::{ChangeReport, PlannedRequest, gate},
         lookup,
         node,
         table::{Confirmation, not_value},
@@ -29,11 +29,7 @@ use crate::{
         lookup::choice,
         node::{DeleteMode, NewNode, NodeBrief, NodeKind, NodeName},
     },
-    effect::{
-        board_write::WriteMode,
-        confirmation::unless_confirmed,
-        socket::SocketConnector,
-    },
+    effect::{board_write::WriteMode, socket::SocketConnector},
     error::{
         Error,
         Result,
@@ -245,12 +241,9 @@ async fn into_board(
     args: &ImportArgs,
 ) -> Result<Imported> {
     let target = lookup::exact_board(client, into, args.workspace.as_deref()).await?;
-    let mode = args.dry_run;
     let unconfirmed =
         Unconfirmed::new("writing a board file into a board", ChangeRisk::Everyone);
-    let held =
-        unless_confirmed(Some(unconfirmed), args.confirm == Confirmation::Given, mode)
-            .err();
+    let gated = gate(Some(unconfirmed), (args.dry_run, args.confirm), || None);
     let done = board_file::import_with(
         client,
         connector,
@@ -262,23 +255,14 @@ async fn into_board(
             } else {
                 Overwrite::EmptyOnly
             },
-            mode: if held.is_some() {
-                WriteMode::DryRun
-            } else {
-                mode
-            },
+            mode: gated
+                .as_ref()
+                .err()
+                .map_or(WriteMode::Send, |_| WriteMode::DryRun),
         },
     )
     .await?;
-    let outcome = match (held, args.dry_run) {
-        (Some(refusal), _) => ChangeReport::Held {
-            request: None,
-            needs: format!("{} {}", refusal.change, refusal.risk),
-            refusal,
-        },
-        (None, WriteMode::DryRun) => ChangeReport::DryRun { request: None },
-        (None, WriteMode::Send) => ChangeReport::Sent,
-    };
+    let outcome = gated.err().unwrap_or(ChangeReport::Sent);
     Ok(Imported {
         link: Some(client.board_link(&target.id)),
         board: Some(target.id),

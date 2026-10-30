@@ -2,12 +2,8 @@
 
 use crate::{
     command::{
-        object::{
-            LockArgs,
-            UnlockArgs,
-            change::{Guard, named},
-            group::written,
-        },
+        board_write::Guard,
+        object::{LockArgs, UnlockArgs, change::named, group::written},
         table::not_value,
     },
     domain::change::{receipt::ChangeReport, value::BoardChange},
@@ -47,7 +43,7 @@ pub async fn lock(
         cache,
         args.dry_run,
         (&args.board, args.workspace.as_deref()),
-        &change,
+        change,
         Some(LOCKING),
     )
     .await
@@ -70,7 +66,7 @@ pub async fn unlock(
         cache,
         args.dry_run,
         (&args.board, args.workspace.as_deref()),
-        &unlock_change(args)?,
+        unlock_change(args)?,
         Some(LOCKING),
     )
     .await

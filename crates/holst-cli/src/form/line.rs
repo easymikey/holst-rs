@@ -5,6 +5,8 @@
 use unicode_segmentation::UnicodeSegmentation as _;
 use zeroize::Zeroizing;
 
+use crate::form::prompt::Step;
+
 const CAPACITY: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,6 +43,9 @@ pub(crate) enum Keystroke {
     Delete,
     Left,
     Right,
+    Up,
+    Down,
+    Tab,
     WordLeft,
     WordRight,
     Home,
@@ -93,6 +98,8 @@ impl Csi {
             ('C', true, _) => Keystroke::WordRight,
             ('D', false, _) => Keystroke::Left,
             ('C', false, _) => Keystroke::Right,
+            ('A', _, _) => Keystroke::Up,
+            ('B', _, _) => Keystroke::Down,
             ('H', _, _) | ('~', _, 1 | 7) => Keystroke::Home,
             ('F', _, _) | ('~', _, 4 | 8) => Keystroke::End,
             ('~', _, 3) => Keystroke::Delete,
@@ -117,15 +124,44 @@ const fn ss3_key(last: char) -> Keystroke {
         'F' => Keystroke::End,
         'D' => Keystroke::Left,
         'C' => Keystroke::Right,
+        'A' => Keystroke::Up,
+        'B' => Keystroke::Down,
         _ => Keystroke::Ignored,
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EditorState {
-    Typing,
+/// Finishes the escape sequences the terminal splits into keystrokes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum Decoder {
+    #[default]
+    Plain,
     Csi(Csi),
     Ss3,
+}
+
+impl Decoder {
+    /// The next state and the key to press; a key inside a sequence is
+    /// `Ignored`.
+    #[must_use]
+    pub(crate) fn feed(self, keystroke: Keystroke) -> (Self, Keystroke) {
+        match (self, keystroke) {
+            (Self::Csi(csi), Keystroke::Char(c)) if csi_parameter(c) => {
+                (Self::Csi(csi.feed(c)), Keystroke::Ignored)
+            }
+            (Self::Csi(csi), Keystroke::Char(c)) if csi_final(c) => {
+                (Self::Plain, csi.key(c))
+            }
+            (Self::Ss3, Keystroke::Char(c)) => (Self::Plain, ss3_key(c)),
+            (_, Keystroke::Escape(EscapeTail::Csi(csi))) => {
+                (Self::Csi(csi), Keystroke::Ignored)
+            }
+            (_, Keystroke::Escape(EscapeTail::Ss3)) => (Self::Ss3, Keystroke::Ignored),
+            (_, Keystroke::Escape(EscapeTail::Done)) => {
+                (Self::Plain, Keystroke::Ignored)
+            }
+            (_, keystroke) => (Self::Plain, keystroke),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -133,15 +169,9 @@ pub(crate) struct TypedAnswer {
     kind: QuestionKind,
     text: Zeroizing<String>,
     cursor: usize,
-    state: EditorState,
 }
 
-#[derive(Debug)]
-pub(crate) enum EditorStep {
-    Typing(TypedAnswer),
-    Submit(Zeroizing<String>),
-    Quit(Cancellation),
-}
+pub(crate) type EditorStep = Step<TypedAnswer, Zeroizing<String>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Cancellation {
@@ -156,7 +186,6 @@ impl TypedAnswer {
             kind,
             text: Zeroizing::new(String::with_capacity(CAPACITY)),
             cursor: 0,
-            state: EditorState::Typing,
         }
     }
 
@@ -190,21 +219,6 @@ impl TypedAnswer {
 
     #[must_use]
     pub(crate) fn press(self, keystroke: Keystroke) -> EditorStep {
-        match (self.state, keystroke) {
-            (EditorState::Csi(csi), Keystroke::Char(c)) if csi_parameter(c) => {
-                EditorStep::Typing(self.with_state(EditorState::Csi(csi.feed(c))))
-            }
-            (EditorState::Csi(csi), Keystroke::Char(c)) if csi_final(c) => {
-                self.with_state(EditorState::Typing).edit(csi.key(c))
-            }
-            (EditorState::Ss3, Keystroke::Char(c)) => {
-                self.with_state(EditorState::Typing).edit(ss3_key(c))
-            }
-            (_, keystroke) => self.with_state(EditorState::Typing).edit(keystroke),
-        }
-    }
-
-    fn edit(self, keystroke: Keystroke) -> EditorStep {
         let (text, at) = (&*self.text, self.cursor);
         match keystroke {
             Keystroke::Enter => EditorStep::Submit(self.answer()),
@@ -215,60 +229,50 @@ impl TypedAnswer {
             }
             Keystroke::Backspace => {
                 let from = before(text, at);
-                EditorStep::Typing(self.cut(from, at))
+                EditorStep::Editing(self.cut(from, at))
             }
             Keystroke::Delete => {
                 let to = after(text, at);
-                EditorStep::Typing(self.cut(at, to))
+                EditorStep::Editing(self.cut(at, to))
             }
-            Keystroke::ClearBefore => EditorStep::Typing(self.cut(0, at)),
+            Keystroke::ClearBefore => EditorStep::Editing(self.cut(0, at)),
             Keystroke::ClearAfter => {
                 let end = text.len();
-                EditorStep::Typing(self.cut(at, end))
+                EditorStep::Editing(self.cut(at, end))
             }
             Keystroke::DeleteWord => {
                 let from = spaced_word_start(text, at);
-                EditorStep::Typing(self.cut(from, at))
+                EditorStep::Editing(self.cut(from, at))
             }
             Keystroke::Left => self.moved_by(before),
             Keystroke::Right => self.moved_by(after),
             Keystroke::WordLeft => self.moved_by(word_start),
             Keystroke::WordRight => self.moved_by(word_end),
-            Keystroke::Home => EditorStep::Typing(self.moved(0)),
+            Keystroke::Home => EditorStep::Editing(self.moved(0)),
             Keystroke::End => {
                 let end = text.len();
-                EditorStep::Typing(self.moved(end))
+                EditorStep::Editing(self.moved(end))
             }
             Keystroke::Char(c) if self.kind.is_kept(c) => {
-                EditorStep::Typing(self.inserted(c))
-            }
-            Keystroke::Escape(EscapeTail::Csi(csi)) => {
-                EditorStep::Typing(self.with_state(EditorState::Csi(csi)))
-            }
-            Keystroke::Escape(EscapeTail::Ss3) => {
-                EditorStep::Typing(self.with_state(EditorState::Ss3))
+                EditorStep::Editing(self.inserted(c))
             }
             Keystroke::Char(_)
             | Keystroke::EndOfInput
-            | Keystroke::Escape(EscapeTail::Done)
-            | Keystroke::Ignored => EditorStep::Typing(self),
+            | Keystroke::Up
+            | Keystroke::Down
+            | Keystroke::Tab
+            | Keystroke::Escape(_)
+            | Keystroke::Ignored => EditorStep::Editing(self),
         }
     }
 
     fn moved_by(self, target: fn(&str, usize) -> usize) -> EditorStep {
         let to = target(&self.text, self.cursor);
-        EditorStep::Typing(self.moved(to))
+        EditorStep::Editing(self.moved(to))
     }
 
     fn answer(self) -> Zeroizing<String> {
         Zeroizing::new(self.text.trim().to_owned())
-    }
-
-    fn with_state(self, mode: EditorState) -> Self {
-        Self {
-            state: mode,
-            ..self
-        }
     }
 
     fn moved(self, to: usize) -> Self {

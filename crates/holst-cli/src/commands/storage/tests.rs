@@ -154,6 +154,7 @@ fn env_without_cache(dir: &std::path::Path) -> holst_core::Result<RunSettings> {
         },
         None,
         TerminalType::Capable,
+        crate::run::Prompting::Off,
     ))
 }
 

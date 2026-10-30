@@ -3,6 +3,7 @@
 pub(crate) mod draw;
 #[cfg(test)] pub(crate) mod fake;
 pub(crate) mod line;
+pub(crate) mod prompt;
 pub(crate) mod terminal;
 
 use std::{convert::Infallible, ops::ControlFlow, time::Duration};
@@ -11,7 +12,8 @@ use zeroize::Zeroizing;
 
 use self::{
     draw::{NoteTone, QuestionFooter},
-    line::{Cancellation, EditorStep, Keystroke, QuestionKind, TypedAnswer},
+    line::{Cancellation, Decoder, EditorStep, Keystroke, QuestionKind, TypedAnswer},
+    prompt::{Confirm, Prompt, Step},
     terminal::{Terminal, TerminalKind},
 };
 use crate::{
@@ -44,12 +46,17 @@ pub(crate) struct Form<T: Terminal> {
 }
 
 impl<T: Terminal> Form<T> {
-    pub(crate) fn intro(term: T, title: &str) -> Result<Self> {
-        let form = Self {
+    /// A form without an intro line: one question inside a command.
+    pub(crate) fn bare(term: T) -> Self {
+        Self {
             _quiet: term.quiet(),
             coloring: Coloring::colored_if(term.has_color()),
             terminal: term,
-        };
+        }
+    }
+
+    pub(crate) fn intro(term: T, title: &str) -> Result<Self> {
+        let form = Self::bare(term);
         form.write_live(&draw::clear_line())?;
         form.write(&draw::intro(form.coloring, title))
             .map(|()| form)
@@ -111,6 +118,110 @@ impl<T: Terminal> Form<T> {
                 ))
                 .map(|()| value),
             Err(invalid) => self.ask_again(question, parse, invalid),
+        }
+    }
+
+    /// Asks yes or no; Enter takes `default`.
+    pub(crate) fn confirm(&self, label: &str, default: bool) -> Result<bool> {
+        let yes = self.run(label, Confirm::new(default))?;
+        self.step(label, &Confirm::new(yes).summary()).map(|()| yes)
+    }
+
+    fn run<P: Prompt>(&self, label: &str, prompt: P) -> Result<P::Answer> {
+        self.not_interrupted()?;
+        match self.terminal.kind() {
+            TerminalKind::Live => {
+                self.terminal.answering(|_| self.run_keys(label, prompt))
+            }
+            TerminalKind::Dumb => {
+                self.terminal.answering(|_| self.run_lines(label, prompt))
+            }
+            TerminalKind::Redirected => Err(Error::NoInput { what: "an answer" }),
+        }
+    }
+
+    fn run_keys<P: Prompt>(&self, label: &str, prompt: P) -> Result<P::Answer> {
+        let done = self
+            .terminal
+            .hidden(|_| self.press_keys(label, prompt))
+            .map_err(Error::Terminal)?;
+        self.terminal.discard_typeahead();
+        done
+    }
+
+    fn press_keys<P: Prompt>(&self, label: &str, prompt: P) -> Result<P::Answer> {
+        let frame = |shown: &P| {
+            std::iter::once(format!("{}  {label}", self.coloring.cyan("◆")))
+                .chain(shown.view(self.coloring, self.terminal.width()))
+                .chain([self.coloring.cyan("└")])
+                .collect::<Vec<_>>()
+        };
+        let first = frame(&prompt);
+        self.write(&draw::repaint(0, &first))?;
+        let flow = std::iter::repeat_with(|| self.terminal.keystroke()).try_fold(
+            (prompt, Decoder::default(), first.len()),
+            |(prompt, decoder, drawn), keystroke| match keystroke {
+                Err(error) => ControlFlow::Break(Err(Error::Terminal(error))),
+                Ok(keystroke) => {
+                    let (decoder, key) = decoder.feed(keystroke);
+                    match prompt.press(key) {
+                        Step::Editing(prompt) => {
+                            let rows = frame(&prompt);
+                            self.write(&draw::repaint(drawn, &rows)).map_or_else(
+                                |error| ControlFlow::Break(Err(error)),
+                                |()| {
+                                    ControlFlow::Continue((prompt, decoder, rows.len()))
+                                },
+                            )
+                        }
+                        Step::Submit(answer) => ControlFlow::Break(
+                            self.write(&draw::repaint(drawn, &[])).map(|()| answer),
+                        ),
+                        Step::Quit(quit) => ControlFlow::Break(
+                            self.write(&draw::repaint(drawn, &[]))
+                                .and_then(|()| {
+                                    self.write(&draw::cancelled(
+                                        self.coloring,
+                                        label,
+                                        "",
+                                    ))
+                                })
+                                .and(Err(stopped_by(quit))),
+                        ),
+                    }
+                }
+            },
+        );
+        match flow {
+            ControlFlow::Break(done) => done,
+            // Keystrokes never run out; if they did, nothing was submitted.
+            ControlFlow::Continue(_) => Err(Error::Cancelled),
+        }
+    }
+
+    /// A line answers with its first letter; anything else takes the default.
+    fn run_lines<P: Prompt>(&self, label: &str, prompt: P) -> Result<P::Answer> {
+        let line = self
+            .terminal
+            .write(&format!("◆  {label}\n"))
+            .and_then(|()| self.terminal.line())
+            .inspect(|_| self.terminal.discard_typeahead())
+            .map_err(Error::ReadInput)?
+            .ok_or(Error::Cancelled)?;
+        let flow = line
+            .trim()
+            .chars()
+            .take(1)
+            .map(Keystroke::Char)
+            .chain([Keystroke::Enter])
+            .try_fold(prompt, |prompt, key| match prompt.press(key) {
+                Step::Editing(prompt) => ControlFlow::Continue(prompt),
+                Step::Submit(answer) => ControlFlow::Break(Ok(answer)),
+                Step::Quit(quit) => ControlFlow::Break(Err(stopped_by(quit))),
+            });
+        match flow {
+            ControlFlow::Break(done) => done,
+            ControlFlow::Continue(_) => Err(Error::Cancelled),
         }
     }
 
@@ -248,23 +359,20 @@ impl<T: Terminal> Form<T> {
                 cancellation: quit,
             } => self
                 .write(&draw::cancelled(self.coloring, label, &shown))
-                .and(Err(match quit {
-                    Cancellation::Interrupt => Error::Interrupted,
-                    Cancellation::Cancel => Error::Cancelled,
-                })),
+                .and(Err(stopped_by(quit))),
         }
     }
 
     fn read_keys(&self, answer: TypedAnswer) -> Result<KeyReadEnd> {
         let flow = std::iter::repeat_with(|| self.terminal.keystroke()).try_fold(
-            answer,
-            |answer, keystroke| {
+            (answer, Decoder::default()),
+            |(answer, decoder), keystroke| {
                 let shown = draw::masked(answer.kind(), answer.text());
-                match keystroke
-                    .map_err(Error::Terminal)
-                    .map(|keystroke| answer.press(keystroke))
-                {
-                    Ok(EditorStep::Typing(answer)) => {
+                match keystroke.map_err(Error::Terminal).map(|keystroke| {
+                    let (decoder, key) = decoder.feed(keystroke);
+                    (decoder, answer.press(key))
+                }) {
+                    Ok((decoder, EditorStep::Editing(answer))) => {
                         let redrawn = draw::draw_input(
                             self.coloring,
                             &answer,
@@ -273,13 +381,13 @@ impl<T: Terminal> Form<T> {
                         self.write(&draw::update(self.coloring, &redrawn))
                             .map_or_else(
                                 |error| ControlFlow::Break(Err(error)),
-                                |()| ControlFlow::Continue(answer),
+                                |()| ControlFlow::Continue((answer, decoder)),
                             )
                     }
-                    Ok(EditorStep::Submit(text)) => {
+                    Ok((_, EditorStep::Submit(text))) => {
                         ControlFlow::Break(Ok(KeyReadEnd::Typed(text)))
                     }
-                    Ok(EditorStep::Quit(quit)) => {
+                    Ok((_, EditorStep::Quit(quit))) => {
                         ControlFlow::Break(Ok(KeyReadEnd::GaveUp {
                             masked: shown,
                             cancellation: quit,
@@ -351,6 +459,13 @@ impl<T: Terminal> Form<T> {
     }
 }
 
+fn stopped_by(quit: Cancellation) -> Error {
+    match quit {
+        Cancellation::Interrupt => Error::Interrupted,
+        Cancellation::Cancel => Error::Cancelled,
+    }
+}
+
 fn clean_answer(kind: QuestionKind, text: &str) -> Zeroizing<String> {
     let done = text
         .chars()
@@ -358,7 +473,7 @@ fn clean_answer(kind: QuestionKind, text: &str) -> Zeroizing<String> {
         .chain([Keystroke::Enter])
         .try_fold(TypedAnswer::new(kind), |answer, keystroke| {
             match answer.press(keystroke) {
-                EditorStep::Typing(answer) => ControlFlow::Continue(answer),
+                EditorStep::Editing(answer) => ControlFlow::Continue(answer),
                 EditorStep::Submit(submitted) => ControlFlow::Break(submitted),
                 EditorStep::Quit(_) => {
                     ControlFlow::Break(Zeroizing::new(String::new()))
@@ -636,6 +751,26 @@ mod tests {
         let form = form(Script::new(TerminalKind::Live, strokes, []))?;
         assert_eq!(form.ask("Email", QuestionKind::Text, &not_empty)?, long);
         assert!(form.terminal().written().contains('…'));
+        Ok(())
+    }
+
+    #[test]
+    fn a_bare_form_quiets_the_terminal_and_writes_nothing() {
+        let form = Form::bare(Script::new(TerminalKind::Live, [], []));
+        assert!(form.terminal().was_quieted());
+        assert_eq!(form.terminal().written(), "");
+    }
+
+    #[test]
+    fn a_flipped_answer_and_the_final_erase_repaint_the_three_rows() -> Result<()> {
+        let strokes = [Keystroke::Tab, Keystroke::Char('n')];
+        let form = Form::bare(Script::new(TerminalKind::Live, strokes, []));
+        assert!(!form.confirm("Go?", true)?);
+        let written = form.terminal().written();
+        let repaints = written.matches("\r\x1b[3A\x1b[J").count();
+        assert_eq!(repaints, 2, "{written:?}");
+        assert!(written.ends_with("◇  Go?\n│  No\n│\n"), "{written:?}");
+        assert_eq!(form.terminal().discards(), 1);
         Ok(())
     }
 }

@@ -10,14 +10,10 @@ use crate::{
     effect::{
         board_write::WriteMode,
         confirmation::unless_confirmed,
-        interpreter::{CarriedRequest, RequestInterpreter as _},
         request::{ApiRequest, QueryParameter},
     },
     error::{Result, confirmation::Unconfirmed},
-    remote::client::{
-        Client,
-        interpreter::{RequestReporter, RequestSender},
-    },
+    remote::client::Client,
 };
 
 /// What is told of a change; `P` is the plan of what would go out.
@@ -115,38 +111,39 @@ impl From<&ApiRequest> for PlannedRequest {
     }
 }
 
+/// A change under the confirmation rule: `Err` is the report of one that stays
+/// (held for its confirmation, or a dry run; a dry run needs none), with
+/// `plan`; `Ok` means carry it now.
+pub(in crate::command) fn gate<P: 'static>(
+    unconfirmed: Option<Unconfirmed>,
+    (mode, confirm): (WriteMode, Confirmation),
+    plan: impl FnOnce() -> P,
+) -> std::result::Result<(), ChangeReport<P>> {
+    match (
+        unless_confirmed(unconfirmed, confirm == Confirmation::Given, mode),
+        mode,
+    ) {
+        (Err(refusal), _) => Err(ChangeReport::Held {
+            request: plan(),
+            needs: refusal.needs(),
+            refusal,
+        }),
+        (Ok(()), WriteMode::DryRun) => Err(ChangeReport::DryRun { request: plan() }),
+        (Ok(()), WriteMode::Send) => Ok(()),
+    }
+}
+
 /// Sends the request, reports it for a dry run, or holds it for want of its
-/// confirmation (a dry run needs none). The reply is there when it was sent.
+/// confirmation. The reply is there when it was sent.
 pub(in crate::command) async fn settle(
     client: &Client,
     request: ApiRequest,
     unconfirmed: Option<Unconfirmed>,
-    (dry_run, confirm): (WriteMode, Confirmation),
+    confirmation: (WriteMode, Confirmation),
 ) -> Result<(ChangeReport, Option<Value>)> {
-    let mode = dry_run;
-    if let Err(needs) =
-        unless_confirmed(unconfirmed, confirm == Confirmation::Given, mode)
-    {
-        let held = ChangeReport::Held {
-            request: PlannedRequest::from(&request),
-            needs: format!("{} {}", needs.change, needs.risk),
-            refusal: needs,
-        };
-        Ok((held, None))
-    } else {
-        let carried = match dry_run {
-            WriteMode::DryRun => RequestReporter.carry(client, request).await?,
-            WriteMode::Send => RequestSender.carry(client, request).await?,
-        };
-        Ok(match carried {
-            CarriedRequest::Reported(reported) => (
-                ChangeReport::DryRun {
-                    request: PlannedRequest::from(&reported),
-                },
-                None,
-            ),
-            CarriedRequest::Sent(reply) => (ChangeReport::Sent, Some(reply)),
-        })
+    match gate(unconfirmed, confirmation, || PlannedRequest::from(&request)) {
+        Err(stays) => Ok((stays, None)),
+        Ok(()) => Ok((ChangeReport::Sent, Some(client.send_json(request).await?))),
     }
 }
 
@@ -160,13 +157,59 @@ mod tests {
     use serde_json::json;
 
     use crate::{
-        command::change::PlannedRequest,
+        command::{
+            change::{ChangeReport, PlannedRequest, gate},
+            table::Confirmation,
+        },
         effect::{
+            board_write::WriteMode,
             http::{HttpBody, HttpMethod},
             request::{ApiRequest, Authorization, QueryParameter},
         },
-        error::Result,
+        error::{
+            Result,
+            confirmation::{ChangeRisk, Unconfirmed},
+        },
     };
+
+    fn risky() -> Unconfirmed {
+        Unconfirmed::new("deleting it", ChangeRisk::Irreversible)
+    }
+
+    #[test]
+    fn an_unconfirmed_change_is_held_with_what_it_needs() -> Result<()> {
+        let stays = gate(
+            Some(risky()),
+            (WriteMode::Send, Confirmation::Missing),
+            || (),
+        );
+        assert_eq!(
+            serde_json::to_value(stays.err())?,
+            json!({ "status": "held", "needs": "deleting it cannot be undone" })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_dry_run_needs_no_confirmation_and_stays_unsent() {
+        let stays = gate(
+            Some(risky()),
+            (WriteMode::DryRun, Confirmation::Missing),
+            || (),
+        );
+        assert!(
+            matches!(stays, Err(ChangeReport::DryRun { .. })),
+            "{stays:?}"
+        );
+    }
+
+    #[test]
+    fn a_confirmed_or_harmless_change_is_carried() {
+        let confirmed =
+            gate(Some(risky()), (WriteMode::Send, Confirmation::Given), || ());
+        let harmless = gate(None, (WriteMode::Send, Confirmation::Missing), || ());
+        assert!(confirmed.is_ok() && harmless.is_ok());
+    }
 
     fn request(path: &str, authorization: Authorization) -> Result<ApiRequest> {
         Ok(ApiRequest {

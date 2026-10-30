@@ -12,19 +12,64 @@ use holst_core::{
 
 use crate::{
     error::{Error, Result},
-    output,
+    output::{self, OutputFormat},
     terminal::{
         awaiting::{apart, optional},
-        detect::TerminalType,
+        detect::{StreamKind, TerminalType},
         signals::{self, Signal},
     },
 };
+
+/// Whether a held command may ask a person, and how.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Prompting {
+    Keys,
+    Lines,
+    Off,
+}
+
+impl Prompting {
+    /// `streams` are stdin, stdout and stderr; `disabled` is `HOLST_NO_PROMPT`
+    /// set to a non-empty value.
+    #[must_use]
+    pub(crate) const fn of(
+        streams: [StreamKind; 3],
+        term_type: TerminalType,
+        disabled: bool,
+        format: OutputFormat,
+    ) -> Self {
+        match (streams, format, disabled, term_type) {
+            (
+                [
+                    StreamKind::Terminal,
+                    StreamKind::Terminal,
+                    StreamKind::Terminal,
+                ],
+                OutputFormat::Text,
+                false,
+                TerminalType::Capable,
+            ) => Prompting::Keys,
+            (
+                [
+                    StreamKind::Terminal,
+                    StreamKind::Terminal,
+                    StreamKind::Terminal,
+                ],
+                OutputFormat::Text,
+                false,
+                TerminalType::Dumb,
+            ) => Prompting::Lines,
+            _ => Prompting::Off,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct RunSettings {
     settings: Settings,
     home: Option<PathBuf>,
     terminal_type: TerminalType,
+    prompting: Prompting,
 }
 
 impl RunSettings {
@@ -32,11 +77,13 @@ impl RunSettings {
         settings: Settings,
         home: Option<PathBuf>,
         terminal_type: TerminalType,
+        prompting: Prompting,
     ) -> Self {
         Self {
             settings,
             home,
             terminal_type,
+            prompting,
         }
     }
 
@@ -58,6 +105,10 @@ impl RunSettings {
 
     pub(crate) const fn terminal_type(&self) -> TerminalType {
         self.terminal_type
+    }
+
+    pub(crate) const fn prompting(&self) -> Prompting {
+        self.prompting
     }
 
     pub(crate) fn location(&self) -> SessionLocation {
@@ -204,13 +255,78 @@ mod tests {
         remote::client::Client,
         storage::session_store::{LoginSaveReport, SessionStoreKind},
     };
+    use rstest::rstest;
     use secrecy::SecretString;
 
     use crate::{
         error::{Error, Result},
-        run::{SignedClient, save_rotated, unsaved_warning},
-        terminal::signals::Signal,
+        output::OutputFormat,
+        run::{Prompting, SignedClient, save_rotated, unsaved_warning},
+        terminal::{
+            detect::{StreamKind, TerminalType},
+            signals::Signal,
+        },
     };
+
+    const TTY: [StreamKind; 3] = [StreamKind::Terminal; 3];
+
+    #[rstest]
+    #[case::keys(
+        TTY,
+        TerminalType::Capable,
+        false,
+        OutputFormat::Text,
+        Prompting::Keys
+    )]
+    #[case::lines(TTY, TerminalType::Dumb, false, OutputFormat::Text, Prompting::Lines)]
+    #[case::disabled(
+        TTY,
+        TerminalType::Capable,
+        true,
+        OutputFormat::Text,
+        Prompting::Off
+    )]
+    #[case::json(TTY, TerminalType::Capable, false, OutputFormat::Json, Prompting::Off)]
+    #[case::pretty(
+        TTY,
+        TerminalType::Capable,
+        false,
+        OutputFormat::Pretty,
+        Prompting::Off
+    )]
+    #[case::stdin_piped(
+        [StreamKind::Redirected, StreamKind::Terminal, StreamKind::Terminal],
+        TerminalType::Capable,
+        false,
+        OutputFormat::Text,
+        Prompting::Off
+    )]
+    #[case::stdout_piped(
+        [StreamKind::Terminal, StreamKind::Redirected, StreamKind::Terminal],
+        TerminalType::Capable,
+        false,
+        OutputFormat::Text,
+        Prompting::Off
+    )]
+    #[case::stderr_piped(
+        [StreamKind::Terminal, StreamKind::Terminal, StreamKind::Redirected],
+        TerminalType::Capable,
+        false,
+        OutputFormat::Text,
+        Prompting::Off
+    )]
+    fn a_prompt_needs_terminals_text_and_no_opt_out(
+        #[case] streams: [StreamKind; 3],
+        #[case] term_type: TerminalType,
+        #[case] disabled: bool,
+        #[case] format: OutputFormat,
+        #[case] expected: Prompting,
+    ) {
+        assert_eq!(
+            Prompting::of(streams, term_type, disabled, format),
+            expected
+        );
+    }
 
     #[test]
     fn a_replaced_login_is_not_a_warning() {

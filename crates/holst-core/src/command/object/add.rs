@@ -6,11 +6,15 @@ use futures_util::{StreamExt as _, TryStreamExt as _, stream};
 
 use crate::{
     command::{
-        account,
-        board::show::{Loading, account_cache, board_id},
-        board_load::{self, CacheUse, RemoteBoard},
-        board_write::{WriteRequest, write_cached},
-        object::{AddArgs, AddItem, AddKind, change::refuse_hiding},
+        board::show::{Loading, board_id, through_cache},
+        board_load::CacheUse,
+        board_write::{BoardWrite, change_board},
+        object::{
+            AddArgs,
+            AddItem,
+            AddKind,
+            change::{load_board, refuse_hiding},
+        },
         table::not_value,
     },
     domain::{
@@ -46,11 +50,7 @@ use crate::{
         rich_text::TextFormat,
         upload::{UploadKind, file_type},
     },
-    effect::{
-        board_write::{WriteInterpreter, WriteMode},
-        confirmation::ALWAYS,
-        settings::CacheSettings,
-    },
+    effect::{board_write::WriteMode, confirmation::ALWAYS, settings::CacheSettings},
     error::{
         Error,
         Result,
@@ -64,9 +64,8 @@ use crate::{
             link::link_preview,
         },
         client::Client,
-        socket::write::{connector, interpreter},
     },
-    storage::{cache::Cache, file},
+    storage::file,
 };
 
 const COMMAND: &str = "object add";
@@ -87,27 +86,15 @@ pub async fn add(
 ) -> Result<ChangeReport> {
     // The arguments are read before the first request.
     let items = read_items(args)?;
-    let cache_use = CacheUse::Use;
-    let account = account_cache(client, cache, cache_use).await?;
-    let mode = args.dry_run;
-    added(
-        client,
-        Loading {
-            connector: connector(),
-            cache: account.as_ref().map(Cache::as_port),
-            cache_use,
-        },
-        interpreter(mode),
-        args,
-        &items,
-    )
+    through_cache(client, cache, CacheUse::Use, async |loading| {
+        added(client, loading, args, &items).await
+    })
     .await
 }
 
-async fn added<I: WriteInterpreter + ?Sized>(
+async fn added(
     client: &Client,
     loading: Loading<'_>,
-    interpreter: &I,
     args: &AddArgs,
     items: &[Item],
 ) -> Result<ChangeReport> {
@@ -118,16 +105,7 @@ async fn added<I: WriteInterpreter + ?Sized>(
         loading.cache_use,
     )
     .await?;
-    let (loaded, _) = board_load::load(
-        RemoteBoard {
-            client,
-            connector: loading.connector,
-            board: &board,
-        },
-        loading.cache,
-        loading.cache_use,
-    )
-    .await?;
+    let loaded = load_board(client, &loading, &board).await?;
     // Before any upload: a board that cannot be changed takes no file.
     match loaded.right {
         EditRight::Editable => Ok(()),
@@ -154,28 +132,24 @@ async fn added<I: WriteInterpreter + ?Sized>(
         &scene,
         linked_frame(&scene, &args.board),
     )?);
-    let user = account::account_id(client).await?;
-    let changed = write_cached(
+    let report = change_board(
         client,
-        interpreter,
-        WriteRequest {
+        loading,
+        BoardWrite {
             board: &board,
-            change: &change,
-            send_if: ALWAYS,
-            account_id: &user,
-            kept: None,
+            change,
+            release: ALWAYS,
+            guard: None,
+            mode: args.dry_run,
         },
-        loading.cache,
     )
-    .await
-    .map_err(Error::from)?;
-    let base = client.base_url();
-    let report = changed
-        .change
-        .written
-        .report(&board, |object| base.object_link(&board, object));
+    .await?;
     Ok(ChangeReport {
-        warnings: warnings(items, &got),
+        warnings: report
+            .warnings
+            .into_iter()
+            .chain(warnings(items, &got))
+            .collect(),
         ..report
     })
 }
@@ -1014,10 +988,7 @@ mod tests {
                 Client,
                 fake::{Fake, reply},
             },
-            socket::{
-                fake::{BOARD, Scripted, answer, script, signed_in, update},
-                write::WriteOver,
-            },
+            socket::fake::{BOARD, Scripted, answer, script, signed_in, update},
         },
     };
 
@@ -1268,16 +1239,19 @@ mod tests {
         let state = doc
             .transact()
             .encode_state_as_update_v2(&StateVector::default());
-        script([Some(vec![
-            answer(DocumentResponse::Subscribed { right }),
-            update(0, UpdatePayload::Inline(state)),
-        ])])
+        let session = || {
+            Some(vec![
+                answer(DocumentResponse::Subscribed { right }),
+                update(0, UpdatePayload::Inline(state.clone())),
+            ])
+        };
+        script([session(), session()])
     }
 
     #[tokio::test]
     async fn mixed_kinds_are_one_dry_run_write_in_the_order_given() -> Result<()> {
         let (_, client) = signed_in_hud()?;
-        let arguments = args(json!({"kind": "shape", "items": [
+        let arguments = args(json!({"kind": "shape", "dry_run": true, "items": [
             {"text": "Start", "shape": "diamond"},
             {"kind": "sticker", "text": "Ask", "color": "blue3"},
             {"kind": "arrow", "from": "#1", "to": "#2"},
@@ -1289,7 +1263,6 @@ mod tests {
                 cache: None,
                 cache_use: CacheUse::Use,
             },
-            &WriteOver::reporter(&board_document()),
             &arguments,
             &read_items(&arguments)?,
         )
@@ -1314,6 +1287,32 @@ mod tests {
                 true,
                 report.objects.first().map(|object| object.id.clone()),
             )
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_dry_run_reports_what_stayed_text_and_the_links_without_preview()
+    -> Result<()> {
+        let (_, client) = serving(vec![reply(404, &[], "")])?;
+        let arguments = args(json!({"dry_run": true, "text_format": "markdown",
+            "items": [
+                {"kind": "sticker", "text": "> quoted"},
+                {"kind": "link", "url": "https://example.test/x"}]}))?;
+        let report = added(
+            &client,
+            Loading {
+                connector: &board_document(),
+                cache: None,
+                cache_use: CacheUse::Use,
+            },
+            &arguments,
+            &read_items(&arguments)?,
+        )
+        .await?;
+        assert_eq!(
+            report.warnings,
+            ["kept as text: quote", "no preview: https://example.test/x"]
         );
         Ok(())
     }

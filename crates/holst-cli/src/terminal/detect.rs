@@ -1,5 +1,7 @@
 //! What the terminal is and whether it shows color, detected once per run.
 
+use std::io::{self, IsTerminal as _};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TerminalType {
     Dumb,
@@ -30,6 +32,19 @@ impl StreamKind {
             StreamKind::Redirected
         }
     }
+}
+
+/// Stdin, stdout and stderr, in that order.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "detect is where the CLI asks whether the standard streams are terminals"
+)]
+pub(crate) fn standard_streams() -> [StreamKind; 3] {
+    [
+        StreamKind::terminal_if(io::stdin().is_terminal()),
+        StreamKind::terminal_if(io::stdout().is_terminal()),
+        StreamKind::terminal_if(io::stderr().is_terminal()),
+    ]
 }
 
 pub(crate) fn mute_color_when(term_type: TerminalType) {

@@ -7,11 +7,11 @@ use crate::{
     command::{
         board::show::{
             Loading,
-            account_cache,
             board_id,
             cache_use,
             chosen_area,
             explicit_area,
+            through_cache,
         },
         board_load::{self, RemoteBoard},
         object::LsArgs,
@@ -42,8 +42,7 @@ use crate::{
     effect::settings::CacheSettings,
     error::Result,
     protocol::document::{COLOR, FIXED_WIDTH, TEXT_BACKGROUND_COLOR, TEXT_COLOR},
-    remote::{client::Client, socket::write::connector},
-    storage::cache::Cache,
+    remote::client::Client,
 };
 
 const COMMAND: &str = "object ls";
@@ -164,16 +163,9 @@ pub async fn ls(
     args: &LsArgs,
 ) -> Result<Listing> {
     let cache_use = cache_use(&args.caching, COMMAND)?;
-    let account = account_cache(client, cache, cache_use).await?;
-    listing(
-        client,
-        Loading {
-            connector: connector(),
-            cache: account.as_ref().map(Cache::as_port),
-            cache_use,
-        },
-        args,
-    )
+    through_cache(client, cache, cache_use, async |loading| {
+        listing(client, loading, args).await
+    })
     .await
 }
 

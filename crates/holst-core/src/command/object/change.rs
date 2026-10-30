@@ -7,17 +7,16 @@ use serde::Serialize;
 
 use crate::{
     command::{
-        account,
-        board::show::{Loading, account_cache, board_id},
-        board_load::{self, CacheUse, RemoteBoard, withheld},
-        board_write::{WriteRequest, write_cached},
+        board::show::{Loading, board_id, through_cache},
+        board_load::{self, CacheUse, RemoteBoard},
+        board_write::{BoardWrite, Guard, change_board, refuse_withheld},
         object::{EditArgs, EditItem, RemoveArgs},
         table::{Confirmation, not_value},
     },
     domain::{
         board::{LoadedBoard, arrow_look::ARROW_WIDTHS},
         change::{
-            receipt::ChangeReport,
+            receipt::{ChangeReport, Delivery},
             value::{
                 ArrowEdit,
                 Backdrop,
@@ -37,14 +36,11 @@ use crate::{
         rich_text::{Mark, TextFormat},
     },
     effect::{
-        board_write::WriteInterpreter,
-        board_write_plan::WrittenChange,
-        cache::CachePort,
         confirmation::{
             ALWAYS,
             NEVER,
-            ReleaseCheck,
             UNLESS_FRAME_CONTENT,
+            frame_content_unconfirmed,
             unless_confirmed,
         },
         settings::CacheSettings,
@@ -56,8 +52,7 @@ use crate::{
         confirmation::{ChangeRisk, Unconfirmed},
         input::InputError,
     },
-    remote::{api, client::Client, socket::write::interpreter},
-    storage::cache::Cache,
+    remote::client::Client,
 };
 
 const EDIT: &str = "object edit";
@@ -103,38 +98,6 @@ pub(super) fn named(
     }
 }
 
-/// What a write sends to a board and how it is let go.
-pub(in crate::command) struct Sending<'a> {
-    pub(in crate::command) board: &'a str,
-    pub(in crate::command) change: &'a BoardChange,
-    pub(in crate::command) release: ReleaseCheck,
-}
-
-/// Writes the change as the logged-in account.
-pub(in crate::command) async fn send<I: WriteInterpreter + ?Sized>(
-    client: &Client,
-    cache: Option<&dyn CachePort>,
-    interpreter: &I,
-    sending: Sending<'_>,
-) -> Result<WrittenChange> {
-    let user = account::account_id(client).await?;
-    let changed = write_cached(
-        client,
-        interpreter,
-        WriteRequest {
-            board: sending.board,
-            change: sending.change,
-            send_if: sending.release,
-            account_id: &user,
-            kept: None,
-        },
-        cache,
-    )
-    .await
-    .map_err(Error::from)?;
-    Ok(changed.change.written)
-}
-
 pub(super) async fn load_board(
     client: &Client,
     loading: &Loading<'_>,
@@ -153,16 +116,6 @@ pub(super) async fn load_board(
     Ok(loaded)
 }
 
-/// What the write did to the board's objects, each with its link.
-pub(super) fn reported(
-    client: &Client,
-    board: &str,
-    written: &WrittenChange,
-) -> ChangeReport {
-    let base = client.base_url();
-    written.report(board, |object| base.object_link(board, object))
-}
-
 /// Changes text, corner, size, color, rotation, link, order or tags of
 /// objects, in one write.
 ///
@@ -175,20 +128,15 @@ pub async fn edit(
     cache: &CacheSettings,
     args: &EditArgs,
 ) -> Result<ChangeReport> {
-    let account = account_cache(client, cache, CacheUse::Use).await?;
-    edited(
-        client,
-        account.as_ref().map(Cache::as_port),
-        interpreter(args.dry_run),
-        args,
-    )
+    through_cache(client, cache, CacheUse::Use, async |loading| {
+        edited(client, loading, args).await
+    })
     .await
 }
 
-async fn edited<I: WriteInterpreter + ?Sized>(
+async fn edited(
     client: &Client,
-    cache: Option<&dyn CachePort>,
-    interpreter: &I,
+    loading: Loading<'_>,
     args: &EditArgs,
 ) -> Result<ChangeReport> {
     let board = board_id(
@@ -199,22 +147,19 @@ async fn edited<I: WriteInterpreter + ?Sized>(
     )
     .await?;
     let edits = read_edits(args, &client.base_url().share_link(&board))?;
-    if edits.iter().any(|edit| edit.patch.frame.hidden.is_some()) {
-        refuse_hiding(client, &board).await?;
-    }
-    let change = BoardChange::EditAll(edits);
-    let written = send(
+    let hides = edits.iter().any(|edit| edit.patch.frame.hidden.is_some());
+    change_board(
         client,
-        cache,
-        interpreter,
-        Sending {
+        loading,
+        BoardWrite {
             board: &board,
-            change: &change,
+            change: BoardChange::EditAll(edits),
             release: ALWAYS,
+            guard: hides.then_some(HIDING),
+            mode: args.dry_run,
         },
     )
-    .await?;
-    Ok(reported(client, &board, &written))
+    .await
 }
 
 /// The edits: those of `--items`, or the one the flags describe for each
@@ -476,28 +421,13 @@ pub(super) fn hidden_of(
 /// Refuses hiding or showing frame content on `board` when its
 /// `who_can_manage_frame_hide_content` stands above the caller's role.
 pub(super) async fn refuse_hiding(client: &Client, board: &str) -> Result<()> {
-    let guard: Guard = ("who_can_manage_frame_hide_content", |needs, holds| {
-        BoardChangeError::HideWithheld { needs, holds }
-    });
-    refuse_withheld(client, board, guard).await
+    refuse_withheld(client, board, HIDING).await
 }
 
-/// A right a write needs: the `who_can_*` setting of the board that gates it,
-/// and the error that names the roles when it stands above the caller's.
-pub(super) type Guard = (&'static str, fn(String, &'static str) -> BoardChangeError);
-
-/// Refuses on `board` when the setting of `guard` stands above the role the
-/// caller's permits give there, as the web client does.
-pub(super) async fn refuse_withheld(
-    client: &Client,
-    board: &str,
-    (setting, refused): Guard,
-) -> Result<()> {
-    let channel = api::channel::get(client, board).await?;
-    withheld(&channel, setting).map_or(Ok(()), |(needs, holds)| {
-        Err(Error::BoardChange(refused(needs, holds)))
-    })
-}
+/// Hiding or showing frame content needs `who_can_manage_frame_hide_content`.
+const HIDING: Guard = ("who_can_manage_frame_hide_content", |needs, holds| {
+    BoardChangeError::HideWithheld { needs, holds }
+});
 
 /// What `--width` says: `auto`, or a width above 0. The width is read as
 /// drawn, so a size given beside it would change what it means.
@@ -614,20 +544,15 @@ pub async fn rm(
     cache: &CacheSettings,
     args: &RemoveArgs,
 ) -> Result<Removed> {
-    let account = account_cache(client, cache, CacheUse::Use).await?;
-    removed(
-        client,
-        account.as_ref().map(Cache::as_port),
-        interpreter(args.dry_run),
-        args,
-    )
+    through_cache(client, cache, CacheUse::Use, async |loading| {
+        removed(client, loading, args).await
+    })
     .await
 }
 
-async fn removed<I: WriteInterpreter + ?Sized>(
+async fn removed(
     client: &Client,
-    cache: Option<&dyn CachePort>,
-    interpreter: &I,
+    loading: Loading<'_>,
     args: &RemoveArgs,
 ) -> Result<Removed> {
     let objects = named(&args.board, &args.object, REMOVE)?;
@@ -646,32 +571,30 @@ async fn removed<I: WriteInterpreter + ?Sized>(
         (false, true) => NEVER,
         (false, false) => UNLESS_FRAME_CONTENT,
     };
-    let change = BoardChange::RemoveAll(objects);
-    let written = send(
+    let report = change_board(
         client,
-        cache,
-        interpreter,
-        Sending {
+        loading,
+        BoardWrite {
             board: &board,
-            change: &change,
+            change: BoardChange::RemoveAll(objects),
             release,
+            guard: None,
+            mode: args.dry_run,
         },
     )
     .await?;
-    let unconfirmed = if several {
-        Some(Unconfirmed::new(
+    let unconfirmed = match (several, report.receipt.delivery) {
+        (true, _) => Some(Unconfirmed::new(
             format!("removing {count} objects"),
             ChangeRisk::Irreversible,
-        ))
-    } else {
-        written.held_unconfirmed()
+        )),
+        (false, Delivery::Accepted) => None,
+        (false, Delivery::Built) => frame_content_unconfirmed(&report.objects),
     };
     let refusal = unless_confirmed(unconfirmed, confirmed, args.dry_run).err();
-    let held = refusal
-        .as_ref()
-        .map(|needs| format!("{} {}", needs.change, needs.risk));
+    let held = refusal.as_ref().map(Unconfirmed::needs);
     Ok(Removed {
-        report: reported(client, &board, &written),
+        report,
         held,
         refusal,
     })
@@ -686,6 +609,8 @@ mod tests {
     use crate::{
         Result,
         command::{
+            board::show::Loading,
+            board_load::CacheUse,
             fixture::{ARROW, FRAME, STICKER, TEXT, arguments, board_of, objects},
             object::{
                 EditArgs,
@@ -694,28 +619,32 @@ mod tests {
             },
         },
         domain::change::receipt::Delivery,
-        remote::socket::{
-            fake::{BOARD, signed_in},
-            write::WriteOver,
-        },
+        effect::board_write::WriteMode,
+        remote::socket::fake::{BOARD, Scripted, signed_in},
     };
 
     fn link(object: &str) -> String {
         format!("https://app.holst.so/board/{BOARD}?objectId={object}")
     }
 
+    const fn over(socket: &Scripted) -> Loading<'_> {
+        Loading {
+            connector: socket,
+            cache: None,
+            cache_use: CacheUse::Use,
+        }
+    }
+
     async fn edit_fields(
         given: serde_json::Value,
     ) -> Result<Vec<(String, Vec<&'static str>)>> {
         let (_, client) = signed_in([])?;
-        let args: EditArgs = arguments(given)?;
-        let report = edited(
-            &client,
-            None,
-            &WriteOver::reporter(&board_of(&objects())),
-            &args,
-        )
-        .await?;
+        let args = EditArgs {
+            dry_run: WriteMode::DryRun,
+            ..arguments(given)?
+        };
+        let socket = board_of(&objects());
+        let report = edited(&client, over(&socket), &args).await?;
         Ok(report
             .objects
             .into_iter()
@@ -836,7 +765,7 @@ mod tests {
         let (_, client) = signed_in([])?;
         let args: RemoveArgs = arguments(given)?;
         let socket = board_of(&objects());
-        let done = removed(&client, None, &WriteOver::sender(&socket), &args).await?;
+        let done = removed(&client, over(&socket), &args).await?;
         Ok((
             done.report
                 .objects

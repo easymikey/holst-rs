@@ -6,32 +6,117 @@ use futures_util::future::{self, OptionFuture};
 use yrs::Doc;
 
 use crate::{
-    command::board_load::{
-        DocumentRecord,
-        forget,
-        guarded_loss,
-        stored,
-        trusted_seed,
-        withheld,
+    command::{
+        account,
+        board::show::Loading,
+        board_load::{
+            DocumentRecord,
+            forget,
+            guarded_loss,
+            stored,
+            trusted_seed,
+            withheld,
+        },
     },
     domain::{
         board::EditRight,
         change::{
-            receipt::BoardStatus,
+            receipt::{BoardStatus, ChangeReport},
             value::{BoardChange, ChangeSources, RemoveRight},
         },
         node::NodeBrief,
         time::Timestamp,
     },
     effect::{
-        board_write::{LoadSource, WriteInterpreter},
+        board_write::{LoadSource, WriteInterpreter, WriteMode},
         board_write_plan::{LoadedChange, WrittenChange, plan},
         cache::{CachePort, meta::ReadCheck},
         confirmation::ReleaseCheck,
     },
-    error::{Error, Result, board_socket::BoardSocketError},
-    remote::{client::Client, socket::write::writer_document},
+    error::{
+        Error,
+        Result,
+        board_change::BoardChangeError,
+        board_socket::BoardSocketError,
+    },
+    remote::{
+        api,
+        client::Client,
+        socket::write::{WriteOver, writer_document},
+    },
 };
+
+/// A right a write needs: its `who_can_*` setting and the error for a refusal.
+pub(in crate::command) type Guard =
+    (&'static str, fn(String, &'static str) -> BoardChangeError);
+
+/// Refuses on `board` when the setting of `guard` stands above the role the
+/// caller's permits give there, as the web client does.
+pub(in crate::command) async fn refuse_withheld(
+    client: &Client,
+    board: &str,
+    (setting, refused): Guard,
+) -> Result<()> {
+    let channel = api::channel::get(client, board).await?;
+    withheld(&channel, setting).map_or(Ok(()), |(needs, holds)| {
+        Err(Error::BoardChange(refused(needs, holds)))
+    })
+}
+
+/// One change to one board, as a command asks for it.
+pub(in crate::command) struct BoardWrite<'a> {
+    /// The id; the command finds it.
+    pub(in crate::command) board: &'a str,
+    pub(in crate::command) change: BoardChange,
+    pub(in crate::command) release: ReleaseCheck,
+    /// A right checked on `board` before anything else.
+    pub(in crate::command) guard: Option<Guard>,
+    pub(in crate::command) mode: WriteMode,
+}
+
+/// Checks the guard, writes as the logged-in account through the cache of
+/// `loading` (sent, or only built), and reports each object with its link.
+pub(in crate::command) async fn change_board(
+    client: &Client,
+    loading: Loading<'_>,
+    write: BoardWrite<'_>,
+) -> Result<ChangeReport> {
+    let BoardWrite {
+        board,
+        change,
+        release,
+        guard,
+        mode,
+    } = write;
+    match guard {
+        Some(guard) => refuse_withheld(client, board, guard).await,
+        None => Ok(()),
+    }?;
+    let account_id = account::account_id(client).await?;
+    let over = match mode {
+        WriteMode::Send => WriteOver::sender(loading.connector),
+        WriteMode::DryRun => WriteOver::reporter(loading.connector),
+    };
+    let changed = write_cached(
+        client,
+        &over,
+        WriteRequest {
+            board,
+            change: &change,
+            send_if: release,
+            account_id: &account_id,
+            kept: None,
+        },
+        loading.cache,
+    )
+    .await
+    .map_err(Error::from)?;
+    let base = client.base_url();
+    Ok(changed
+        .change
+        .written
+        .report(board, |object| base.object_link(board, object)))
+}
 
 /// Whether a write started from a kept or cached copy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,7 +186,7 @@ async fn write<I: WriteInterpreter + ?Sized>(
     } = request;
     let seed = kept.map_or_else(|| writer_document(client, None), Ok)?;
     let (reply, opened) = future::join(
-        Box::pin(crate::remote::api::channel::get(client, board)),
+        Box::pin(api::channel::get(client, board)),
         interpreter.open(client, board, seed),
     )
     .await;

@@ -6,19 +6,12 @@ use itertools::Itertools as _;
 
 use crate::{
     command::{
-        board::show::{Loading, account_cache, board_id},
+        board::show::{Loading, board_id, through_cache},
         board_load::CacheUse,
+        board_write::{BoardWrite, Guard, change_board, refuse_withheld},
         object::{
             CopyArgs,
-            change::{
-                Guard,
-                Sending,
-                load_board,
-                named,
-                refuse_withheld,
-                reported,
-                send,
-            },
+            change::{load_board, named},
         },
         table::not_value,
     },
@@ -33,17 +26,9 @@ use crate::{
         lookup::rules::find_id,
         placement::free_spot_among,
     },
-    effect::{
-        board_write::WriteInterpreter,
-        confirmation::ALWAYS,
-        settings::CacheSettings,
-    },
+    effect::{confirmation::ALWAYS, settings::CacheSettings},
     error::{Result, board_change::BoardChangeError},
-    remote::{
-        client::Client,
-        socket::write::{connector, interpreter},
-    },
-    storage::cache::Cache,
+    remote::client::Client,
 };
 
 const COMMAND: &str = "object cp";
@@ -62,25 +47,15 @@ pub async fn cp(
     cache: &CacheSettings,
     args: &CopyArgs,
 ) -> Result<ChangeReport> {
-    let cache_use = CacheUse::Use;
-    let account = account_cache(client, cache, cache_use).await?;
-    copied(
-        client,
-        Loading {
-            connector: connector(),
-            cache: account.as_ref().map(Cache::as_port),
-            cache_use,
-        },
-        interpreter(args.dry_run),
-        args,
-    )
+    through_cache(client, cache, CacheUse::Use, async |loading| {
+        copied(client, loading, args).await
+    })
     .await
 }
 
-async fn copied<I: WriteInterpreter + ?Sized>(
+async fn copied(
     client: &Client,
     loading: Loading<'_>,
-    interpreter: &I,
     args: &CopyArgs,
 ) -> Result<ChangeReport> {
     let references = named(&args.board, &args.object, COMMAND)?;
@@ -113,18 +88,18 @@ async fn copied<I: WriteInterpreter + ?Sized>(
         &beside,
         args.at.as_deref(),
     )?);
-    let written = send(
+    change_board(
         client,
-        loading.cache,
-        interpreter,
-        Sending {
+        loading,
+        BoardWrite {
             board: &target,
-            change: &change,
+            change,
             release: ALWAYS,
+            guard: None,
+            mode: args.dry_run,
         },
     )
-    .await?;
-    Ok(reported(client, &target, &written))
+    .await
 }
 
 /// The copies of the chosen objects, moved to the corner `at` gives, else to a
@@ -327,7 +302,7 @@ mod tests {
                 STICKER,
                 TEXT,
                 arguments,
-                board_of,
+                board_twice_of,
                 listed,
                 objects,
                 signed_in_hud,
@@ -341,7 +316,7 @@ mod tests {
             board::{ObjectKind, detail::TagNames, object_of},
             change::value::ObjectChangeKind,
         },
-        remote::socket::{fake::BOARD, write::WriteOver},
+        remote::socket::fake::BOARD,
     };
 
     fn chosen_ids(references: &[&str]) -> Result<Vec<String>> {
@@ -440,11 +415,10 @@ mod tests {
         let report = copied(
             &client,
             Loading {
-                connector: &board_of(&objects()),
+                connector: &board_twice_of(&objects()),
                 cache: None,
                 cache_use: CacheUse::Use,
             },
-            &WriteOver::reporter(&board_of(&objects())),
             &args,
         )
         .await?;

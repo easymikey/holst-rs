@@ -18,11 +18,11 @@ use crate::{
             SnapArgs,
             show::{
                 Loading,
-                account_cache,
                 board_id,
                 cache_use,
                 chosen_area,
                 explicit_area,
+                through_cache,
             },
         },
         board_load::{self, RemoteBoard},
@@ -42,17 +42,14 @@ use crate::{
     },
     effect::settings::CacheSettings,
     error::{Error, Result, stored_file::StoredFileError},
-    remote::{api, client::Client, socket::write::connector},
-    storage::{
-        cache::Cache,
-        file::{
-            PartialDir,
-            create_dir,
-            create_dir_all,
-            place_dir,
-            write_new,
-            write_numbered,
-        },
+    remote::{api, client::Client},
+    storage::file::{
+        PartialDir,
+        create_dir,
+        create_dir_all,
+        place_dir,
+        write_new,
+        write_numbered,
     },
 };
 
@@ -120,17 +117,9 @@ pub async fn snap(
     args: &SnapArgs,
 ) -> Result<Snapped> {
     let cache_use = cache_use(&args.caching, SNAP)?;
-    let account = account_cache(client, cache, cache_use).await?;
-    snapped(
-        client,
-        Loading {
-            connector: connector(),
-            cache: account.as_ref().map(Cache::as_port),
-            cache_use,
-        },
-        downloads,
-        args,
-    )
+    through_cache(client, cache, cache_use, async |loading| {
+        snapped(client, loading, downloads, args).await
+    })
     .await
 }
 
@@ -148,17 +137,9 @@ pub async fn save(
     args: &SaveArgs,
 ) -> Result<Saved> {
     let cache_use = cache_use(&args.caching, SAVE)?;
-    let account = account_cache(client, cache, cache_use).await?;
-    saved(
-        client,
-        Loading {
-            connector: connector(),
-            cache: account.as_ref().map(Cache::as_port),
-            cache_use,
-        },
-        downloads,
-        args,
-    )
+    through_cache(client, cache, cache_use, async |loading| {
+        saved(client, loading, downloads, args).await
+    })
     .await
 }
 

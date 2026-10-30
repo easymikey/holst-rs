@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     command::{
         account::account_id,
-        change::ChangeReport,
+        board::show::{Loading, through_cache},
+        board_load::{self, CacheUse, RemoteBoard},
+        change::{ChangeReport, gate},
         lookup,
         table::{Command, CommandArgs, Confirmation, not_value, visible},
     },
@@ -29,7 +31,7 @@ use crate::{
         lookup::rules::find_id,
         text::one_line,
     },
-    effect::{board_write::WriteMode, confirmation::unless_confirmed},
+    effect::{board_write::WriteMode, settings::CacheSettings},
     error::{
         Error,
         Result,
@@ -47,10 +49,7 @@ use crate::{
     remote::{
         api,
         client::Client,
-        socket::{
-            comments::{CommentRoom, open},
-            load::load,
-        },
+        socket::comments::{CommentRoom, open},
     },
 };
 
@@ -458,14 +457,29 @@ pub async fn ls(client: &Client, args: &LsArgs) -> Result<ThreadList> {
 /// A blank text, `at` and `object` given together, an `at` that is not two
 /// numbers, a board or object that is not found, a board that is read-only for
 /// the user, and errors of the requests.
-pub async fn add(client: &Client, args: &AddArgs) -> Result<CommentReport> {
+pub async fn add(
+    client: &Client,
+    cache: &CacheSettings,
+    args: &AddArgs,
+) -> Result<CommentReport> {
+    through_cache(client, cache, CacheUse::Use, async |loading| {
+        started(client, loading, args).await
+    })
+    .await
+}
+
+async fn started(
+    client: &Client,
+    loading: Loading<'_>,
+    args: &AddArgs,
+) -> Result<CommentReport> {
     let text = visible("comment add", "text", &args.text)?;
     let placement = placement(args)?;
     let open = opened(client, &args.board, args.workspace.as_deref()).await?;
     let anchor = match placement {
         Placement::Point(x, y) => ThreadAnchor::Point { x, y },
         Placement::Object(reference) => {
-            object_anchor(client, &open.board, reference).await?
+            object_anchor(client, loading, &open.board, reference).await?
         }
         Placement::Free => free_corner(&open.threads),
     };
@@ -657,26 +671,18 @@ async fn released(
     changed: CommentReport,
     (dry_run, unconfirmed, confirm): (WriteMode, Option<Unconfirmed>, Confirmation),
 ) -> Result<CommentReport> {
-    let mode = dry_run;
     let plan = || CommentPlan {
         action: changed.action,
         thread: changed.thread.clone(),
     };
-    let outcome =
-        match unless_confirmed(unconfirmed, confirm == Confirmation::Given, mode) {
-            Err(needs) => ChangeReport::Held {
-                request: plan(),
-                needs: format!("{} {}", needs.change, needs.risk),
-                refusal: needs,
-            },
-            Ok(()) => match dry_run {
-                WriteMode::DryRun => ChangeReport::DryRun { request: plan() },
-                WriteMode::Send => {
-                    open.room.send(client, &change).await?;
-                    ChangeReport::Sent
-                }
-            },
-        };
+    let outcome = match gate(unconfirmed, (dry_run, confirm), plan) {
+        Err(stays) => Ok(stays),
+        Ok(()) => open
+            .room
+            .send(client, &change)
+            .await
+            .map(|()| ChangeReport::Sent),
+    }?;
     Ok(CommentReport {
         board: open.board,
         outcome,
@@ -714,10 +720,20 @@ fn placement(args: &AddArgs) -> Result<Placement<'_>> {
 /// thread sits at the middle of it.
 async fn object_anchor(
     client: &Client,
+    loading: Loading<'_>,
     board: &str,
     reference: &str,
 ) -> Result<ThreadAnchor> {
-    let loaded = load(client, board).await?;
+    let (loaded, _) = board_load::load(
+        RemoteBoard {
+            client,
+            connector: loading.connector,
+            board,
+        },
+        loading.cache,
+        loading.cache_use,
+    )
+    .await?;
     let ids: Vec<String> = objects(&loaded.document)
         .into_iter()
         .map(|object| object.id)

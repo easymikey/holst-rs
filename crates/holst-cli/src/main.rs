@@ -16,7 +16,10 @@ use std::process::ExitCode;
 
 use holst_core::effect::settings::LogSettings;
 
-use self::{error::Error, run::RunSettings};
+use self::{
+    error::Error,
+    run::{Prompting, RunSettings},
+};
 use crate::{cli::Cli, exit::report, terminal::detect::TerminalType};
 
 #[tokio::main(flavor = "current_thread")]
@@ -56,7 +59,16 @@ async fn run(cli: Cli) -> ExitCode {
     let result = match terminal::signals::watch_apart() {
         // Ctrl-C fallback for commands that have no stop of their own.
         Ok(()) => {
-            let env = RunSettings::new(settings, home, TerminalType::dumb_if(dumb));
+            let term_type = TerminalType::dumb_if(dumb);
+            let disabled =
+                read_variable("HOLST_NO_PROMPT").is_some_and(|value| !value.is_empty());
+            let prompting = Prompting::of(
+                terminal::detect::standard_streams(),
+                term_type,
+                disabled,
+                cli.output,
+            );
+            let env = RunSettings::new(settings, home, term_type, prompting);
             // Boxed: every command group's future in one would be large on the stack.
             let work = Box::pin(cli::run(cli.table, cli.output, &env));
             terminal::signals::or_stopped(work, terminal::signals::stopped_fallback())

@@ -7,19 +7,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     command::{
-        board_load::account_caches,
-        change::ChangeReport,
+        change::{ChangeReport, gate},
         table::{Command, CommandArgs, Confirmation},
     },
     effect::{
         board_write::WriteMode,
         cache::{CachePort, CacheUsage},
         clock::Clock,
-        confirmation::unless_confirmed,
         settings::CacheSettings,
     },
     error::confirmation::{ChangeRisk, Unconfirmed},
-    storage::local_data::{self, CleanMode, DataPlace, DataRoots, FilePlace},
+    storage::{
+        cache::Cache,
+        local_data::{self, CleanMode, DataPlace, DataRoots, FilePlace},
+    },
 };
 
 /// The verbs of `holst storage`.
@@ -158,24 +159,14 @@ pub fn clean(
         (false, true) => CleanMode::Cache,
         (false, false) => CleanMode::Leftovers,
     };
-    let sending = args.dry_run == WriteMode::Send;
     let unconfirmed = (scope == CleanMode::All).then(|| {
         Unconfirmed::new(
             "removing the saved login and the board cache",
             ChangeRisk::Irreversible,
         )
     });
-    let held = unless_confirmed(
-        unconfirmed,
-        args.confirm == Confirmation::Given,
-        if sending {
-            WriteMode::Send
-        } else {
-            WriteMode::DryRun
-        },
-    )
-    .err();
-    let removing = sending && held.is_none();
+    let gated = gate(unconfirmed, (args.dry_run, args.confirm), || ());
+    let removing = gated.is_ok();
     let places = local_data::places(roots);
     let results: Vec<_> = local_data::to_remove(&places, scope)
         .into_iter()
@@ -217,21 +208,13 @@ pub fn clean(
         removed,
         failed,
         evicted: evicted.filter(|usage| usage.boards > 0),
-        report: match (held, sending) {
-            (Some(refusal), _) => ChangeReport::Held {
-                request: (),
-                needs: format!("{} {}", refusal.change, refusal.risk),
-                refusal,
-            },
-            (None, true) => ChangeReport::Sent,
-            (None, false) => ChangeReport::DryRun { request: () },
-        },
+        report: gated.err().unwrap_or(ChangeReport::Sent),
         scope,
     }
 }
 
 fn evictable(settings: &CacheSettings, clock: &Arc<dyn Clock>) -> CacheUsage {
-    account_caches(settings, clock)
+    Cache::accounts(settings, clock)
         .iter()
         .map(CachePort::evictable)
         .sum::<CacheUsage>()
@@ -241,7 +224,7 @@ fn evict(
     settings: &CacheSettings,
     clock: &Arc<dyn Clock>,
 ) -> (CacheUsage, Vec<NotRemoved>) {
-    let results: Vec<_> = account_caches(settings, clock)
+    let results: Vec<_> = Cache::accounts(settings, clock)
         .iter()
         .map(CachePort::evict)
         .collect();

@@ -37,7 +37,7 @@ pub async fn align(
         cache,
         args.dry_run,
         (&args.board, args.workspace.as_deref()),
-        &BoardChange::Arrange { objects, how },
+        BoardChange::Arrange { objects, how },
         None,
     )
     .await

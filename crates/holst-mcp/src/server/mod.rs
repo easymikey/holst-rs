@@ -233,12 +233,7 @@ impl McpServer {
             epoch: client.epoch,
             account_id: user.clone(),
         })));
-        holst_core::command::board_load::account_cache(
-            &self.cache,
-            &user,
-            client.clock(),
-        )
-        .map(Cache::into_shared)
+        Cache::from_settings(&self.cache, &user, client.clock()).map(Cache::into_shared)
     }
 
     fn table_tool(&self, name: &str) -> Option<&TableTool> {

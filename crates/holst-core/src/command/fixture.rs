@@ -146,6 +146,11 @@ pub(in crate::command) fn board_of(objects: &[Value]) -> Scripted {
     acking([Some(frames_of(objects))])
 }
 
+/// As `board_of`, for the load of a command and the connection of its write.
+pub(in crate::command) fn board_twice_of(objects: &[Value]) -> Scripted {
+    acking([Some(frames_of(objects)), Some(frames_of(objects))])
+}
+
 fn frames_of(objects: &[Value]) -> Vec<SocketFrame> {
     let doc = Doc::with_client_id(4);
     let store = doc.get_or_insert_map("objects");

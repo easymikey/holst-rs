@@ -205,6 +205,7 @@ mod object_references {
     use crate::{
         command::login::connect,
         domain::session::Session,
+        effect::settings::CacheSettings,
         error::{
             Error,
             lookup::{LookupError, LookupKind, LookupMiss},
@@ -234,7 +235,9 @@ mod object_references {
         let args = add(&json!({
             "board": "Plans", "text": "Here?", "object": reference
         }))?;
-        let refusal = super::super::add(&client, &args).await.err();
+        let refusal = super::super::add(&client, &CacheSettings::default(), &args)
+            .await
+            .err();
         Ok((
             refusal.ok_or(crate::error::input::InputError::NoWorkspaces)?,
             fake.updates_received(),

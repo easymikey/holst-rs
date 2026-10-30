@@ -213,6 +213,9 @@ fn keystroke_of(key: Key) -> Keystroke {
         Key::Char('\u{17}') => Keystroke::DeleteWord,
         Key::Char('\u{8}' | '\u{7f}') | Key::Backspace => Keystroke::Backspace,
         Key::Del => Keystroke::Delete,
+        Key::ArrowUp => Keystroke::Up,
+        Key::ArrowDown => Keystroke::Down,
+        Key::Tab => Keystroke::Tab,
         Key::Char(c) => Keystroke::Char(c),
         Key::Enter => Keystroke::Enter,
         Key::CtrlC => Keystroke::Interrupt,
@@ -220,9 +223,6 @@ fn keystroke_of(key: Key) -> Keystroke {
         Key::UnknownEscSeq(sequence) => escape_of(&sequence),
         // `Key` is non-exhaustive in `console`: the known rest and any later key.
         Key::Unknown
-        | Key::ArrowUp
-        | Key::ArrowDown
-        | Key::Tab
         | Key::BackTab
         | Key::Alt
         | Key::Shift
@@ -277,7 +277,8 @@ mod tests {
     #[case::arrow_right(Key::ArrowRight, Keystroke::Right)]
     #[case::alt_b(Key::UnknownEscSeq(vec!['b']), Keystroke::WordLeft)]
     #[case::alt_f(Key::UnknownEscSeq(vec!['f']), Keystroke::WordRight)]
-    #[case::arrow_up(Key::ArrowUp, Keystroke::Ignored)]
+    #[case::arrow_up(Key::ArrowUp, Keystroke::Up)]
+    #[case::arrow_down(Key::ArrowDown, Keystroke::Down)]
     #[case::ctrl_w(Key::Char('\u{17}'), Keystroke::DeleteWord)]
     #[case::backspace(Key::Backspace, Keystroke::Backspace)]
     #[case::windows_backspace(Key::Char('\u{8}'), Keystroke::Backspace)]
@@ -287,7 +288,8 @@ mod tests {
     #[case::enter(Key::Enter, Keystroke::Enter)]
     #[case::arrow(Key::ArrowLeft, Keystroke::Left)]
     #[case::delete(Key::Del, Keystroke::Delete)]
-    #[case::tab(Key::Tab, Keystroke::Ignored)]
+    #[case::tab(Key::Tab, Keystroke::Tab)]
+    #[case::back_tab(Key::BackTab, Keystroke::Ignored)]
     #[case::ctrl_arrow(Key::UnknownEscSeq(vec!['[', '1', ';']), Keystroke::Escape(EscapeTail::Csi(Csi::default().feed('1').feed(';'))))]
     #[case::f1(Key::UnknownEscSeq(vec!['O']), Keystroke::Escape(EscapeTail::Ss3))]
     #[case::alt_x(Key::UnknownEscSeq(vec!['x']), Keystroke::Escape(EscapeTail::Done))]

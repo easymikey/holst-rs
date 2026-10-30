@@ -9,7 +9,7 @@ use crate::{
     command::{
         board::{
             picture::{Delivery, Place},
-            show::{Loading, account_cache, board_id},
+            show::{Loading, board_id, through_cache},
         },
         board_load::CacheUse,
         object::{
@@ -26,8 +26,7 @@ use crate::{
     },
     effect::settings::CacheSettings,
     error::{Error, Result, board_change::BoardChangeError},
-    remote::{client::Client, socket::write::connector},
-    storage::cache::Cache,
+    remote::client::Client,
 };
 
 const COMMAND: &str = "object get";
@@ -69,17 +68,9 @@ pub async fn get(
     } else {
         CacheUse::Use
     };
-    let account = account_cache(client, cache, cache_use).await?;
-    downloaded(
-        client,
-        Loading {
-            connector: connector(),
-            cache: account.as_ref().map(Cache::as_port),
-            cache_use,
-        },
-        downloads,
-        args,
-    )
+    through_cache(client, cache, cache_use, async |loading| {
+        downloaded(client, loading, downloads, args).await
+    })
     .await
 }
 

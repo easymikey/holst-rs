@@ -62,6 +62,12 @@ impl Unconfirmed {
         )
     }
 
+    /// The change and its risk as one phrase, for a report that holds it.
+    #[must_use]
+    pub fn needs(&self) -> String {
+        self.to_string()
+    }
+
     /// Advice for every unconfirmed action.
     #[must_use]
     pub const fn hint(&self) -> Option<Hint> {
@@ -82,6 +88,12 @@ mod tests {
     fn every_refusal_hints_to_confirm() {
         let err = Unconfirmed::new("deleting permanently", ChangeRisk::Irreversible);
         assert_eq!(err.hint(), Some(Hint::ConfirmFirst));
+    }
+
+    #[test]
+    fn a_held_change_needs_its_change_and_risk() {
+        let err = Unconfirmed::new("deleting permanently", ChangeRisk::Irreversible);
+        assert_eq!(err.needs(), "deleting permanently cannot be undone");
     }
 
     #[test]

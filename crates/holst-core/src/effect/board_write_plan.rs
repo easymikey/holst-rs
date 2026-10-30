@@ -11,8 +11,8 @@ use crate::{
         },
         rich_text::kept_note,
     },
-    effect::confirmation::{ReleaseCheck, frame_content_unconfirmed},
-    error::{Error, Result, board_change::BoardChangeError, confirmation::Unconfirmed},
+    effect::confirmation::ReleaseCheck,
+    error::{Error, Result, board_change::BoardChangeError},
 };
 
 /// An update the server confirmed.
@@ -117,16 +117,6 @@ pub struct WrittenChange {
 }
 
 impl WrittenChange {
-    /// The refusal behind a change that was held back, not sent: removing a
-    /// frame with its objects. None once the server confirmed the update.
-    #[must_use]
-    pub fn held_unconfirmed(&self) -> Option<Unconfirmed> {
-        match self.accepted {
-            Some(_) => None,
-            None => frame_content_unconfirmed(&self.change.objects),
-        }
-    }
-
     /// The receipt of the update: built only, or confirmed.
     #[must_use]
     pub const fn receipt(&self) -> UpdateReceipt {

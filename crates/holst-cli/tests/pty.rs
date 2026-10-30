@@ -471,3 +471,57 @@ fn ctrl_c_while_the_code_is_sent() -> TestResult {
     assert!(!printed(&seen).contains("error: interrupted"));
     Ok(())
 }
+
+/// A home that holds a login the fake server accepts.
+fn signed_home(base: &str) -> Result<std::path::PathBuf, TestError> {
+    let home = empty_home()?;
+    let script = format!(
+        "printf '%s\\n' mock@example.com {} | '{}' auth login",
+        holst_core::fake::LOGIN_CODE,
+        env!("CARGO_BIN_EXE_holst"),
+    );
+    let login = test_command("sh", &["-c", &script], base, &home).output()?;
+    assert!(login.status.success(), "{:?}", login.stderr);
+    Ok(home)
+}
+
+/// `board rm plans --permanently` holds for its confirmation on a terminal.
+fn held_removal(base: &str) -> Result<Form, TestError> {
+    let home = signed_home(base)?;
+    let form = Form::spawn(test_command(
+        env!("CARGO_BIN_EXE_holst"),
+        &["board", "rm", "plans", "--permanently"],
+        base,
+        &home,
+    ))?;
+    form.wait_for("cannot be undone? (y/N)")?;
+    Ok(form)
+}
+
+#[test]
+fn y_confirms_a_held_change() -> TestResult {
+    let fake = support::start()?;
+    let form = held_removal(fake.base_url())?;
+    form.press("y")?;
+    let (code, seen) = form.finish()?;
+    let shown = printed(&seen);
+    assert_eq!(code, Some(0), "{shown}");
+    assert!(shown.contains("◇  "), "{shown}");
+    assert!(shown.contains("Yes"), "{shown}");
+    assert!(fake.id_of("Plans").is_none(), "the board is still there");
+    Ok(())
+}
+
+#[test]
+fn n_declines_a_held_change_and_sends_nothing() -> TestResult {
+    let fake = support::start()?;
+    let form = held_removal(fake.base_url())?;
+    form.press("n")?;
+    let (code, seen) = form.finish()?;
+    let shown = printed(&seen);
+    assert_eq!(code, Some(77), "{shown}");
+    assert!(shown.contains("No"), "{shown}");
+    assert!(!shown.contains("confirm with --yes"), "{shown}");
+    assert!(fake.id_of("Plans").is_some(), "the board was deleted");
+    Ok(())
+}

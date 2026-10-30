@@ -32,7 +32,7 @@ pub(crate) async fn run(
         CommentVerb::Add => {
             let args = table::parse(arguments)?;
             run_signed_in(run, async |client| {
-                shown(format, &comment::add(client, &args).await?)
+                shown(format, &comment::add(client, run.cache(), &args).await?)
             })
             .await
         }

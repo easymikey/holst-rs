@@ -112,16 +112,9 @@ pub async fn show(
     args: &ShowArgs,
 ) -> Result<Briefs> {
     let cache_use = cache_use(&args.caching, COMMAND)?;
-    let account = account_cache(client, cache, cache_use).await?;
-    shown(
-        client,
-        Loading {
-            connector: connector(),
-            cache: account.as_ref().map(Cache::as_port),
-            cache_use,
-        },
-        args,
-    )
+    through_cache(client, cache, cache_use, async |loading| {
+        shown(client, loading, args).await
+    })
     .await
 }
 
@@ -148,14 +141,30 @@ pub(in crate::command) async fn account_cache(
         (_, None) => Ok(None),
         (CacheUse::Offline, Some(_)) => client
             .account_id()
-            .map(|user| board_load::account_cache(settings, &user, client.clock()))
+            .map(|user| Cache::from_settings(settings, &user, client.clock()))
             .ok_or(Error::LocalData(LocalDataError::AccountUnknown)),
         (CacheUse::Use | CacheUse::Refresh, Some(_)) => {
-            Ok(account::known_account_id(client).await.and_then(|user| {
-                board_load::account_cache(settings, &user, client.clock())
-            }))
+            Ok(account::known_account_id(client)
+                .await
+                .and_then(|user| Cache::from_settings(settings, &user, client.clock())))
         }
     }
+}
+
+/// Opens the account's cache and runs `then` over the real socket and it.
+pub(in crate::command) async fn through_cache<T>(
+    client: &Client,
+    settings: &CacheSettings,
+    cache_use: CacheUse,
+    then: impl AsyncFnOnce(Loading<'_>) -> Result<T>,
+) -> Result<T> {
+    let account = account_cache(client, settings, cache_use).await?;
+    then(Loading {
+        connector: connector(),
+        cache: account.as_ref().map(Cache::as_port),
+        cache_use,
+    })
+    .await
 }
 
 async fn shown(

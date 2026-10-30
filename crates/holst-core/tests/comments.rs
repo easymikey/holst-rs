@@ -240,13 +240,20 @@ async fn a_change_to_an_unknown_thread_sends_nothing() -> holst_core::Result<()>
 }
 
 mod verbs {
+    use std::fs;
+
     use holst_core::{
         command::{
+            account::account_id,
             change::ChangeReport,
             comment::{AddArgs, CommentReport, LsArgs, ReplyArgs},
             table::{CommandArgs, parse},
         },
+        effect::{cache::CachePort as _, settings::CacheSettings},
+        error::local_data::LocalDataError,
         fake::{Fixture, FixtureObject, FixtureThread, ThreadAnchor},
+        storage::cache::Cache,
+        system::clock::SystemClock,
     };
     use serde_json::{Value, json};
 
@@ -277,7 +284,12 @@ mod verbs {
     }
 
     async fn add(client: &Client, given: Value) -> holst_core::Result<CommentReport> {
-        holst_core::command::comment::add(client, &args::<AddArgs>(&given)?).await
+        holst_core::command::comment::add(
+            client,
+            &CacheSettings::default(),
+            &args::<AddArgs>(&given)?,
+        )
+        .await
     }
 
     fn rect_and_resolved() -> Fixture {
@@ -330,6 +342,42 @@ mod verbs {
         let thread = held.iter().find(|thread| thread.id == "ReS01");
         assert_eq!(thread.map(|thread| thread.resolved), Some(false));
         assert_eq!(thread.map(|thread| thread.messages.len()), Some(2));
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the test removes its own temp directory"
+    )]
+    async fn a_thread_on_an_object_keeps_the_board_it_loaded_in_the_cache()
+    -> holst_core::Result<()> {
+        let (fake, client, _) = started(seeded()).await?;
+        let root = std::env::temp_dir()
+            .join(format!("holst-comment-cache-{}", std::process::id()));
+        fs::create_dir_all(&root)?;
+        let settings = CacheSettings {
+            root: Some(root.clone()),
+            roots: vec![root.clone()],
+            host: "app.holst.so".into(),
+            max_bytes: 1 << 24,
+            trust_millis: 1_000,
+        };
+        let object = fake.object_id("Plans", 1).unwrap_or_default();
+        let given = json!({ "board": "Plans", "text": "Here?", "object": object });
+        let started = holst_core::command::comment::add(
+            &client,
+            &settings,
+            &args::<AddArgs>(&given)?,
+        )
+        .await?;
+        let user = account_id(&client).await?;
+        let cache = Cache::from_settings(&settings, &user, SystemClock)
+            .ok_or(holst_core::Error::LocalData(LocalDataError::NoHome))?;
+        let kept = cache.usage().boards;
+        fs::remove_dir_all(&root)?;
+        assert!(sent(&started));
+        assert_eq!(kept, 1);
         Ok(())
     }
 

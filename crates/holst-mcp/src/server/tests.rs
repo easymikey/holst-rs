@@ -121,7 +121,7 @@ async fn the_disk_cache_is_the_logins_account() -> Result<()> {
     let client = holst.client().await?;
     let first = holst.cache(&client).await;
     let second = holst.cache(&client).await;
-    let expected = holst_core::command::board_load::account_cache(
+    let expected = holst_core::storage::cache::Cache::from_settings(
         &settings,
         ALICE,
         holst_core::system::clock::SystemClock,

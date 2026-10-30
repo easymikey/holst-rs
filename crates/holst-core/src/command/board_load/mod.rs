@@ -211,26 +211,6 @@ pub async fn seeded(
     result.map(|(loaded, source)| (loaded, source, before))
 }
 
-/// The caches of every account on every server, stamped by `clock`.
-#[must_use]
-pub fn account_caches(
-    settings: &crate::effect::settings::CacheSettings,
-    clock: &std::sync::Arc<dyn crate::effect::clock::Clock>,
-) -> Vec<crate::storage::cache::Cache> {
-    crate::storage::cache::Cache::accounts(settings, clock)
-}
-
-/// The cache of account `account_id` on the settings' server, stamped by
-/// `clock`; `None` when the cache is off or `account_id` is not a UUID.
-#[must_use]
-pub fn account_cache(
-    settings: &crate::effect::settings::CacheSettings,
-    account_id: &str,
-    clock: impl crate::effect::clock::Clock + 'static,
-) -> Option<crate::storage::cache::Cache> {
-    crate::storage::cache::Cache::from_settings(settings, account_id, clock)
-}
-
 /// The board's objects loaded through `cache`.
 ///
 /// # Errors

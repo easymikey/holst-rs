@@ -1,6 +1,7 @@
 //! The commands, the signed-in client and the arguments they share.
 
 pub(crate) mod api;
+mod ask;
 pub(crate) mod auth;
 pub(crate) mod backup;
 pub(crate) mod board;
@@ -22,9 +23,13 @@ use serde_json::{Map, Value};
 
 use crate::{
     error::{Error, Result},
+    form::{Form, terminal::Console},
     output::OutputFormat,
-    run::RunSettings,
+    run::{Prompting, RunSettings},
 };
+
+/// How many times a run may be repeated after an answer.
+const ROUNDS: usize = 3;
 
 /// Turns the refusal of a held change into the exit code.
 pub(crate) fn refused(refusal: Option<&Unconfirmed>) -> Result<()> {
@@ -42,6 +47,51 @@ pub(crate) async fn run(
     format: OutputFormat,
 ) -> Result<()> {
     read_files(name, &mut arguments, std::io::stdin().lock())?;
+    rounds(name, arguments, run, format, ROUNDS).await
+}
+
+/// Runs the command; a held one that a person may answer is asked, and
+/// repeated with the answer.
+async fn rounds(
+    name: CommandName,
+    arguments: Map<String, Value>,
+    run: &RunSettings,
+    format: OutputFormat,
+    left: usize,
+) -> Result<()> {
+    match group(name, arguments.clone(), run, format).await {
+        Err(error) if left > 0 => match asked(&error, &arguments, run)? {
+            Some(next) => {
+                Box::pin(rounds(name, next, run, format, left.saturating_sub(1))).await
+            }
+            None => Err(error),
+        },
+        done => done,
+    }
+}
+
+/// The arguments of the repeated run, or `None` when nothing is asked.
+fn asked(
+    error: &Error,
+    arguments: &Map<String, Value>,
+    run: &RunSettings,
+) -> Result<Option<Map<String, Value>>> {
+    match (run.prompting(), ask::question(error)) {
+        (Prompting::Keys | Prompting::Lines, Some(question)) => {
+            let form = Form::bare(Console::detect(run.terminal_type()));
+            ask::put(&form, &question)
+                .map(|()| Some(ask::answered(arguments.clone(), &question)))
+        }
+        (Prompting::Off, _) | (_, None) => Ok(None),
+    }
+}
+
+async fn group(
+    name: CommandName,
+    arguments: Map<String, Value>,
+    run: &RunSettings,
+    format: OutputFormat,
+) -> Result<()> {
     match name {
         CommandName::Auth(verb) => auth::run(verb, arguments, run, format).await,
         CommandName::Workspace(verb) => {
