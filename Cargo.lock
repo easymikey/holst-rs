@@ -1169,9 +1169,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
- "unicode-segmentation",
  "yrs",
- "zeroize",
 ]
 
 [[package]]
