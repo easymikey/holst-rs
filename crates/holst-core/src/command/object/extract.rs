@@ -22,17 +22,21 @@ use crate::{
         area::scene::{Scene, drawn_scale},
         board::{EditRight, Object, ObjectKind, objects},
         change::{
-            media::page_count,
+            media::{page_count, uncounted},
             receipt::ChangeReport,
             value::{BoardChange, Pasted},
         },
         geometry::Point,
         lookup::rules::find_id,
+        response::PagesInfo,
     },
     effect::{board_write::WriteMode, confirmation::ALWAYS},
     error::{Error, Result, board_change::BoardChangeError},
     protocol::document::{FILE_NAME, POSITION},
-    remote::{api::files::convert_pages, client::Client},
+    remote::{
+        api::files::{convert_pages, page_count as page_count_of},
+        client::Client,
+    },
 };
 
 const EDIT: &str = "object edit";
@@ -46,13 +50,15 @@ const ROW_PAGES: u32 = 8;
 const GAP: f64 = 64.0;
 
 /// Puts one file object per page of the file the call names on the board,
-/// below it, after the page service has converted the pages.
+/// below it, after the page service has converted the pages. A page file
+/// nobody has counted is counted first, by the page service, even in a dry run
+/// (a read).
 ///
 /// # Errors
 /// More than one object or any other field beside `--extract`, an object that
-/// is not a file with counted pages, pages that are not a list or are more than
-/// 50, a board that cannot be changed, a run the page service refuses, and
-/// errors of the requests and of the write.
+/// is not a page file or has no valid pages, pages that are not a list or are
+/// more than 50, a board that cannot be changed, a run the page service
+/// refuses, and errors of the requests and of the write.
 pub(super) async fn extracted(
     client: &Client,
     loading: Loading<'_>,
@@ -75,10 +81,18 @@ pub(super) async fn extracted(
     }?;
     let listed = objects(&loaded.document);
     let scene = Scene::new(&listed);
-    let (file, name, count) = source(&scene, &one_object(args)?)?;
+    let (file, name, stored) = source(&scene, &one_object(args)?)?;
+    let asked = if stored.is_none() {
+        Some(counted_by_service(client, &name).await?)
+    } else {
+        None
+    };
+    let count = stored
+        .or_else(|| asked.as_ref().map(|info| info.count))
+        .unwrap_or_default();
     let wanted = parse_pages(pages, count)?;
     let pasted = Pasted {
-        objects: copies(&scene, file, &wanted)?,
+        objects: copies(&scene, file, &wanted, asked)?,
         tags: BTreeMap::new(),
         shift: Point::ORIGIN,
     };
@@ -148,8 +162,12 @@ fn one_object(args: &EditArgs) -> Result<String> {
     }
 }
 
-/// The file `reference` names, its stored name and its page count.
-fn source<'a>(scene: &Scene<'a>, reference: &str) -> Result<(&'a Object, String, u32)> {
+/// The file `reference` names, its stored name and the page count it holds,
+/// when it holds one; a page file nobody has counted has none.
+fn source<'a>(
+    scene: &Scene<'a>,
+    reference: &str,
+) -> Result<(&'a Object, String, Option<u32>)> {
     let id = find_id(
         scene.objects().iter().map(|object| object.id.as_str()),
         reference,
@@ -159,24 +177,46 @@ fn source<'a>(scene: &Scene<'a>, reference: &str) -> Result<(&'a Object, String,
             reference: id.clone(),
         })
     })?;
-    let counted = file
-        .fields
-        .get(FILE_NAME)
-        .and_then(Value::as_str)
-        .zip(page_count(&file.fields))
-        .filter(|(_, count)| *count > 0);
-    match (&file.kind, counted) {
-        (ObjectKind::File, Some((name, count))) => Ok((file, name.to_owned(), count)),
-        (ObjectKind::File, None) => Err(not_value(
+    let none_counted = || {
+        not_value(
             EDIT,
             "extract",
             &format!("a file with pages: {id} has none counted"),
-        )),
+        )
+    };
+    match (
+        &file.kind,
+        file.fields.get(FILE_NAME).and_then(Value::as_str),
+    ) {
+        (ObjectKind::File, Some(name)) => match page_count(&file.fields) {
+            Some(count) if count > 0 => Ok((file, name.to_owned(), Some(count))),
+            _ if uncounted(&file.fields).is_some() => Ok((file, name.to_owned(), None)),
+            _ => Err(none_counted()),
+        },
+        (ObjectKind::File, None) => Err(none_counted()),
         (kind, _) => Err(not_value(
             EDIT,
             "extract",
             &format!("a file with pages: {id} is {}", kind.short_name()),
         )),
+    }
+}
+
+/// The pages the page service counts in the file `name`, as the web asks when
+/// a file has no `pagesInfo` (`preparePagePreview`, main.a33651a4.js 209861).
+///
+/// # Errors
+/// The request, or a file the service finds no pages in.
+async fn counted_by_service(client: &Client, name: &str) -> Result<PagesInfo> {
+    let info = page_count_of(client, name).await?;
+    if info.valid && info.count > 0 {
+        Ok(info)
+    } else {
+        Err(not_value(
+            EDIT,
+            "extract",
+            &format!("a file with pages: {name} has no valid pages"),
+        ))
     }
 }
 
@@ -245,9 +285,16 @@ fn runs_of(pages: &[u32]) -> Vec<(u32, u32)> {
 }
 
 /// A copy of `file` for each page, 8 to a row, the first row below the file.
+/// `counted` is the page info the service gave a file that held none: the
+/// copies hold it, as the web's state of the file did.
 /// A copy stands for its source under the page's name: `Pasted` gives each its
 /// own id.
-fn copies(scene: &Scene<'_>, file: &Object, pages: &[u32]) -> Result<Vec<Object>> {
+fn copies(
+    scene: &Scene<'_>,
+    file: &Object,
+    pages: &[u32],
+    counted: Option<PagesInfo>,
+) -> Result<Vec<Object>> {
     let own = scene
         .rectangle_of(file)
         .ok_or_else(|| not_value(EDIT, "extract", "a file with a box on the board"))?;
@@ -267,6 +314,8 @@ fn copies(scene: &Scene<'_>, file: &Object, pages: &[u32]) -> Result<Vec<Object>
                 ("extracted", json!(true)),
                 (POSITION, json!({ "x": x, "y": y })),
             ]
+            .into_iter()
+            .chain(counted.map(|info| ("pagesInfo", json!(info))))
             .map(|(name, value)| (name.to_owned(), value));
             Object {
                 id: format!("{}#{slot}", file.id),

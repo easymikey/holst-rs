@@ -148,7 +148,8 @@ fn a_made_object_is_written_with_texts_parts_code_and_entries() -> Result<()> {
             Some(json!("kanban")),
             Some(json!({"x": 10, "y": 20})),
             Some(json!("K")),
-            Some(Value::Null)
+            // The web client stores no `parentId` on a kanban outside a frame.
+            None
         )
     );
     assert_eq!(
@@ -211,7 +212,7 @@ fn entries_go_to_their_stores_and_a_kept_one_stays() -> Result<()> {
     built(&document, &add(NewObject::Made(kanban()?)))?;
     assert_eq!(
         store_json(&document, "task-card-statusesStore"),
-        json!({"todo": {"title": "mine"}, "done": {"title": "new"}})
+        json!({"todo": {"title": "mine"}, "done": {"id": "done", "title": "new"}})
     );
     let columns = document.get_or_insert_map("kanban-columnsStore");
     let transaction = document.transact();

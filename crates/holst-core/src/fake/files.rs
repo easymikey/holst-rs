@@ -6,7 +6,7 @@ mod transfer;
 use std::io::Write as _;
 
 use flate2::{Compression, write::GzEncoder};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use self::{link::Pages, transfer::Transfers};
 pub(crate) use self::{
@@ -218,7 +218,7 @@ impl Files {
                 Some(self.counted(name))
             }
             ("POST", ["", "pdfpage", "file", name, "convert_pages"]) => {
-                Some(self.converted(name, (parts.query("start"), parts.query("end"))))
+                Some(self.converted(name, &request.body))
             }
             ("GET", ["", "gapi", "backup", "list"]) => {
                 Some(self.listing(parts.query("name")))
@@ -240,15 +240,10 @@ impl Files {
         }
     }
 
-    /// Converts the pages `start` to `end` of the file `name`, which the
-    /// service does for a file it counts; the run is kept.
-    fn converted(
-        &mut self,
-        name: &str,
-        (start, end): (Option<&str>, Option<&str>),
-    ) -> Response {
-        let number =
-            |text: Option<&str>| text.and_then(|text| text.parse::<u32>().ok());
+    /// Converts the pages the body `{"params": {"start", "end"}}` names of the
+    /// file `name`, which the service does for a file it counts; the run is
+    /// kept. The query is not read: the web sends none.
+    fn converted(&mut self, name: &str, body: &str) -> Response {
         let reply = match self.known(name) {
             None => coded(404, "file_not_found", "no such file"),
             Some(CountOutcome::Pages { .. }) => found(&json!({})),
@@ -256,7 +251,14 @@ impl Files {
                 coded(400, code, detail)
             }
         };
-        match (number(start), number(end)) {
+        let sent: Option<Value> = serde_json::from_str(body).ok();
+        let number = |pointer: &str| {
+            sent.as_ref()
+                .and_then(|value| value.pointer(pointer))
+                .and_then(Value::as_u64)
+                .and_then(|page| u32::try_from(page).ok())
+        };
+        match (number("/params/start"), number("/params/end")) {
             (Some(first), Some(last)) => {
                 self.runs.push((name.to_owned(), first, last));
                 reply

@@ -18,8 +18,8 @@ path = "src/main.rs"
 
 [dependencies]
 itertools.workspace = true
-holst-core = { path = "../holst-core", version = "0.2.0", features = ["logging"] }
-holst-form = { path = "../holst-form", version = "0.2.0" }
+holst-core = { path = "../holst-core", version = "0.3.0", features = ["logging"] }
+holst-form = { path = "../holst-form", version = "0.3.0" }
 futures-util.workspace = true
 thiserror.workspace = true
 secrecy.workspace = true

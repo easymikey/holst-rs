@@ -17,8 +17,8 @@ name = "holst"
 path = "src/main.rs"
 
 [dependencies]
-holst-core = { path = "../holst-core", version = "0.2.0", features = ["logging"] }
-holst-form = { path = "../holst-form", version = "0.2.0" }
+holst-core = { path = "../holst-core", version = "0.3.0", features = ["logging"] }
+holst-form = { path = "../holst-form", version = "0.3.0" }
 thiserror.workspace = true
 secrecy.workspace = true
 zeroize.workspace = true

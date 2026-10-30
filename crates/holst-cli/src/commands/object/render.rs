@@ -178,7 +178,7 @@ mod tests {
             shown,
             format!(
                 "5 objects · editable\n\
-                 @a1b2c3d4 sticker (100, 50) 192×192  yellow4  \"{text}\"  L/a1b2c3d4e5f6\n\
+                 @a1b2c3d4 sticker 100,50 192×192  yellow4  \"{text}\"  L/a1b2c3d4e5f6\n\
                  … 1–1 of 5; next: --offset 1"
             )
         );
@@ -210,11 +210,11 @@ mod tests {
                 .collect();
         assert_eq!(
             lines.get(1).map(String::as_str),
-            Some("@a1 arrow   (100, 50)  @s1111111 → ·  L/a1")
+            Some("@a1 arrow 100,50  @s1111111 → ·  L/a1")
         );
         assert_eq!(
             lines.get(2).map(String::as_str),
-            Some("@s2 sticker (100, 50) 192×192 in @f1111111  \"hi\"  L/s2")
+            Some("@s2 sticker 100,50 192×192 in @f1111111  \"hi\"  L/s2")
         );
     }
 

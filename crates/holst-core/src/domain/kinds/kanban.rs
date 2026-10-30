@@ -82,9 +82,11 @@ pub fn made(
                 fields: card
                     .fields
                     .into_iter()
-                    .filter(|(name, _)| *name != WIDTH)
+                    .filter(|(name, _)| ![WIDTH, task::DISPLAY_OPTIONS].contains(name))
                     .chain([
                         (WIDTH, json!(CARD_WIDTH)),
+                        // The web client's first card has no display options.
+                        (task::DISPLAY_OPTIONS, Value::Null),
                         (task::SWIMLANE_ID, json!(swimlane)),
                         (task::COLUMN_ID, json!(column)),
                     ])
@@ -231,7 +233,7 @@ pub(super) fn detail(document: &Doc, kanban: &Object) -> Detail {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use serde_json::{Value, json};
     use yrs::{Any, ArrayPrelim, Doc, Map as _, MapPrelim, Transact as _};
 
     use super::{columns, detail, made, swimlanes};
@@ -333,6 +335,7 @@ mod tests {
                 field("swimlaneId"),
                 field("index"),
                 field("width"),
+                field("displayOptions"),
                 card.map(|card| card.entries.len()),
             ),
             (
@@ -342,6 +345,7 @@ mod tests {
                 Some(json!("k3")),
                 Some(json!(0x100_0000_0000_u64)),
                 Some(json!(338.0)),
+                Some(Value::Null),
                 Some(6),
             )
         );

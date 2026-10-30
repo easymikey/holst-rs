@@ -1,11 +1,20 @@
+use std::iter;
+
 use serde_json::Value;
 
 use crate::{
     domain::{
         area,
-        area::scene::Scene,
+        area::{
+            layout::{Grid, Kanban, connector},
+            scene::Scene,
+        },
         board::{Object, ObjectKind},
         geometry::Rectangle,
+        kinds::{
+            kanban::{COLUMN_WIDTH, is_kanban},
+            mind_map,
+        },
         palette,
         palette::TEXT_COLOR,
         picture::{
@@ -63,13 +72,47 @@ pub(super) fn object_svg(
         | ObjectKind::Link
         | ObjectKind::Other(_) => scene
             .rectangle_of(object)
-            .map(|rectangle| placed(object, rectangle, images))
+            .map(|rectangle| placed(scene, object, rectangle, images))
             .unwrap_or_default(),
     };
-    format!("<g id=\"o-{id}\">{inner}</g>")
+    let link = mind_map_link(scene, object);
+    format!("<g id=\"o-{id}\">{link}{inner}</g>")
 }
 
-fn placed(object: &Object, rectangle: Rectangle, images: &PictureImages<'_>) -> String {
+/// The curve from the node a mind-map node hangs from to the node itself.
+fn mind_map_link(scene: &Scene<'_>, node: &Object) -> String {
+    Some(node)
+        .filter(|node| node.kind.as_str() == mind_map::NODE)
+        .and_then(|node| {
+            let parent = scene.get(node.parent.as_deref()?)?;
+            let [start, first, second, end] =
+                connector(&scene.rectangle_of(parent)?, &scene.rectangle_of(node)?);
+            let color = node
+                .fields
+                .get(mind_map::NODE_COLOR)
+                .and_then(palette::of_value)
+                .unwrap_or_else(|| "#8b8b8b".to_owned());
+            let point = |(x, y): (f64, f64)| {
+                format!("{} {}", format_number(x), format_number(y))
+            };
+            Some(format!(
+                "<path d=\"M{} C{} {} {}\" fill=\"none\" stroke=\"{color}\" \
+                 stroke-width=\"2\" stroke-linecap=\"round\"/>",
+                point(start),
+                point(first),
+                point(second),
+                point(end)
+            ))
+        })
+        .unwrap_or_default()
+}
+
+fn placed(
+    scene: &Scene<'_>,
+    object: &Object,
+    rectangle: Rectangle,
+    images: &PictureImages<'_>,
+) -> String {
     let scale = match object.kind {
         ObjectKind::Sticker | ObjectKind::StickerStack | ObjectKind::Text => {
             area::scene::text_scale(object)
@@ -115,11 +158,17 @@ fn placed(object: &Object, rectangle: Rectangle, images: &PictureImages<'_>) -> 
         ObjectKind::Document => card(object, local),
         ObjectKind::Arrow | ObjectKind::Group => String::new(),
         ObjectKind::Image => image(object, local, images),
-        ObjectKind::Table => table_outline(local),
-        ObjectKind::TableCell => table_cell(object, local),
+        ObjectKind::Table => table_outline(&object.fields, local),
+        ObjectKind::TableCell => Some(object)
+            .filter(|cell| !scene.is_merged_away(cell))
+            .map(|cell| table_cell(cell, local))
+            .unwrap_or_default(),
         ObjectKind::Code => code_block(object, local),
         ObjectKind::Drawing => drawing(&object.fields),
         ObjectKind::Stamp => stamp(object, local, images),
+        ObjectKind::Other(_) if is_kanban(object) => scene
+            .kanban(object)
+            .map_or_else(|| kind_card(object, local), |layout| kanban(&layout, local)),
         ObjectKind::File
         | ObjectKind::Dice
         | ObjectKind::Wheel
@@ -453,12 +502,81 @@ fn kind_card(object: &Object, local: Rectangle) -> String {
     boxed(&shown, local, style)
 }
 
-fn table_outline(local: Rectangle) -> String {
+fn table_outline(fields: &Value, local: Rectangle) -> String {
+    let stroke = palette::hex("gray7").unwrap_or(TEXT_COLOR);
+    let rectangle = |place: Rectangle| {
+        format!(
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" \
+             stroke=\"{stroke}\" stroke-width=\"1\"/>",
+            format_number(place.x),
+            format_number(place.y),
+            format_number(place.width),
+            format_number(place.height)
+        )
+    };
+    iter::once(Rectangle::new(0.0, 0.0, local.width, local.height))
+        .chain(Grid::of(fields).blocks())
+        .map(rectangle)
+        .collect()
+}
+
+/// The columns, swimlanes and their titles of a kanban; its cards are objects
+/// of their own, drawn over it.
+fn kanban(layout: &Kanban, local: Rectangle) -> String {
+    let line = |x1: f64, y1: f64, x2: f64, y2: f64| {
+        format!(
+            "<path d=\"M{} {}L{} {}\" stroke=\"#00000029\" stroke-width=\"1\"/>",
+            format_number(x1),
+            format_number(y1),
+            format_number(x2),
+            format_number(y2)
+        )
+    };
+    let title = |text: &str, place: Rectangle, size: f64, weight: u16| {
+        TextBlock {
+            lines: &[text.to_owned()],
+            rectangle: place,
+            font_size: size,
+            line_height: (1.5 * size).round(),
+            color: TEXT_COLOR,
+            align: TextAlign::TOP_LEFT,
+            weight,
+        }
+        .svg()
+    };
+    let columns = layout.columns.iter().enumerate().map(|(index, name)| {
+        let left = f64::from(u32::try_from(index).unwrap_or_default()) * COLUMN_WIDTH;
+        let divider =
+            line(left, 0.0, left, local.height).repeat(usize::from(index > 0));
+        format!(
+            "{divider}{}",
+            title(
+                name,
+                Rectangle::new(left + 12.0, 12.0, COLUMN_WIDTH - 24.0, 24.0),
+                16.0,
+                600
+            )
+        )
+    });
+    let lanes = layout.lanes.iter().map(|lane| {
+        format!(
+            "{}{}",
+            line(0.0, lane.top, local.width, lane.top),
+            title(
+                &lane.title,
+                Rectangle::new(12.0, lane.top + 6.0, local.width - 24.0, 20.0),
+                13.0,
+                400
+            )
+        )
+    });
     format!(
-        "<rect width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"1\"/>",
+        "<rect width=\"{}\" height=\"{}\" rx=\"10\" fill=\"#f6f6f6\" stroke=\"#00000029\" \
+         stroke-width=\"1.5\"/>{}{}",
         format_number(local.width),
         format_number(local.height),
-        palette::hex("gray7").unwrap_or(TEXT_COLOR)
+        columns.collect::<String>(),
+        lanes.collect::<String>()
     )
 }
 
@@ -779,5 +897,89 @@ mod tests {
             .map(|object| object.kind.as_str())
             .collect();
         assert!(missing.is_empty(), "not drawn: {missing:?}");
+    }
+
+    /// The objects of `fields`, drawn over their own area at scale 1.
+    fn drawn(fields: &[Value]) -> String {
+        let objects: Vec<_> = fields.iter().cloned().filter_map(object_of).collect();
+        let inlined = HashMap::new();
+        let images = PictureImages {
+            storage: "/",
+            replacements: &inlined,
+        };
+        let scene = Scene::new(&objects);
+        let area = scene
+            .area_rectangle(&Area::Board, 10.0)
+            .unwrap_or(Rectangle::new(0.0, 0.0, 1.0, 1.0));
+        draw_rectangle(&scene, area, PixelsPerUnit::ONE, &images).svg
+    }
+
+    /// Table `619d8599` of the live board as the web wrote it: rows and columns
+    /// 1..2 x 1..3, a 2x2 block merged from 1,1, and cells at 1,1, 2,1 and 2,3.
+    fn merged_table(block: &Value) -> Vec<Value> {
+        let cell = |id: &str, row: u32, column: u32, text: &str| {
+            json!({"id": id, "type": "table-cell", "parentId": "t", "rowId": row,
+                "columnId": column, "position": {"x": 0, "y": 0}, "zIndex": 0,
+                "fillColor": {"color": "white6", "opacity": 1}, "text": text})
+        };
+        vec![
+            json!({"id": "t", "type": "table", "position": {"x": 100, "y": 50},
+                "row-1": {"index": 1_099_511_627_776_u64, "height": 60, "minHeight": 60},
+                "row-2": {"index": 2_199_023_255_552_u64, "height": 60, "minHeight": 60},
+                "column-1": {"index": 1_099_511_627_776_u64, "width": 240},
+                "column-2": {"index": 2_199_023_255_552_u64, "width": 240},
+                "column-3": {"index": 3_298_534_883_328_u64, "width": 240},
+                "merge-1-1": block}),
+            cell("a", 1, 1, ""),
+            cell("b", 2, 1, ""),
+            cell("c", 2, 3, ""),
+        ]
+    }
+
+    #[test]
+    fn a_merged_block_of_a_table_is_one_cell_and_the_rest_is_a_grid() {
+        let block = json!({"row": 1, "column": 1, "countRow": 2, "countColumn": 2});
+        insta::assert_snapshot!(drawn(&merged_table(&block)));
+    }
+
+    #[test]
+    fn a_merge_stored_with_text_numbers_is_drawn_as_one_stored_with_numbers() {
+        let numbers = json!({"row": 1, "column": 1, "countRow": 2, "countColumn": 2});
+        let text = json!({"row": "1", "column": "1", "countRow": 2, "countColumn": 2});
+        assert_eq!(drawn(&merged_table(&text)), drawn(&merged_table(&numbers)));
+    }
+
+    /// Kanban `8eb2447d` of the live board: three columns, one swimlane, a
+    /// card.
+    fn kanban_with_card() -> Vec<Value> {
+        vec![
+            json!({"id": "k", "type": "kanban", "position": {"x": 459, "y": 916},
+                "zIndex": 10, "kanbanInfoId": "i",
+                "snapColumns": [{"id": "c1", "title": "To do"},
+                    {"id": "c2", "title": "In progress"}, {"id": "c3", "title": "Done"}],
+                "snapSwimlanes": [{"id": "s1", "title": "Untitled"}]}),
+            json!({"id": "card", "type": "task-card", "parentId": "k", "zIndex": 20,
+                "position": {"x": 459, "y": 916}, "width": 338, "columnId": "c2",
+                "swimlaneId": "s1", "index": 1_428_645_776.8, "text": "Write docs"}),
+        ]
+    }
+
+    #[test]
+    fn a_kanban_is_drawn_with_its_columns_and_its_cards_in_their_cells() {
+        insta::assert_snapshot!(drawn(&kanban_with_card()));
+    }
+
+    #[test]
+    fn a_mind_map_node_is_joined_to_the_node_it_hangs_from() {
+        let node = |id: &str, parent: Option<&str>, x: u32, y: u32| {
+            json!({"id": id, "type": "mind-map-node", "parentId": parent,
+                "position": {"x": x, "y": y}, "width": 160, "height": 100})
+        };
+        let svg = drawn(&[
+            node("root", None, 0, 0),
+            node("right", Some("root"), 260, 0),
+            node("below", Some("root"), 0, 200),
+        ]);
+        insta::assert_snapshot!(svg);
     }
 }

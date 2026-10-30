@@ -43,7 +43,7 @@ const INSTRUCTIONS_MAX: usize = 660;
 // The size BUDGET_TABLE=1 shows, rounded up to the next fifty bytes.
 const TOOLS_MAX: usize = 15_000;
 
-const PAGE_MAX: usize = 13_000;
+const PAGE_MAX: usize = 9_900;
 
 const EDIT_MAX: usize = 200;
 

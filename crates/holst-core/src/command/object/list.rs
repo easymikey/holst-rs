@@ -104,7 +104,7 @@ impl ListedObject {
     #[must_use]
     pub fn line(&self, name: impl Fn(&str) -> String, max_chars: usize) -> String {
         let object = &self.object;
-        let corner = format!("({:.0}, {:.0})", object.x, object.y);
+        let corner = format!("{:.0},{:.0}", object.x, object.y);
         let size = object
             .width
             .zip(object.height)
@@ -175,7 +175,7 @@ impl ListedObject {
             format!("  \"{text}\"")
         };
         format!(
-            "{} {:<7} {corner}{size}{inside}{color}{look}{style}{detail}{ends}{padlock}{turn}{linked}{tags}{reactions}{quoted}",
+            "{} {} {corner}{size}{inside}{color}{look}{style}{detail}{ends}{padlock}{turn}{linked}{tags}{reactions}{quoted}",
             name(&object.id),
             object.kind.short_name(),
         )
@@ -338,6 +338,8 @@ async fn listing(
     let objects = board_objects(&loaded.document);
     let area = chosen_area(&asked, id::object_in(&args.board), &objects)?;
     let selected = listed_area(&objects, &area, padding)?;
+    let scene = Scene::new(&objects);
+    let shown = scene.with_descendants(&selected.objects);
     let tags = TagNames::of(&loaded.document);
     let reactions = Reactions::of(&loaded.document);
     let tag = args.tag.as_deref().filter(|tag| !tag.trim().is_empty());
@@ -350,10 +352,8 @@ async fn listing(
         offset: args.offset.map_or(0, widen),
         limit: Limit::from(args.limit.map_or(0, widen)),
     };
-    let page = query.page_where(&selected.objects, |object| {
-        tag.is_none_or(|tag| tags.has(object, tag))
-    })?;
-    let scene = Scene::new(&objects);
+    let page = query
+        .page_where(&shown, |object| tag.is_none_or(|tag| tags.has(object, tag)))?;
     let target = selected.target.map(|object| object.id.as_str());
     let base = client.base_url();
     let storage = base.storage();
@@ -466,6 +466,9 @@ mod tests {
                    "row-1": {"index": 0}, "row-2": {"index": 1},
                    "column-1": {"index": 0}, "column-2": {"index": 1},
                    "column-3": {"index": 2}}),
+            json!({"id": "k1", "type": "kanban", "position": at(100, 700)}),
+            json!({"id": "c1", "type": "task-card", "parentId": "k1",
+                   "position": at(0, 0), "width": 338}),
         ]
     }
 
@@ -606,9 +609,27 @@ mod tests {
             (json.pointer("/objects/0/detail"), line.as_deref()),
             (
                 Some(&json!({"rows": 2, "columns": 3})),
-                Some("tb1 table   (2000, 0) 720×120  [rows=2 columns=3]")
+                Some("tb1 table 2000,0 720×120  [rows=2 columns=3]")
             )
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_card_with_a_stored_width_lists_that_width() -> Result<()> {
+        let listing = run(json!({ "kind": "task" })).await?;
+        let line = listing
+            .objects
+            .first()
+            .map(|listed| listed.line(str::to_owned, 40));
+        assert_eq!(line.as_deref(), Some("c1 task 0,0 338×120 in k1"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_frame_listing_holds_the_cards_of_a_kanban_inside_it() -> Result<()> {
+        let listing = run(json!({ "frame": "Q3" })).await?;
+        assert_eq!(ids(&listing), ["c1", "f1", "s3", "k1"]);
         Ok(())
     }
 
@@ -631,7 +652,7 @@ mod tests {
             ),
             (
                 Some(&json!({"like": 2, "fire": 1})),
-                Some("s2 sticker (400, 0) 192×192  fire:1 like:2  \"Roadmap\""),
+                Some("s2 sticker 400,0 192×192  fire:1 like:2  \"Roadmap\""),
                 None
             )
         );

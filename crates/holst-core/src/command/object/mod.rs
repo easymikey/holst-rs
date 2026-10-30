@@ -80,7 +80,7 @@ impl ObjectVerb {
     block = Commands,
     about = "List the objects of a board or a part of it",
     help = "List the objects of a board or a part of it.\n\
-            It prints one line per object with @N, kind, corner, size and text.",
+            It prints one line per object with @N, kind, corner x,y, size and text.",
     example = "holst o ls \"Roadmap\" -k sticker --contains \"design\"",
     example = "holst o ls \"Roadmap\" --frame \"Q3\" -l 20",
     example = "holst o ls \"Roadmap\" --tag urgent",

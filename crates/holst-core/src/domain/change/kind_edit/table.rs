@@ -563,6 +563,28 @@ fn track_value(word: &str) -> Value {
         .map_or_else(|_| json!(word), |number| json!(number))
 }
 
+/// `styles` and, once there are any, the styles the cell leaves unset as
+/// `null` with an index of their own, as the web client creates a styled cell.
+fn all_styles(
+    scope: &WriteTransaction<'_>,
+    table: &str,
+    styles: Vec<(&'static str, Value)>,
+) -> Vec<(&'static str, Value)> {
+    let unset: Vec<_> = STYLES
+        .iter()
+        .filter(|(name, _)| {
+            !styles.is_empty() && !styles.iter().any(|(set, _)| set == name)
+        })
+        .flat_map(|&(name, index)| {
+            [
+                (name, Value::Null),
+                (index, json!(next_index(scope.states, table, index))),
+            ]
+        })
+        .collect();
+    styles.into_iter().chain(unset).collect()
+}
+
 /// A cell as the web client makes it when a cell gets text.
 fn create(
     transaction: &mut TransactionMut<'_>,
@@ -578,7 +600,7 @@ fn create(
         parent: None,
         fields: [(ROW_ID, track_value(row)), (COLUMN_ID, track_value(column))]
             .into_iter()
-            .chain(styles)
+            .chain(all_styles(scope, table, styles))
             .collect(),
         texts: vec![(DOCUMENT_ID, text.to_owned())],
         code: None,
@@ -854,7 +876,7 @@ fn merge(
     );
     let block = json!({
         "countRow": counts.0, "countColumn": counts.1,
-        "row": corner.0, "column": corner.1,
+        "row": track_value(&corner.0), "column": track_value(&corner.1),
     });
     let inside = blocks(fields)
         .into_iter()
@@ -1544,7 +1566,7 @@ mod tests {
                 cell_text(&document, &first)
             ),
             (
-                json!({"countRow": 1, "countColumn": 2, "row": "1", "column": "1"}),
+                json!({"countRow": 1, "countColumn": 2, "row": 1, "column": 1}),
                 "lead".to_owned()
             )
         );
@@ -1642,6 +1664,34 @@ mod tests {
                 at(&made, &["fillColorIndex"]).clone()
             ),
             (json!({"color": "blue3", "opacity": 1}), json!(6))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_cell_made_by_a_colour_has_every_style_and_index_at_layer_zero() -> Result<()> {
+        let document = table_of(2, 2)?;
+        edit(&document, TableEdit::Fill(span((1, 1), (1, 1)), blue()?))?;
+        let made = cell_at_place(&document, ("1", "1"));
+        let styles = [
+            "fillColor",
+            "fontFamily",
+            "fontSize",
+            "verticalAlign",
+            "horizontalAlign",
+            "textRotation",
+        ];
+        assert_eq!(
+            (
+                styles.map(|name| at(&made, &[name]).is_null()),
+                styles.map(|name| at(&made, &[&format!("{name}Index")]).clone()),
+                at(&made, &["zIndex"]).clone(),
+            ),
+            (
+                [false, true, true, true, true, true],
+                [json!(2), json!(1), json!(1), json!(1), json!(1), json!(1)],
+                json!(0)
+            )
         );
         Ok(())
     }

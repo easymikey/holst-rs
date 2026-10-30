@@ -35,6 +35,7 @@ Changed output:
 - Change reports show `@N` and the short id.
 - A saved login records its base URL. A different `HOLST_BASE_URL` is refused.
 - A socket internal error exits 75 (a retry may help).
+- `object ls` lines show the corner as `x,y` and drop the kind padding, so MCP replies are shorter.
 
 Releases:
 
@@ -86,6 +87,8 @@ Other:
 - One paging line ends `board ls` and `workspace log`.
 - CI and the local gates run tests through `cargo-nextest`, with one retry policy for loopback stalls.
 - `--tag none` clears the tags like `''`. `comment read --time` accepts ISO 8601 or says why not.
+- A new object no longer copies the board, and `object edit --path` and `--extract` read the board once.
+- `board snap` draws table grids with merged blocks, kanban columns with their cards, and mind-map connectors.
 
 ### Fixed
 
@@ -101,6 +104,13 @@ Other:
 - `object add` checks named frames before any upload.
 - A frame moved into a frame writes `parentId` only, no `zIndex`.
 - Table ids are numbers, and each table edit is checked against the board it edits.
+- Kanbans, task cards and merged table cells made by holst show in the web client: store entries carry their `id`, and merged blocks have numeric rows and columns.
+- `object edit --extract` counts the pages of a new file first, and the page service gets the request shape the web sends.
+- `object ls` prints a kanban card's stored width, and `--frame` lists objects nested in the frame's children.
+- A card taken out of a kanban keeps the kanban's parent. A new mind-map child counts only the children on its side.
+- A new start or due day keeps the times and the time zone of the task. A flip or a card move is refused beside `--at`, `--rotate`, `--size` and `--scale`.
+- A kept board tree is read again on a miss and after a sent change, never after a dry run, and an older tree no longer overwrites a newer one.
+- MCP write actions that hold nothing accept `confirm`, and a mixed-up key names the right one.
 
 ## 0.2.0
 

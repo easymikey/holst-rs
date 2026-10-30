@@ -1,5 +1,5 @@
 use holst_macros::post;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::{
     domain::{
@@ -8,7 +8,7 @@ use crate::{
     },
     effect::{
         http::{HttpBody, HttpMethod},
-        request::{ApiRequest, Authorization, QueryParameter},
+        request::{ApiRequest, Authorization},
     },
     error::{Error, Result, http::HttpError},
     protocol::upload::multipart_body,
@@ -140,8 +140,12 @@ pub async fn page_count(client: &Client, file_name: &str) -> Result<PagesInfo> {
 }
 
 /// Ask the page service to convert the pages `start` to `end` of the stored
-/// file `file_name` into page images; the reply body is not read
-/// (`convertPagesRange`, main.a33651a4.js 209849-209852).
+/// file `file_name` into page images; the reply body is not read.
+///
+/// BUNDLE: the web calls `axios.post(url, { params: { start, end } })`
+/// (`convertPagesRange`, main.a33651a4.js 209849-209852). The second argument
+/// of `post` is the body, not the config, so `start` and `end` travel as the
+/// JSON body `{"params": {"start", "end"}}` and the query stays empty.
 ///
 /// # Errors
 /// [`Client::send_text`] errors; a refusal of the service says its code and
@@ -152,22 +156,23 @@ pub async fn convert_pages(
     start: u32,
     end: u32,
 ) -> Result<()> {
-    let parameter = |name: &str, page: u32| QueryParameter {
-        name: name.to_owned(),
-        value: page.to_string(),
-    };
-    let request = ApiRequest {
-        method: HttpMethod::Post,
-        path: format!("{PAGE_SERVICE}{}/convert_pages", encode_segment(file_name)?),
-        query: vec![parameter("start", start), parameter("end", end)],
-        body: None,
-        authorization: Authorization::Session,
-    };
     client
-        .send_text(request)
+        .send_text(convert_pages_request(file_name, start, end)?)
         .await
         .map(|_reply| ())
         .map_err(said_by_service)
+}
+
+fn convert_pages_request(file_name: &str, start: u32, end: u32) -> Result<ApiRequest> {
+    Ok(ApiRequest {
+        method: HttpMethod::Post,
+        path: format!("{PAGE_SERVICE}{}/convert_pages", encode_segment(file_name)?),
+        query: Vec::new(),
+        body: Some(HttpBody::json(
+            &json!({ "params": { "start": start, "end": end } }),
+        )?),
+        authorization: Authorization::Session,
+    })
 }
 
 /// A refusal of the page service as its `code` and `detail`.
@@ -211,9 +216,16 @@ fn coded(body: &str) -> Option<String> {
 mod tests {
     #![expect(clippy::panic_in_result_fn, reason = "assert is the point of a test")]
 
+    use serde_json::json;
+
     use crate::{
         Result,
-        remote::api::files::{FilePart, UploadBind, upload_parts_request},
+        remote::api::files::{
+            FilePart,
+            UploadBind,
+            convert_pages_request,
+            upload_parts_request,
+        },
     };
 
     #[test]
@@ -247,6 +259,27 @@ mod tests {
                     pair("freshness_duration", "0")
                 ],
             ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_conversion_sends_the_pages_as_the_web_does_in_the_body() -> Result<()> {
+        let request = convert_pages_request("plan.pdf", 3, 7)?;
+        let body = request
+            .body
+            .map(|body| (body.content_type, serde_json::from_slice(&body.bytes)))
+            .map(|(kind, value)| (kind, value.ok()));
+        assert_eq!(
+            (request.path.as_str(), request.query.len(), body),
+            (
+                "/pdfpage/file/plan.pdf/convert_pages",
+                0,
+                Some((
+                    "application/json".to_owned(),
+                    Some(json!({"params": {"start": 3, "end": 7}}))
+                ))
+            )
         );
         Ok(())
     }

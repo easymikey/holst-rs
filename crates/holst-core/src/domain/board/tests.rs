@@ -497,3 +497,61 @@ fn reading_a_v2_document_creates_no_objects_v3_root() -> Result<()> {
     assert!(document.transact().get_map("objects_v3").is_none());
     Ok(())
 }
+
+#[test]
+fn a_loaded_kanban_carries_its_columns_and_swimlanes_in_order() -> Result<()> {
+    let document = Doc::new();
+    let store = |name: &str, id: &str, fields: serde_json::Value| -> Result<()> {
+        let map = document.get_or_insert_map(name);
+        insert_map(
+            &mut document.transact_mut(),
+            &map,
+            id,
+            fields
+                .as_object()
+                .into_iter()
+                .flatten()
+                .map(|(key, value)| (key.clone(), value.clone())),
+        )
+    };
+    store(
+        "objects",
+        "K",
+        json!({"id": "K", "type": "kanban", "position": {"x": 0, "y": 0}, "kanbanInfoId": "i"}),
+    )?;
+    store(
+        "kanban-infoStore",
+        "i",
+        json!({"columns": ["c2", "c1"], "swimlanes": ["s1"]}),
+    )?;
+    store(
+        "kanban-columnsStore",
+        "c1",
+        json!({"title": "Now", "index": 0}),
+    )?;
+    store(
+        "kanban-columnsStore",
+        "c2",
+        json!({"title": "Next", "index": 10_000}),
+    )?;
+    store(
+        "kanban-swimlanesStore",
+        "s1",
+        json!({"title": "Team", "index": 0}),
+    )?;
+    let kanban = objects(&document);
+    let listed = |key: &str| {
+        kanban
+            .first()
+            .and_then(|object| object.fields.get(key))
+            .cloned()
+    };
+    assert_eq!(
+        (listed("snapColumns"), listed("snapSwimlanes")),
+        (
+            Some(json!([{"id": "c1", "title": "Now"}, {"id": "c2", "title": "Next"}])),
+            Some(json!([{"id": "s1", "title": "Team"}])),
+        )
+    );
+    Ok(())
+}

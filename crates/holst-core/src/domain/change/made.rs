@@ -16,7 +16,7 @@ use yrs::{
 
 use crate::{
     domain::{
-        board::{any, insert_map},
+        board::{ObjectKind, any, insert_map},
         change::{
             check::Placement,
             value::{ChangedObject, Made, StoreEntry},
@@ -29,10 +29,11 @@ use crate::{
                 new_header,
             },
         },
+        kinds::kanban,
         rich_text::TextFormat,
     },
     error::Result,
-    protocol::document::{DOCUMENT_ID, PARENT_ID, POSITION},
+    protocol::document::{DOCUMENT_ID, ID, PARENT_ID, POSITION},
 };
 
 /// What `made` stores in its own map beside the header, the ids of its texts
@@ -107,8 +108,12 @@ fn put(
         root.insert(transaction, 0, code);
         (DOCUMENT_ID.to_owned(), json!(document))
     });
-    let layer =
-        beyond_among(scope.states.iter().chain(&writing.added), &id, Edge::Front);
+    // The web client keeps a table cell at layer 0: the table lays it out.
+    let layer = if made.kind == ObjectKind::TableCell {
+        0.0
+    } else {
+        beyond_among(scope.states.iter().chain(&writing.added), &id, Edge::Front)
+    };
     let header = new_header(&id, &made.kind, layer, scope.stamp)
         .into_iter()
         .map(|(name, value)| (name.to_owned(), value));
@@ -116,7 +121,11 @@ fn put(
         .chain(own_fields(made))
         .chain(documents)
         .chain(code)
-        .chain([(PARENT_ID.to_owned(), json!(parent))])
+        // The web client stores no `parentId` on a kanban outside a frame.
+        .chain(
+            (parent.is_some() || made.kind.as_str() != kanban::STORED)
+                .then(|| (PARENT_ID.to_owned(), json!(parent))),
+        )
         .collect();
     insert_map(transaction, &scope.roots.objects, &id, pairs.clone())?;
     let fields = Value::Object(pairs.into_iter().collect());
@@ -149,10 +158,10 @@ fn insert_entry(
     stored: &MapRef,
     entry: &StoreEntry,
 ) -> Result<()> {
-    let fields = entry
-        .fields
-        .iter()
-        .map(|(name, value)| any(value).map(|value| ((*name).to_owned(), value)))
+    // The web client repeats the key inside every entry.
+    let fields = std::iter::once((ID, json!(entry.id)))
+        .chain(entry.fields.iter().cloned())
+        .map(|(name, value)| any(&value).map(|value| (name.to_owned(), value)))
         .collect::<Result<Vec<_>>>()?;
     let map =
         stored.insert(transaction, entry.id.as_str(), MapPrelim::from_iter(fields));

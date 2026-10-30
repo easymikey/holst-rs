@@ -342,7 +342,7 @@ fn finish(r: *Release) !void {
     say(
         \\
         \\Not done by this script (the workflow's crates and homebrew jobs):
-        \\  crates.io: for name in holst-macros holst-core holst-cli holst-mcp, cargo publish -p $name --locked
+        \\  crates.io: for name in holst-macros holst-form holst-core holst-cli holst-mcp, cargo publish -p $name --locked
         \\  homebrew:  in easymikey/homebrew-holst set Formula/holst-cli.rb and Formula/holst-mcp.rb to version {s},
         \\             url https://github.com/easymikey/holst-rs/releases/download/{s}/<package>-<target>.tar.gz
         \\             and the sha256 of each program's four macOS and Linux archives from {s}/checksums.txt

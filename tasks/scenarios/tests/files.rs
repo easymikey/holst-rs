@@ -1279,7 +1279,7 @@ async fn a_failed_run_adds_nothing(
 
 #[rstest]
 #[tokio::test]
-async fn a_file_without_pages_refuses_extract(
+async fn a_file_without_pages_is_counted_then_extracted(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = with_an_uncounted("plan.pdf")
@@ -1287,10 +1287,32 @@ async fn a_file_without_pages_refuses_extract(
         .start()
         .await?;
     let call = extract_call(&holst, "all")?;
+    then(&holst.on(surface).object("Plans", call).await?).succeeded();
+    assert_eq!(
+        (
+            holst.page_counts_asked(),
+            holst.page_runs(),
+            extracted_pages(&holst)?.len(),
+        ),
+        (1, runs(&[(1, 3)]), 3)
+    );
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_file_the_service_cannot_count_refuses_extract(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_an_uncounted("plan.pdf")
+        .unconvertible_file("plan.pdf", "office_conversion_unavailable", "no converter")
+        .start()
+        .await?;
+    let call = extract_call(&holst, "all")?;
     let observation = holst.on(surface).object("Plans", call).await?;
     then(&observation)
-        .failed_saying("a file with pages")
-        .signalled_as(surface.usage());
+        .failed_saying("office_conversion_unavailable: no converter")
+        .signalled_as(surface.data_error());
     assert_eq!(holst.page_runs(), runs(&[]));
     board_of(&holst).got_no_update();
     Ok(())

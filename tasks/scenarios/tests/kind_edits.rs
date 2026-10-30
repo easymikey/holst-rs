@@ -316,7 +316,7 @@ async fn merging_two_cells_writes_the_block_and_a_colour_writes_its_index(
             fields.get("fillColorIndex")
         ),
         (
-            Some(&json!({"countRow": 1, "countColumn": 2, "row": "1", "column": "1"})),
+            Some(&json!({"countRow": 1, "countColumn": 2, "row": 1, "column": 1})),
             Some(&json!("blue3")),
             Some(&json!(2))
         )

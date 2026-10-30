@@ -37,6 +37,7 @@ use crate::{
     domain::{
         area::scene::Scene,
         geometry::{Point, Size},
+        kinds::{kanban, task::TITLE_DOCUMENT},
         rich_text::{Mark, TextFormat, read::markdown},
     },
     error::{Error, Result, input::InputError},
@@ -470,6 +471,42 @@ impl BoardContent {
     }
 }
 
+/// The `fields` key with a kanban's columns, `{id, title}` in order.
+pub(crate) const KANBAN_COLUMNS: &str = "snapColumns";
+/// As [`KANBAN_COLUMNS`], for the swimlanes.
+pub(crate) const KANBAN_SWIMLANES: &str = "snapSwimlanes";
+
+/// The kanban with its columns and swimlanes beside its fields; any other
+/// object as it is.
+fn with_kanban_cells(document: &Doc, mut object: Object) -> Object {
+    let listed = |cells: Vec<(String, String)>| {
+        Value::Array(
+            cells
+                .into_iter()
+                .map(|(id, title)| serde_json::json!({"id": id, "title": title}))
+                .collect(),
+        )
+    };
+    let cells = kanban::is_kanban(&object).then(|| {
+        [
+            (
+                KANBAN_COLUMNS.to_owned(),
+                listed(kanban::columns(document, &object)),
+            ),
+            (
+                KANBAN_SWIMLANES.to_owned(),
+                listed(kanban::swimlanes(document, &object)),
+            ),
+        ]
+    });
+    object
+        .fields
+        .as_object_mut()
+        .into_iter()
+        .for_each(|fields| fields.extend(cells.clone().into_iter().flatten()));
+    object
+}
+
 /// The root that holds a document's objects: `objects_v3` if the document has
 /// it, else `objects`. Looks on a read transaction, so it creates no root.
 pub(crate) fn objects_root(document: &Doc) -> &'static str {
@@ -486,23 +523,29 @@ pub fn objects(document: &Doc) -> Vec<Object> {
     let objects = document.get_or_insert_map(objects_root(document));
     let documents = document.get_or_insert_map(document::DOCUMENTS);
     let users = document.get_or_insert_map(document::USERS_IDS);
-    let txn = document.transact();
-    let authors: HashMap<u64, String> = users
-        .iter(&txn)
-        .filter_map(|(user, index)| {
-            number(&index.to_json(&txn)).map(|index| (index, user.to_owned()))
-        })
-        .collect();
-    let listed: Vec<Object> = objects
-        .iter(&txn)
-        .filter_map(|(_, value)| json(&value.to_json(&txn)))
-        .filter_map(|fields| {
-            object(
-                fields,
-                |document_id| text_of(&txn, &documents, document_id),
-                &authors,
-            )
-        })
+    let listed: Vec<Object> = {
+        let txn = document.transact();
+        let authors: HashMap<u64, String> = users
+            .iter(&txn)
+            .filter_map(|(user, index)| {
+                number(&index.to_json(&txn)).map(|index| (index, user.to_owned()))
+            })
+            .collect();
+        objects
+            .iter(&txn)
+            .filter_map(|(_, value)| json(&value.to_json(&txn)))
+            .filter_map(|fields| {
+                object(
+                    fields,
+                    |document_id| text_of(&txn, &documents, document_id),
+                    &authors,
+                )
+            })
+            .collect()
+    };
+    let listed = listed
+        .into_iter()
+        .map(|object| with_kanban_cells(document, object))
         .collect();
     // Arrows first: an attached end stores (0, 0), the drawn start is real.
     with_drawn_ends(listed)
@@ -571,6 +614,7 @@ fn object(
     let float = |value: Option<&Value>| value.and_then(Value::as_f64);
     let kind = ObjectKind::of(field(document::TYPE)?.as_str()?);
     let note = field(document::DOCUMENT_ID)
+        .or_else(|| field(TITLE_DOCUMENT))
         .and_then(Value::as_str)
         .map(&text)
         .or_else(|| field(document::TEXTS).map(arrow_text));

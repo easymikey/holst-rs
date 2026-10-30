@@ -10,6 +10,7 @@ use crate::{
     error::{Error, Result, picture::PictureError},
 };
 
+pub(crate) mod layout;
 pub mod route;
 pub mod scene;
 

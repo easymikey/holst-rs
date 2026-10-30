@@ -246,7 +246,7 @@ jobs:
           fi
           pkgid=$(cargo pkgid -p holst-cli)
           version="${pkgid##*[#@]}"
-          for name in holst-macros holst-core holst-cli holst-mcp; do
+          for name in holst-macros holst-form holst-core holst-cli holst-mcp; do
             code=$(curl -s -o /dev/null -w '%{http_code}' -A "holst-release-workflow" \
               "https://crates.io/api/v1/crates/$name/$version")
             case "$code" in

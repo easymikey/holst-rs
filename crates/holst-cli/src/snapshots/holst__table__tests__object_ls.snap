@@ -3,7 +3,7 @@ source: crates/holst-cli/src/table.rs
 expression: "help_of(&format!(\"{line} -h\"))"
 ---
 List the objects of a board or a part of it.
-It prints one line per object with @N, kind, corner, size and text.
+It prints one line per object with @N, kind, corner x,y, size and text.
 
 USAGE
   holst object ls <board> [flags]

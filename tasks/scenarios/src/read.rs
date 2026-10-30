@@ -393,7 +393,7 @@ fn is_reaction(word: &str) -> bool {
     })
 }
 
-/// Reads `@N kind (x, y) [WxH] [in @M]  [color]  [A → B]  [#tag]  ["text"]`,
+/// Reads `@N kind x,y [W×H] [in @M]  [color]  [A → B]  [#tag]  ["text"]`,
 /// the way `object` shows an object.
 fn listed_object(line: &str) -> Option<ListedObject> {
     let (head, text) = line.split_once("  \"").map_or((line, ""), |(head, text)| {
@@ -402,13 +402,7 @@ fn listed_object(line: &str) -> Option<ListedObject> {
     let mut words = head.split_whitespace();
     let id = words.next()?.to_owned();
     let kind = words.next()?.to_owned();
-    let corner = words
-        .next()?
-        .trim_start_matches('(')
-        .trim_end_matches(',')
-        .to_owned()
-        + ","
-        + words.next()?.trim_end_matches(')');
+    let corner = words.next()?.to_owned();
     let rest: Vec<&str> = words.collect();
     let parent = rest.iter().position(|word| *word == "in");
     let arrow = rest.iter().position(|word| *word == "→");
@@ -444,6 +438,10 @@ fn listed_object(line: &str) -> Option<ListedObject> {
         .map(|(_, word)| *word)
         .collect();
     let look = free.get(1..).unwrap_or_default().join(" ");
+    let size = rest
+        .iter()
+        .find(|word| word.contains('×'))
+        .map(|word| word.replace('×', "x"));
     Some(ListedObject {
         id,
         kind,
@@ -459,10 +457,7 @@ fn listed_object(line: &str) -> Option<ListedObject> {
             .find_map(|word| word.strip_prefix("link-to="))
             .map(str::to_owned),
         text: text.to_owned(),
-        size: rest
-            .iter()
-            .find(|word| word.contains('×'))
-            .map(|word| word.replace('×', "x")),
+        size,
         color: free.first().map(|word| (*word).to_owned()),
         look: Some(look).filter(|look| !look.is_empty()),
         tags: rest

@@ -1,15 +1,24 @@
 //! A board's objects indexed for geometry: the box each object takes.
 
-use std::{collections::HashMap, ptr, sync::OnceLock};
+use std::{
+    collections::{HashMap, HashSet},
+    iter,
+    ptr,
+    sync::OnceLock,
+};
 
 use itertools::Itertools;
 use serde_json::Value;
 
 use crate::{
     domain::{
-        area::Area,
+        area::{
+            Area,
+            layout::{Grid, Kanban},
+        },
         board::{Object, ObjectKind},
         geometry::{Rectangle, StoredPoint, StoredSize},
+        kinds::kanban::is_kanban,
         lookup::rules::{FRAME_ORDER, Reference},
         text::printable,
         text_layout,
@@ -56,6 +65,38 @@ impl<'a> Scene<'a> {
     /// `None` for arrows, groups and broken or absurd numbers.
     #[must_use]
     pub fn rectangle_of(&self, object: &Object) -> Option<Rectangle> {
+        self.card_in_kanban(object)
+            .or_else(|| self.own_rectangle(object))
+    }
+
+    /// The layout of a kanban: its columns, swimlanes and the place of each
+    /// card.
+    pub(crate) fn kanban(&self, object: &Object) -> Option<Kanban> {
+        Some(object)
+            .filter(|object| is_kanban(object))
+            .and_then(|object| Kanban::of(object, self.objects))
+    }
+
+    /// Where a task card stands in the kanban it belongs to.
+    fn card_in_kanban(&self, card: &Object) -> Option<Rectangle> {
+        let kanban = self.get(card.parent.as_deref()?)?;
+        let at = self.kanban(kanban)?.card(&card.id)?;
+        Rectangle::new(kanban.x + at.x, kanban.y + at.y, at.width, at.height).sane()
+    }
+
+    /// Whether a merged block led by another cell holds the table cell, which
+    /// is then not drawn.
+    pub(crate) fn is_merged_away(&self, cell: &Object) -> bool {
+        self.get(cell.parent.as_deref().unwrap_or_default())
+            .map(|table| Grid::of(&table.fields))
+            .and_then(|grid| {
+                let (row, column) = grid.place(cell)?;
+                Some(grid.is_covered(row, column))
+            })
+            .unwrap_or(false)
+    }
+
+    fn own_rectangle(&self, object: &Object) -> Option<Rectangle> {
         let scale = text_scale(object);
         let sized = object
             .width
@@ -67,8 +108,12 @@ impl<'a> Scene<'a> {
                 Some(StoredSize::new(size.width(), size.height()))
             })
         };
-        let fallback =
-            |width, height| Some(sized.unwrap_or(StoredSize::new(width, height)));
+        let fallback = |width: f64, height: f64| {
+            Some(StoredSize::new(
+                object.width.unwrap_or(width),
+                object.height.unwrap_or(height),
+            ))
+        };
         let size = match &object.kind {
             ObjectKind::Arrow | ObjectKind::Group => None,
             ObjectKind::Sticker | ObjectKind::StickerStack => stored()
@@ -90,6 +135,10 @@ impl<'a> Scene<'a> {
             ObjectKind::Task => fallback(300.0, 120.0),
             ObjectKind::Link => fallback(300.0, 220.0),
             ObjectKind::File => fallback(240.0, 64.0),
+            ObjectKind::Other(_) if is_kanban(object) => self
+                .kanban(object)
+                .map(|kanban| StoredSize::new(kanban.width, kanban.height))
+                .or_else(|| fallback(160.0, 100.0)),
             ObjectKind::Image | ObjectKind::Stamp | ObjectKind::Other(_) => {
                 fallback(160.0, 100.0)
             }
@@ -110,30 +159,22 @@ impl<'a> Scene<'a> {
 
     fn cell_corner(&self, cell: &Object) -> Option<StoredPoint> {
         let table = self.get(cell.parent.as_deref()?)?;
-        let TableCell { column, row } = cell_place(cell, table)?;
-        let before = |prefix, default, side, limit: f64| {
-            tracks(&table.fields, prefix, default, side)
-                .iter()
-                .filter(|track| track.index < limit)
-                .map(|track| track.size)
-                .sum::<f64>()
-        };
-        Some(StoredPoint::new(
-            table.x
-                + before(
-                    document::COLUMN_PREFIX,
-                    240.0,
-                    document::WIDTH,
-                    column.index,
-                ),
-            table.y + before(document::ROW_PREFIX, 60.0, document::HEIGHT, row.index),
-        ))
+        let local = Self::cell_box(cell, table)?;
+        Some(StoredPoint::new(table.x + local.x, table.y + local.y))
     }
 
     fn cell_size(&self, cell: &Object) -> Option<StoredSize> {
         let table = self.get(cell.parent.as_deref()?)?;
-        let TableCell { column, row } = cell_place(cell, table)?;
-        Some(StoredSize::new(column.size, row.size))
+        let local = Self::cell_box(cell, table)?;
+        Some(StoredSize::new(local.width, local.height))
+    }
+
+    /// The place of the cell inside its table; a merged block's leader takes
+    /// the whole block.
+    fn cell_box(cell: &Object, table: &Object) -> Option<Rectangle> {
+        let grid = Grid::of(&table.fields);
+        let (row, column) = grid.place(cell)?;
+        Some(grid.rectangle(row, column))
     }
 
     /// Everything the object covers: its rotated box, a frame's label, an
@@ -392,6 +433,27 @@ impl<'a> Scene<'a> {
         chosen.or_else(|| self.rectangle_link_target(rectangle))
     }
 
+    /// `shown` and everything standing in one of them, nested parents
+    /// included, in board order.
+    #[must_use]
+    pub fn with_descendants(&self, shown: &[&'a Object]) -> Vec<&'a Object> {
+        let held: HashSet<&str> =
+            shown.iter().map(|object| object.id.as_str()).collect();
+        let under_held = |object: &Object| {
+            iter::successors(self.parent_of(object), |parent| self.parent_of(parent))
+                .take(GROUP_DEPTH)
+                .any(|parent| held.contains(parent.id.as_str()))
+        };
+        self.objects
+            .iter()
+            .filter(|object| held.contains(object.id.as_str()) || under_held(object))
+            .collect()
+    }
+
+    fn parent_of(&self, object: &Object) -> Option<&'a Object> {
+        object.parent.as_deref().and_then(|id| self.get(id))
+    }
+
     /// The objects that show inside `rectangle`, in reading order.
     #[must_use]
     pub fn within(&self, rectangle: &Rectangle) -> Vec<&'a Object> {
@@ -504,45 +566,8 @@ fn code_height(text: &str) -> f64 {
     text_layout::count(text_layout::paragraphs(text).count()) * 21.0 + 24.0
 }
 
-/// One row or column of a table: its place in the order and its length.
-#[derive(Debug, Clone, Copy)]
-struct Track {
-    index: f64,
-    size: f64,
-}
-
-/// The column and the row a table cell sits in.
-struct TableCell {
-    column: Track,
-    row: Track,
-}
-
-fn tracks(fields: &Value, prefix: &str, default: f64, side: &str) -> Vec<Track> {
-    fields
-        .as_object()
-        .into_iter()
-        .flatten()
-        .filter_map(|(key, track)| {
-            key.strip_prefix(prefix)?;
-            Some(Track {
-                index: number(track, document::INDEX)?,
-                size: number(track, side).unwrap_or(default),
-            })
-        })
-        .collect()
-}
-
 pub(crate) fn table_size(fields: &Value) -> StoredSize {
-    let sum = |prefix, default, side| {
-        tracks(fields, prefix, default, side)
-            .iter()
-            .map(|track| track.size)
-            .sum::<f64>()
-    };
-    StoredSize::new(
-        sum(document::COLUMN_PREFIX, 240.0, document::WIDTH),
-        sum(document::ROW_PREFIX, 60.0, document::HEIGHT),
-    )
+    Grid::of(fields).size()
 }
 
 /// A row or column number as text, whether the board stores it as text or as
@@ -553,31 +578,6 @@ pub(crate) fn track_word(value: Option<&Value>) -> Option<String> {
         Value::Number(number) => number.as_f64().map(|number| number.to_string()),
         Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => None,
     }
-}
-
-fn cell_place(cell: &Object, table: &Object) -> Option<TableCell> {
-    let track = |id_field: &str, prefix: &str, default: f64, side: &str| {
-        let id = track_word(cell.fields.get(id_field))?;
-        let track = table.fields.get(format!("{prefix}{id}"))?;
-        Some(Track {
-            index: number(track, document::INDEX)?,
-            size: number(track, side).unwrap_or(default),
-        })
-    };
-    Some(TableCell {
-        column: track(
-            document::COLUMN_ID,
-            document::COLUMN_PREFIX,
-            240.0,
-            document::WIDTH,
-        )?,
-        row: track(
-            document::ROW_ID,
-            document::ROW_PREFIX,
-            60.0,
-            document::HEIGHT,
-        )?,
-    })
 }
 
 /// The numbers of a drawing's stored path, read from a list or from path data.
