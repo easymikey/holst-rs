@@ -1596,7 +1596,7 @@ mod tests {
 
     fn nested_snapshot(parent_of_ship: &str) -> (Snapshot, Snapshot) {
         let member = |id: &str, parent: &str| json!({"id": id, "parentId": parent});
-        let group = |id: &str, locked: bool| json!({"id": id, "type": "group", "locked": locked});
+        let group = |id: &str, locked: bool, parent: &str| json!({"id": id, "type": "group", "locked": locked, "parentId": parent});
         let ids: Vec<String> = (1..=8).map(|n| format!("o{n}")).collect();
         let before = Snapshot {
             boards: BTreeMap::from([(
@@ -1608,34 +1608,30 @@ mod tests {
             ids,
             exports: BTreeMap::new(),
         };
-        let mut after = before.clone();
-        after.boards.insert(
-            ROADMAP.to_owned(),
-            vec![
-                member("o3", "inner"),
-                member("o4", parent_of_ship),
-                group("inner", false),
-                group("outer", true),
-            ],
-        );
-        after.boards.get_mut(ROADMAP).unwrap()[2]["parentId"] = json!("outer");
+        let objects = vec![
+            member("o3", "inner"),
+            member("o4", parent_of_ship),
+            group("inner", false, "outer"),
+            group("outer", true, ""),
+        ];
+        let after = Snapshot {
+            boards: BTreeMap::from([(ROADMAP.to_owned(), objects)]),
+            ..before.clone()
+        };
         (before, after)
     }
 
     #[test]
     fn a_locked_group_around_a_new_group_holds_both_members() {
-        let (before, after) = nested_snapshot("outer");
-        let seen = Seen {
-            before: &before,
-            after: &after,
+        let check = |parent_of_ship| {
+            let (before, after) = nested_snapshot(parent_of_ship);
+            locked_group_of_both(&Seen {
+                before: &before,
+                after: &after,
+            })
         };
-        assert_eq!(locked_group_of_both(&seen), Ok(()));
-        let (before, after) = nested_snapshot("elsewhere");
-        let seen = Seen {
-            before: &before,
-            after: &after,
-        };
-        assert!(locked_group_of_both(&seen).is_err());
+        assert_eq!(check("outer"), Ok(()));
+        assert!(check("elsewhere").is_err());
     }
 
     async fn broken_checks() -> Vec<String> {

@@ -1,0 +1,34 @@
+name: tools
+description: Rust toolchains and the pinned tools of `[workspace.metadata.bin]`, as prebuilt binaries.
+
+inputs:
+  components:
+    description: Components of the justfile's nightly, comma separated.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: rustup
+      shell: bash
+      run: |
+        if ! command -v rustup >/dev/null; then
+          curl --proto '=https' -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+          echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
+        fi
+
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-binstall,cargo-run-bin
+
+    - uses: actions/cache@v6
+      with:
+        path: .bin
+        key: bin-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.toml') }}
+        restore-keys: bin-${{ runner.os }}-${{ runner.arch }}-
+
+    - name: toolchains
+      shell: bash
+      run: |
+        rustup toolchain install
+        rustup toolchain install "$(cargo bin just --evaluate nightly)" --profile minimal -c ${{ inputs.components }}

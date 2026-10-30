@@ -10,8 +10,8 @@
 //! $DIST (default `dist`), Cargo builds into $CARGO_TARGET_DIR (default `target`).
 //!
 //! Needs, all checked first (it prints what is missing and installs nothing): rustup with the five
-//! targets, zig, cargo-zigbuild 0.24.0 exactly, cargo-xwin, `clang-cl` on PATH, tar, zip, shasum, file,
-//! and gh for --publish.
+//! targets, zig, cargo-run-bin (runs the cargo-zigbuild and cargo-xwin pinned in Cargo.toml),
+//! `clang-cl` on PATH, tar, zip, shasum, file, and gh for --publish.
 //!
 //! One archive per program and target: `holst-cli-<target>` and `holst-mcp-<target>`, ten in all.
 //! The Linux targets are static musl builds, so the archives run on any distribution.
@@ -27,8 +27,6 @@ const Io = std.Io;
 const Allocator = std.mem.Allocator;
 
 const pinned_zig: std.SemanticVersion = .{ .major = 0, .minor = 17, .patch = 0 };
-
-const pinned_zigbuild = "0.24.0";
 
 const Os = enum { macos, linux, windows };
 
@@ -70,8 +68,7 @@ const required_tools = [_]Tool{
     .{ .name = "rustup", .install = "https://rustup.rs" },
     .{ .name = "cargo", .install = "https://rustup.rs" },
     .{ .name = "zig", .install = "brew install zig" },
-    .{ .name = "cargo-zigbuild", .install = "cargo install --locked cargo-zigbuild --version " ++ pinned_zigbuild },
-    .{ .name = "cargo-xwin", .install = "cargo install --locked cargo-xwin" },
+    .{ .name = "cargo-bin", .install = "cargo install --locked cargo-run-bin" },
     .{ .name = "clang-cl", .install = "brew install llvm, then put $(brew --prefix llvm)/bin on PATH (cargo-xwin compiles C with it)" },
     .{ .name = "tar", .install = "ships with macOS" },
     .{ .name = "zip", .install = "ships with macOS" },
@@ -159,12 +156,6 @@ fn checkTools(r: *Release) !void {
         for (missing.items) |line| std.debug.print("  {s}\n", .{line});
         std.process.exit(1);
     }
-
-    // `cargo-zigbuild 0.24.0`: the version the Linux builds were checked with
-    const zigbuild = try capture(r, &.{ "cargo-zigbuild", "--version" });
-    if (!std.mem.endsWith(u8, zigbuild, " " ++ pinned_zigbuild)) {
-        fail("this script is written for cargo-zigbuild {s}, found `{s}`; run `cargo install --locked cargo-zigbuild --version {s}`, or update scripts/release.zig on purpose", .{ pinned_zigbuild, zigbuild, pinned_zigbuild });
-    }
 }
 
 /// Step 2: work from the repository root, so `dist/` and the Cargo paths do not depend on where the script was started.
@@ -195,8 +186,8 @@ fn checkTag(r: *Release) !void {
 fn build(r: *Release, target: Target) !void {
     const command: []const []const u8 = switch (target.os) {
         .macos => &.{ "cargo", "build" },
-        .linux => &.{ "cargo", "zigbuild" },
-        .windows => &.{ "cargo", "xwin", "build" },
+        .linux => &.{ "cargo", "bin", "cargo-zigbuild" },
+        .windows => &.{ "cargo", "bin", "cargo-xwin", "build" },
     };
     const flags: []const []const u8 = &.{ "--release", "--locked", "-p", "holst-cli", "-p", "holst-mcp", "--target", target.triple };
     try runVisible(r, try std.mem.concat(r.arena, []const u8, &.{ command, flags }), .inherit);

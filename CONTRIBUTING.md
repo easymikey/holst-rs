@@ -6,23 +6,30 @@
 cargo build
 ```
 
-The toolchain is pinned in `rust-toolchain.toml` (Rust 1.96.0). Formatting and clippy use `nightly-2026-05-22`, as in CI.
+The toolchain is pinned in `rust-toolchain.toml` (Rust 1.96.0). Formatting and clippy use the nightly named in `justfile`.
 
-## Checks a pull request must pass
+## Tools and checks
 
-CI (`.github/workflows/ci.yml`) runs these. Run them before you push.
+Every tool is pinned in `[workspace.metadata.bin]` of `Cargo.toml` and run through [cargo-run-bin](https://github.com/dustinblackman/cargo-run-bin), so you and CI use the same versions. Install it once; each tool is built into `.bin/` on first use.
 
 ```sh
-cargo +nightly-2026-05-22 fmt --all --check
-cargo +nightly-2026-05-22 clippy --workspace --all-targets --all-features --locked -- -D warnings
-cargo-nextest nextest run --workspace --all-features --locked --profile ci
-cargo test --workspace --all-features --locked --doc
-cargo spellcheck check -m 1
-cargo deny --config .config/deny.toml check
-cargo machete
+cargo install --locked cargo-run-bin
+rustup toolchain install nightly-2026-05-22 -c rustfmt,clippy
 ```
 
-`cargo spellcheck` needs `libclang`. New words go into `spellcheck.dic`, one per line, and the count on its first line is updated. Nextest retries a failed test twice, because loopback connects to the fakes can stall on a busy machine; a test that passes on a retry is reported as flaky.
+The commands live in `justfile`, one recipe per CI job (`.github/workflows/ci.yml` runs the same recipes):
+
+```sh
+cargo bin just fmt      # format the code
+cargo bin just lint     # formatting and spelling
+cargo bin just deps     # licences and advisories, unused dependencies, each feature on its own
+cargo bin just check    # clippy, tests and doctests
+cargo bin just ci       # all of the above: run it before you push
+```
+
+`cargo bin just` lists the recipes. The recipes call each tool as `cargo bin cargo-<tool>`, not through cargo aliases, which would shadow a copy installed globally.
+
+`cargo spellcheck` needs `libclang` to build: on macOS `brew install llvm` and set `LIBCLANG_PATH=$(brew --prefix llvm)/lib` the first time. New words go into `spellcheck.dic`, one per line, and the count on its first line is updated. Nextest retries a failed test twice, because loopback connects to the fakes can stall on a busy machine; a test that passes on a retry is reported as flaky.
 
 ## Layout
 
@@ -50,7 +57,7 @@ When CI passes on a push to `main`, `.github/workflows/tag.yml` reads the `holst
 
 The release pipeline (`.github/workflows/release.yml`) is the main path. When the runners are down, `scripts/release.zig` builds the same ten archives and `checksums.txt` on one Mac into `dist/`: `holst-cli-<target>` and `holst-mcp-<target>` for each of the five targets. The Linux targets are static musl builds made with `cargo-zigbuild` (they run on any distribution, no glibc requirement; the script checks that `file` reports both binaries as statically linked), Windows uses `cargo-xwin`.
 
-Needs Zig 0.17.0 and cargo-zigbuild 0.24.0 exactly (the script stops on any other version), `cargo install --locked cargo-zigbuild --version 0.24.0`, `cargo install --locked cargo-xwin`, `llvm` (for `clang-cl`) on `PATH`, and the five `rustup` targets. The script prints what is missing and installs nothing. With the Homebrew package `llvm@22`, `clang-cl` is not on `PATH` by default, so run the script as `PATH=/opt/homebrew/opt/llvm@22/bin:$PATH zig run ...`.
+Needs Zig 0.17.0 exactly (the script stops on any other version), `cargo-run-bin` (it runs the `cargo-zigbuild` and `cargo-xwin` pinned in `Cargo.toml`), `llvm` (for `clang-cl`) on `PATH`, and the five `rustup` targets. The script prints what is missing and installs nothing. With the Homebrew package `llvm@22`, `clang-cl` is not on `PATH` by default, so run the script as `PATH=/opt/homebrew/opt/llvm@22/bin:$PATH zig run ...`.
 
 ```sh
 git tag v0.3.0              # local tag; the Cargo version must match

@@ -82,11 +82,11 @@ jobs:
         with:
           version: 0.17.0
 
-      - name: install cargo-zigbuild
+      - name: install cargo-run-bin
         if: runner.os == 'Linux'
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-zigbuild@0.24.0
+          tool: cargo-binstall,cargo-run-bin
 
       - name: build
         if: runner.os != 'Linux'
@@ -94,7 +94,7 @@ jobs:
 
       - name: build (static musl)
         if: runner.os == 'Linux'
-        run: cargo zigbuild --release --locked -p holst-cli -p holst-mcp --target "$TARGET"
+        run: cargo bin cargo-zigbuild --release --locked -p holst-cli -p holst-mcp --target "$TARGET"
 
       # one stage directory and one archive per program
       - name: stage

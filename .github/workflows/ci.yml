@@ -15,7 +15,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  NIGHTLY: nightly-2026-05-22
 
 defaults:
   run:
@@ -27,44 +26,29 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: nightly rustfmt
-        run: rustup toolchain install "$NIGHTLY" --profile minimal -c rustfmt
-
-      - name: fmt
-        run: cargo +"$NIGHTLY" fmt --all --check
-
       - name: libclang
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libclang-dev
 
-      - uses: actions/cache@v6
-        id: spellcheck-cache
+      - uses: ./.github/actions/tools
         with:
-          path: ~/.cargo/bin/cargo-spellcheck
-          key: cargo-spellcheck-0.15.7-${{ runner.os }}-${{ runner.arch }}
+          components: rustfmt
 
-      - name: install cargo-spellcheck
-        if: steps.spellcheck-cache.outputs.cache-hit != 'true'
-        run: cargo install cargo-spellcheck --version 0.15.7 --locked
+      - run: cargo bin just lint
 
-      - name: spellcheck
-        run: cargo spellcheck check -m 1
-
-  deny:
+  deps:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
 
-      - uses: taiki-e/install-action@v2
+      - uses: ./.github/actions/tools
         with:
-          tool: cargo-deny,cargo-machete
+          components: rustfmt
 
-      - name: cargo-deny
-        run: cargo deny --config .config/deny.toml check
+      - uses: Swatinem/rust-cache@v2
 
-      - name: cargo-machete
-        run: cargo machete
+      - run: cargo bin just deps
 
   check:
     needs: lint
@@ -80,29 +64,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: rustup
-        run: |
-          if ! command -v rustup >/dev/null; then
-            curl --proto '=https' -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
-            echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
-          fi
-
-      - name: toolchains
-        run: |
-          rustup toolchain install
-          rustup toolchain install "$NIGHTLY" --profile minimal -c clippy
+      - uses: ./.github/actions/tools
+        with:
+          components: clippy
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: clippy
-        run: cargo +"$NIGHTLY" clippy --workspace --all-targets --all-features --locked -- -D warnings
-
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest@0.9.128
-
-      - name: test
-        run: cargo-nextest nextest run --workspace --all-features --locked --profile ci
-
-      - name: doctests
-        run: cargo test --workspace --all-features --locked --doc
+      - run: cargo bin just check

@@ -1,5 +1,0 @@
-[alias]
-hack = ["bin", "cargo-hack"]
-llvm-cov = ["bin", "cargo-llvm-cov"]
-nextest = ["bin", "cargo-nextest"]
-shear = ["bin", "cargo-shear"]
