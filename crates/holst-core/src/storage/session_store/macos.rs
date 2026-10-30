@@ -83,7 +83,8 @@ impl SecurityTool {
             program: self.program.clone(),
             error: source,
         };
-        // imperative: the pipes are taken and the child waited on through `&mut`.
+        // imperative: the pipes are taken and the child waited on through
+        // `&mut`.
         let mut child = Command::new(&self.program)
             .args(arguments)
             .stdin(input.map_or_else(Stdio::null, |_| Stdio::piped()))

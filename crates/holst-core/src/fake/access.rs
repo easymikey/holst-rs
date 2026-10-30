@@ -336,7 +336,8 @@ impl Access {
 
     fn patch(&mut self, board: &str, patch: Map<String, Value>) {
         let mut merged = self.settings_of(board);
-        // `in_trash` and `thumbnail_updated_at` ride along and are no link settings.
+        // `in_trash` and `thumbnail_updated_at` ride along and are no link
+        // settings.
         merged.extend(patch.into_iter().filter(|(key, _)| {
             !matches!(key.as_str(), "in_trash" | "thumbnail_updated_at")
         }));

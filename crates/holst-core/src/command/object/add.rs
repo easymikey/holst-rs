@@ -1461,8 +1461,8 @@ fn slot_of(reference: &str) -> Option<usize> {
 }
 
 /// The web's pen and highlighter: width, packed RGB and alpha.
-const PEN: (f64, u32, f64) = (3.0, 0x001E_1E1E, 1.0);
-const HIGHLIGHTER: (f64, u32, f64) = (22.0, 0x00FB_F040, 0.5);
+const PEN: (f64, u32, f64) = (3.0, 0x001e_1e1e, 1.0);
+const HIGHLIGHTER: (f64, u32, f64) = (22.0, 0x00fb_f040, 0.5);
 
 /// What `author_number` is under: its draws are in `0..DRAWS`.
 const DRAWS: u32 = 0x8000_0000;
@@ -1857,7 +1857,8 @@ fn entry_in(
     (named, linked): (Option<&Object>, Option<&Object>),
 ) -> NewEntry {
     let fresh = item.frame.as_deref().filter(|name| name.starts_with('#'));
-    // An arrow or a stuck stamp is put in a frame by where it falls, if not asked.
+    // An arrow or a stuck stamp is put in a frame by where it falls, if not
+    // asked.
     let frame = named.or(linked
         .filter(|_| !matches!(item.what, What::Arrow { .. } | What::Stuck { .. })));
     NewEntry {
@@ -2469,9 +2470,9 @@ mod tests {
                 )?,
             ],
             [
-                made(0x001E_1E1E, 3.0, 1.0)?,
-                made(0x00FB_F040, 22.0, 0.5)?,
-                made(0x00FC_F3AF, 9.0, 1.0)?,
+                made(0x001e_1e1e, 3.0, 1.0)?,
+                made(0x00fb_f040, 22.0, 0.5)?,
+                made(0x00fc_f3af, 9.0, 1.0)?,
             ]
         );
         Ok(())

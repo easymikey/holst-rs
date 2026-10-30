@@ -95,7 +95,8 @@ impl Client {
             };
             let credentials = SentSession::of(&request.headers);
             let response = self.transport.send(&request).await?;
-            // Cookies of every signed reply count, retried and redirected ones too.
+            // Cookies of every signed reply count, retried and redirected ones
+            // too.
             (authorization != Authorization::Unsigned)
                 .then_some(&response)
                 .into_iter()
@@ -166,7 +167,8 @@ impl Client {
                     SentSession::Bare => {
                         Error::Login(LoginError::BareToken { method, path })
                     }
-                    // The words are the login's: no status number, no request path.
+                    // The words are the login's: no status number, no request
+                    // path.
                     SentSession::Full => Error::Login(LoginError::SessionRevoked),
                 };
                 self.transition(SessionState::revoke);

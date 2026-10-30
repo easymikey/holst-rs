@@ -617,7 +617,8 @@ fn object(
     let label = field(document::LABEL_TEXT)
         .and_then(Value::as_str)
         .map(str::to_owned);
-    // An arrow keeps (0, 0) as its position; where it starts is the useful place.
+    // An arrow keeps (0, 0) as its position; where it starts is the useful
+    // place.
     let at = if kind == ObjectKind::Arrow {
         field(document::START).and_then(|start| start.get(document::POINT))
     } else {

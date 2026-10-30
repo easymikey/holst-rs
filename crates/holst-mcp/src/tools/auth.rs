@@ -29,7 +29,8 @@ impl McpServer {
         arguments: Map<String, Value>,
     ) -> CallToolResult {
         match verb {
-            // `login` and `logout` are for the CLI; the table gives them no tool.
+            // `login` and `logout` are for the CLI; the table gives them no
+            // tool.
             AuthVerb::Login => self.fail(&Error::CliOnly {
                 command: "auth login".to_owned(),
             }),
@@ -68,7 +69,8 @@ impl McpServer {
     ) -> Result<String> {
         match status(client, args).await {
             StatusReport::Active(found) => Ok(self.status_text(source, found)),
-            // The words and the hint of the error, as every other tool says them.
+            // The words and the hint of the error, as every other tool says
+            // them.
             StatusReport::Revoked(err) => {
                 Ok(format!("{}\n", reply::explain(&Error::from(err))))
             }

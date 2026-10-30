@@ -80,7 +80,8 @@ pub(crate) fn help_block() -> String {
 pub(crate) fn usage(error: &clap::Error) -> ExitCode {
     // A closed stderr leaves nobody to tell; the code still says it.
     drop(error.print());
-    // clap's own code is 0 for `--help` and `--version`, and 2 for a usage error.
+    // clap's own code is 0 for `--help` and `--version`, and 2 for a usage
+    // error.
     ExitCode::from(match error.exit_code() {
         0 => EX_OK,
         _ => EX_USAGE,

@@ -86,7 +86,8 @@ async fn run(cli: Cli) -> ExitCode {
                 cli.output,
             );
             let env = RunSettings::new(settings, home, term_type, prompting);
-            // Boxed: every command group's future in one would be large on the stack.
+            // Boxed: every command group's future in one would be large on the
+            // stack.
             let work = Box::pin(cli::run(cli.table, cli.output, &env));
             terminal::signals::or_stopped(work, terminal::signals::stopped_fallback())
                 .await

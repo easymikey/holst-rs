@@ -141,33 +141,31 @@ fn a_letter_means_one_argument_everywhere() {
 fn a_name_has_one_kind_and_one_tool_doc_in_a_tool() {
     // A group with a read tool and a write tool has two namespaces.
     let shapes: BTreeMap<(&str, bool, &str), BTreeSet<String>> = CommandName::iter()
-            // A command on no surface yet has no tool to share a schema with.
-            .filter(|name| !name.command().surfaces.is_empty())
-            .flat_map(|name| {
-                let command = name.command();
-                let writes = command.risk != CommandRisk::Read
-                    && matches!(
-                        command.group.help().tools,
-                        GroupTools::ReadAndWrite { .. }
-                    );
-                command
-                    .arguments
-                    .iter()
-                    .map(move |argument| (command.group, writes, argument))
-            })
-            .filter(|(_, _, argument)| {
-                argument.surfaces.contains(&Surface::Mcp)
-            })
-            .map(|(group, writes, argument)| {
-                (
-                    (group.help().name, writes, argument.name),
-                    format!("{:?} {:?}", argument.kind.one(), argument.tool_doc),
-                )
-            })
-            .into_group_map()
-            .into_iter()
-            .map(|(key, shapes)| (key, shapes.into_iter().collect()))
-            .collect();
+        // A command on no surface yet has no tool to share a schema with.
+        .filter(|name| !name.command().surfaces.is_empty())
+        .flat_map(|name| {
+            let command = name.command();
+            let writes = command.risk != CommandRisk::Read
+                && matches!(
+                    command.group.help().tools,
+                    GroupTools::ReadAndWrite { .. }
+                );
+            command
+                .arguments
+                .iter()
+                .map(move |argument| (command.group, writes, argument))
+        })
+        .filter(|(_, _, argument)| argument.surfaces.contains(&Surface::Mcp))
+        .map(|(group, writes, argument)| {
+            (
+                (group.help().name, writes, argument.name),
+                format!("{:?} {:?}", argument.kind.one(), argument.tool_doc),
+            )
+        })
+        .into_group_map()
+        .into_iter()
+        .map(|(key, shapes)| (key, shapes.into_iter().collect()))
+        .collect();
     let differing: Vec<_> = shapes
         .iter()
         .filter(|(_, shapes)| shapes.len() > 1)

@@ -155,7 +155,8 @@ async fn edited(
     }?;
     let id = lookup::board_id(client, &args.board, args.workspace.as_deref()).await?;
     let sending = args.dry_run == WriteMode::Send;
-    // Read before any upload; a reset that sends reads it when it draws the board.
+    // Read before any upload; a reset that sends reads it when it draws the
+    // board.
     match (&cover, sending) {
         (Some(Cover::File { .. } | Cover::Auto), false)
         | (Some(Cover::File { .. }), true) => editable(client, loading, &id).await,
@@ -349,7 +350,8 @@ async fn cover_uploaded(
         }
         (Cover::Auto, false) => Ok((CoverEdit::Auto { uploaded: None }, None)),
         (Cover::Auto, true) => {
-            // Drawn and uploaded first: a board that cannot be drawn keeps its cover.
+            // Drawn and uploaded first: a board that cannot be drawn keeps its
+            // cover.
             let (picture, channel) = preview(client, loading, id).await?;
             let key = format!("preview-{id}");
             let name = uploaded(

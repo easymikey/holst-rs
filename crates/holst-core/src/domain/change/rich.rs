@@ -105,7 +105,8 @@ fn write_runs(
                 linked
             },
         );
-        // imperative: each run is appended after the last, so the writes are ordered
+        // imperative: each run is appended after the last, so the writes are
+        // ordered
         for run in group {
             let at = target.len(transaction);
             let marks = marks_of(run, link.is_some());

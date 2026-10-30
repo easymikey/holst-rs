@@ -307,7 +307,8 @@ pub fn find_matches<T>(
     reference: &Reference,
     order: &MatchOrder,
 ) -> Vec<T> {
-    // imperative: one buffer reused for every name avoids an allocation per item.
+    // imperative: one buffer reused for every name avoids an allocation per
+    // item.
     let mut name = String::new();
     // An emoji-only name normalizes to "", which names nothing: no scan.
     if reference.is_empty() {

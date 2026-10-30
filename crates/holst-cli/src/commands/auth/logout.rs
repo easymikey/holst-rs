@@ -46,7 +46,8 @@ pub(crate) async fn logout(
     )
     .await;
     let server = end_session(logout.local_only, saved).await;
-    // Forget before printing: a closed stdout must not leave the session on disk.
+    // Forget before printing: a closed stdout must not leave the session on
+    // disk.
     let cleared = run.clear(ended).await?;
     forget_cache(run, account.as_deref());
     let (gone, kept) = forgotten(cleared);

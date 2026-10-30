@@ -154,7 +154,8 @@ impl Terminal for Console {
         reason = "a blocking terminal read loop with no clock: the grace pause blocks the thread"
     )]
     fn keystroke(&self) -> io::Result<Keystroke> {
-        // `console` reports a read cut by a signal as Ctrl-C: skip it after a pause.
+        // `console` reports a read cut by a signal as Ctrl-C: skip it after a
+        // pause.
         std::iter::repeat_with(|| tty::exclusive(|| self.stderr.read_key_raw()))
             .find(|read| {
                 let cut_short =
@@ -181,7 +182,8 @@ impl Terminal for Console {
     }
 
     fn hidden<R>(&self, work: impl FnOnce(&Self) -> R) -> io::Result<R> {
-        // Only live reads key by key; there Ctrl-C and Ctrl-U stay keys between reads.
+        // Only live reads key by key; there Ctrl-C and Ctrl-U stay keys between
+        // reads.
         let quiet = match self.kind {
             TerminalKind::Live => tty::TerminalQuiet::Keys,
             TerminalKind::Dumb | TerminalKind::Redirected => tty::TerminalQuiet::Echo,
@@ -227,7 +229,8 @@ fn keystroke_of(key: Key) -> Keystroke {
         Key::CtrlC => Keystroke::Interrupt,
         Key::Escape => Keystroke::Cancel,
         Key::UnknownEscSeq(sequence) => escape_of(&sequence),
-        // `Key` is non-exhaustive in `console`: the known rest and any later key.
+        // `Key` is non-exhaustive in `console`: the known rest and any later
+        // key.
         Key::Unknown
         | Key::BackTab
         | Key::Alt

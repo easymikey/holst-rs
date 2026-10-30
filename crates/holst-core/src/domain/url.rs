@@ -331,7 +331,7 @@ pub fn percent_encode(raw: &str) -> Cow<'_, str> {
             |mut out, b| {
                 match b {
                     b if unreserved(b) => out.push(char::from(b)),
-                    b => out.extend(['%', hex(b >> 4), hex(b & 0xF)]),
+                    b => out.extend(['%', hex(b >> 4), hex(b & 0xf)]),
                 }
                 out
             },

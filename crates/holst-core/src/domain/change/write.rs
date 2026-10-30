@@ -1471,7 +1471,8 @@ fn stamped(
     scope: &WriteTransaction<'_>,
 ) -> Vec<(&'static str, Value)> {
     let stamp = match changes.as_slice() {
-        // No field of the object (a reaction), or only an adoption: no `updated`.
+        // No field of the object (a reaction), or only an adoption: no
+        // `updated`.
         [] | [(PARENT_ID, _)] => None,
         _ => Some((UPDATED, scope.stamp.json())),
     };

@@ -100,7 +100,8 @@ mod imp {
     fn current() -> io::Result<TerminalSettings> {
         // imperative: `tcgetattr` fills the value through a pointer.
         let mut out = MaybeUninit::<TerminalSettings>::zeroed();
-        // SAFETY: `tcgetattr` only writes a `termios` into a sized, aligned local.
+        // SAFETY: `tcgetattr` only writes a `termios` into a sized, aligned
+        // local.
         let status = unsafe { libc::tcgetattr(libc::STDIN_FILENO, out.as_mut_ptr()) };
         (status == 0)
             // SAFETY: the call succeeded, so the (zeroed before) value is initialised.
@@ -131,7 +132,8 @@ mod imp {
     }
 
     pub(super) fn flush_output() {
-        // SAFETY: `tcdrain` takes a descriptor; not a terminal is an ignored error.
+        // SAFETY: `tcdrain` takes a descriptor; not a terminal is an ignored
+        // error.
         unsafe { libc::tcdrain(libc::STDERR_FILENO) };
     }
 
@@ -161,7 +163,8 @@ mod imp {
     }
 
     pub(super) fn discard_typeahead() {
-        // SAFETY: `tcflush` takes a descriptor and a constant; failure is ignored.
+        // SAFETY: `tcflush` takes a descriptor and a constant; failure is
+        // ignored.
         unsafe { libc::tcflush(libc::STDIN_FILENO, libc::TCIFLUSH) };
     }
 }

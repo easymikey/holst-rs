@@ -145,7 +145,8 @@ fn respond_api(state: &mut State, request: &Request) -> Response {
         ("GET", "/gapi/current_user") if signed_in => {
             found(&state.workspaces.current_user())
         }
-        // The socket handshake without the session cookie never reaches the socket.
+        // The socket handshake without the session cookie never reaches the
+        // socket.
         ("GET", "/gapi/current_user" | "/hud/ws") => unauthorized(),
         (_, _) if !signed_in => unauthorized(),
         (method, path) => {

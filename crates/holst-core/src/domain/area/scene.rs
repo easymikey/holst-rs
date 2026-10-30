@@ -191,7 +191,8 @@ impl<'a> Scene<'a> {
 
     fn measure(&self, object: &Object) -> Option<Rectangle> {
         let covered = match object.kind {
-            // Without its fields an arrow covers at least the span of its kept ends.
+            // Without its fields an arrow covers at least the span of its kept
+            // ends.
             ObjectKind::Arrow => self
                 .route(object)
                 .map(|route| route.points)

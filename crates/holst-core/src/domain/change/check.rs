@@ -980,7 +980,8 @@ fn checked_add(
         (None, None) => {
             // BUNDLE: the frame holding the corner (main.a33651a4.js 214803).
             let parent = new_rectangle(new).and_then(|rect| {
-                // BUNDLE: a stroke is found by the centre of its box (132131-132133).
+                // BUNDLE: a stroke is found by the centre of its box
+                // (132131-132133).
                 let (dx, dy) = matches!(new, NewObject::Drawing { .. })
                     .then(|| (rect.width / 2.0, rect.height / 2.0))
                     .unwrap_or_default();

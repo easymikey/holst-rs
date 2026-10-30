@@ -380,7 +380,8 @@ impl<T: Terminal> Form<T> {
     async fn turn(&self, label: &str) -> Infallible {
         let origin = tokio::time::Instant::now();
         let frames = std::cell::Cell::new(1_u32);
-        // imperative: the frames repeat until the request ends and `select!` drops this
+        // imperative: the frames repeat until the request ends and `select!`
+        // drops this
         loop {
             let frame = frames.get();
             tokio::time::sleep_until(origin + SPIN_STEP.saturating_mul(frame)).await;
