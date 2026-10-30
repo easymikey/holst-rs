@@ -266,7 +266,6 @@ fn a_taken_author_number_is_salted() -> Result<()> {
     let document = Doc::new();
     {
         let users = document.get_or_insert_map("usersIds");
-        // imperative: yrs writes take `&mut TransactionMut`
         let mut transaction = document.transact_mut();
         users.insert(
             &mut transaction,

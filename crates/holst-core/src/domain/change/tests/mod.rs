@@ -353,7 +353,6 @@ fn fields_of(document: &Doc, id: &str) -> Value {
 fn churn_scratch(server: &Doc, deleted: u32) {
     let scratch = server.get_or_insert_map("scratch");
     (0..deleted).for_each(|number| {
-        // imperative: yrs writes take `&mut TransactionMut`
         let mut transaction = server.transact_mut();
         scratch.insert(
             &mut transaction,

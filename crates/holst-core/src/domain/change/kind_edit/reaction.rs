@@ -47,27 +47,27 @@ pub(super) fn write(
         .filter(|(_, reaction)| wanted.contains(reaction))
         .unique_by(|(_, reaction)| reaction)
         .collect();
-    // imperative: each removal writes to the transaction
-    for (entry, _) in mine.iter().filter(|entry| !kept.contains(entry)) {
-        store.remove(transaction, entry);
-    }
-    // imperative: each insert writes to the transaction
-    for reaction in wanted
+    mine.iter()
+        .filter(|entry| !kept.contains(entry))
+        .for_each(|(entry, _)| {
+            store.remove(transaction, entry);
+        });
+    wanted
         .iter()
         .unique()
         .filter(|reaction| !kept.iter().any(|(_, held)| held == *reaction))
-    {
-        let entry = scope.context.ids.new_id();
-        let pairs = [
-            (ID, json!(entry)),
-            (TARGET_ID, json!(id)),
-            (REACTION_ID, json!(reaction)),
-            (AUTHOR_ID, json!(scope.user)),
-            (CREATED_AT, json!(scope.stamp.at.as_millis())),
-        ]
-        .map(|(name, value)| (name.to_owned(), value));
-        insert_map(transaction, store, entry.as_str(), pairs)?;
-    }
+        .try_for_each(|reaction| {
+            let entry = scope.context.ids.new_id();
+            let pairs = [
+                (ID, json!(entry)),
+                (TARGET_ID, json!(id)),
+                (REACTION_ID, json!(reaction)),
+                (AUTHOR_ID, json!(scope.user)),
+                (CREATED_AT, json!(scope.stamp.at.as_millis())),
+            ]
+            .map(|(name, value)| (name.to_owned(), value));
+            insert_map(transaction, store, entry.as_str(), pairs)
+        })?;
     Ok(Written {
         fields: Vec::new(),
         touched: Vec::new(),

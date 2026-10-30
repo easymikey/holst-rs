@@ -264,34 +264,35 @@ fn add_all(
     scope: &WriteTransaction<'_>,
     entries: &[(NewObject, Placement)],
 ) -> Result<Vec<ChangedObject>> {
-    let mut states = scope.states.clone();
-    let mut touched: Vec<ChangedObject> = Vec::new();
-    // imperative: each object is written against the ones before it
-    for (new, placement) in entries {
-        let new = with_ids(new, &touched);
-        let placement = Placement {
-            parent: placement
-                .parent
-                .as_deref()
-                .map(|parent| id_of(parent, &touched)),
-            format: placement.format,
-        };
-        let made = add(
-            transaction,
-            &WriteTransaction {
-                roots: scope.roots,
-                states: &states,
-                stamp: scope.stamp,
-                context: scope.context,
-                user: scope.user,
-            },
-            &new,
-            &placement,
-        )?;
-        states.insert(made.changed.id.clone(), made.fields);
-        states.extend(made.parts);
-        touched.push(made.changed);
-    }
+    let (_, touched) = entries.iter().try_fold(
+        (scope.states.clone(), Vec::new()),
+        |(mut states, mut touched): (_, Vec<ChangedObject>), (new, placement)| {
+            let new = with_ids(new, &touched);
+            let placement = Placement {
+                parent: placement
+                    .parent
+                    .as_deref()
+                    .map(|parent| id_of(parent, &touched)),
+                format: placement.format,
+            };
+            let made = add(
+                transaction,
+                &WriteTransaction {
+                    roots: scope.roots,
+                    states: &states,
+                    stamp: scope.stamp,
+                    context: scope.context,
+                    user: scope.user,
+                },
+                &new,
+                &placement,
+            )?;
+            states.insert(made.changed.id.clone(), made.fields);
+            states.extend(made.parts);
+            touched.push(made.changed);
+            Ok::<_, Error>((states, touched))
+        },
+    )?;
     Ok(touched)
 }
 
@@ -832,10 +833,12 @@ pub(super) fn edit(
         }
     }
     if let Some(size) = patch.size.filter(|_| *kind == ObjectKind::Table) {
-        // imperative: each track is a write to the transaction
-        for (name, value) in table_tracks(&fields, size) {
-            map.insert(transaction, name, any(&value)?);
-        }
+        table_tracks(&fields, size)
+            .into_iter()
+            .try_for_each(|(name, value)| {
+                map.insert(transaction, name, any(&value)?);
+                Ok::<_, Error>(())
+            })?;
     }
     let resized = frame_resized(transaction, scope, edited, &fields)?;
     let moved = match (patch.at, placed) {
@@ -1471,8 +1474,7 @@ fn stamped(
     scope: &WriteTransaction<'_>,
 ) -> Vec<(&'static str, Value)> {
     let stamp = match changes.as_slice() {
-        // No field of the object (a reaction), or only an adoption: no
-        // `updated`.
+        // A reaction or an adoption alone leaves `updated` as it is.
         [] | [(PARENT_ID, _)] => None,
         _ => Some((UPDATED, scope.stamp.json())),
     };

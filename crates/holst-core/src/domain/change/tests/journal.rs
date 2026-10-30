@@ -61,7 +61,6 @@ fn restore(document: &Doc, id: &str) -> Result<()> {
             .unwrap_or_default()
     };
     let objects = document.get_or_insert_map("objects");
-    // imperative: yrs writes take `&mut TransactionMut`
     let mut transaction = document.transact_mut();
     entry
         .get("s")

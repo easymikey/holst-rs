@@ -26,8 +26,7 @@ use crate::{
 /// The colour token the editor sets on a link's text (bundle line 234938).
 const LINK_COLOR: f64 = 1_671_390.0;
 
-/// `blocks` as the children of `root`, one `wrapper` each; a nested block is a
-/// `wrapper` after its parent's element inside the parent's `wrapper`.
+/// `blocks` as the children of `root`, one `wrapper` each.
 pub(crate) fn fill_blocks(
     transaction: &mut TransactionMut<'_>,
     root: &XmlTextRef,
@@ -105,8 +104,7 @@ fn write_runs(
                 linked
             },
         );
-        // imperative: each run is appended after the last, so the writes are
-        // ordered
+        // imperative: each run is appended after the last
         for run in group {
             let at = target.len(transaction);
             let marks = marks_of(run, link.is_some());
@@ -229,8 +227,7 @@ pub(super) fn tick(
         .ok_or(items.len())
 }
 
-/// The checklist items under `node` in reading order, the nested ones after
-/// their parent.
+/// The checklist items under `node` in reading order.
 fn checklist<T: ReadTxn>(transaction: &T, node: &XmlTextRef) -> Vec<XmlTextRef> {
     let is_item = matches!(
         node.get_attribute(transaction, "type"),
@@ -264,7 +261,6 @@ fn format_leaves(
     attrs: &Attrs,
 ) {
     let chunks = element.diff(&*transaction, YChange::identity);
-    // a leaf is formatted at the place the earlier chunks end
     chunks.into_iter().fold(0_u32, |at, chunk| {
         at + match chunk.insert {
             Out::YXmlText(child) => {

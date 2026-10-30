@@ -126,7 +126,6 @@ fn a_carried_arrow_moves_its_ends() -> Result<()> {
     );
     {
         let objects = document.get_or_insert_map("objects");
-        // imperative: yrs writes take `&mut TransactionMut`
         let mut transaction = document.transact_mut();
         let map = object_map(&transaction, &objects, arrow, &ObjectKind::Arrow)?;
         let free = json!({ "point": { "x": 120, "y": 130 } });
@@ -260,7 +259,6 @@ fn moving_a_frame_carries_what_it_holds() -> Result<()> {
     )?;
     let child = document.get_or_insert_map("objects");
     {
-        // imperative: yrs writes take `&mut TransactionMut`
         let mut transaction = document.transact_mut();
         let text = object_map(&transaction, &child, "m-2", &ObjectKind::Text)?;
         text.insert(&mut transaction, "parentId", "m-1");
@@ -426,7 +424,6 @@ fn a_frame_without_a_stored_size_takes_its_drawn_size() -> Result<()> {
     built_with_ids(&document, &ids, &add(frame))?;
     {
         let objects = document.get_or_insert_map("objects");
-        // imperative: yrs writes take `&mut TransactionMut`
         let mut transaction = document.transact_mut();
         let map = object_map(&transaction, &objects, "z-1", &ObjectKind::Frame)?;
         map.remove(&mut transaction, "width");
@@ -516,7 +513,6 @@ pub(super) fn seed(document: &Doc, fields: &Value) -> Result<()> {
         .map(|(name, value)| Ok((name.clone(), any(value)?)))
         .collect::<Result<Vec<_>>>()?;
     let objects = document.get_or_insert_map("objects");
-    // imperative: yrs writes take `&mut TransactionMut`
     objects.insert(
         &mut document.transact_mut(),
         id,
@@ -744,8 +740,7 @@ fn a_frame_in_a_frame_takes_the_outer_layer() -> Result<()> {
     let (document, ids) = nested_frames()?;
     let z = |id: &str| fields_of(&document, id).get("zIndex").cloned();
     assert_eq!(z("r-2"), z("r-1"));
-    // A frame beyond every frame goes behind them; a move into r-2 keeps its
-    // layer.
+    // A frame beyond every frame goes behind them; a move keeps its layer.
     let apart = NewObject::Frame {
         title: "G".into(),
         at: Point::new(1000.0, 1000.0)?,

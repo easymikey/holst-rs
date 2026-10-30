@@ -110,12 +110,11 @@ pub(super) fn arrange(
             (free && frame.as_deref() != parent_of(fields)).then_some((*id, frame))
         })
         .collect();
-    // imperative: each parent is written to the transaction
-    for (id, frame) in &framed {
+    framed.iter().try_for_each(|(id, frame)| {
         let map =
             object_map(transaction, &scope.roots.objects, id, &kind_of(&after, id))?;
-        insert_changes(transaction, &map, &[(PARENT_ID, json!(frame))])?;
-    }
+        insert_changes(transaction, &map, &[(PARENT_ID, json!(frame))])
+    })?;
     Ok(moved
         .into_iter()
         .map(|changed| {

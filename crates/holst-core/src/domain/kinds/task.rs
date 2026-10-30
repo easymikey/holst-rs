@@ -464,7 +464,6 @@ mod tests {
         let documents = document.get_or_insert_map(DOCUMENTS);
         let infos = document.get_or_insert_map(TASK_INFO_STORE);
         {
-            // imperative: yrs inserts through one `&mut` transaction
             let mut transaction = document.transact_mut();
             documents.insert(&mut transaction, "t1", XmlTextPrelim::new("Ship"));
             let info = infos.insert(
@@ -588,7 +587,6 @@ mod tests {
         let columns = document.get_or_insert_map("kanban-columnsStore");
         let lanes = document.get_or_insert_map("kanban-swimlanesStore");
         {
-            // imperative: yrs inserts through one `&mut` transaction
             let mut transaction = document.transact_mut();
             columns.insert(
                 &mut transaction,

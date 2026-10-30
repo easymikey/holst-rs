@@ -135,7 +135,6 @@ mod tests {
         let document = Doc::new();
         let documents = document.get_or_insert_map(DOCUMENTS);
         {
-            // imperative: yrs inserts through one `&mut` transaction
             let mut transaction = document.transact_mut();
             documents.insert(&mut transaction, "f1", XmlTextPrelim::new("Q"));
             documents.insert(&mut transaction, "b1", XmlTextPrelim::new("A"));

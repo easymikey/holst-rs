@@ -169,7 +169,6 @@ mod tests {
         let document = Doc::new();
         let store = document.get_or_insert_map("objects");
         {
-            // imperative: yrs inserts through one `&mut` transaction
             let mut txn = document.transact_mut();
             store.insert(
                 &mut txn,
