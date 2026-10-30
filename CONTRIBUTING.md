@@ -25,6 +25,7 @@ cargo bin just lint     # formatting and spelling
 cargo bin just deps     # licences and advisories, unused dependencies, each feature on its own
 cargo bin just check    # clippy, tests and doctests
 cargo bin just ci       # all of the above: run it before you push
+cargo bin just budget   # release binary sizes and startup against the limits in `justfile` (CI job `budget`; slow, not part of `ci`)
 ```
 
 `cargo bin just` lists the recipes. The recipes call each tool as `cargo bin cargo-<tool>`, not through cargo aliases, which would shadow a copy installed globally.
