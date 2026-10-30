@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*", "tasks/*"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT OR Apache-2.0"
@@ -14,7 +14,7 @@ authors = ["Mikhail Avdeev"]
 
 [workspace.dependencies]
 itertools = "0.15"
-holst-macros = { path = "crates/holst-macros", version = "0.3.0" }
+holst-macros = { path = "crates/holst-macros", version = "0.4.0" }
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", default-features = false, features = ["full", "parsing", "printing", "proc-macro", "clone-impls"] }

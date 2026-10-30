@@ -1153,7 +1153,7 @@ dependencies = [
 
 [[package]]
 name = "holst-cli"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "clap",
  "console",
@@ -1174,7 +1174,7 @@ dependencies = [
 
 [[package]]
 name = "holst-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64 0.23.1",
  "derive_more",
@@ -1216,7 +1216,7 @@ dependencies = [
 
 [[package]]
 name = "holst-form"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "console",
  "derive_more",
@@ -1232,7 +1232,7 @@ dependencies = [
 
 [[package]]
 name = "holst-macros"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1242,7 +1242,7 @@ dependencies = [
 
 [[package]]
 name = "holst-mcp"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "arc-swap",
  "base64 0.23.1",
@@ -1271,7 +1271,7 @@ dependencies = [
 
 [[package]]
 name = "holst-scenarios"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "holst-core",
  "rmcp",

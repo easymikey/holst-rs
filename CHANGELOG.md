@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0
+
+### Added
+
+- `auth status --with sessions`: your signed-in sessions with device, system, place and last activity; the current one is marked.
+- `auth status --with tokens` lists personal access tokens as rows (name, prefix, scope, expiry, last use), never the secret.
+- `workspace show --with requests`: pending requests to join the workspace.
+- `workspace show --with members` marks the owner and who holds a licence.
+- `workspace show --with plan` reads the plan by name, period and price; a free workspace shows `plan: Free`, and without admin rights `plan: needs admin rights`.
+
+### Changed
+
+- Built with Rust 1.99.1; the minimum supported Rust version is 1.99.
+
 ## 0.3.0
 
 ### Breaking
