@@ -47,6 +47,16 @@ pub(crate) async fn run(
             commands::change(arguments, run, format, comment::resolve, render::change)
                 .await
         }
+        CommentVerb::Edit => {
+            commands::change(
+                arguments,
+                run,
+                format,
+                async |client, args| comment::edit(client, run.cache(), args).await,
+                render::change,
+            )
+            .await
+        }
         CommentVerb::Rm => {
             commands::change(arguments, run, format, comment::rm, render::change).await
         }

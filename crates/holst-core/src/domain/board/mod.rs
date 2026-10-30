@@ -68,8 +68,28 @@ pub enum ObjectKind {
     Task,
     Link,
     #[serde(untagged)]
-    Other(String),
+    Other(#[serde(serialize_with = "serialize_other")] String),
 }
+
+/// An `Other` kind as listings name it: its short word, or its stored name.
+#[expect(clippy::ptr_arg, reason = "serde passes the field as it is stored")]
+fn serialize_other<S: serde::Serializer>(
+    name: &String,
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error> {
+    serializer.serialize_str(other_word(name))
+}
+
+fn other_word(name: &str) -> &str {
+    OTHER_WORDS
+        .iter()
+        .find(|(stored, _)| *stored == name)
+        .map_or(name, |(_, word)| word)
+}
+
+/// The short word of an `Other` kind, by its stored name.
+const OTHER_WORDS: [(&str, &str); 2] =
+    [("mind-map-node", "mind-map"), ("phosphor-icon", "icon")];
 
 /// Every kind with a variant, in the order listings and errors name them.
 const KNOWN: [ObjectKind; 20] = [
@@ -136,7 +156,18 @@ impl ObjectKind {
     }
 
     /// The word a person reads and types (`text`, `document`, `flipcard`,
-    /// `wheel`, `task`); a kind without a variant keeps its stored name.
+    /// `wheel`, `task`, `mind-map`, `icon`); a kind without a word keeps its
+    /// stored name.
+    ///
+    /// ```
+    /// use holst_core::domain::board::ObjectKind;
+    ///
+    /// assert_eq!(
+    ///     ObjectKind::Other("mind-map-node".into()).short_name(),
+    ///     "mind-map"
+    /// );
+    /// assert_eq!(ObjectKind::Other("heart".into()).short_name(), "heart");
+    /// ```
     #[must_use]
     pub fn short_name(&self) -> &str {
         match self {
@@ -159,8 +190,8 @@ impl ObjectKind {
             | ObjectKind::Code
             | ObjectKind::Drawing
             | ObjectKind::Dice
-            | ObjectKind::Link
-            | ObjectKind::Other(_) => self.as_str(),
+            | ObjectKind::Link => self.as_str(),
+            ObjectKind::Other(name) => other_word(name),
         }
     }
 
@@ -205,6 +236,10 @@ impl ObjectKind {
     ///     ObjectKind::typed(" Mind-Map-Node "),
     ///     Some(ObjectKind::Other("mind-map-node".into()))
     /// );
+    /// assert_eq!(
+    ///     ObjectKind::typed("mind-map"),
+    ///     Some(ObjectKind::Other("mind-map-node".into()))
+    /// );
     /// assert_eq!(ObjectKind::typed("  "), None);
     /// ```
     #[must_use]
@@ -218,7 +253,16 @@ impl ObjectKind {
                     .iter()
                     .find(|kind| kind.short_name() == asked || kind.as_str() == asked)
                     .cloned()
-                    .unwrap_or(ObjectKind::Other(asked)),
+                    .unwrap_or_else(|| {
+                        ObjectKind::Other(
+                            OTHER_WORDS
+                                .iter()
+                                .find(|(stored, word)| {
+                                    *stored == asked || *word == asked
+                                })
+                                .map_or(asked, |(stored, _)| (*stored).to_owned()),
+                        )
+                    }),
             )
         }
     }
@@ -422,11 +466,20 @@ impl BoardContent {
     }
 }
 
+/// The root that holds a document's objects: `objects_v3` if the document has
+/// it, else `objects`. Looks on a read transaction, so it creates no root.
+pub(crate) fn objects_root(document: &Doc) -> &'static str {
+    document
+        .transact()
+        .get_map(document::OBJECTS_V3)
+        .map_or(document::OBJECTS, |_| document::OBJECTS_V3)
+}
+
 /// Every object of a board document, in reading order: top to bottom, left to
 /// right.
 #[must_use]
 pub fn objects(document: &Doc) -> Vec<Object> {
-    let objects = document.get_or_insert_map(document::OBJECTS);
+    let objects = document.get_or_insert_map(objects_root(document));
     let documents = document.get_or_insert_map(document::DOCUMENTS);
     let users = document.get_or_insert_map(document::USERS_IDS);
     let txn = document.transact();
@@ -689,7 +742,11 @@ fn number(any: &Any) -> Option<u64> {
     json(any).and_then(|value| value.as_u64())
 }
 
-fn text_of<T: ReadTxn>(txn: &T, documents: &MapRef, document: &str) -> String {
+pub(crate) fn text_of<T: ReadTxn>(
+    txn: &T,
+    documents: &MapRef,
+    document: &str,
+) -> String {
     document_root(txn, documents, document)
         .map(|root| plain(txn, &root))
         .unwrap_or_default()

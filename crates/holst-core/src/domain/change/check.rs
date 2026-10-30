@@ -19,6 +19,7 @@ use crate::{
                 ArrowEdit,
                 BoardChange,
                 LinkTo,
+                Made,
                 NewObject,
                 NoteContent,
                 ObjectEdit,
@@ -27,6 +28,7 @@ use crate::{
                 RemoveRight,
                 Reparent,
                 ShapeEdit,
+                TagChange,
                 TextLook,
             },
             write_shape::line_of,
@@ -88,10 +90,8 @@ impl CheckedChange<'_> {
             CheckedChange::AddAll(entries) => entries
                 .iter()
                 .filter(|(_, placement)| placement.format == TextFormat::Markdown)
-                .filter_map(|(new, _)| {
-                    written_text(new).map(|(kind, text)| of(text, &kind))
-                })
-                .flatten()
+                .flat_map(|(new, _)| written_text(new))
+                .flat_map(|(kind, text)| of(text, &kind))
                 .collect(),
             CheckedChange::EditAll(edits) => edits
                 .iter()
@@ -114,23 +114,33 @@ impl CheckedChange<'_> {
             | CheckedChange::Ungroup(_)
             | CheckedChange::LockOnly(_)
             | CheckedChange::Unlock(_)
-            | CheckedChange::Arrange(..) => BTreeSet::new(),
+            | CheckedChange::Arrange(..)
+            | CheckedChange::Tag { .. } => BTreeSet::new(),
         }
     }
 }
 
-/// The kind and text of a new object that holds rich text.
-fn written_text(new: &NewObject) -> Option<(ObjectKind, &str)> {
+/// The kind and text of each rich text a new object writes.
+fn written_text(new: &NewObject) -> Vec<(ObjectKind, &str)> {
     match new {
-        NewObject::Sticker { text, .. } => Some((ObjectKind::Sticker, text)),
-        NewObject::Text { text, .. } => Some((ObjectKind::Text, text)),
-        NewObject::Shape { text, .. } => Some((ObjectKind::Shape, text)),
+        NewObject::Sticker { text, .. } => vec![(ObjectKind::Sticker, text)],
+        NewObject::Text { text, .. } => vec![(ObjectKind::Text, text)],
+        NewObject::Shape { text, .. } => vec![(ObjectKind::Shape, text)],
+        NewObject::Made(made) => made_texts(made),
         NewObject::Frame { .. }
         | NewObject::Arrow { .. }
         | NewObject::Link { .. }
         | NewObject::Image { .. }
-        | NewObject::File { .. } => None,
+        | NewObject::File { .. } => Vec::new(),
     }
+}
+
+fn made_texts(made: &Made) -> Vec<(ObjectKind, &str)> {
+    made.texts
+        .iter()
+        .map(|(_, text)| (made.kind.clone(), text.as_str()))
+        .chain(made.parts.iter().flat_map(made_texts))
+        .collect()
 }
 
 pub(crate) enum CheckedChange<'a> {
@@ -150,6 +160,11 @@ pub(crate) enum CheckedChange<'a> {
     Unlock(Vec<String>),
     /// The top objects to move against each other, once each.
     Arrange(Vec<String>, Arrangement),
+    /// A tag definition to change, found when written.
+    Tag {
+        tag: &'a str,
+        change: &'a TagChange,
+    },
 }
 
 /// What a new group is for.
@@ -198,7 +213,8 @@ const fn placed(new: &NewObject) -> (Option<&Point>, Option<&Size>) {
         NewObject::Sticker { at, size, .. }
         | NewObject::Shape { at, size, .. }
         | NewObject::Frame { at, size, .. }
-        | NewObject::Image { at, size, .. } => (Some(at), size.as_ref()),
+        | NewObject::Image { at, size, .. }
+        | NewObject::Made(Made { at, size, .. }) => (Some(at), size.as_ref()),
         NewObject::Text { at, .. }
         | NewObject::Link { at, .. }
         | NewObject::File { at, .. } => (Some(at), None),
@@ -234,7 +250,8 @@ pub(crate) fn check<'a>(
         | BoardChange::LockOnly(_)
         | BoardChange::Unlock(_)
         | BoardChange::UnlockAll
-        | BoardChange::Arrange { .. } => Ok(()),
+        | BoardChange::Arrange { .. }
+        | BoardChange::Tag { .. } => Ok(()),
     }?;
     match change {
         BoardChange::Note(content) => Ok(CheckedChange::Note(content)),
@@ -260,7 +277,7 @@ pub(crate) fn check<'a>(
                 unlocked(states, &id, &edit.object)?;
                 let kind = kind_of(states, &id);
                 let held = held_in(states, &id, &kind);
-                changeable_edit(&kind, held, edit)?;
+                changeable_edit(states, &id, &kind, held, edit)?;
                 arrow_fits(states, &id, &edit.patch.arrow)?;
                 let link_to = edit
                     .patch
@@ -303,6 +320,27 @@ pub(crate) fn check<'a>(
         BoardChange::Arrange { objects, how } => {
             arrangeable(states, objects).map(|ids| CheckedChange::Arrange(ids, *how))
         }
+        BoardChange::Tag { tag, change } => {
+            asks_something(change).map(|()| CheckedChange::Tag { tag, change })
+        }
+    }
+}
+
+/// The name a tag change asks for: trimmed, and none when blank.
+pub(super) fn asked_name(change: &TagChange) -> Option<&str> {
+    change
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+}
+
+fn asks_something(change: &TagChange) -> Result<()> {
+    match (asked_name(change), &change.color, change.remove) {
+        (None, None, false) => {
+            Err(Error::BoardChange(BoardChangeError::NothingToChange))
+        }
+        _ => Ok(()),
     }
 }
 
@@ -933,14 +971,33 @@ fn checked_add(
     states: &HashMap<String, Value>,
     earlier: &[(NewObject, Placement)],
 ) -> Result<(NewObject, Placement)> {
-    frame.map_or_else(
-        || {
-            let parent = new_rectangle(new)
-                .and_then(|rect| parent_frame(states, &rect, &BTreeSet::new(), None));
+    match (held_by(new), frame) {
+        (Some(holder), _) => check_new(new, states, Some(holder.to_owned()), earlier),
+        (None, Some(frame)) => checked_in(new, frame, states, earlier),
+        (None, None) => {
+            // BUNDLE: the frame holding the corner (main.a33651a4.js 214803).
+            let parent = new_rectangle(new).and_then(|rect| {
+                let corner = Rectangle::new(rect.x, rect.y, 0.0, 0.0);
+                parent_frame(states, &corner, &BTreeSet::new(), None)
+            });
             check_new(new, states, parent, earlier)
-        },
-        |frame| checked_in(new, frame, states, earlier),
-    )
+        }
+    }
+}
+
+/// The holder a new object names for itself, which is not a frame.
+fn held_by(new: &NewObject) -> Option<&str> {
+    match new {
+        NewObject::Made(Made { parent, .. }) => parent.as_deref(),
+        NewObject::Sticker { .. }
+        | NewObject::Text { .. }
+        | NewObject::Shape { .. }
+        | NewObject::Frame { .. }
+        | NewObject::Arrow { .. }
+        | NewObject::Link { .. }
+        | NewObject::Image { .. }
+        | NewObject::File { .. } => None,
+    }
 }
 
 /// A new object inside `frame`, from its corner; `frame` is an object, or `#N`
@@ -1016,7 +1073,7 @@ fn check_new(
         *from = end_of(states, earlier, from)?;
         *to = end_of(states, earlier, to)?;
         parent = parent.or_else(|| {
-            common_frame(
+            common_parent(
                 states,
                 &chain(states, earlier, from),
                 &chain(states, earlier, to),
@@ -1095,6 +1152,7 @@ fn new_rectangle(new: &NewObject) -> Option<Rectangle> {
         }
         NewObject::Shape { at, size, .. } => Some(placed(at, size, &ObjectKind::Shape)),
         NewObject::Frame { at, size, .. } => Some(placed(at, size, &ObjectKind::Frame)),
+        NewObject::Made(Made { kind, at, size, .. }) => Some(placed(at, size, kind)),
         NewObject::Arrow { .. } => None,
     }
 }
@@ -1167,13 +1225,20 @@ pub(super) fn parent_frame(
         .map(|(_, id)| id.clone())
 }
 
-fn common_frame(
+/// The lowest ancestor of both ends that takes children: a group, or a frame
+/// that shows its content (`selectAcceptingLCAForObj$`, `main@4017543`).
+fn common_parent(
     states: &HashMap<String, Value>,
     from: &[String],
     to: &[String],
 ) -> Option<String> {
+    let takes = |id: &str| {
+        let kind = kind_of(states, id);
+        kind == ObjectKind::Group
+            || (kind == ObjectKind::Frame && shows_content(states, id))
+    };
     from.iter()
-        .filter(|id| kind_of(states, id) == ObjectKind::Frame)
+        .filter(|id| takes(id))
         .find(|id| to.contains(id))
         .cloned()
 }
@@ -1203,6 +1268,8 @@ fn sticker_shape(size: Size) -> Result<()> {
 
 /// An edit of many asks for something, and the object can take all of it.
 fn changeable_edit(
+    states: &HashMap<String, Value>,
+    id: &str,
     kind: &ObjectKind,
     held: Option<Held>,
     edit: &ObjectEdit,
@@ -1237,16 +1304,24 @@ fn changeable_edit(
                 arrow,
                 frame,
                 reparent: None,
+                kind_edits,
             },
             None,
             None,
         ) if shape.first_field().is_none()
             && arrow.fields().is_empty()
-            && frame.fields().is_empty() =>
+            && frame.fields().is_empty()
+            && kind_edits.is_empty() =>
         {
             Err(Error::BoardChange(BoardChangeError::NothingToChange))
         }
         (patch, _, _) => fits(kind, held, patch)
+            .and(
+                patch
+                    .kind_edits
+                    .iter()
+                    .try_for_each(|kind_edit| kind_edit.check(kind, states, id)),
+            )
             .and(scales(kind, held, patch))
             .and(spins(kind, patch))
             .and(framed(kind, patch))

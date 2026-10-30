@@ -1,5 +1,6 @@
 //! The board cache on disk: per server, per account, per board, size-capped.
 
+pub mod account;
 pub mod disk;
 pub mod files;
 #[cfg(test)] pub(crate) mod memory;
@@ -32,6 +33,8 @@ const META_FILE: &str = "meta.json";
 const TALLY_FILE: &str = "tally.json";
 const BOARDS_DIR: &str = "boards";
 const ASSETS_DIR: &str = "assets";
+const WORKSPACES_FILE: &str = "workspaces.json";
+const TREES_DIR: &str = "trees";
 
 /// The board cache of one account on disk.
 #[derive(Clone)]

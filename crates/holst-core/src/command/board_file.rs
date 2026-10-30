@@ -9,12 +9,18 @@ use crate::{
         board_load::{self, RemoteBoard},
     },
     domain::{
-        board::{BoardContent, EditRight},
+        board::{BoardContent, EditRight, objects_root},
         board_file::document::{ImportPlan, Overwrite},
         change::receipt::{Delivery, UpdateReceipt},
     },
     effect::board_write::WriteMode,
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{
+        Error,
+        Result,
+        board_change::BoardChangeError,
+        board_socket::BoardSocketError,
+    },
+    protocol::document::OBJECTS,
     remote::client::Client,
 };
 
@@ -46,6 +52,7 @@ pub(in crate::command) async fn export_with(
         loading.cache_use,
     )
     .await?;
+    v2_only(&loaded.document)?;
     Ok(BoardFile {
         content: BoardContent {
             edit_right: loaded.right,
@@ -53,6 +60,18 @@ pub(in crate::command) async fn export_with(
         },
         document: crate::domain::board_file::document::encoded(&loaded.document),
     })
+}
+
+/// Whole-board files are v2 only: a loaded version 3 document has the
+/// `objects_v3` root.
+fn v2_only(document: &Doc) -> Result<()> {
+    match objects_root(document) {
+        OBJECTS => Ok(()),
+        _ => Err(Error::BoardSocket(BoardSocketError::UnsupportedFormat {
+            schema: 3,
+            provider: "hud".to_owned(),
+        })),
+    }
 }
 
 /// A saved state written into a board, or in a dry run only planned.
@@ -140,7 +159,7 @@ pub(in crate::command) async fn write_with(
     mode: WriteMode,
     plan: impl FnOnce(&Doc) -> Result<ImportPlan>,
 ) -> Result<ImportedBoardFile> {
-    board_load::supported(client, board).await?;
+    board_load::whole_file(client, board).await?;
     let connected =
         crate::remote::socket::write::open_with(client, loading.connector, board)
             .await?;

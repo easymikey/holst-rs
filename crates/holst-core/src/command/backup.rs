@@ -26,7 +26,7 @@ use crate::{
             document,
         },
         change::receipt::UpdateReceipt,
-        text::joined,
+        text::{counted, joined},
     },
     effect::{board_write::WriteMode, settings::CacheSettings},
     error::{
@@ -290,12 +290,16 @@ impl Restored {
         let backup = self.backup.line();
         match &self.outcome {
             ChangeReport::Sent => format!(
-                "restored {} to the backup {backup}: {} objects, were {}",
-                self.name, self.objects_after, self.objects_before
+                "restored {} to the backup {backup}: {}, were {}",
+                self.name,
+                counted(self.objects_after, "object"),
+                self.objects_before
             ),
             ChangeReport::DryRun { .. } | ChangeReport::Held { .. } => format!(
-                "would restore {} to the backup {backup}: {} objects replace {}",
-                self.name, self.saved_objects, self.objects_before
+                "would restore {} to the backup {backup}: {} replace {}",
+                self.name,
+                counted(self.saved_objects, "object"),
+                self.objects_before
             ),
         }
     }

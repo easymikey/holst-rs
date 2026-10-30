@@ -94,8 +94,10 @@ fn a_ratio_edit_reshapes_the_frame_keeping_its_area() -> Result<()> {
     let fields = fields_of(&document, &id);
     let (width, height) = (number(&fields, "width"), number(&fields, "height"));
     assert_eq!(fields.get("ratio"), Some(&json!(1)));
-    assert!((width * height - 480_000.0).abs() < 1e-3);
-    assert!((width / height - 16.0 / 9.0).abs() < 1e-9);
+    // The sizes are cut to hundredths as the web client does.
+    assert!((width * 100.0).fract() == 0.0 && (height * 100.0).fract() == 0.0);
+    assert!((width * height - 480_000.0).abs() < 30.0);
+    assert!((width / height - 16.0 / 9.0).abs() < 1e-3);
     Ok(())
 }
 

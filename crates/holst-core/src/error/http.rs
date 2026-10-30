@@ -2,7 +2,61 @@
 
 use std::fmt;
 
-use crate::error::hint::Hint;
+use crate::error::{Error, hint::Hint, input::InputError};
+
+/// An HTTP method the API uses; parsing ignores case.
+///
+/// ```
+/// use holst_core::effect::http::HttpMethod;
+///
+/// assert_eq!("patch".parse::<HttpMethod>().ok(), Some(HttpMethod::Patch));
+/// assert_eq!(HttpMethod::Delete.to_string(), "DELETE");
+/// assert!("FETCH".parse::<HttpMethod>().is_err());
+/// ```
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    strum::Display,
+    strum::IntoStaticStr,
+    strum::EnumIter,
+    strum::EnumString,
+)]
+#[strum(
+    serialize_all = "UPPERCASE",
+    ascii_case_insensitive,
+    parse_err_ty = Error,
+    parse_err_fn = not_http_method
+)]
+pub enum HttpMethod {
+    Get,
+    Post,
+    Patch,
+    Put,
+    Delete,
+}
+
+impl HttpMethod {
+    /// The method on the wire: `GET`, `POST`, …
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+
+    /// Only a read may be repeated after a failure: no double write.
+    #[must_use]
+    pub const fn is_read(self) -> bool {
+        matches!(self, HttpMethod::Get)
+    }
+}
+
+fn not_http_method(raw: &str) -> Error {
+    Error::Input(InputError::NotHttpMethod {
+        raw: raw.to_owned(),
+    })
+}
 
 /// A reply that is a refusal, not what was asked, or never came.
 #[derive(Debug, thiserror::Error)]

@@ -4,6 +4,7 @@ pub(crate) mod table;
 #[cfg(test)] mod tests;
 
 use std::{
+    cell::Cell,
     path::PathBuf,
     sync::{Arc, atomic::Ordering},
     time::{Duration, Instant},
@@ -69,6 +70,11 @@ use crate::{
     server::table::TableTool,
     tools::{admin::RawWrite, files::SecretPaths},
 };
+
+tokio::task_local! {
+    /// Whether the reply of the running call came from a 401 or 403.
+    static UNAUTHORIZED: Cell<bool>;
+}
 
 const INSTRUCTIONS: &str = "\
 Holst (app.holst.so), unofficial, with the user's rights. Tools are holst CLI \
@@ -279,14 +285,13 @@ impl McpServer {
             let started = self.login.state.load();
             (started.epoch(), started.answered())
         };
-        let first = Box::pin(self.command(command, arguments.clone())).await;
-        let revoked = first
-            == self.fail(
-                &holst_core::Error::Login(
-                    holst_core::error::login::LoginError::SessionRevoked,
-                )
-                .into(),
-            );
+        let (first, refused) = UNAUTHORIZED
+            .scope(Cell::new(false), async {
+                let reply = Box::pin(self.command(command, arguments.clone())).await;
+                (reply, UNAUTHORIZED.with(Cell::get))
+            })
+            .await;
+        let revoked = refused && first.is_error == Some(true);
         let seen = self.login.state.load_full();
         // A new client starts at zero; an old one must not have answered more.
         let carried = (seen.epoch() == before).then_some(answered);
@@ -498,6 +503,10 @@ impl McpServer {
     }
 
     pub(crate) fn fail(&self, err: &Error) -> CallToolResult {
+        let unauthorized = matches!(err, Error::Holst(core) if core.is_unauthorized());
+        UNAUTHORIZED
+            .try_with(|refused| refused.set(unauthorized))
+            .unwrap_or_default();
         reply::error(self.state.alias_text(&reply::explain(err)))
     }
 

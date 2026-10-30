@@ -84,7 +84,7 @@ fn members_of_different_parents_make_a_group_on_the_board() -> Result<()> {
     let document = board()?;
     built(&document, &group_of(&["a", "c"]))?;
     let group = fields_of(&document, "g-1");
-    assert_eq!(group.get("parentId"), None);
+    assert_eq!(group.get("parentId"), Some(&Value::Null));
     assert_eq!(group.get("position"), Some(&json!({ "x": 10, "y": 0 })));
     assert_eq!(parent(&document, "c"), Some(json!("g-1")));
     Ok(())

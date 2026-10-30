@@ -10,6 +10,7 @@ pub mod board_write;
 pub mod change;
 pub mod comment;
 #[cfg(test)] mod fixture;
+mod loading;
 pub mod login;
 pub mod lookup;
 pub mod node;

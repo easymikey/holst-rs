@@ -5,7 +5,7 @@ use holst_core::domain::{
         receipt::{BoardStatus, ChangeReport, Delivery},
         value::ObjectChangeKind,
     },
-    text::{joined, one_line},
+    text::{counted, joined, one_line},
 };
 
 pub(crate) fn written(
@@ -43,7 +43,7 @@ pub(crate) fn written(
         },
     );
     let also = groups.iter().map(|((effect, kind), count)| {
-        format!("{} {count} {kind}", effect.verb(delivery))
+        format!("{} {}", effect.verb(delivery), counted(*count, kind))
     });
     let also = Some(joined(also, ", ").to_string())
         .filter(|also| !also.is_empty())

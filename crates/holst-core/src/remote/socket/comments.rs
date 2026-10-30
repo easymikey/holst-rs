@@ -4,7 +4,7 @@ use crate::{
     domain::{
         board::{
             EditRight,
-            comment::{CommentChange, Thread, build, threads},
+            comment::{CommentChange, Thread, author_of, build, threads},
         },
         change::build::update_id,
     },
@@ -53,6 +53,12 @@ impl CommentRoom {
     #[must_use]
     pub fn threads(&self) -> Vec<Thread> {
         threads(self.connected.document())
+    }
+
+    /// The number the board's users hold for `user`, if it holds one.
+    #[must_use]
+    pub fn author_of(&self, user: &str) -> Option<u32> {
+        author_of(self.connected.document(), user)
     }
 
     /// Writes `change` and waits for the server's ack.

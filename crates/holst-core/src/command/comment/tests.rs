@@ -12,6 +12,7 @@ use crate::{
             CommentPlan,
             CommentReport,
             ListedThread,
+            Placement,
             ThreadList,
             found,
             free_corner,
@@ -43,15 +44,36 @@ fn add(given: &Value) -> crate::Result<AddArgs> {
     parse(given.as_object().cloned().unwrap_or_default())
 }
 
+fn placed(args: &AddArgs) -> crate::Result<Placement<'_>> {
+    placement("comment add", args.at.as_deref(), args.object.as_deref())
+}
+
 fn changed(action: CommentAction, outcome: ChangeReport<CommentPlan>) -> CommentReport {
     CommentReport {
         action,
         board: "b".to_owned(),
         thread: "weVza".to_owned(),
-        message: None,
+        message: Some("m1".to_owned()),
         read_at: None,
+        edited: vec!["color", "place"],
         outcome,
     }
+}
+
+#[test]
+fn the_json_carries_the_status_at_the_top() -> serde_json::Result<()> {
+    let dry = ChangeReport::DryRun {
+        request: CommentPlan {
+            action: CommentAction::Delete,
+            thread: "weVza".to_owned(),
+        },
+    };
+    let json = serde_json::to_value(changed(CommentAction::Delete, dry))?;
+    assert_eq!(
+        (json.pointer("/status"), json.pointer("/outcome")),
+        (Some(&json!("dry_run")), None)
+    );
+    Ok(())
 }
 
 #[rstest]
@@ -75,6 +97,16 @@ fn changed(action: CommentAction, outcome: ChangeReport<CommentPlan>) -> Comment
     CommentAction::Delete,
     "deleted thread weVza",
     "would delete thread weVza"
+)]
+#[case::delete_reply(
+    CommentAction::DeleteReply,
+    "deleted reply m1 in thread weVza",
+    "would delete reply m1 in thread weVza"
+)]
+#[case::edit(
+    CommentAction::Edit,
+    "changed thread weVza: color, place",
+    "would change thread weVza: color, place"
 )]
 #[case::read(
     CommentAction::Read,
@@ -157,11 +189,11 @@ fn a_thread_line_shows_number_state_start_replies_and_read_mark() {
 #[test]
 fn at_and_object_are_not_both_taken_and_at_is_two_numbers() -> crate::Result<()> {
     let both = add(&json!({ "board": "b", "text": "t", "at": "1,2", "object": "o" }))?;
-    assert!(placement(&both).is_err());
+    assert!(placed(&both).is_err());
     let bad = add(&json!({ "board": "b", "text": "t", "at": "1;2" }))?;
-    assert!(placement(&bad).is_err());
+    assert!(placed(&bad).is_err());
     let good = add(&json!({ "board": "b", "text": "t", "at": " 120, 80.5 " }))?;
-    assert_eq!(placement(&good)?, super::Placement::Point(120.0, 80.5));
+    assert_eq!(placed(&good)?, Placement::Point(120.0, 80.5));
     assert_eq!(good.dry_run, WriteMode::Send);
     Ok(())
 }

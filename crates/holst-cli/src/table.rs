@@ -561,6 +561,9 @@ mod tests {
             CommandName::Board(BoardVerb::Edit) => {
                 parse::<board::EditArgs>(call.arguments).map(drop)
             }
+            CommandName::Board(BoardVerb::Tag) => {
+                parse::<board::TagArgs>(call.arguments).map(drop)
+            }
             CommandName::Board(BoardVerb::Rename) => {
                 parse::<board::RenameArgs>(call.arguments).map(drop)
             }
@@ -647,6 +650,7 @@ mod tests {
             CommentVerb::Add => parse::<comment::AddArgs>(arguments).map(drop),
             CommentVerb::Reply => parse::<comment::ReplyArgs>(arguments).map(drop),
             CommentVerb::Resolve => parse::<comment::ResolveArgs>(arguments).map(drop),
+            CommentVerb::Edit => parse::<comment::EditArgs>(arguments).map(drop),
             CommentVerb::Rm => parse::<comment::RemoveArgs>(arguments).map(drop),
             CommentVerb::Read => parse::<comment::ReadArgs>(arguments).map(drop),
         }

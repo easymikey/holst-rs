@@ -2,37 +2,30 @@
 
 use std::fmt;
 
-use serde::{Serialize, Serializer, ser::SerializeStruct as _};
+use serde::{Serialize, Serializer};
 
 use crate::domain::{change::value::ChangedObject, id::short_id};
 
 /// Whether an update was only built or also accepted by the server.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 pub enum Delivery {
     #[default]
+    #[serde(rename = "dry_run")]
     Built,
+    #[serde(rename = "sent")]
     Accepted,
 }
 
 /// The receipt of one update: only built, or sent and accepted by the server.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct UpdateReceipt {
+    #[serde(rename = "update_bytes")]
     pub bytes: usize,
+    #[serde(rename = "update_id")]
     pub id: u64,
+    /// Told by the `status` of the result, not by the receipt.
+    #[serde(skip)]
     pub delivery: Delivery,
-}
-
-/// Keeps `dry_run` and `accepted`, the keys scripts read.
-impl Serialize for UpdateReceipt {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let accepted = self.delivery == Delivery::Accepted;
-        let mut receipt = serializer.serialize_struct("UpdateReceipt", 4)?;
-        receipt.serialize_field("dry_run", &!accepted)?;
-        receipt.serialize_field("update_bytes", &self.bytes)?;
-        receipt.serialize_field("update_id", &self.id)?;
-        receipt.serialize_field("accepted", &accepted)?;
-        receipt.end()
-    }
 }
 
 impl fmt::Display for UpdateReceipt {
@@ -56,17 +49,56 @@ impl fmt::Display for UpdateReceipt {
 }
 
 /// A board change as the CLI and the MCP server report it.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ChangeReport {
     pub board: String,
-    #[serde(flatten)]
     pub receipt: UpdateReceipt,
     pub objects: Vec<ChangedObject>,
     /// What went less well than asked, e.g. a link without a preview.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
-    #[serde(skip)]
     pub board_status: BoardStatus,
+}
+
+/// The `status` of a write that went out or was only built.
+#[derive(Debug, Serialize)]
+struct Delivered {
+    status: Delivery,
+}
+
+/// The flat JSON of a report; `status` (and `needs`) come from the caller.
+#[derive(Debug, Serialize)]
+pub struct Told<'a, S: Serialize> {
+    board: &'a str,
+    #[serde(flatten)]
+    status: S,
+    #[serde(flatten)]
+    receipt: &'a UpdateReceipt,
+    objects: &'a [ChangedObject],
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    warnings: &'a [String],
+}
+
+impl ChangeReport {
+    /// The report as flat JSON whose `status` is the given outcome's.
+    #[must_use]
+    pub fn told<S: Serialize>(&self, status: S) -> Told<'_, S> {
+        Told {
+            board: &self.board,
+            status,
+            receipt: &self.receipt,
+            objects: &self.objects,
+            warnings: &self.warnings,
+        }
+    }
+}
+
+impl Serialize for ChangeReport {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.told(Delivered {
+            status: self.receipt.delivery,
+        })
+        .serialize(serializer)
+    }
 }
 
 /// Where a board sits: among the live boards or in the trash.
@@ -177,14 +209,20 @@ mod tests {
     }
 
     #[test]
-    fn the_json_keeps_the_keys_scripts_read() {
+    fn a_sent_update_says_sent() {
+        let sent =
+            serde_json::to_value(outcome(Delivery::Accepted)).unwrap_or_default();
+        assert_eq!(sent.pointer("/status"), Some(&serde_json::json!("sent")));
+    }
+
+    #[test]
+    fn the_json_is_flat_with_one_status() {
         insta::assert_json_snapshot!(outcome(Delivery::Built), @r#"
         {
           "board": "b1",
-          "dry_run": true,
+          "status": "dry_run",
           "update_bytes": 527,
           "update_id": 42,
-          "accepted": false,
           "objects": [
             {
               "id": "s1",

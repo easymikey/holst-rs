@@ -43,7 +43,7 @@ fn mistakes_in_api_arguments_are_explained() -> TestResult {
         (
             &["api", "GET", "/gapi/current_user", "-p", "novalue"],
             64,
-            &["expected key=value, got \"novalue\""],
+            &["\"novalue\" is not key=value: expected key=value, e.g. limit=50"],
         ),
         (
             &[

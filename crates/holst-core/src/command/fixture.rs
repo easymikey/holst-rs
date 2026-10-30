@@ -21,7 +21,10 @@ use crate::{
     },
     domain::board::{EditRight, Object, object_of},
     effect::{http::HttpResponse, socket::SocketConnector},
-    protocol::hud::{DocumentResponse, SocketFrame, UpdatePayload},
+    protocol::{
+        document::TAGS_STORE,
+        hud::{DocumentResponse, SocketFrame, UpdatePayload},
+    },
     remote::{
         client::{
             Client,
@@ -159,16 +162,37 @@ pub(in crate::command) fn board_of(objects: &[Value]) -> Scripted {
     acking([Some(frames_of(objects))])
 }
 
+/// As `board_of`, with the tags `(id, title)` defined in indigo5.
+pub(in crate::command) fn board_tagged_of(
+    objects: &[Value],
+    tags: &[(&str, &str)],
+) -> Scripted {
+    acking([Some(frames_with(objects, tags))])
+}
+
 /// As `board_of`, for the load of a command and the connection of its write.
 pub(in crate::command) fn board_twice_of(objects: &[Value]) -> Scripted {
     acking([Some(frames_of(objects)), Some(frames_of(objects))])
 }
 
 fn frames_of(objects: &[Value]) -> Vec<SocketFrame> {
+    frames_with(objects, &[])
+}
+
+fn frames_with(objects: &[Value], tags: &[(&str, &str)]) -> Vec<SocketFrame> {
     let doc = Doc::with_client_id(4);
     let store = doc.get_or_insert_map("objects");
+    let defined = doc.get_or_insert_map(TAGS_STORE);
     {
         let mut transaction = doc.transact_mut();
+        // imperative: yrs inserts through one `&mut` transaction
+        for (id, title) in tags {
+            defined.insert(
+                &mut transaction,
+                *id,
+                MapPrelim::from_iter([("title", *title), ("color", "indigo5")]),
+            );
+        }
         // imperative: yrs inserts through one `&mut` transaction
         for fields in objects {
             let id = fields.get("id").and_then(Value::as_str).unwrap_or_default();

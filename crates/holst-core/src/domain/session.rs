@@ -7,18 +7,26 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     domain::{
+        account::Account,
         cookie::{CookieChange, CookieJar},
         url::{BaseUrl, DEFAULT_BASE},
     },
     error::{Error, Result, login::LoginError},
 };
 
+/// The account a login belongs to, as far as the login remembers it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KnownAccount {
+    pub id: String,
+    pub name: Option<String>,
+}
+
 /// A login: the Bearer token (a CSRF value), the cookies and its server.
 #[derive(Debug, Clone, Default)]
 pub struct Session {
     token: SecretString,
     cookies: CookieJar,
-    account_id: Option<String>,
+    account: Option<KnownAccount>,
     base: Option<BaseUrl>,
 }
 
@@ -34,7 +42,7 @@ impl Session {
         Self {
             token,
             cookies,
-            account_id: None,
+            account: None,
             base: None,
         }
     }
@@ -72,16 +80,31 @@ impl Session {
     /// The same login, naming its account.
     #[must_use]
     pub fn with_account_id(self, user: &str) -> Self {
+        self.with_account(KnownAccount {
+            id: user.to_owned(),
+            name: None,
+        })
+    }
+
+    /// The same login, naming its account and the user.
+    #[must_use]
+    pub fn with_account(self, account: KnownAccount) -> Self {
         Self {
-            account_id: Some(user.to_owned()),
+            account: Some(account),
             ..self
         }
+    }
+
+    /// The account, when the login was saved with it.
+    #[must_use]
+    pub fn account(&self) -> Option<&KnownAccount> {
+        self.account.as_ref()
     }
 
     /// The account's user id, when the login was saved with it.
     #[must_use]
     pub fn account_id(&self) -> Option<&str> {
-        self.account_id.as_deref()
+        self.account.as_ref().map(|account| account.id.as_str())
     }
 
     /// The token, still secret.
@@ -113,13 +136,19 @@ impl Session {
     pub fn to_saved_login(&self) -> SecretString {
         let token = self.token.expose_secret();
         let header = self.cookies.header();
-        match (header.expose_secret(), &self.account_id, &self.base) {
+        match (header.expose_secret(), &self.account, &self.base) {
             ("", None, None) if !token.starts_with('{') => SecretString::from(token),
-            (line, user, base) => SecretString::from(
+            (line, account, base) => SecretString::from(
                 serde_json::to_string(&SavedLoginJson {
                     token: token.into(),
                     cookies: line.into(),
-                    user: user.as_deref().map(Cow::Borrowed),
+                    user: account
+                        .as_ref()
+                        .map(|known| Cow::Borrowed(known.id.as_str())),
+                    name: account
+                        .as_ref()
+                        .and_then(|known| known.name.as_deref())
+                        .map(Cow::Borrowed),
                     base_url: base.as_ref().map(|base| Cow::Borrowed(base.as_str())),
                 })
                 .unwrap_or_else(|_| token.to_owned()),
@@ -132,7 +161,7 @@ impl PartialEq for Session {
     fn eq(&self, other: &Self) -> bool {
         self.token.expose_secret() == other.token.expose_secret()
             && self.cookies == other.cookies
-            && self.account_id == other.account_id
+            && self.account == other.account
             && self.base.as_ref().map(BaseUrl::as_str)
                 == other.base.as_ref().map(BaseUrl::as_str)
     }
@@ -148,6 +177,8 @@ struct SavedLoginJson<'a> {
     cookies: Cow<'a, str>,
     #[serde(default, borrow, skip_serializing_if = "Option::is_none")]
     user: Option<Cow<'a, str>>,
+    #[serde(default, borrow, skip_serializing_if = "Option::is_none")]
+    name: Option<Cow<'a, str>>,
     #[serde(default, borrow, skip_serializing_if = "Option::is_none")]
     base_url: Option<Cow<'a, str>>,
 }
@@ -175,7 +206,10 @@ impl FromStr for Session {
                             .transpose()
                             .ok()?;
                         Some(Session {
-                            account_id: stored.user.map(Cow::into_owned),
+                            account: stored.user.map(|id| KnownAccount {
+                                id: id.into_owned(),
+                                name: stored.name.map(Cow::into_owned),
+                            }),
                             base,
                             ..Session::with_cookies(
                                 SecretString::from(stored.token.as_ref()),
@@ -216,6 +250,26 @@ pub enum SessionStatus {
     Missing,
     Active,
     Revoked,
+}
+
+/// Where a login was found or saved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionStoreKind {
+    Keychain,
+    File,
+}
+
+impl SessionStoreKind {
+    /// The name a person knows the store by.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            SessionStoreKind::Keychain if cfg!(target_os = "macos") => "Keychain",
+            SessionStoreKind::Keychain if cfg!(windows) => "Credential Manager",
+            SessionStoreKind::Keychain => "Secret Service",
+            SessionStoreKind::File => "file",
+        }
+    }
 }
 
 impl Default for SessionState {
@@ -318,14 +372,14 @@ impl SessionState {
                 let Session {
                     token,
                     cookies,
-                    account_id,
+                    account,
                     base,
                 } = session;
                 let after = cookies.clone().merge(fresh);
                 Self::Active {
                     rotated: rotated || after != cookies,
                     session: Session {
-                        account_id,
+                        account,
                         base,
                         ..Session::with_cookies(token, after)
                     },
@@ -385,6 +439,23 @@ impl SessionState {
         }
     }
 
+    /// The active login's account and name became known; a change marks it for
+    /// saving.
+    #[must_use]
+    pub fn learn_account(self, account: &Account) -> Self {
+        let known = KnownAccount {
+            id: account.id.clone(),
+            name: account.name.clone(),
+        };
+        match self {
+            Self::Active { session, rotated } => Self::Active {
+                rotated: rotated || session.account() != Some(&known),
+                session: session.with_account(known),
+            },
+            other @ (Self::Missing { .. } | Self::Revoked { .. }) => other,
+        }
+    }
+
     /// The active login's account became known; a new one marks it for saving.
     #[must_use]
     pub fn learn_account_id(self, user: &str) -> Self {
@@ -405,8 +476,9 @@ mod tests {
 
     use crate::{
         domain::{
+            account::Account,
             cookie::CookieChange,
-            session::{Session, SessionState, SessionStatus, redact},
+            session::{KnownAccount, Session, SessionState, SessionStatus, redact},
             url::{BaseUrl, DEFAULT_BASE},
         },
         error::{Error, Result, hint::Hint, login::LoginError},
@@ -464,6 +536,78 @@ mod tests {
         assert!(none.is_none(), "a known account is saved again");
         let (_, kept) = saved(again.absorb(vec![sid("2")]));
         assert_eq!(kept.as_ref().and_then(Session::account_id), Some("u1"));
+    }
+
+    fn account(id: &str, name: &str) -> Account {
+        Account {
+            id: id.into(),
+            name: Some(name.into()),
+            workspaces: vec![],
+        }
+    }
+
+    #[test]
+    fn a_saved_login_keeps_the_id_and_the_name() {
+        let named = session("abc", "").with_account(KnownAccount {
+            id: "u1".into(),
+            name: Some("Ann".into()),
+        });
+        let stored = named.to_saved_login();
+        assert_eq!(
+            stored.expose_secret(),
+            r#"{"token":"abc","cookies":"","user":"u1","name":"Ann"}"#
+        );
+        assert_eq!(stored.expose_secret().parse::<Session>().ok(), Some(named));
+    }
+
+    #[test]
+    fn an_old_saved_login_loads_with_the_id_and_no_name() {
+        let back = r#"{"token":"t","user":"u1"}"#.parse::<Session>().ok();
+        assert_eq!(
+            back.as_ref().and_then(Session::account),
+            Some(&KnownAccount {
+                id: "u1".into(),
+                name: None
+            })
+        );
+    }
+
+    #[test]
+    fn learning_the_same_account_twice_marks_rotated_once() {
+        let loaded = SessionState::from(Some(session("tok", "sid=1")));
+        let (learned, first) = saved(loaded.learn_account(&account("u1", "Ann")));
+        assert!(first.is_some());
+        let (_, second) = saved(learned.learn_account(&account("u1", "Ann")));
+        assert!(second.is_none());
+    }
+
+    #[test]
+    fn a_renamed_user_marks_rotated() {
+        let loaded = SessionState::from(Some(session("tok", "sid=1")));
+        let (learned, _) = saved(loaded.learn_account(&account("u1", "Ann")));
+        let (_, renamed) = saved(learned.learn_account(&account("u1", "Anna")));
+        assert_eq!(
+            renamed.as_ref().and_then(Session::account),
+            Some(&KnownAccount {
+                id: "u1".into(),
+                name: Some("Anna".into())
+            })
+        );
+    }
+
+    #[test]
+    fn a_new_login_after_a_revocation_holds_no_account() {
+        let base = DEFAULT_BASE.parse::<BaseUrl>().ok();
+        let state = SessionState::from(Some(session("tok", "sid=1")))
+            .learn_account(&account("u1", "Ann"))
+            .revoke();
+        let fresh = base.map(|base| state.log_in(SecretString::from("new"), &base));
+        assert_eq!(
+            fresh
+                .as_ref()
+                .and_then(|logged| logged.session()?.account()),
+            None
+        );
     }
 
     #[rstest]

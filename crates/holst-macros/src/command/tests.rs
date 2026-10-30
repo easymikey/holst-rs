@@ -95,6 +95,11 @@ fn a_group_is_its_arguments() {
         text(&quote!(impl crate::command::table::ArgumentGroup for Selection)),
         text(&quote!(name: "rectangle", letter: ::core::option::Option::None)),
         text(&quote!(value_name: "x,y,w,h")),
+        text(&quote!((
+            "rectangle",
+            crate::command::table::Given::given(&self.rectangle)
+        ))),
+        text(&quote!(fn first_given(&self))),
     ];
     let missing: Vec<_> = wanted.iter().filter(|want| !out.contains(*want)).collect();
     assert!(missing.is_empty(), "{missing:?} in {out}");
@@ -140,7 +145,7 @@ fn a_subcommand_and_the_kinds_it_limits_are_emitted() {
         #[holst_command(group = Object, verb = "add", risk = Write, about = "a", help = "b")]
         struct AddArgs {
             #[argument(help = "c", subcommand)] kind: Option<AddKind>,
-            #[argument(help = "d", kinds = [shape, frame])] shape: Option<String>,
+            #[argument(help = "d", kinds = [shape, sticker_stack])] shape: Option<String>,
             #[argument(help = "e")] board: String,
             #[argument(help = "f")] dry_run: WriteMode,
         }
@@ -149,7 +154,7 @@ fn a_subcommand_and_the_kinds_it_limits_are_emitted() {
     .unwrap_or_default();
     let wanted = [
         text(&quote!(subcommand: true, kinds: &[],)),
-        text(&quote!(subcommand: false, kinds: &["shape", "frame"],)),
+        text(&quote!(subcommand: false, kinds: &["shape", "sticker-stack"],)),
         text(&quote!(subcommand: false, kinds: &[],)),
     ];
     let missing: Vec<_> = wanted.iter().filter(|want| !out.contains(*want)).collect();

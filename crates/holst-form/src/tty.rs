@@ -73,19 +73,21 @@ impl Drop for QuietedTerminal {
     fn drop(&mut self) {
         // Deliver what was written first: a later Ctrl-C would flush it.
         imp::flush_output();
-        warn(exclusive(|| imp::put_back(self.0)));
+        warn(exclusive(|| imp::put_back(self.0)).as_deref());
     }
+}
+
+pub(crate) fn warn(warning: Option<&str>) {
+    warning.map(stderr_line).unwrap_or_default();
 }
 
 #[expect(
     clippy::disallowed_methods,
-    reason = "a drop has no caller to return the warning to: stderr is the only place left"
+    reason = "a drop or a signal has no caller to return the text to: stderr is the only place left"
 )]
-fn warn(warning: Option<String>) {
+pub(crate) fn stderr_line(text: &str) {
     // A stderr that cannot be written has nowhere to report to.
-    warning
-        .map_or(Ok(()), |text| writeln!(io::stderr().lock(), "{text}"))
-        .unwrap_or_default();
+    writeln!(io::stderr().lock(), "{text}").unwrap_or_default();
 }
 
 #[cfg(unix)]

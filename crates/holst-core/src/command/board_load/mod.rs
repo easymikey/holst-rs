@@ -111,25 +111,33 @@ pub async fn load(
         }
         (CacheUse::Refresh, Some(cache)) => through(link, cache, None).await,
         (CacheUse::Use | CacheUse::Refresh, None) => {
-            with_format(
-                client,
-                board,
-                load_seeded(client, connector, board, Doc::new()),
-            )
-            .await
+            let (loaded, source, _) = seeded(client, connector, board, None).await?;
+            Ok((loaded, source))
         }
     }
 }
 
-/// `Ok` when the board is stored in the one format this program reads and
-/// writes; the board server is not asked.
+async fn format(client: &Client, board: &str) -> Result<BoardFormat> {
+    let reply = crate::remote::api::channel::get(client, board).await?;
+    Ok(serde_json::from_value(reply)?)
+}
+
+/// The root of the document that holds the objects when the board is stored
+/// in a format this program reads and writes; the board server is not asked.
 ///
 /// # Errors
 /// The API's refusal of the board, or
 /// [`BoardSocketError::UnsupportedFormat`].
-pub async fn supported(client: &Client, board: &str) -> Result<()> {
-    let reply = crate::remote::api::channel::get(client, board).await?;
-    serde_json::from_value::<BoardFormat>(reply)?.supported()
+pub async fn supported(client: &Client, board: &str) -> Result<&'static str> {
+    format(client, board).await?.supported()
+}
+
+/// `Ok` when the board is stored in the format of a whole-board file (v2).
+///
+/// # Errors
+/// As [`supported`], and for a version 3 board.
+pub async fn whole_file(client: &Client, board: &str) -> Result<()> {
+    format(client, board).await?.whole_file()
 }
 
 /// The roles of the web client's scale, the lowest first.
@@ -171,18 +179,6 @@ pub(crate) fn withheld(
         .map(|needs| (needs.to_owned(), held))
 }
 
-/// `loading`, run beside the format check: an unsupported board is refused
-/// before its document is returned.
-async fn with_format<T>(
-    client: &Client,
-    board: &str,
-    loading: impl Future<Output = Result<T>>,
-) -> Result<T> {
-    try_join(supported(client, board), loading)
-        .await
-        .map(|((), loaded)| loaded)
-}
-
 /// The board loaded into `seed`, if any; a seed ahead of the server goes and
 /// the board loads whole. Also the state vector of the seed that was used.
 ///
@@ -195,20 +191,21 @@ pub async fn seeded(
     seed: Option<Doc>,
 ) -> Result<(LoadedBoard, LoadSource, Option<StateVector>)> {
     let before = seed.as_ref().map(|doc| doc.transact().state_vector());
-    let first = with_format(
-        client,
-        board,
-        load_seeded(client, connector, board, seed.unwrap_or_default()),
-    )
-    .await;
-    let (result, before) = match first {
-        Err(Error::BoardSocket(BoardSocketError::CopyAhead)) => (
-            load_seeded(client, connector, board, Doc::new()).await,
-            None,
-        ),
-        other => (other, before),
+    let loading = async {
+        match load_seeded(client, connector, board, seed.unwrap_or_default()).await {
+            Err(Error::BoardSocket(BoardSocketError::CopyAhead)) => {
+                load_seeded(client, connector, board, Doc::new())
+                    .await
+                    .map(|loaded| (loaded, None))
+            }
+            other => other.map(|loaded| (loaded, before)),
+        }
     };
-    result.map(|(loaded, source)| (loaded, source, before))
+    // Registered, so an empty version 3 board writes under `objects_v3`.
+    let (root, ((loaded, source), used)) =
+        try_join(supported(client, board), loading).await?;
+    loaded.document.get_or_insert_map(root);
+    Ok((loaded, source, used))
 }
 
 /// The board's objects loaded through `cache`.

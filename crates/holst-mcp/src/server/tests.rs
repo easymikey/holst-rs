@@ -451,6 +451,23 @@ async fn new_login_in_the_store_is_used_when_the_old_one_is_refused() {
 }
 
 #[tokio::test]
+async fn new_login_is_used_when_a_bare_token_is_refused() {
+    let replies = [
+        CannedResponse::ok(ME),
+        CannedResponse::unauthorized(),
+        CannedResponse::ok(ME),
+    ];
+    let (holst, memory, _) =
+        server(Memory::new(Some(session("a")), Script::new(replies)));
+    let list = serde_json::json!({ "action": "ls" });
+    let (first, opened) = table_call(&holst, "workspace", list.clone()).await;
+    assert!(!first, "{opened}");
+    memory.store(Some(session("b")));
+    let (second, text) = table_call(&holst, "workspace", list).await;
+    assert!(!second, "{text}");
+}
+
+#[tokio::test]
 async fn call_is_not_repeated_when_an_earlier_request_landed() -> Result<()> {
     let replies = [
         CannedResponse::ok(ME),

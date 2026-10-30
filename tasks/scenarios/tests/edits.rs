@@ -116,6 +116,27 @@ async fn a_sticker_added_to_a_frame_belongs_to_it(
 
 #[rstest]
 #[tokio::test]
+async fn a_sticker_whose_corner_is_in_a_frame_joins_it(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = frame_and_note().start().await?;
+    // The corner is in the 800 by 600 frame; the box crosses its edge.
+    holst
+        .on(surface)
+        .object(
+            "Plans",
+            ObjectCall::add("sticker")
+                .text("Call Ann")
+                .with("at", "700,550"),
+        )
+        .await?;
+    let observation = holst.on(surface).objects("Plans").await?;
+    then(&observation).lists_object_in_a_frame("sticker", "Call Ann");
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
 async fn a_sticker_moved_into_a_frame_joins_it(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {

@@ -6,7 +6,7 @@ use holst_core::{
         change::{ChangeReport, PlannedRequest},
         table,
     },
-    domain::text::printable,
+    domain::text::{hide_tokens, printable},
     effect::request::DRY_RUN,
 };
 use serde_json::{Map, Value};
@@ -37,9 +37,7 @@ pub(crate) async fn run(
 
 fn render(format: OutputFormat, kind: ReplyKind, done: &ApiReply) -> Result<()> {
     match &done.report {
-        ChangeReport::Sent => {
-            output::reply(format, kind, done.reply.as_ref().unwrap_or(&Value::Null))
-        }
+        ChangeReport::Sent => output::reply(format, kind, &sent_reply(done)),
         ChangeReport::DryRun { request } => {
             shown(format, &done.report, Some(DRY_RUN), request)
         }
@@ -47,6 +45,11 @@ fn render(format: OutputFormat, kind: ReplyKind, done: &ApiReply) -> Result<()> 
             shown(format, &done.report, None, request)
         }
     }
+}
+
+/// What the server answered; token values stay hidden, as in MCP `api`.
+fn sent_reply(done: &ApiReply) -> Value {
+    hide_tokens(done.reply.clone().unwrap_or(Value::Null))
 }
 
 /// Prints the request that was not sent.
@@ -68,5 +71,22 @@ fn shown(
         OutputFormat::Pretty | OutputFormat::Json => {
             output::print_value(format, report)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use holst_core::command::{api::ApiReply, change::ChangeReport};
+    use serde_json::json;
+
+    use crate::commands::api::sent_reply;
+
+    #[test]
+    fn a_reply_with_a_token_value_is_printed_hidden() {
+        let done = ApiReply {
+            report: ChangeReport::Sent,
+            reply: Some(json!([{ "name": "ci", "token": "holst_pat_planted_fake" }])),
+        };
+        assert_eq!(sent_reply(&done), json!([{ "name": "ci", "token": "***" }]));
     }
 }

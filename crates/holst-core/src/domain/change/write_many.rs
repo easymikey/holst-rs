@@ -154,6 +154,7 @@ fn edited(
         states: &running.states,
         stamp: scope.stamp,
         context: scope.context,
+        user: scope.user,
     };
     let touched = edit(
         transaction,
@@ -343,15 +344,16 @@ impl Pasting<'_> {
             self.scope.stamp,
         )
         .map(|(name, value)| (name.to_owned(), value));
-        let parent = self
-            .parent(object, &placed, states)
-            .map(|parent| (PARENT_ID.to_owned(), json!(parent)));
+        let parent = (
+            PARENT_ID.to_owned(),
+            json!(self.parent(object, &placed, states)),
+        );
         Value::Object(
             base.into_iter()
                 .filter(|(name, _)| name != PARENT_ID)
                 .chain(moved)
                 .chain(own)
-                .chain(parent)
+                .chain([parent])
                 .collect(),
         )
     }

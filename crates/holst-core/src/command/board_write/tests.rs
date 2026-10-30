@@ -23,7 +23,6 @@ use crate::{
         id_source::SequentialIds,
     },
     effect::{
-        board_write::WriteInterpreter,
         board_write_plan::WrittenChange,
         cache::CachePort as _,
         clock::FixedClock,
@@ -59,7 +58,7 @@ use crate::{
                 signed_in,
             },
             recorder::WriteRecorder,
-            write::{WriteOver, upload_error},
+            write::{WriteInterpreter, WriteOver, upload_error},
         },
     },
     storage::cache::memory::MemoryCache,
@@ -247,7 +246,12 @@ async fn a_dry_run_sends_nothing_but_the_request() -> Result<()> {
         )
     );
     let report = serde_json::to_value(&outcome)?;
-    assert_eq!(report.pointer("/dry_run"), Some(&serde_json::json!(true)));
+    assert_eq!(
+        report.pointer("/status"),
+        Some(&serde_json::json!("dry_run"))
+    );
+    assert_eq!(report.pointer("/dry_run"), None);
+    assert_eq!(report.pointer("/accepted"), None);
     assert_eq!(
         report.pointer("/objects/0/change"),
         Some(&serde_json::json!("created"))

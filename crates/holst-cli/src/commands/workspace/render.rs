@@ -124,10 +124,9 @@ fn member_line(member: &Member) -> String {
 }
 
 fn log_text(log: &EventLog) -> String {
-    let more = log
-        .cursor
-        .as_deref()
-        .map(|cursor| format!("more: -p cursor={cursor}"));
+    let more = log.cursor.as_deref().map(|cursor| {
+        format!("… {} shown; next: -p cursor={cursor}", log.events.len())
+    });
     let lines: Vec<String> = log
         .events
         .iter()
@@ -146,13 +145,13 @@ mod tests {
     use holst_core::{
         command::{
             change::{ChangeReport, PlannedRequest},
-            workspace::{ChangeKind, Member, WorkspaceChange, WorkspaceRow},
+            workspace::{ChangeKind, EventLog, Member, WorkspaceChange, WorkspaceRow},
         },
         error::confirmation::{ChangeRisk, Unconfirmed},
     };
     use rstest::rstest;
 
-    use crate::commands::workspace::render::{listing_text, members_text};
+    use crate::commands::workspace::render::{listing_text, log_text, members_text};
 
     fn planned() -> PlannedRequest {
         PlannedRequest {
@@ -232,5 +231,14 @@ mod tests {
             "Ann  <a@x.io>  admin  active t1\nu1  <a@x.io>  admin"
         );
         assert_eq!(members_text(&[]), "(empty)");
+    }
+
+    #[test]
+    fn a_log_page_ends_with_the_paging_line() {
+        let log = EventLog {
+            events: vec![serde_json::json!(1), serde_json::json!(2)],
+            cursor: Some("2".to_owned()),
+        };
+        assert_eq!(log_text(&log), "1\n2\n… 2 shown; next: -p cursor=2");
     }
 }

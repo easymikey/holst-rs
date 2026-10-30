@@ -18,6 +18,11 @@ KINDS
   link:        Add links
   image:       Add images
   file:        Add files
+  dice:        Add dices
+  wheel:       Add wheels
+  sticker-stack:Add sticker-stacks
+  flipcard:    Add flipcards
+  mind-map:    Add mind-maps
 
 INHERITED FLAGS
   --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
@@ -29,6 +34,11 @@ EXAMPLES
   $ holst o add arrow "Roadmap" --from a1b2c3d4 --to e5f6a7b8
   $ holst o add link "Roadmap" https://example.com
   $ holst o add image "Roadmap" mock.png --size 400,300
+  $ holst o add dice "Roadmap" --faces 20
+  $ holst o add wheel "Roadmap" --choice Pizza --choice Sushi
+  $ holst o add sticker-stack "Roadmap" Ideas --size 384,192
+  $ holst o add flipcard "Roadmap" Question --back Answer
+  $ holst o add mind-map "Roadmap" "Budget" --parent @3 --direction down
 
 LEARN MORE
   How a board is given: `holst b -h`.

@@ -1,4 +1,4 @@
-//! `object add`: stickers, texts, shapes, frames, arrows, links, images, files.
+//! `object add`: new objects of every kind the CLI can place.
 
 use std::path::Path;
 
@@ -11,11 +11,12 @@ use crate::{
         board_write::{BoardWrite, change_board},
         object::{
             AddArgs,
+            AddFields,
             AddItem,
             AddKind,
             change::{load_board, refuse_hiding},
         },
-        table::not_value,
+        table::{ArgumentGroup as _, not_value},
     },
     domain::{
         area::scene::Scene,
@@ -35,6 +36,7 @@ use crate::{
                 BoardChange,
                 FrameEdit,
                 ImageUpload,
+                Made,
                 NewEntry,
                 NewObject,
                 ShapeEdit,
@@ -44,6 +46,14 @@ use crate::{
         geometry::{Point, Rectangle, Size},
         id,
         image::pixel_size,
+        kinds::{
+            dice,
+            flipcard,
+            mind_map::{self, Direction, Under},
+            sticker_stack,
+            wheel,
+        },
+        lookup::rules::find_id,
         palette::Color,
         placement::{free_corner, free_spot_among},
         response::LinkPreview,
@@ -85,7 +95,7 @@ pub async fn add(
     args: &AddArgs,
 ) -> Result<ChangeReport> {
     // The arguments are read before the first request.
-    let items = read_items(args)?;
+    let items = read_items(args, &|| client.new_id())?;
     through_cache(client, cache, CacheUse::Use, async |loading| {
         added(client, loading, args, &items).await
     })
@@ -198,7 +208,9 @@ async fn fetched(
                 | What::Frame { .. }
                 | What::Arrow { .. }
                 | What::Image { .. }
-                | What::File { .. } => Ok(Fetched::Nothing),
+                | What::File { .. }
+                | What::Node { .. }
+                | What::Made { .. } => Ok(Fetched::Nothing),
             }
         })
         .try_collect()
@@ -298,6 +310,26 @@ enum What {
         file: Local,
         at: Option<Point>,
     },
+    /// A node of a mind map: a root, or a child of `parent`, an object as
+    /// given.
+    Node {
+        branch: Branch,
+        at: Option<Point>,
+    },
+    /// An object its kind's own code builds; `at` is asked for, else found.
+    Made {
+        made: Made,
+        at: Option<Point>,
+    },
+}
+
+/// Where a mind-map node hangs: from `parent` on the `direction` side, or a
+/// root.
+#[derive(Debug, PartialEq)]
+struct Branch {
+    text: String,
+    parent: Option<String>,
+    direction: Direction,
 }
 
 /// The longest side an image is placed at when no size is asked.
@@ -338,7 +370,7 @@ fn fitted(pixels: Size) -> Result<Size> {
 }
 
 /// The items: those of `--items`, or the one the flags describe.
-fn read_items(args: &AddArgs) -> Result<Vec<Item>> {
+fn read_items(args: &AddArgs, ids: &dyn Fn() -> String) -> Result<Vec<Item>> {
     let kind = args.kind.unwrap_or_default();
     let listed = args.items.as_ref().map(|items| items.0.as_slice());
     match listed {
@@ -350,53 +382,16 @@ fn read_items(args: &AddArgs) -> Result<Vec<Item>> {
         _ => Ok(()),
     }?;
     let many = listed.is_some();
-    let given = [
-        ("text", args.text.is_some()),
-        ("shape", args.shape.is_some()),
-        ("at", args.at.is_some()),
-        ("size", args.size.is_some()),
-        ("color", args.color.is_some()),
-        ("from", args.from.is_some()),
-        ("to", args.to.is_some()),
-        ("line", args.line.is_some()),
-        ("heads", args.heads.is_some()),
-        ("stroke_style", args.stroke_style.is_some()),
-        ("stroke_width", args.stroke_width.is_some()),
-        ("label", !args.label.is_empty()),
-        ("url", args.url.is_some()),
-        ("path", args.path.is_some()),
-        ("no_preview", args.no_preview),
-        ("ratio", args.ratio.is_some()),
-        ("background", args.background.is_some()),
-        ("hide_content", args.hide_content),
-    ];
-    given
-        .into_iter()
-        .find_map(|(name, given)| (many && given).then_some(name))
+    args.add
+        .first_given()
+        .filter(|_| many)
         .map_or(Ok(()), |name| {
             Err(not_value(COMMAND, name, "left out with --items"))
         })?;
     let own = [AddItem {
         kind: None,
-        text: args.text.clone(),
-        shape: args.shape,
-        at: args.at.clone(),
-        size: args.size.clone(),
-        color: args.color.clone(),
         frame: None,
-        from: args.from.clone(),
-        to: args.to.clone(),
-        line: args.line,
-        heads: args.heads.clone(),
-        stroke_style: args.stroke_style,
-        stroke_width: args.stroke_width,
-        label: args.label.clone(),
-        url: args.url.clone(),
-        path: args.path.clone(),
-        no_preview: args.no_preview.then_some(true),
-        ratio: args.ratio,
-        background: args.background,
-        hide_content: args.hide_content.then_some(true),
+        add: args.add.clone(),
     }];
     let asked: &[AddItem] = listed.unwrap_or(&own);
     let format = args.text_format.unwrap_or_default();
@@ -404,18 +399,19 @@ fn read_items(args: &AddArgs) -> Result<Vec<Item>> {
         .iter()
         .enumerate()
         .try_fold(Vec::new(), |mut read, (slot, item)| {
-            let item = Reader { many, slot, format }.item(
-                item,
-                kind,
-                args.frame.as_deref(),
-                &read,
-            )?;
+            let item = Reader {
+                many,
+                slot,
+                format,
+                ids,
+            }
+            .item(item, kind, args.frame.as_deref(), &read)?;
             read.push(item);
             Ok::<_, Error>(read)
         })
 }
 
-impl AddItem {
+impl AddFields {
     /// The keys only an arrow takes, each with whether it is given.
     fn arrow_keys(&self) -> [(&'static str, bool); 7] {
         [
@@ -434,19 +430,21 @@ impl AddItem {
         [
             ("ratio", self.ratio.is_some()),
             ("background", self.background.is_some()),
-            ("hide_content", self.hide_content.is_some()),
+            ("hide_content", self.hide_content),
         ]
     }
 }
 
 /// Reads the values of one item, which is the `slot`-th of `--items` if `many`.
-struct Reader {
+struct Reader<'a> {
     many: bool,
     slot: usize,
     format: TextFormat,
+    /// Draws the ids a kind gives its parts.
+    ids: &'a dyn Fn() -> String,
 }
 
-impl Reader {
+impl Reader<'_> {
     fn bad(&self, name: &'static str, expected: &str) -> Error {
         let place = self.many.then(|| format!(", in item {}", self.slot + 1));
         not_value(
@@ -459,7 +457,10 @@ impl Reader {
     /// Whether the kind holds rich text; markdown for another kind alone is
     /// refused.
     fn rich(&self, kind: AddKind, word: &str) -> Result<bool> {
-        let rich = matches!(kind, AddKind::Sticker | AddKind::Text | AddKind::Shape);
+        let rich = matches!(
+            kind,
+            AddKind::Sticker | AddKind::Text | AddKind::Shape | AddKind::MindMap
+        );
         match (rich, self.many, self.format) {
             (false, false, TextFormat::Markdown) => {
                 Err(self.bad("text_format", &format!("left out for {word}")))
@@ -484,6 +485,38 @@ impl Reader {
             })
     }
 
+    /// Refuses the first key a mind-map node's parent or direction breaks:
+    /// those of another kind, a corner or frame beside a parent, a direction
+    /// without one.
+    fn refuse_node_keys(
+        &self,
+        kind: AddKind,
+        fields: &AddFields,
+        framed: bool,
+    ) -> Result<()> {
+        let node = kind == AddKind::MindMap;
+        let hanging = node && fields.parent.is_some();
+        let foreign = format!("left out for {}", word(kind));
+        [
+            ("parent", !node && fields.parent.is_some(), foreign.as_str()),
+            (
+                "direction",
+                !node && fields.direction.is_some(),
+                foreign.as_str(),
+            ),
+            ("at", hanging && fields.at.is_some(), "left out with parent"),
+            ("frame", hanging && framed, "left out with parent"),
+            (
+                "direction",
+                node && !hanging && fields.direction.is_some(),
+                "left out without parent",
+            ),
+        ]
+        .into_iter()
+        .find(|(_, given, _)| *given)
+        .map_or(Ok(()), |(name, _, why)| Err(self.bad(name, why)))
+    }
+
     fn missing(&self, name: &'static str) -> Error {
         if self.many {
             self.bad(name, "given")
@@ -503,6 +536,7 @@ impl Reader {
         earlier: &[Item],
     ) -> Result<Item> {
         let kind = item.kind.unwrap_or(kind);
+        let fields = &item.add;
         let word = word(kind);
         let refuse = |name: &'static str, given: bool| {
             given
@@ -510,28 +544,36 @@ impl Reader {
                 .map_or(Ok(()), Err)
         };
         let arrow = kind == AddKind::Arrow;
-        self.refuse_foreign(kind, AddKind::Arrow, &item.arrow_keys())?;
+        self.refuse_foreign(kind, AddKind::Arrow, &fields.arrow_keys())?;
         let linked = kind == AddKind::Link;
         let uploaded = matches!(kind, AddKind::Image | AddKind::File);
-        refuse("text", (arrow || linked || uploaded) && item.text.is_some())?;
-        refuse("at", arrow && item.at.is_some())?;
+        let die = kind == AddKind::Dice;
+        let wheel = kind == AddKind::Wheel;
         refuse(
-            "size",
-            matches!(
-                kind,
-                AddKind::Arrow | AddKind::Text | AddKind::Link | AddKind::File
-            ) && item.size.is_some(),
+            "text",
+            (arrow || linked || uploaded || die || wheel) && fields.text.is_some(),
         )?;
-        refuse("shape", kind != AddKind::Shape && item.shape.is_some())?;
-        refuse("color", (linked || uploaded) && item.color.is_some())?;
-        refuse("url", !linked && item.url.is_some())?;
-        refuse("path", !uploaded && item.path.is_some())?;
+        refuse("faces", !die && fields.faces.is_some())?;
+        refuse("choice", !wheel && !fields.choice.is_empty())?;
+        refuse("back", kind != AddKind::Flipcard && fields.back.is_some())?;
+        self.refuse_node_keys(kind, fields, item.frame.is_some() || frame.is_some())?;
+        refuse("at", arrow && fields.at.is_some())?;
+        refuse("size", sizeless(kind) && fields.size.is_some())?;
+        refuse("shape", kind != AddKind::Shape && fields.shape.is_some())?;
+        refuse(
+            "color",
+            (linked || uploaded || wheel) && fields.color.is_some(),
+        )?;
+        refuse("url", !linked && fields.url.is_some())?;
+        refuse("path", !uploaded && fields.path.is_some())?;
         let rich = self.rich(kind, word)?;
-        refuse("no_preview", !linked && item.no_preview.is_some())?;
-        self.refuse_foreign(kind, AddKind::Frame, &item.frame_keys())?;
-        let at = item.at.as_deref().map(str::parse).transpose()?;
-        let size = item.size.as_deref().map(str::parse).transpose()?;
-        let text = item.text.clone();
+        refuse("no_preview", !linked && fields.no_preview)?;
+        self.refuse_foreign(kind, AddKind::Frame, &fields.frame_keys())?;
+        let at = fields.at.as_deref().map(str::parse).transpose()?;
+        let size = fields.size.as_deref().map(str::parse).transpose()?;
+        let color: Option<Color> =
+            fields.color.as_deref().map(str::parse).transpose()?;
+        let text = fields.text.clone();
         let needed = || text.clone().ok_or_else(|| self.missing("text"));
         let what = match kind {
             AddKind::Sticker => What::Sticker {
@@ -546,41 +588,40 @@ impl Reader {
             AddKind::Shape => What::Shape {
                 text: text.clone().unwrap_or_default(),
                 at,
-                size: size.or_else(|| item.shape.and_then(ShapeType::default_size)),
-                kind: item.shape.unwrap_or(ShapeType::Square),
+                size: size.or_else(|| fields.shape.and_then(ShapeType::default_size)),
+                kind: fields.shape.unwrap_or(ShapeType::Square),
             },
-            AddKind::Frame => frame_of(item, (at, size))?,
+            AddKind::Frame => frame_of(fields, (at, size))?,
             AddKind::Arrow => What::Arrow {
-                from: self.end("from", item.from.as_deref(), earlier)?,
-                to: self.end("to", item.to.as_deref(), earlier)?,
-                look: arrow_look(item)?,
+                from: self.end("from", fields.from.as_deref(), earlier)?,
+                to: self.end("to", fields.to.as_deref(), earlier)?,
+                look: arrow_look(fields)?,
             },
             AddKind::Link => What::Link {
-                url: item.url.clone().ok_or_else(|| self.missing("url"))?,
+                url: fields.url.clone().ok_or_else(|| self.missing("url"))?,
                 at,
-                embed: item.no_preview != Some(true),
+                embed: !fields.no_preview,
             },
-            AddKind::Image => {
-                let (name, bytes) = self.read(item.path.as_deref())?;
-                let (pixels, mime) = self.picture(&bytes)?;
-                What::Image {
-                    size: size.map_or_else(|| fitted(pixels), Ok)?,
-                    pixels,
-                    at,
-                    file: Local { name, mime, bytes },
-                }
-            }
-            AddKind::File => {
-                let (name, bytes) = self.read(item.path.as_deref())?;
-                What::File {
-                    at,
-                    file: Local {
-                        mime: file_type(&name),
-                        name,
-                        bytes,
-                    },
-                }
-            }
+            AddKind::Image => self.image(fields.path.as_deref(), at, size)?,
+            AddKind::File => self.file(fields.path.as_deref(), at)?,
+            AddKind::Dice => What::Made {
+                made: dice::made(self.faces(fields.faces)?, color.as_ref()),
+                at,
+            },
+            AddKind::StickerStack => self.stack(fields, size, color.as_ref(), at)?,
+            AddKind::Flipcard => self.card(fields, color.as_ref(), at)?,
+            AddKind::Wheel => What::Made {
+                made: wheel::made(self.choices(&fields.choice)?, self.ids),
+                at,
+            },
+            AddKind::MindMap => What::Node {
+                branch: Branch {
+                    text: needed()?,
+                    parent: fields.parent.clone(),
+                    direction: fields.direction.unwrap_or_default(),
+                },
+                at,
+            },
         };
         let frame = item.frame.as_deref().or(frame);
         frame
@@ -593,9 +634,116 @@ impl Reader {
             .map_or(Ok(()), |_| Err(self.bad("frame", "#N of an earlier frame")))?;
         Ok(Item {
             what,
-            color: item.color.as_deref().map(str::parse).transpose()?,
+            color,
             frame: frame.map(str::to_owned),
             format: if rich { self.format } else { TextFormat::Plain },
+        })
+    }
+
+    /// The faces asked for, or the default, which the web client offers.
+    fn faces(&self, given: Option<u32>) -> Result<u32> {
+        let faces = given.unwrap_or(dice::DEFAULT_FACES);
+        dice::FACES
+            .contains(&faces)
+            .then_some(faces)
+            .ok_or_else(|| self.bad("faces", "one of 2, 4, 6, 8, 10, 12 or 20"))
+    }
+
+    /// A flip card of the text and the back the call gives.
+    fn card(
+        &self,
+        fields: &AddFields,
+        color: Option<&Color>,
+        at: Option<Point>,
+    ) -> Result<What> {
+        let front = fields.text.as_deref().ok_or_else(|| self.missing("text"))?;
+        let back = fields.back.as_deref().ok_or_else(|| self.missing("back"))?;
+        Ok(What::Made {
+            made: flipcard::made(front, back, color),
+            at,
+        })
+    }
+
+    /// A sticker stack titled by the text, of one of the two widths.
+    fn stack(
+        &self,
+        fields: &AddFields,
+        size: Option<Size>,
+        color: Option<&Color>,
+        at: Option<Point>,
+    ) -> Result<What> {
+        Ok(What::Made {
+            made: sticker_stack::made(
+                fields.text.as_deref(),
+                self.stack_size(size)?,
+                color,
+            ),
+            at,
+        })
+    }
+
+    /// The size of a stack: one of the two widths the web client offers.
+    fn stack_size(&self, given: Option<Size>) -> Result<Size> {
+        let size = given.unwrap_or(Size::STICKER);
+        sticker_stack::WIDTHS
+            .contains(&size.width())
+            .then_some(size)
+            .filter(|size| size.height() == sticker_stack::HEIGHT_OF)
+            .ok_or_else(|| self.bad("size", "192,192 or 384,192"))
+    }
+
+    /// The choices of a wheel: how many and how long the web client takes.
+    fn choices<'c>(&self, given: &'c [String]) -> Result<&'c [String]> {
+        match given {
+            _ if !(wheel::MIN_CHOICES..=wheel::MAX_CHOICES).contains(&given.len()) => {
+                Err(self.bad(
+                    "choice",
+                    &format!(
+                        "{} to {} choices",
+                        wheel::MIN_CHOICES,
+                        wheel::MAX_CHOICES
+                    ),
+                ))
+            }
+            _ if given
+                .iter()
+                .any(|label| label.chars().count() > wheel::MAX_LABEL) =>
+            {
+                Err(self.bad(
+                    "choice",
+                    &format!("labels of at most {} characters", wheel::MAX_LABEL),
+                ))
+            }
+            _ => Ok(given),
+        }
+    }
+
+    /// An image shown at `size` or at its pixels, fitted.
+    fn image(
+        &self,
+        path: Option<&str>,
+        at: Option<Point>,
+        size: Option<Size>,
+    ) -> Result<What> {
+        let (name, bytes) = self.read(path)?;
+        let (pixels, mime) = self.picture(&bytes)?;
+        Ok(What::Image {
+            size: size.map_or_else(|| fitted(pixels), Ok)?,
+            pixels,
+            at,
+            file: Local { name, mime, bytes },
+        })
+    }
+
+    fn file(&self, path: Option<&str>, at: Option<Point>) -> Result<What> {
+        let (name, bytes) = self.read(path)?;
+        Ok(What::File {
+            at,
+            file: Local {
+                mime: file_type(&name),
+                name,
+                bytes,
+            },
         })
     }
 
@@ -653,11 +801,14 @@ impl Reader {
 }
 
 /// A frame with the ratio, background and hidden content the item asks for.
-fn frame_of(item: &AddItem, (at, size): (Option<Point>, Option<Size>)) -> Result<What> {
+fn frame_of(
+    item: &AddFields,
+    (at, size): (Option<Point>, Option<Size>),
+) -> Result<What> {
     let look = FrameEdit {
         ratio: item.ratio,
         background: item.background,
-        hidden: item.hide_content.filter(|&hide| hide),
+        hidden: item.hide_content.then_some(true),
     };
     Ok(What::Frame {
         title: item.text.clone().unwrap_or_default(),
@@ -688,6 +839,21 @@ fn slot_of(reference: &str) -> Option<usize> {
         .checked_sub(1)
 }
 
+/// Whether the kind has a size of its own, which a call cannot change.
+const fn sizeless(kind: AddKind) -> bool {
+    matches!(
+        kind,
+        AddKind::Arrow
+            | AddKind::Text
+            | AddKind::Link
+            | AddKind::File
+            | AddKind::Dice
+            | AddKind::Wheel
+            | AddKind::Flipcard
+            | AddKind::MindMap
+    )
+}
+
 const fn word(kind: AddKind) -> &'static str {
     match kind {
         AddKind::Sticker => "a sticker",
@@ -698,11 +864,16 @@ const fn word(kind: AddKind) -> &'static str {
         AddKind::Link => "a link",
         AddKind::Image => "an image",
         AddKind::File => "a file",
+        AddKind::Dice => "a die",
+        AddKind::Wheel => "a wheel",
+        AddKind::StickerStack => "a sticker stack",
+        AddKind::Flipcard => "a flip card",
+        AddKind::MindMap => "a mind-map node",
     }
 }
 
 /// How the item draws an arrow: its line, heads, labels, dash and width.
-fn arrow_look(item: &AddItem) -> Result<ArrowLook> {
+fn arrow_look(item: &AddFields) -> Result<ArrowLook> {
     Ok(ArrowLook {
         arrow: ArrowEdit {
             line: item.line,
@@ -741,6 +912,38 @@ fn linked_frame<'a>(scene: &Scene<'a>, link: &str) -> Option<&'a Object> {
     })
 }
 
+/// A new mind-map node with its text, hung from `parent` if there is one; the
+/// corner of a root is left to the caller.
+fn hung_node(
+    scene: &Scene<'_>,
+    branch: &Branch,
+    color: Option<&Color>,
+) -> Result<Made> {
+    let hung = branch
+        .parent
+        .as_deref()
+        .map(|reference| parent_node(scene, reference))
+        .transpose()?;
+    let under = hung.map(|node| Under {
+        scene,
+        parent: node,
+        direction: branch.direction,
+    });
+    mind_map::made(&branch.text, color, under.as_ref())
+}
+
+/// The mind-map node `reference` names on the board.
+fn parent_node<'a>(scene: &Scene<'a>, reference: &str) -> Result<&'a Object> {
+    let id = find_id(
+        scene.objects().iter().map(|object| object.id.as_str()),
+        reference,
+    )?;
+    scene
+        .get(&id)
+        .filter(|object| mind_map::is_node(object))
+        .ok_or_else(|| not_value(COMMAND, "parent", "a mind-map node"))
+}
+
 /// The new objects in order: a corner is found for those without one, among
 /// the objects there and the ones before in the list. A frame `#N` is the
 /// N-th item, a frame made in the same list, and is kept as `#N`.
@@ -757,7 +960,6 @@ fn entries(
         .iter()
         .enumerate()
         .map(|(place, item)| {
-            let fresh = item.frame.as_deref().filter(|name| name.starts_with('#'));
             let (within, named) = frames_of(item, scene, &frames)?;
             let color = item.color.clone();
             let mut spot =
@@ -837,20 +1039,40 @@ fn entries(
                     upload: held(file, got.get(place)),
                     at: spot(*at, None, &ObjectKind::File)?,
                 },
+                What::Made { made, at } => NewObject::Made(Made {
+                    at: spot(*at, made.size, &made.kind)?,
+                    ..made.clone()
+                }),
+                What::Node { branch, at } => {
+                    let node = hung_node(scene, branch, color.as_ref())?;
+                    let fixed = branch.parent.as_ref().map(|_| node.at).or(*at);
+                    let corner = spot(fixed, node.size, &node.kind)?;
+                    NewObject::Made(Made { at: corner, ..node })
+                }
             };
             frames.push(made_frame(item, &placed));
-            // An arrow goes into a frame only when asked, else where its ends are.
-            let frame =
-                named.or(linked.filter(|_| !matches!(item.what, What::Arrow { .. })));
-            Ok(NewEntry {
-                new,
-                frame: fresh
-                    .map(str::to_owned)
-                    .or_else(|| frame.map(|frame| frame.id.clone())),
-                format: item.format,
-            })
+            Ok(entry_in(item, new, (named, linked)))
         })
         .collect()
+}
+
+/// The new object as an entry, in the frame it names or, but for an arrow,
+/// the linked one; `#N` is kept as given.
+fn entry_in(
+    item: &Item,
+    new: NewObject,
+    (named, linked): (Option<&Object>, Option<&Object>),
+) -> NewEntry {
+    let fresh = item.frame.as_deref().filter(|name| name.starts_with('#'));
+    // An arrow goes into a frame only when asked, else where its ends are.
+    let frame = named.or(linked.filter(|_| !matches!(item.what, What::Arrow { .. })));
+    NewEntry {
+        new,
+        frame: fresh
+            .map(str::to_owned)
+            .or_else(|| frame.map(|frame| frame.id.clone())),
+        format: item.format,
+    }
 }
 
 /// The rectangle of the frame the item made, as the last one placed.
@@ -966,12 +1188,21 @@ mod tests {
     )]
     #![expect(clippy::panic_in_result_fn, reason = "assert is the point of a test")]
 
-    use std::sync::Arc;
+    use std::{cell::Cell, sync::Arc};
 
     use serde_json::{Map, Value, json};
     use yrs::{Any, Doc, Map as _, ReadTxn as _, StateVector, Transact as _};
 
-    use super::{Fetched, add, added, entries, fetched, linked_frame, read_items};
+    use super::{
+        Fetched,
+        Item,
+        add,
+        added,
+        entries,
+        fetched,
+        linked_frame,
+        read_items,
+    };
     use crate::{
         Error,
         Result,
@@ -985,7 +1216,7 @@ mod tests {
         domain::{
             area::scene::Scene,
             board::{EditRight, Object, ObjectKind, object_of},
-            change::value::{NewObject, Upload},
+            change::value::{Made, NewObject, Upload},
             response::LinkPreview,
         },
         effect::{http::HttpResponse, settings::CacheSettings},
@@ -1000,6 +1231,15 @@ mod tests {
             socket::fake::{BOARD, Scripted, answer, script, signed_in, update},
         },
     };
+
+    /// The items, each id drawn as `w1`, `w2`, ...
+    fn read(args: &AddArgs) -> Result<Vec<Item>> {
+        let drawn = Cell::new(0_u32);
+        read_items(args, &|| {
+            drawn.set(drawn.get() + 1);
+            format!("w{}", drawn.get())
+        })
+    }
 
     fn args(given: Value) -> Result<AddArgs> {
         let mut arguments = match given {
@@ -1040,7 +1280,7 @@ mod tests {
         let scene = Scene::new(board);
         let args = args(given)?;
         let found = entries(
-            &read_items(&args)?,
+            &read(&args)?,
             &[],
             &scene,
             linked_frame(&scene, &args.board),
@@ -1055,7 +1295,8 @@ mod tests {
                     | NewObject::Frame { at, .. }
                     | NewObject::Link { at, .. }
                     | NewObject::Image { at, .. }
-                    | NewObject::File { at, .. } => Some((at.x(), at.y())),
+                    | NewObject::File { at, .. }
+                    | NewObject::Made(Made { at, .. }) => Some((at.x(), at.y())),
                     NewObject::Arrow { .. } => None,
                 };
                 (corner, entry.frame)
@@ -1111,7 +1352,7 @@ mod tests {
     #[test]
     fn what_an_item_cannot_take_is_refused_with_its_number() -> Result<()> {
         let refused = |given: Value| -> Result<String> {
-            Ok(read_items(&args(given)?)
+            Ok(read(&args(given)?)
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
@@ -1142,17 +1383,342 @@ mod tests {
     }
 
     #[test]
+    fn a_stack_takes_only_its_two_widths() -> Result<()> {
+        let refused = |size: &str| -> Result<String> {
+            Ok(read(&args(json!({"kind": "sticker-stack", "size": size}))?)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default())
+        };
+        assert_eq!(
+            refused("300,300")?,
+            "size of `object add` must be 192,192 or 384,192"
+        );
+        assert_eq!(
+            read(&args(json!({
+                "kind": "sticker-stack", "text": "Ideas", "size": "384,192"
+            }))?)
+            .map(|found| found.len())
+            .ok(),
+            Some(1)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_flip_card_needs_its_back_and_no_other_kind_takes_one() -> Result<()> {
+        let refused = |item: Value| -> Result<String> {
+            Ok(read(&args(json!({ "items": [item] }))?)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default())
+        };
+        assert_eq!(
+            [
+                refused(json!({"kind": "flipcard", "text": "Q"}))?,
+                refused(json!({"kind": "flipcard", "back": "A"}))?,
+                refused(json!({"text": "a", "back": "A"}))?,
+            ],
+            [
+                "back of `object add` must be given, in item 1",
+                "text of `object add` must be given, in item 1",
+                "back of `object add` must be left out for a sticker, in item 1",
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_die_refuses_a_size_a_text_and_faces_the_web_does_not_offer() -> Result<()> {
+        let refused = |item: Value| -> Result<String> {
+            Ok(read(&args(json!({ "items": [item] }))?)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default())
+        };
+        assert_eq!(
+            [
+                refused(json!({"kind": "dice", "size": "10,10"}))?,
+                refused(json!({"kind": "dice", "text": "a"}))?,
+                refused(json!({"kind": "dice", "faces": 7}))?,
+                refused(json!({"text": "a", "faces": 6}))?,
+            ],
+            [
+                "size of `object add` must be left out for a die, in item 1",
+                "text of `object add` must be left out for a die, in item 1",
+                "faces of `object add` must be one of 2, 4, 6, 8, 10, 12 or 20, in item 1",
+                "faces of `object add` must be left out for a sticker, in item 1",
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_die_is_made_with_its_faces_colour_and_corner() -> Result<()> {
+        let args = args(json!({
+            "kind": "dice", "faces": 20, "color": "red4", "at": "10,20"
+        }))?;
+        let scene = Scene::new(&[]);
+        let found = entries(&read(&args)?, &[], &scene, None)?;
+        let die = found.into_iter().find_map(|entry| made_of(entry.new));
+        assert_eq!(
+            die.map(|made| (
+                made.kind,
+                (made.at.x(), made.at.y()),
+                made.fields.contains(&("faces", json!(20))),
+                made.fields.iter().any(|(name, _)| *name == "fillColor"),
+            )),
+            Some((ObjectKind::Dice, (10.0, 20.0), true, true))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_wheel_refuses_one_choice_too_many_and_a_long_label() -> Result<()> {
+        let refused = |choices: Vec<String>| -> Result<String> {
+            Ok(read(&args(json!({"kind": "wheel", "choice": choices}))?)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default())
+        };
+        let many = |count: usize| vec!["a".to_owned(); count];
+        assert_eq!(
+            [
+                refused(many(1))?,
+                refused(many(21))?,
+                refused(vec!["a".to_owned(), "b".repeat(41)])?,
+                refused(many(20))?,
+            ],
+            [
+                "choice of `object add` must be 2 to 20 choices",
+                "choice of `object add` must be 2 to 20 choices",
+                "choice of `object add` must be labels of at most 40 characters",
+                "",
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_wheel_refuses_a_text_a_size_a_color_and_choices_of_another_kind() -> Result<()>
+    {
+        let refused = |item: Value| -> Result<String> {
+            Ok(read(&args(json!({ "items": [item] }))?)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default())
+        };
+        let two = json!(["a", "b"]);
+        assert_eq!(
+            [
+                refused(json!({"kind": "wheel", "choice": two, "text": "a"}))?,
+                refused(json!({"kind": "wheel", "choice": two, "size": "10,10"}))?,
+                refused(json!({"kind": "wheel", "choice": two, "color": "red4"}))?,
+                refused(json!({"text": "a", "choice": two}))?,
+            ],
+            [
+                "text of `object add` must be left out for a wheel, in item 1",
+                "size of `object add` must be left out for a wheel, in item 1",
+                "color of `object add` must be left out for a wheel, in item 1",
+                "choice of `object add` must be left out for a sticker, in item 1",
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_wheel_is_made_with_the_choices_it_is_given_and_a_corner() -> Result<()> {
+        let args = args(json!({
+            "kind": "wheel", "choice": ["Pizza", "Sushi", "Soup"], "at": "10,20"
+        }))?;
+        let scene = Scene::new(&[]);
+        let found = entries(&read(&args)?, &[], &scene, None)?;
+        let wheel = found.into_iter().find_map(|entry| made_of(entry.new));
+        assert_eq!(
+            wheel.map(|made| (
+                made.kind,
+                (made.at.x(), made.at.y()),
+                made.fields
+                    .iter()
+                    .find(|(name, _)| *name == "items")
+                    .map(|(_, items)| items.clone()),
+            )),
+            Some((
+                ObjectKind::Wheel,
+                (10.0, 20.0),
+                Some(json!([
+                    {"id": "w1", "label": "Pizza"},
+                    {"id": "w2", "label": "Sushi"},
+                    {"id": "w3", "label": "Soup"},
+                ]))
+            ))
+        );
+        Ok(())
+    }
+
+    fn mind_map_board(children: &[Value]) -> Vec<Object> {
+        let node = json!({"id": "m1", "type": "mind-map-node", "documentId": "d1",
+            "position": {"x": 400, "y": 100}, "width": 200, "height": 80,
+            "nodeType": 2, "nodeColor": {"color": "red4", "opacity": 1}});
+        on_board()
+            .into_iter()
+            .chain(
+                std::iter::once(node)
+                    .chain(children.iter().cloned())
+                    .filter_map(object_of),
+            )
+            .collect()
+    }
+
+    #[test]
+    fn a_mind_map_child_goes_beside_its_node_after_the_children_there() -> Result<()> {
+        let child = json!({"id": "m2", "type": "mind-map-node", "parentId": "m1",
+            "position": {"x": 700, "y": 100}});
+        let corner = |board: &[Object], direction: &str| -> Result<Vec<Placed>> {
+            placed_on(
+                board,
+                json!({"kind": "mind-map", "text": "Budget", "parent": "m1",
+                       "direction": direction}),
+            )
+        };
+        let (first, second) = (mind_map_board(&[]), mind_map_board(&[child]));
+        assert_eq!(
+            [
+                corner(&first, "right")?,
+                corner(&second, "right")?,
+                corner(&first, "left")?,
+                corner(&first, "down")?,
+                corner(&first, "up")?,
+            ],
+            [
+                vec![(Some((700.0, 100.0)), None)],
+                vec![(Some((700.0, 216.0)), None)],
+                vec![(Some((140.0, 100.0)), None)],
+                vec![(Some((400.0, 280.0)), None)],
+                vec![(Some((400.0, -100.0)), None)],
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_mind_map_child_takes_the_look_of_its_node_and_a_color_of_its_own() -> Result<()>
+    {
+        let board = mind_map_board(&[]);
+        let fields = |given: Value| -> Result<Option<Value>> {
+            let args = args(given)?;
+            let scene = Scene::new(&board);
+            Ok(entries(&read(&args)?, &[], &scene, None)?
+                .into_iter()
+                .find_map(|entry| made_of(entry.new))
+                .map(|made| {
+                    json!({"parent": made.parent, "fields": made.fields.into_iter()
+                        .map(|(name, value)| (name.to_owned(), value)).collect::<Map<_, _>>()})
+                }))
+        };
+        assert_eq!(
+            [
+                fields(json!({"kind": "mind-map", "text": "a", "parent": "m1"}))?,
+                fields(
+                    json!({"kind": "mind-map", "text": "a", "parent": "m1", "color": "blue4"})
+                )?,
+            ],
+            [
+                Some(json!({"parent": "m1", "fields": {
+                    "nodeType": 2, "nodeColor": {"color": "red4", "opacity": 1}}})),
+                Some(json!({"parent": "m1", "fields": {
+                    "nodeType": 2, "nodeColor": {"color": "blue4", "opacity": 1}}})),
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_mind_map_parent_must_be_a_node_of_the_board() -> Result<()> {
+        let refused = |parent: &str| -> Result<String> {
+            Ok(placed_on(
+                &mind_map_board(&[]),
+                json!({"kind": "mind-map", "text": "a", "parent": parent}),
+            )
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default())
+        };
+        assert_eq!(
+            refused("s1")?,
+            "parent of `object add` must be a mind-map node"
+        );
+        assert!(!refused("nowhere")?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn a_mind_map_refuses_what_it_cannot_take_and_what_only_it_takes() -> Result<()> {
+        let refused = |item: Value| -> Result<String> {
+            Ok(read(&args(json!({ "items": [item] }))?)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default())
+        };
+        let node = |extra: Value| {
+            let mut item = json!({"kind": "mind-map", "text": "a"});
+            item.as_object_mut()
+                .zip(extra.as_object())
+                .into_iter()
+                .for_each(|(item, extra)| item.extend(extra.clone()));
+            item
+        };
+        assert_eq!(
+            [
+                refused(node(json!({"parent": "m1", "at": "1,2"})))?,
+                refused(node(json!({"parent": "m1", "frame": "f1"})))?,
+                refused(node(json!({"direction": "left"})))?,
+                refused(node(json!({"size": "10,10"})))?,
+                refused(json!({"text": "a", "parent": "m1"}))?,
+                refused(json!({"text": "a", "direction": "left"}))?,
+                refused(node(
+                    json!({"parent": "m1", "direction": "left", "color": "red4"})
+                ))?,
+            ],
+            [
+                "at of `object add` must be left out with parent, in item 1",
+                "frame of `object add` must be left out with parent, in item 1",
+                "direction of `object add` must be left out without parent, in item 1",
+                "size of `object add` must be left out for a mind-map node, in item 1",
+                "parent of `object add` must be left out for a sticker, in item 1",
+                "direction of `object add` must be left out for a sticker, in item 1",
+                "",
+            ]
+        );
+        Ok(())
+    }
+
+    fn made_of(new: NewObject) -> Option<Made> {
+        match new {
+            NewObject::Made(made) => Some(made),
+            NewObject::Sticker { .. }
+            | NewObject::Text { .. }
+            | NewObject::Shape { .. }
+            | NewObject::Frame { .. }
+            | NewObject::Arrow { .. }
+            | NewObject::Link { .. }
+            | NewObject::Image { .. }
+            | NewObject::File { .. } => None,
+        }
+    }
+
+    #[test]
     fn an_arrow_ends_at_an_earlier_item_that_is_not_an_arrow() {
         let items = |second: Value| {
             args(json!({"items": [{"text": "a"}, {"text": "b"}, second]}))
-                .and_then(|args| read_items(&args))
+                .and_then(|args| read(&args))
         };
         let ok = items(json!({"kind": "arrow", "from": "#1", "to": "#2"}));
         let forward = items(json!({"kind": "arrow", "from": "#1", "to": "#4"}));
         let to_arrow = args(json!({"items": [
             {"text": "a"}, {"kind": "arrow", "from": "#1", "to": "f1"},
             {"kind": "arrow", "from": "#1", "to": "#2"}]}))
-        .and_then(|args| read_items(&args));
+        .and_then(|args| read(&args));
         assert_eq!(
             (ok.is_ok(), forward.is_err(), to_arrow.is_err()),
             (true, true, true)
@@ -1187,7 +1753,7 @@ mod tests {
     #[test]
     fn a_frame_hash_n_must_name_an_earlier_frame() -> Result<()> {
         let refused = |given: Value| -> Result<String> {
-            Ok(read_items(&args(given)?)
+            Ok(read(&args(given)?)
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
@@ -1204,12 +1770,12 @@ mod tests {
 
     #[test]
     fn items_given_but_empty_are_refused() -> Result<()> {
-        let refused = read_items(&args(json!({"text": "hi", "items": []}))?)
+        let refused = read(&args(json!({"text": "hi", "items": []}))?)
             .err()
             .map(|error| error.to_string())
             .unwrap_or_default();
         assert!(refused.contains("--items holds no objects"), "{refused}");
-        assert_eq!(read_items(&args(json!({"text": "hi"}))?)?.len(), 1);
+        assert_eq!(read(&args(json!({"text": "hi"}))?)?.len(), 1);
         Ok(())
     }
 
@@ -1277,7 +1843,7 @@ mod tests {
                 cache_use: CacheUse::Use,
             },
             &arguments,
-            &read_items(&arguments)?,
+            &read(&arguments)?,
         )
         .await?;
         let kinds: Vec<&ObjectKind> =
@@ -1320,7 +1886,7 @@ mod tests {
                 cache_use: CacheUse::Use,
             },
             &arguments,
-            &read_items(&arguments)?,
+            &read(&arguments)?,
         )
         .await?;
         assert_eq!(
@@ -1362,7 +1928,8 @@ mod tests {
             | NewObject::Frame { .. }
             | NewObject::Arrow { .. }
             | NewObject::Image { .. }
-            | NewObject::File { .. } => None,
+            | NewObject::File { .. }
+            | NewObject::Made(_) => None,
         }
     }
 
@@ -1377,7 +1944,8 @@ mod tests {
             | NewObject::Frame { .. }
             | NewObject::Arrow { .. }
             | NewObject::Link { .. }
-            | NewObject::File { .. } => None,
+            | NewObject::File { .. }
+            | NewObject::Made(_) => None,
         }
     }
 
@@ -1387,7 +1955,7 @@ mod tests {
             json!({"title": "Clip", "embedInfo": {"type": "video", "providerName": "YouTube"}}),
         )?;
         let embedded = |given: Value| -> Result<Option<(bool, bool)>> {
-            let items = read_items(&args(given)?)?;
+            let items = read(&args(given)?)?;
             let scene_objects = on_board();
             let scene = Scene::new(&scene_objects);
             let found = entries(
@@ -1415,7 +1983,7 @@ mod tests {
     #[tokio::test]
     async fn a_file_gets_its_mime_type_and_size() -> Result<()> {
         let path = local("plan.pdf", b"%PDF-")?;
-        let items = read_items(&args(json!({"kind": "file", "path": path}))?)?;
+        let items = read(&args(json!({"kind": "file", "path": path}))?)?;
         let (_, client) = client(vec![reply(200, &[], r#"{"name":"u-2.pdf"}"#)])?;
         let got = fetched(&client, BOARD, true, &items).await?;
         assert_eq!(
@@ -1448,7 +2016,7 @@ mod tests {
                 cache_use: CacheUse::Use,
             },
             &arguments,
-            &read_items(&arguments)?,
+            &read(&arguments)?,
         )
         .await;
         let uploads = fake
@@ -1524,8 +2092,7 @@ mod tests {
                 |text| json!({"kind": "image", "path": path, "size": text}),
             );
             let board = on_board();
-            let found =
-                entries(&read_items(&args(given)?)?, &[], &Scene::new(&board), None)?;
+            let found = entries(&read(&args(given)?)?, &[], &Scene::new(&board), None)?;
             Ok(found
                 .into_iter()
                 .next()

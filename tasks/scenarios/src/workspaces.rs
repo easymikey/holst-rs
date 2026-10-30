@@ -197,8 +197,8 @@ fn cursor_of(text: &str) -> Option<String> {
         .and_then(|reply| reply.get("cursor")?.as_str().map(str::to_owned))
         .or_else(|| {
             text.lines()
-                .find_map(|line| line.strip_prefix("cursor: "))
-                .map(str::to_owned)
+                .find_map(|line| line.split_once("; next: cursor "))
+                .map(|(_, cursor)| cursor.to_owned())
         })
 }
 

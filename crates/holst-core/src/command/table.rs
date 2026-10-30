@@ -701,6 +701,32 @@ impl<T> ArgumentValue for Items<T> {
 /// Arguments several commands share, joined in by `#[argument(flatten)]`.
 pub trait ArgumentGroup {
     const ARGUMENTS: &'static [Argument];
+
+    /// The name of the first argument of the group that holds a value.
+    fn first_given(&self) -> Option<&'static str>;
+}
+
+/// Whether a field of an argument group holds a value the caller gave.
+pub trait Given {
+    fn given(&self) -> bool;
+}
+
+impl<T> Given for Option<T> {
+    fn given(&self) -> bool {
+        self.is_some()
+    }
+}
+
+impl<T> Given for Vec<T> {
+    fn given(&self) -> bool {
+        !self.is_empty()
+    }
+}
+
+impl Given for bool {
+    fn given(&self) -> bool {
+        *self
+    }
 }
 
 impl Argument {

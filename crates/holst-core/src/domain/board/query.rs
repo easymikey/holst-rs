@@ -144,9 +144,11 @@ mod tests {
     #[test]
     fn a_kind_nobody_has_is_refused_with_the_known_and_the_board_kinds() {
         let refused = of_kind("stikcer").err().map(|err| err.to_string());
-        assert!(refused.is_some_and(|text| {
-            text.ends_with("flipcard, task, link, mind-map-node")
-        }));
+        assert!(
+            refused.is_some_and(|text| {
+                text.ends_with("flipcard, task, link, mind-map")
+            })
+        );
     }
 
     #[test]

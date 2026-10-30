@@ -14,6 +14,7 @@ use std::{
 
 use secrecy::{ExposeSecret, SecretString};
 
+pub use crate::domain::session::SessionStoreKind;
 use crate::{
     domain::session::Session,
     effect::settings::SessionLocation,
@@ -27,26 +28,6 @@ use crate::{
 
 const SERVICE: &str = "holst-rs";
 const ACCOUNT: &str = "session-token";
-
-/// Where a login was found or saved.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SessionStoreKind {
-    Keychain,
-    File,
-}
-
-impl SessionStoreKind {
-    /// The name a person knows the store by.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            SessionStoreKind::Keychain if cfg!(target_os = "macos") => "Keychain",
-            SessionStoreKind::Keychain if cfg!(windows) => "Credential Manager",
-            SessionStoreKind::Keychain => "Secret Service",
-            SessionStoreKind::File => "file",
-        }
-    }
-}
 
 /// `<home>/.config/holst/token` on every OS (never change it); none without
 /// home.

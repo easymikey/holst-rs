@@ -5,7 +5,7 @@ use std::fmt;
 use itertools::Itertools;
 use serde::de::DeserializeOwned;
 
-use crate::{effect::http::HttpMethod, remote::api::CATALOGUE};
+use crate::{effect::http::HttpMethod, error::input::Refusal, remote::api::CATALOGUE};
 
 /// How a call is sent: a read at once, the others only when confirmed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,48 +88,6 @@ impl Query {
             Self::Any => "any query".to_owned(),
         }
     }
-}
-
-/// Why a request is not a catalogue call; nothing was sent.
-#[derive(Debug, thiserror::Error)]
-pub enum Refusal {
-    #[error(
-        "holst api sends only the calls holst knows; {method} {path} is not one of them"
-    )]
-    Unknown { method: HttpMethod, path: String },
-
-    #[error(
-        "holst api sends only the calls holst knows; {template} takes {allowed}, not {method}"
-    )]
-    Method {
-        template: &'static str,
-        allowed: String,
-        method: HttpMethod,
-    },
-
-    #[error("\"{raw}\" is not an id segment in {template}")]
-    Segment { raw: String, template: &'static str },
-
-    #[error("{method} {template} takes {allowed}; not {key}")]
-    Query {
-        method: HttpMethod,
-        template: &'static str,
-        allowed: String,
-        key: String,
-    },
-
-    #[error("{method} {template} takes no body")]
-    NoBody {
-        method: HttpMethod,
-        template: &'static str,
-    },
-
-    #[error("the body does not fit {method} {template}: {error}")]
-    Body {
-        method: HttpMethod,
-        template: &'static str,
-        error: serde_json::Error,
-    },
 }
 
 /// The catalogue entries a request names. Entries that share a method and

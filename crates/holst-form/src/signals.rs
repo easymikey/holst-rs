@@ -1,9 +1,14 @@
 //! Counts the signals that arrive and marks the time a question is answered.
 
 use std::{
-    future::{pending, ready},
+    convert::Infallible,
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    time::Duration,
 };
+
+pub use imp::Listeners;
+
+use crate::{draw, tty};
 
 static ANSWERING: AtomicBool = AtomicBool::new(false);
 
@@ -35,13 +40,52 @@ pub fn is_answering() -> bool {
 }
 
 pub fn ctrl_c() -> impl Future<Output = ()> {
-    let listener = imp::ctrl_c_listener();
+    let mut listeners = Listeners::interrupt_only();
     async move {
-        match imp::next(listener).await {
-            Some(()) => ready(()).await,
-            None => pending().await,
+        listeners.next().await;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
+pub enum Signal {
+    #[display("interrupted")]
+    Interrupt,
+    #[display("terminated")]
+    Terminate,
+    #[display("the terminal hung up")]
+    HangUp,
+}
+
+impl Signal {
+    #[must_use]
+    pub const fn exit_code(self) -> u8 {
+        match self {
+            Signal::Interrupt => 130,
+            Signal::Terminate => 143,
+            Signal::HangUp => 129,
         }
     }
+}
+
+const SEIZE_PATIENCE: Duration = Duration::from_millis(500);
+
+/// Restores the terminal, closes the form with `text`, ends the process.
+#[must_use]
+#[expect(
+    clippy::exit,
+    clippy::disallowed_methods,
+    reason = "a signal ends the process from outside the command: nothing else can stop a blocking read"
+)]
+pub fn leave(text: &str, code: u8) -> Infallible {
+    // Let a cut read put its settings back, then keep it from doing so.
+    let _owned = tty::seize(SEIZE_PATIENCE);
+    tty::warn(tty::restore().as_deref());
+    tty::stderr_line(&farewell(text));
+    std::process::exit(i32::from(code))
+}
+
+fn farewell(text: &str) -> String {
+    format!("{}\n└  {text}", draw::SHOW_CURSOR)
 }
 
 static ARRIVED: AtomicBool = AtomicBool::new(false);
@@ -75,18 +119,58 @@ pub async fn or_interrupted<T>(
 
 #[cfg(unix)]
 mod imp {
-    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::{
+        future::{pending, ready},
+        sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    };
 
     use tokio::signal::unix::{Signal, SignalKind, signal};
 
-    pub(super) fn ctrl_c_listener() -> Option<Signal> {
-        signal(SignalKind::interrupt()).ok()
+    /// Listens for Ctrl-C, SIGTERM and SIGHUP.
+    #[derive(Debug)]
+    pub struct Listeners {
+        interrupt: Option<Signal>,
+        terminate: Option<Signal>,
+        hangup: Option<Signal>,
     }
 
-    pub(super) async fn next(listener: Option<Signal>) -> Option<()> {
-        match listener {
-            Some(mut listener) => listener.recv().await,
+    impl Default for Listeners {
+        fn default() -> Self {
+            Self {
+                terminate: signal(SignalKind::terminate()).ok(),
+                hangup: signal(SignalKind::hangup()).ok(),
+                ..Self::interrupt_only()
+            }
+        }
+    }
+
+    impl Listeners {
+        #[must_use]
+        pub fn interrupt_only() -> Self {
+            Self {
+                interrupt: signal(SignalKind::interrupt()).ok(),
+                terminate: None,
+                hangup: None,
+            }
+        }
+
+        pub async fn next(&mut self) -> crate::signals::Signal {
+            tokio::select! {
+                () = heard(self.interrupt.as_mut()) => crate::signals::Signal::Interrupt,
+                () = heard(self.terminate.as_mut()) => crate::signals::Signal::Terminate,
+                () = heard(self.hangup.as_mut()) => crate::signals::Signal::HangUp,
+            }
+        }
+    }
+
+    async fn heard(listener: Option<&mut Signal>) {
+        let got = match listener {
+            Some(listener) => listener.recv().await,
             None => None,
+        };
+        match got {
+            Some(()) => ready(()).await,
+            None => pending().await,
         }
     }
 
@@ -113,18 +197,42 @@ mod imp {
 
 #[cfg(not(unix))]
 mod imp {
-    use std::sync::atomic::{AtomicBool, AtomicU64};
+    use std::{
+        future::pending,
+        sync::atomic::{AtomicBool, AtomicU64},
+    };
 
     use tokio::signal::windows::{CtrlC, ctrl_c};
 
-    pub(super) fn ctrl_c_listener() -> Option<CtrlC> {
-        ctrl_c().ok()
+    /// Listens for Ctrl-C, the one signal Windows has.
+    #[derive(Debug)]
+    pub struct Listeners {
+        interrupt: Option<CtrlC>,
     }
 
-    pub(super) async fn next(listener: Option<CtrlC>) -> Option<()> {
-        match listener {
-            Some(mut listener) => listener.recv().await,
-            None => None,
+    impl Default for Listeners {
+        fn default() -> Self {
+            Self::interrupt_only()
+        }
+    }
+
+    impl Listeners {
+        #[must_use]
+        pub fn interrupt_only() -> Self {
+            Self {
+                interrupt: ctrl_c().ok(),
+            }
+        }
+
+        pub async fn next(&mut self) -> crate::signals::Signal {
+            let got = match self.interrupt.as_mut() {
+                Some(listener) => listener.recv().await,
+                None => None,
+            };
+            match got {
+                Some(()) => crate::signals::Signal::Interrupt,
+                None => pending().await,
+            }
         }
     }
 
@@ -135,7 +243,7 @@ mod imp {
 mod tests {
     use std::future::{pending, ready};
 
-    use crate::signals::{answering, is_answering, or_interrupted};
+    use crate::signals::{answering, farewell, is_answering, or_interrupted};
 
     #[test]
     fn answering_is_marked_only_for_the_time_of_the_work() {
@@ -148,5 +256,10 @@ mod tests {
         let done = or_interrupted(ready(1), ready(()), || 0).await;
         let stopped = or_interrupted(pending::<i32>(), ready(()), || 0).await;
         assert_eq!((done, stopped), (1, 0));
+    }
+
+    #[test]
+    fn farewell_closes_the_form_with_the_cursor_back() {
+        assert_eq!(farewell("login cancelled"), "\x1b[?25h\n└  login cancelled");
     }
 }

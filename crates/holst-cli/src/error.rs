@@ -107,7 +107,7 @@ pub(crate) enum Error {
     #[error("{}", .0.on(Surface::Cli))]
     Unconfirmed(Unconfirmed),
 
-    #[error("expected key=value, got \"{item}\"")]
+    #[error("\"{item}\" is not key=value: expected key=value, e.g. limit=50")]
     QueryNoEquals { item: String },
 
     #[error("could not read {}", .path.display())]

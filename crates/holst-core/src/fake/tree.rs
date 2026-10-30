@@ -17,7 +17,14 @@ use crate::{
         Fake,
         FixtureError,
         FixtureObject,
-        board::{Board, add_objects, copied_document, fixture_document, objects_json},
+        board::{
+            Board,
+            add_objects,
+            copied_document,
+            fixture_document,
+            fixture_document_v3,
+            objects_json,
+        },
         fixture::unknown,
         http::{Parts, Request, Response, found, refused},
     },
@@ -109,6 +116,16 @@ struct Cover {
 pub(crate) struct Storage {
     pub(crate) schema_version: u32,
     pub(crate) provider: &'static str,
+}
+
+impl Storage {
+    /// The document of a board stored so, holding `objects`.
+    fn document(&self, board: &str, objects: &[FixtureObject]) -> Doc {
+        match self.schema_version {
+            3 => fixture_document_v3(board, objects),
+            _ => fixture_document(board, objects),
+        }
+    }
 }
 
 impl Default for Storage {
@@ -213,7 +230,7 @@ impl Tree {
                 invited: fixture.invited,
                 storage: fixture.storage.clone(),
                 ..Node::new(
-                    fixture_document(&id, &fixture.objects),
+                    fixture.storage.document(&id, &fixture.objects),
                     id,
                     fixture.name.clone(),
                     fixture.kind.to_owned(),

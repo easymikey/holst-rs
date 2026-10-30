@@ -49,7 +49,7 @@ const LIST_DEFAULT_JSON: u32 = 25;
 const LIST_MAX: u32 = 1_000;
 const TEXT_MAX_CHARS: usize = 120;
 /// The arguments that name a board, a frame or an object.
-const REFERENCES: [&str; 8] = [
+const REFERENCES: [&str; 11] = [
     "board",
     "workspace",
     "frame",
@@ -58,6 +58,9 @@ const REFERENCES: [&str; 8] = [
     "to",
     "into",
     "link_to",
+    "parent",
+    "kanban",
+    "on",
 ];
 
 impl McpServer {
@@ -287,11 +290,14 @@ fn listed_limit(given: Option<u32>, output: Output) -> u32 {
 #[cfg(test)]
 mod tests {
     use holst_core::{
-        command::object::list::{ListedObject, Listing, TextStyle},
+        command::object::{
+            ObjectVerb,
+            list::{ListedObject, Listing, TextStyle},
+        },
         domain::board::{EditRight, Object, ObjectKind},
     };
     use rstest::rstest;
-    use serde_json::Value;
+    use serde_json::{Value, json};
 
     use super::{LIST_DEFAULT, LIST_DEFAULT_JSON, LIST_MAX, listed_limit};
     use crate::{server::McpServer, tools::output::Output};
@@ -318,7 +324,7 @@ mod tests {
             fields: Value::Null,
         };
         Listing {
-            id: "b1".into(),
+            board: "b1".into(),
             link: "L".into(),
             edit_right: EditRight::Editable,
             rectangle: None,
@@ -332,9 +338,31 @@ mod tests {
                 card: None,
                 tags: Vec::new(),
                 style: TextStyle::default(),
+                detail: Vec::new(),
             }],
             next: None,
         }
+    }
+
+    #[test]
+    fn a_reference_in_the_parent_of_an_add_item_is_expanded() {
+        const ID: &str = "dbc79d73-0000-0000-0000-000000000000";
+        let holst = McpServer::offline();
+        assert_eq!(holst.state.alias(ID), "@1");
+        let arguments = json!({
+            "board": "A",
+            "items": [{ "text": "x", "parent": "@1" }]
+        })
+        .as_object()
+        .cloned()
+        .unwrap_or_default();
+        let expanded = holst.object_arguments(ObjectVerb::Add, arguments).ok();
+        let parent = expanded
+            .as_ref()
+            .and_then(|given| given.get("items"))
+            .and_then(|items| items.get(0))
+            .and_then(|item| item.get("parent"));
+        assert_eq!(parent, Some(&json!(ID)));
     }
 
     #[rstest]

@@ -14,6 +14,7 @@ use crate::{
         account::{Account, Workspace},
         login::Email,
         node::NodeKind,
+        text::hide_tokens,
         tree::name_index::build::NameIndex,
     },
     error::{Error, Result},
@@ -176,7 +177,7 @@ pub enum StatusReport {
 pub struct AccountStatus {
     pub account: Account,
     pub workspaces: Vec<WorkspaceStatus>,
-    /// `None` unless asked for with [`StatusPart::Tokens`].
+    /// `None` unless asked for; token values are hidden.
     pub tokens: Option<Result<Value>>,
 }
 
@@ -243,7 +244,7 @@ async fn account_status(
         })
         .collect();
     let tokens = if status.with.contains(&StatusPart::Tokens) {
-        Some(api::user::pat_list(client).await)
+        Some(api::user::pat_list(client).await.map(hide_tokens))
     } else {
         None
     };
@@ -312,6 +313,17 @@ mod tests {
         }
     }
 
+    fn listed_tokens(report: &StatusReport) -> Option<serde_json::Value> {
+        match report {
+            StatusReport::Active(active) => active
+                .tokens
+                .as_ref()
+                .and_then(|tokens| tokens.as_ref().ok())
+                .cloned(),
+            StatusReport::Revoked(_) | StatusReport::Unknown(_) => None,
+        }
+    }
+
     fn has_tokens(report: &StatusReport) -> bool {
         match report {
             StatusReport::Active(active) => {
@@ -368,6 +380,17 @@ mod tests {
                 .filter(|path| path.ends_with(TREE_PATH))
                 .count(),
             2
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn status_hides_the_token_values() -> Result<()> {
+        let listed = r#"[{"name":"ci","token":"holst_pat_planted_fake"}]"#;
+        let (report, _) = run(vec![StatusPart::Tokens], &[listed]).await?;
+        assert_eq!(
+            listed_tokens(&report),
+            Some(json!([{ "name": "ci", "token": "***" }]))
         );
         Ok(())
     }

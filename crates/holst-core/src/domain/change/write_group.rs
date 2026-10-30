@@ -49,6 +49,7 @@ pub(super) fn group(
         states,
         stamp,
         context,
+        ..
     } = *scope;
     let id = context.ids.new_id();
     let layer = members
@@ -121,14 +122,12 @@ fn home_of(
         .ok()
         .flatten()
         .filter(|parent| takes_group(states, parent));
-    shared.map_or_else(Vec::new, |parent| {
-        let cell = members
-            .first()
-            .and_then(|first| states.get(first)?.get(ADDITIONAL_POSITION_INFO))
-            .filter(|info| !info.is_null())
-            .map(|info| (ADDITIONAL_POSITION_INFO, info.clone()));
-        iter::once((PARENT_ID, json!(parent))).chain(cell).collect()
-    })
+    let cell = shared
+        .and(members.first())
+        .and_then(|first| states.get(first)?.get(ADDITIONAL_POSITION_INFO))
+        .filter(|info| !info.is_null())
+        .map(|info| (ADDITIONAL_POSITION_INFO, info.clone()));
+    iter::once((PARENT_ID, json!(shared))).chain(cell).collect()
 }
 
 /// Whether the object holds a group as a child: a frame that shows its content,

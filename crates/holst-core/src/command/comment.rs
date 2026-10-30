@@ -13,7 +13,7 @@ use crate::{
         board_load::{self, CacheUse, RemoteBoard},
         change::{ChangeReport, gate},
         lookup,
-        table::{Command, CommandArgs, Confirmation, not_value, visible},
+        table::{Command, CommandArgs, Confirmation, EnumArgument, not_value, visible},
     },
     domain::{
         board::{
@@ -23,12 +23,14 @@ use crate::{
                 NewThreadMessage,
                 Thread,
                 ThreadAnchor,
+                ThreadMessage,
                 short_id,
             },
             objects,
         },
         lookup::rules::find_id,
         text::{one_line, shortened},
+        time::Timestamp,
     },
     effect::{board_write::WriteMode, settings::CacheSettings},
     error::{
@@ -36,6 +38,7 @@ use crate::{
         Result,
         board_change::BoardChangeError,
         confirmation::{ChangeRisk, Unconfirmed},
+        input::InputError,
         lookup::{
             Candidate,
             Candidates,
@@ -59,6 +62,7 @@ pub enum CommentVerb {
     Add,
     Reply,
     Resolve,
+    Edit,
     Rm,
     Read,
 }
@@ -71,6 +75,7 @@ impl CommentVerb {
             CommentVerb::Add => &AddArgs::COMMAND,
             CommentVerb::Reply => &ReplyArgs::COMMAND,
             CommentVerb::Resolve => &ResolveArgs::COMMAND,
+            CommentVerb::Edit => &EditArgs::COMMAND,
             CommentVerb::Rm => &RemoveArgs::COMMAND,
             CommentVerb::Read => &ReadArgs::COMMAND,
         }
@@ -199,15 +204,105 @@ pub struct ResolveArgs {
     pub dry_run: WriteMode,
 }
 
+/// The colors of a thread, as the web client's palette names them, and `none`.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Deserialize,
+    strum::VariantNames,
+    strum::IntoStaticStr,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum ThreadColor {
+    White1,
+    Red10,
+    Amber10,
+    Yellow10,
+    Lime10,
+    Green10,
+    Blue10,
+    Indigo10,
+    Pink10,
+    Violet10,
+    Gray12,
+    Gray7,
+    Red6,
+    Amber5,
+    Yellow5,
+    Lime5,
+    Green6,
+    Blue6,
+    Indigo6,
+    Pink6,
+    Violet6,
+    Gray8,
+    #[serde(rename = "none")]
+    #[strum(serialize = "none")]
+    Clear,
+}
+
+impl EnumArgument for ThreadColor {}
+
+#[derive(Debug, Deserialize, CommandArgs)]
+#[holst_command(
+    group = Comment,
+    verb = "edit",
+    risk = Write,
+    about = "Colour a thread or move it",
+    help = "Give a comment thread a color, or move it to a point or onto an object; one of --color, --at and --object is needed.\n\
+            It prints the thread and what changed.",
+    example = "holst comment edit \"Roadmap\" weVza --color red10",
+    example = "holst comment edit \"Roadmap\" weVza --at 120,80",
+    example = "holst comment edit \"Roadmap\" @2 --object a1b2c3d4 --color none"
+)]
+pub struct EditArgs {
+    #[argument(positional, help = "The board")]
+    pub board: String,
+    #[argument(
+        positional,
+        help = "The thread: its thread id, e.g. weVza, or @N from `holst comment ls`",
+        tool_doc = "E.g. weVza."
+    )]
+    pub thread: String,
+    #[argument(
+        letter = 'w',
+        value_name = "ws",
+        help = "Where names are looked up and new things go: a workspace id or part of its name; all of yours by default"
+    )]
+    pub workspace: Option<String>,
+    #[argument(
+        help = "The color of the thread, or none to clear it",
+        tool_doc = "Thread colour, or none."
+    )]
+    pub color: Option<ThreadColor>,
+    #[argument(
+        value_name = "x,y",
+        help = "Move the thread to this corner in board units; not with --object"
+    )]
+    pub at: Option<String>,
+    #[argument(
+        value_name = "object",
+        help = "Move the thread onto this object: id, link or the first 8 characters of its id; not with --at"
+    )]
+    pub object: Option<String>,
+    #[argument(letter = 'n', help = "Show what would change; change nothing")]
+    pub dry_run: WriteMode,
+}
+
 #[derive(Debug, Deserialize, CommandArgs)]
 #[holst_command(
     group = Comment,
     verb = "rm",
     risk = Destroy,
-    about = "Delete a thread with its replies",
-    help = "Delete a comment thread with its replies.\n\
+    about = "Delete a thread with its replies, or one reply",
+    help = "Delete a comment thread with its replies, or with --reply only one reply of your own.\n\
             It removes other people's replies for good, so it needs -y; without it only the dry run is shown.",
     example = "holst comment rm \"Roadmap\" weVza -y",
+    example = "holst comment rm \"Roadmap\" weVza --reply 2 -y",
     example = "holst comment rm \"Roadmap\" @2 -n"
 )]
 pub struct RemoveArgs {
@@ -225,6 +320,12 @@ pub struct RemoveArgs {
         help = "Where names are looked up and new things go: a workspace id or part of its name; all of yours by default"
     )]
     pub workspace: Option<String>,
+    #[argument(
+        value_name = "reply",
+        help = "Delete only this reply, one of your own: its message id (`comment ls -o json`) or N, the Nth reply from 1",
+        tool_doc = "Message id or N, the Nth reply from 1."
+    )]
+    pub reply: Option<String>,
     #[argument(
         letter = 'y',
         help = "Confirm a risky change; a terminal asks instead; without one only the dry run is shown (exit code 77)"
@@ -294,7 +395,9 @@ pub enum CommentAction {
     Reply,
     Resolve,
     Reopen,
+    Edit,
     Delete,
+    DeleteReply,
     Read,
 }
 
@@ -316,6 +419,9 @@ pub struct CommentReport {
     pub message: Option<String>,
     /// When `read` marked the thread, ISO 8601.
     pub read_at: Option<String>,
+    /// What `edit` changes: `color`, `place`.
+    pub edited: Vec<&'static str>,
+    #[serde(flatten)]
     pub outcome: ChangeReport<CommentPlan>,
 }
 
@@ -328,6 +434,7 @@ impl CommentReport {
             thread,
             message,
             read_at: None,
+            edited: Vec::new(),
             outcome: ChangeReport::Sent,
         }
     }
@@ -336,19 +443,41 @@ impl CommentReport {
     /// change would do.
     #[must_use]
     pub fn phrase(&self) -> String {
-        let (done, plan, tail) = match self.action {
-            CommentAction::Add => ("started", "start", ""),
-            CommentAction::Reply => ("replied in", "reply in", ""),
-            CommentAction::Resolve => ("resolved", "resolve", ""),
-            CommentAction::Reopen => ("reopened", "reopen", ""),
-            CommentAction::Delete => ("deleted", "delete", ""),
-            CommentAction::Read => ("marked", "mark", " read"),
+        let reply = self.message.as_deref().unwrap_or_default();
+        let (done, plan) = match self.action {
+            CommentAction::Add => ("started", "start"),
+            CommentAction::Reply => ("replied in", "reply in"),
+            CommentAction::Resolve => ("resolved", "resolve"),
+            CommentAction::Reopen => ("reopened", "reopen"),
+            CommentAction::Edit => ("changed", "change"),
+            CommentAction::Delete | CommentAction::DeleteReply => ("deleted", "delete"),
+            CommentAction::Read => ("marked", "mark"),
+        };
+        let tail = match self.action {
+            CommentAction::Read => " read".to_owned(),
+            CommentAction::Edit => format!(": {}", self.edited.join(", ")),
+            CommentAction::Add
+            | CommentAction::Reply
+            | CommentAction::Resolve
+            | CommentAction::Reopen
+            | CommentAction::Delete
+            | CommentAction::DeleteReply => String::new(),
         };
         let thread = &self.thread;
+        let what = match self.action {
+            CommentAction::DeleteReply => format!("reply {reply} in thread {thread}"),
+            CommentAction::Add
+            | CommentAction::Reply
+            | CommentAction::Resolve
+            | CommentAction::Reopen
+            | CommentAction::Edit
+            | CommentAction::Delete
+            | CommentAction::Read => format!("thread {thread}"),
+        };
         match self.outcome {
-            ChangeReport::Sent => format!("{done} thread {thread}{tail}"),
+            ChangeReport::Sent => format!("{done} {what}{tail}"),
             ChangeReport::DryRun { .. } | ChangeReport::Held { .. } => {
-                format!("would {plan} thread {thread}{tail}")
+                format!("would {plan} {what}{tail}")
             }
         }
     }
@@ -475,7 +604,8 @@ async fn started(
     args: &AddArgs,
 ) -> Result<CommentReport> {
     let text = visible("comment add", "text", &args.text)?;
-    let placement = placement(args)?;
+    let placement =
+        placement("comment add", args.at.as_deref(), args.object.as_deref())?;
     let open = opened(client, &args.board, args.workspace.as_deref()).await?;
     let anchor = match placement {
         Placement::Point(x, y) => ThreadAnchor::Point { x, y },
@@ -557,14 +687,28 @@ pub async fn resolve(client: &Client, args: &ResolveArgs) -> Result<CommentRepor
     .await
 }
 
-/// Deletes a thread with its replies; it stays unsent without its confirmation.
+/// Deletes a thread with its replies, or with `reply` only one reply of the
+/// user's own; it stays unsent without its confirmation.
 ///
 /// # Errors
-/// A board or thread that is not found, a board that is read-only for the
+/// A board or thread that is not found, a `reply` that is not a reply of the
+/// thread or was written by someone else, a board that is read-only for the
 /// user, and errors of the requests.
 pub async fn rm(client: &Client, args: &RemoveArgs) -> Result<CommentReport> {
     let open = opened(client, &args.board, args.workspace.as_deref()).await?;
-    let found = found(&open.threads, &args.thread)?;
+    let found = found(&open.threads, &args.thread)?.clone();
+    match args.reply.as_deref() {
+        Some(reference) => removed_reply(client, open, args, &found, reference).await,
+        None => removed_thread(client, open, args, &found).await,
+    }
+}
+
+async fn removed_thread(
+    client: &Client,
+    open: Opened,
+    args: &RemoveArgs,
+    found: &Thread,
+) -> Result<CommentReport> {
     let thread = found.id.clone();
     let first = found
         .messages
@@ -593,14 +737,154 @@ pub async fn rm(client: &Client, args: &RemoveArgs) -> Result<CommentReport> {
     .await
 }
 
+async fn removed_reply(
+    client: &Client,
+    open: Opened,
+    args: &RemoveArgs,
+    found: &Thread,
+    reference: &str,
+) -> Result<CommentReport> {
+    let reply = replied(found, reference)?.clone();
+    (open.room.author_of(&open.me) == Some(reply.author))
+        .then_some(())
+        .ok_or_else(|| {
+            not_value(
+                "comment rm",
+                "reply",
+                "a reply of your own; another author's reply stays",
+            )
+        })?;
+    let first = reply.text.lines().next().unwrap_or_default();
+    let change_text: Cow<'static, str> = format!(
+        "deleting the reply {} \"{first}\" of thread {}",
+        reply.id, found.id
+    )
+    .into();
+    let unconfirmed = Unconfirmed::new(change_text, ChangeRisk::Irreversible);
+    let change = CommentChange::DeleteReply {
+        thread: found.id.clone(),
+        reply: reply.id.clone(),
+    };
+    carry(
+        client,
+        open,
+        change,
+        CommentReport::of(CommentAction::DeleteReply, found.id.clone(), Some(reply.id)),
+        (args.dry_run, Some(unconfirmed), args.confirm),
+    )
+    .await
+}
+
+/// The reply a reference names: its message id, or N for the Nth reply
+/// counting from 1.
+fn replied<'a>(thread: &'a Thread, reference: &str) -> Result<&'a ThreadMessage> {
+    let replies = thread.messages.get(1..).unwrap_or_default();
+    let reference = reference.trim();
+    replies
+        .iter()
+        .find(|message| message.id == reference)
+        .or_else(|| {
+            let number = reference.parse::<usize>().ok()?;
+            replies.get(number.checked_sub(1)?)
+        })
+        .ok_or_else(|| {
+            Error::from(InputError::ReplyNotFound {
+                reply: reference.to_owned(),
+                thread: thread.id.clone(),
+            })
+        })
+}
+
+/// Colours a thread, moves it, or both in one write.
+///
+/// # Errors
+/// Nothing to change, `at` and `object` given together, an `at` that is not
+/// two numbers, a board, thread or object that is not found, a board that is
+/// read-only for the user, and errors of the requests.
+pub async fn edit(
+    client: &Client,
+    cache: &CacheSettings,
+    args: &EditArgs,
+) -> Result<CommentReport> {
+    through_cache(client, cache, CacheUse::Use, async |loading| {
+        edited(client, loading, args).await
+    })
+    .await
+}
+
+async fn edited(
+    client: &Client,
+    loading: Loading<'_>,
+    args: &EditArgs,
+) -> Result<CommentReport> {
+    let placement =
+        placement("comment edit", args.at.as_deref(), args.object.as_deref())?;
+    (args.color.is_some() || placement != Placement::Free)
+        .then_some(())
+        .ok_or_else(|| not_value("comment edit", "color", "given, or at or object"))?;
+    let open = opened(client, &args.board, args.workspace.as_deref()).await?;
+    let thread = found(&open.threads, &args.thread)?.id.clone();
+    let anchor = match placement {
+        Placement::Point(x, y) => Some(ThreadAnchor::Point { x, y }),
+        Placement::Object(reference) => {
+            Some(object_anchor(client, loading, &open.board, reference).await?)
+        }
+        Placement::Free => None,
+    };
+    let edited = args
+        .color
+        .map(|_| "color")
+        .into_iter()
+        .chain(anchor.as_ref().map(|_| "place"))
+        .collect();
+    let color = args.color.map(|color| {
+        (color != ThreadColor::Clear).then(|| <&str>::from(color).to_owned())
+    });
+    let change = CommentChange::Several(
+        color
+            .map(|color| CommentChange::Color {
+                thread: thread.clone(),
+                color,
+            })
+            .into_iter()
+            .chain(anchor.map(|anchor| CommentChange::Move {
+                thread: thread.clone(),
+                anchor,
+            }))
+            .collect(),
+    );
+    carry(
+        client,
+        open,
+        change,
+        CommentReport {
+            edited,
+            ..CommentReport::of(CommentAction::Edit, thread, None)
+        },
+        (args.dry_run, None, Confirmation::Missing),
+    )
+    .await
+}
+
 /// Marks a thread as read, now or at `time`.
 ///
 /// # Errors
 /// A board or thread that is not found, and errors of the requests.
 pub async fn read(client: &Client, args: &ReadArgs) -> Result<CommentReport> {
+    let at = match args.time.as_deref() {
+        None => client.now_iso8601(),
+        Some(text) => Timestamp::parse_iso8601(text)
+            .map(|_| text.to_owned())
+            .ok_or_else(|| {
+                not_value(
+                    "comment read",
+                    "time",
+                    "ISO 8601, e.g. 2026-10-27T09:30:00Z",
+                )
+            })?,
+    };
     let open = opened(client, &args.board, args.workspace.as_deref()).await?;
     let thread = found(&open.threads, &args.thread)?.id.clone();
-    let at = args.time.clone().unwrap_or_else(|| client.now_iso8601());
     let plan = CommentPlan {
         action: CommentAction::Read,
         thread: thread.clone(),
@@ -623,6 +907,7 @@ pub async fn read(client: &Client, args: &ReadArgs) -> Result<CommentReport> {
         thread,
         message: None,
         read_at: Some(at),
+        edited: Vec::new(),
         outcome,
     })
 }
@@ -676,18 +961,20 @@ enum Placement<'a> {
     Object(&'a str),
 }
 
-fn placement(args: &AddArgs) -> Result<Placement<'_>> {
-    match (args.at.as_deref(), args.object.as_deref()) {
-        (Some(_), Some(_)) => Err(not_value(
-            "comment add",
-            "object",
-            "left out when --at is given",
-        )),
+fn placement<'a>(
+    command: &str,
+    at: Option<&str>,
+    object: Option<&'a str>,
+) -> Result<Placement<'a>> {
+    match (at, object) {
+        (Some(_), Some(_)) => {
+            Err(not_value(command, "object", "left out when --at is given"))
+        }
         (Some(at), None) => at
             .split_once(',')
             .and_then(|(x, y)| Some((x.trim().parse().ok()?, y.trim().parse().ok()?)))
             .map(|(x, y)| Placement::Point(x, y))
-            .ok_or_else(|| not_value("comment add", "at", "two numbers like 120,80")),
+            .ok_or_else(|| not_value(command, "at", "two numbers like 120,80")),
         (None, Some(object)) => Ok(Placement::Object(object)),
         (None, None) => Ok(Placement::Free),
     }

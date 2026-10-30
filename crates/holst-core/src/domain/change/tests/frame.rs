@@ -70,7 +70,10 @@ fn a_move_reparents_like_the_web_client() -> Result<()> {
     };
     built_with_ids(&document, &ids, &add(new_sticker))?;
     let sticker = "r-3";
-    assert_eq!(fields_of(&document, sticker).get("parentId"), None);
+    assert_eq!(
+        fields_of(&document, sticker).get("parentId"),
+        Some(&Value::Null)
+    );
     let into = move_to(&document, &ids, sticker, Point::new(150.0, 150.0)?)?;
     assert_eq!(
         fields_of(&document, sticker).get("parentId"),
@@ -661,5 +664,256 @@ fn a_moved_hidden_frame_takes_in_nothing() -> Result<()> {
     seed(&document, &free("u", 3050, 50))?;
     move_to(&document, &ids, "h", Point::new(3000.0, 0.0)?)?;
     assert_eq!(parent_of(&document, "u"), None);
+    Ok(())
+}
+
+fn new_sticker(x: f64, y: f64) -> Result<NewObject> {
+    Ok(NewObject::Sticker {
+        text: "s".into(),
+        at: Point::new(x, y)?,
+        size: None,
+        color: None,
+    })
+}
+
+fn number(fields: &Value, pointer: &str) -> Option<f64> {
+    fields.pointer(pointer).and_then(Value::as_f64)
+}
+
+#[test]
+fn a_new_shape_is_not_fixed_in_size() -> Result<()> {
+    let document = Doc::new();
+    let ids = SequentialIds::new("r");
+    let shape = NewObject::Shape {
+        text: "s".into(),
+        at: Point::new(0.0, 0.0)?,
+        size: None,
+        color: None,
+        kind: ShapeType::Square,
+    };
+    built_with_ids(&document, &ids, &add(shape))?;
+    assert_eq!(
+        fields_of(&document, "r-1").get("fixedSize"),
+        Some(&json!(false))
+    );
+    Ok(())
+}
+
+#[test]
+fn a_new_object_goes_into_the_frame_that_holds_its_corner() -> Result<()> {
+    let (document, ids) = nested_frames()?;
+    // The corner is in r-2 (100..500 by 100..400); the box crosses its edge.
+    built_with_ids(&document, &ids, &add(new_sticker(450.0, 350.0)?))?;
+    assert_eq!(
+        fields_of(&document, "r-3").get("parentId"),
+        Some(&json!("r-2"))
+    );
+    Ok(())
+}
+
+#[test]
+fn an_explicit_frame_still_holds_the_whole_box() {
+    let result = nested_frames().and_then(|(document, ids)| {
+        built_with_ids(
+            &document,
+            &ids,
+            &add_in(new_sticker(350.0, 250.0)?, "r-2".into()),
+        )
+    });
+    // 100 + 350 puts the box past the edge of r-2.
+    assert!(matches!(
+        result,
+        Err(Error::BoardChange(BoardChangeError::OutsideFrame { .. }))
+    ));
+}
+
+#[test]
+fn a_new_object_outside_every_frame_has_a_null_parent() -> Result<()> {
+    let document = Doc::new();
+    let ids = SequentialIds::new("r");
+    built_with_ids(&document, &ids, &add(new_sticker(5.0, 5.0)?))?;
+    assert_eq!(
+        fields_of(&document, "r-1").get("parentId"),
+        Some(&Value::Null)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_frame_in_a_frame_takes_the_outer_layer() -> Result<()> {
+    let (document, ids) = nested_frames()?;
+    let z = |id: &str| fields_of(&document, id).get("zIndex").cloned();
+    assert_eq!(z("r-2"), z("r-1"));
+    // A frame beyond every frame goes behind them; a move into r-2 keeps its layer.
+    let apart = NewObject::Frame {
+        title: "G".into(),
+        at: Point::new(1000.0, 1000.0)?,
+        size: Some(Size::new(50.0, 50.0)?),
+        color: None,
+        look: crate::domain::change::value::FrameEdit::default(),
+    };
+    built_with_ids(&document, &ids, &add(apart))?;
+    let behind = z("r-3");
+    assert_ne!(behind, z("r-2"));
+    move_to(&document, &ids, "r-3", Point::new(150.0, 150.0)?)?;
+    assert_eq!(
+        fields_of(&document, "r-3").get("parentId"),
+        Some(&json!("r-2"))
+    );
+    assert_eq!(z("r-3"), behind);
+    Ok(())
+}
+
+#[test]
+fn an_edit_writes_position_and_size_as_the_web_client_rounds_them() -> Result<()> {
+    let (document, ids) = nested_frames()?;
+    let shape = NewObject::Shape {
+        text: "s".into(),
+        at: Point::new(900.0, 0.0)?,
+        size: None,
+        color: None,
+        kind: ShapeType::Square,
+    };
+    built_with_ids(&document, &ids, &add(shape))?;
+    let patch = ObjectPatch {
+        at: Some(Point::new(10.123, 20.456)?),
+        size: Some(Size::new(100.005, 50.0)?),
+        ..ObjectPatch::default()
+    };
+    built_with_ids(&document, &ids, &edit("r-3".into(), patch))?;
+    let fields = fields_of(&document, "r-3");
+    // Cut towards zero: .456 is .45 and .005 is .00.
+    assert_eq!(
+        [
+            number(&fields, "/position/x"),
+            number(&fields, "/position/y"),
+            number(&fields, "/width"),
+            number(&fields, "/height"),
+        ],
+        [Some(10.12), Some(20.45), Some(100.0), Some(50.0)]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_carried_child_is_written_rounded() -> Result<()> {
+    let (document, ids) = nested_frames()?;
+    move_to(&document, &ids, "r-1", Point::new(0.333, 0.777)?)?;
+    let fields = fields_of(&document, "r-2");
+    assert_eq!(
+        [
+            number(&fields, "/position/x"),
+            number(&fields, "/position/y")
+        ],
+        [Some(100.33), Some(100.77)]
+    );
+    Ok(())
+}
+
+#[test]
+fn the_web_rounding_cuts_towards_zero() {
+    use crate::domain::change::write::web_round;
+    assert_eq!(
+        json!([
+            web_round(0.005),
+            web_round(-20.456),
+            web_round(1.0),
+            web_round(0.0)
+        ]),
+        json!([0.0, -20.45, 1.0, 0.0])
+    );
+}
+
+#[test]
+fn an_adopted_object_gets_no_updated_stamp() -> Result<()> {
+    let document = Doc::new();
+    let ids = SequentialIds::new("a");
+    let frame = NewObject::Frame {
+        title: "F".into(),
+        at: Point::ORIGIN,
+        size: Some(Size::new(400.0, 400.0)?),
+        color: None,
+        look: crate::domain::change::value::FrameEdit::default(),
+    };
+    built_with_ids(&document, &ids, &add(frame))?;
+    built_with_ids(&document, &ids, &add(new_sticker(1000.0, 100.0)?))?;
+    move_to(&document, &ids, "a-1", Point::new(900.0, 0.0)?)?;
+    let adopted = fields_of(&document, "a-2");
+    assert_eq!(adopted.get("parentId"), Some(&json!("a-1")));
+    assert_eq!(adopted.get("updated"), Some(&Value::Null));
+    Ok(())
+}
+
+#[test]
+fn a_carried_child_whose_position_changes_gets_the_stamp() -> Result<()> {
+    let (document, ids) = nested_frames()?;
+    built_with_ids(&document, &ids, &add(new_sticker(150.0, 150.0)?))?;
+    move_to(&document, &ids, "r-2", Point::new(200.0, 200.0)?)?;
+    let carried = fields_of(&document, "r-3");
+    assert_eq!(carried.get("parentId"), Some(&json!("r-2")));
+    assert!(carried.get("updated").is_some_and(|stamp| !stamp.is_null()));
+    Ok(())
+}
+
+fn arrow_parent(
+    document: &Doc,
+    ids: &SequentialIds,
+    (from, to): (&str, &str),
+) -> Result<Option<String>> {
+    let new_arrow = NewObject::Arrow {
+        from: from.into(),
+        to: to.into(),
+        color: None,
+        look: ArrowLook::default(),
+    };
+    let built = built_with_ids(document, ids, &add(new_arrow))?;
+    let id = built
+        .objects
+        .first()
+        .map(|t| t.id.clone())
+        .unwrap_or_default();
+    Ok(parent_of(document, &id))
+}
+
+#[test]
+fn an_arrow_between_two_members_of_a_group_goes_into_the_group() -> Result<()> {
+    let (document, ids) = nested_frames()?;
+    seed(
+        &document,
+        &json!({ "id": "G", "type": "group", "parentId": null }),
+    )?;
+    seed(&document, &member("s1", "sticker", "G", 900, 0))?;
+    seed(&document, &member("s2", "sticker", "G", 1100, 0))?;
+    assert_eq!(
+        arrow_parent(&document, &ids, ("s1", "s2"))?,
+        Some("G".to_owned())
+    );
+    Ok(())
+}
+
+#[test]
+fn an_arrow_between_a_group_member_and_a_frame_member_goes_into_the_frame() -> Result<()>
+{
+    let (document, ids) = nested_frames()?;
+    seed(
+        &document,
+        &json!({ "id": "G", "type": "group", "parentId": "r-2" }),
+    )?;
+    seed(&document, &member("s1", "sticker", "G", 150, 150))?;
+    seed(&document, &member("s2", "sticker", "r-2", 300, 150))?;
+    assert_eq!(
+        arrow_parent(&document, &ids, ("s1", "s2"))?,
+        Some("r-2".to_owned())
+    );
+    Ok(())
+}
+
+#[test]
+fn an_arrow_inside_a_hidden_frame_has_no_parent() -> Result<()> {
+    let (document, ids) = nested_frames()?;
+    seed(&document, &hidden_frame())?;
+    seed(&document, &member("s1", "sticker", "h", 2000, 0))?;
+    seed(&document, &member("s2", "sticker", "h", 2200, 0))?;
+    assert_eq!(arrow_parent(&document, &ids, ("s1", "s2"))?, None);
     Ok(())
 }

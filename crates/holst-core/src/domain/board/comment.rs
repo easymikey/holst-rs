@@ -21,7 +21,7 @@ use yrs::{
 use crate::{
     domain::{
         board::{any, json, slate_text},
-        change::build::{author, author_number},
+        change::build::{author, author_number, known_author},
         id_source::IdSource,
     },
     error::{
@@ -112,6 +112,18 @@ pub enum CommentChange {
     /// The thread and its replies.
     Delete {
         thread: String,
+    },
+    /// One reply; the thread and its other messages stay.
+    DeleteReply {
+        thread: String,
+        reply: String,
+    },
+    /// Several changes in one transaction, in order.
+    Several(Vec<CommentChange>),
+    /// A root moves to `anchor`; a reply has none.
+    Move {
+        thread: String,
+        anchor: ThreadAnchor,
     },
 }
 
@@ -265,6 +277,13 @@ fn anchor_of(target: &Value) -> Option<ThreadAnchor> {
     }
 }
 
+/// The number the room's users hold for `user`, if it holds one.
+#[must_use]
+pub fn author_of(doc: &Doc, user: &str) -> Option<u32> {
+    let users = doc.get_or_insert_map(USERS_IDS);
+    known_author(&doc.transact(), &users, user)
+}
+
 /// Applies `change` to the store of `doc` in one transaction and encodes just
 /// that transaction as a v2 update. `ids` numbers the blocks of a new text.
 /// The number of an author or resolver is taken from the room's `usersIds`,
@@ -313,24 +332,7 @@ fn write(
         }
         CommentChange::Color { thread, color } => {
             let entry = thread_map(store, txn, thread)?;
-            match (color, entry.get(&*txn, COLOR)) {
-                (None, _) => {
-                    entry.remove(txn, COLOR);
-                    Ok(())
-                }
-                (Some(color), Some(Out::YMap(held))) => {
-                    held.insert(txn, MARKS, any(&json!(color))?);
-                    Ok(())
-                }
-                (Some(color), _) => {
-                    let fields = [(MARKS, json!(color)), ("opacity", json!(1))]
-                        .into_iter()
-                        .map(|(name, value)| Ok((name.to_owned(), any(&value)?)))
-                        .collect::<Result<Vec<_>>>()?;
-                    entry.insert(txn, COLOR, MapPrelim::from_iter(fields));
-                    Ok(())
-                }
-            }
+            recolor(&entry, txn, color.as_deref())
         }
         CommentChange::Resolve { thread, by, at } => {
             let entry = thread_map(store, txn, thread)?;
@@ -366,6 +368,55 @@ fn write(
             for key in &doomed {
                 store.remove(txn, key);
             }
+            Ok(())
+        }
+        CommentChange::DeleteReply { thread, reply } => {
+            thread_map(store, txn, thread)?;
+            match store.get(&*txn, reply) {
+                Some(Out::YMap(entry))
+                    if parent_of(&*txn, &entry).as_deref() == Some(thread) =>
+                {
+                    store.remove(txn, reply);
+                    Ok(())
+                }
+                _ => Err(Error::Lookup(LookupError {
+                    kind: LookupKind::Thread,
+                    reference: thread.clone(),
+                    miss: LookupMiss::not_found(),
+                })),
+            }
+        }
+        CommentChange::Several(changes) => changes
+            .iter()
+            .try_for_each(|each| write(store, users, txn, each, ids)),
+        CommentChange::Move { thread, anchor } => {
+            let entry = thread_map(store, txn, thread)?;
+            entry.insert(txn, TARGET, any(&target(anchor))?);
+            Ok(())
+        }
+    }
+}
+
+fn recolor(
+    entry: &MapRef,
+    txn: &mut TransactionMut<'_>,
+    color: Option<&str>,
+) -> Result<()> {
+    match (color, entry.get(&*txn, COLOR)) {
+        (None, _) => {
+            entry.remove(txn, COLOR);
+            Ok(())
+        }
+        (Some(color), Some(Out::YMap(held))) => {
+            held.insert(txn, MARKS, any(&json!(color))?);
+            Ok(())
+        }
+        (Some(color), _) => {
+            let fields = [(MARKS, json!(color)), ("opacity", json!(1))]
+                .into_iter()
+                .map(|(name, value)| Ok((name.to_owned(), any(&value)?)))
+                .collect::<Result<Vec<_>>>()?;
+            entry.insert(txn, COLOR, MapPrelim::from_iter(fields));
             Ok(())
         }
     }
@@ -805,6 +856,110 @@ mod tests {
             ["x_Ctu"]
         );
         assert_eq!(threads(&doc).len(), 1);
+        Ok(())
+    }
+
+    fn replied(doc: &Doc) -> Result<()> {
+        start(doc, "B9ckv", point())?;
+        start(doc, "x_Ctu", point())?;
+        ["3fBIc", "4gCJd"]
+            .iter()
+            .zip([300.0, 400.0])
+            .try_for_each(|(id, at)| {
+                change(
+                    doc,
+                    CommentChange::Reply {
+                        thread: "B9ckv".to_owned(),
+                        message: message(id, at, "zz reply"),
+                    },
+                )
+                .map(drop)
+            })
+    }
+
+    fn message_ids(doc: &Doc, thread: &str) -> Vec<String> {
+        threads(doc)
+            .into_iter()
+            .filter(|t| t.id == thread)
+            .flat_map(|t| t.messages.into_iter().map(|m| m.id))
+            .collect()
+    }
+
+    #[test]
+    fn deleting_a_reply_keeps_the_thread_and_the_other_replies() -> Result<()> {
+        let doc = Doc::new();
+        replied(&doc)?;
+        change(
+            &doc,
+            CommentChange::DeleteReply {
+                thread: "B9ckv".to_owned(),
+                reply: "3fBIc".to_owned(),
+            },
+        )?;
+        assert_eq!(message_ids(&doc, "B9ckv"), ["B9ckv", "4gCJd"]);
+        assert_eq!(threads(&doc).len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn a_reply_of_another_thread_or_a_root_is_not_deleted_as_a_reply() -> Result<()> {
+        let doc = Doc::new();
+        replied(&doc)?;
+        let refused = |thread: &str, reply: &str| {
+            change(
+                &doc,
+                CommentChange::DeleteReply {
+                    thread: thread.to_owned(),
+                    reply: reply.to_owned(),
+                },
+            )
+            .err()
+            .map(|error| error.to_string())
+        };
+        assert_eq!(
+            refused("x_Ctu", "3fBIc"),
+            Some("comment thread \"x_Ctu\" not found on this board".to_owned())
+        );
+        assert!(refused("B9ckv", "x_Ctu").is_some());
+        assert_eq!(message_ids(&doc, "B9ckv").len(), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn a_move_replaces_the_target_of_a_root_and_refuses_a_reply() -> Result<()> {
+        let doc = Doc::new();
+        replied(&doc)?;
+        let moved = |thread: &str| {
+            change(
+                &doc,
+                CommentChange::Move {
+                    thread: thread.to_owned(),
+                    anchor: ThreadAnchor::Object {
+                        id: "o1".to_owned(),
+                        x: 0.25,
+                        y: 0.5,
+                    },
+                },
+            )
+            .err()
+            .map(|error| error.to_string())
+        };
+        assert!(moved("3fBIc").is_some());
+        assert_eq!(moved("B9ckv"), None);
+        let anchors: Vec<_> = threads(&doc)
+            .into_iter()
+            .filter(|t| t.id == "B9ckv")
+            .map(|t| t.anchor)
+            .collect();
+        assert_eq!(
+            anchors,
+            [ThreadAnchor::Object {
+                id: "o1".to_owned(),
+                x: 0.25,
+                y: 0.5
+            }]
+        );
+        assert_eq!(message_ids(&doc, "B9ckv").len(), 3);
         Ok(())
     }
 

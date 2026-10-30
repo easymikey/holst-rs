@@ -309,7 +309,7 @@ impl On<'_> {
         words: Words<'_>,
     ) -> Result<Observation, ScenarioError> {
         let words = Words {
-            confirms: matches!(action, "rm" | "mv"),
+            confirms: matches!(action, "rm" | "mv" | "tag"),
             writes: true,
             ..words
         };

@@ -3,6 +3,7 @@
 use holst_core::fake::WorkspaceRole;
 use holst_scenarios::{
     BoardReference,
+    Export,
     FixtureObject,
     Given,
     Look,
@@ -56,7 +57,8 @@ async fn a_board_shows_its_objects(
 #[case::sticker("sticker", "sticker", "Buy milk")]
 #[case::text("text", "text", "Roadmap")]
 #[case::shape_any_case("Shape", "shape", "Decision")]
-#[case::without_variant("mind-map-node", "mind-map-node", "Idea")]
+#[case::without_variant("mind-map-node", "mind-map", "Idea")]
+#[case::short_word("mind-map", "mind-map", "Idea")]
 #[tokio::test]
 async fn objects_are_filtered_by_kind(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
@@ -739,7 +741,7 @@ const FORMAT_REFUSAL: &str = "cannot read or write";
 #[tokio::test]
 async fn a_board_in_another_format_is_not_listed(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-    #[values((3, "hud"), (2, "hocuspocus"))] storage: (u32, &'static str),
+    #[values((1, "hud"), (2, "hocuspocus"))] storage: (u32, &'static str),
 ) -> Result<(), ScenarioError> {
     let holst = stored_as(storage.0, storage.1).start().await?;
     let observation = holst.on(surface).objects("Old").await?;
@@ -754,7 +756,7 @@ async fn a_board_in_another_format_is_not_listed(
 #[tokio::test]
 async fn a_board_in_another_format_takes_no_object(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-    #[values((3, "hud"), (2, "hocuspocus"))] storage: (u32, &'static str),
+    #[values((1, "hud"), (2, "hocuspocus"))] storage: (u32, &'static str),
 ) -> Result<(), ScenarioError> {
     let holst = stored_as(storage.0, storage.1).start().await?;
     let observation = holst
@@ -765,5 +767,37 @@ async fn a_board_in_another_format_takes_no_object(
         .failed_saying(FORMAT_REFUSAL)
         .signalled_as(surface.unavailable());
     board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_v3_board_is_read_and_written(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = stored_as(3, "hud").start().await?;
+    holst.edit_board_behind_its_back(
+        "Old",
+        vec![FixtureObject::Sticker("Buy milk".to_owned())],
+    )?;
+    let before = holst.on(surface).objects("Old").await?;
+    then(&before).lists_objects(&[("sticker", "Buy milk")]);
+    holst
+        .on(surface)
+        .add_sticker("Old", "Call Ann", None)
+        .await?;
+    board_of(&holst).got_one_update();
+    let after = holst.on(surface).objects("Old").await?;
+    then(&after).lists_objects_in_any_order(&[
+        ("sticker", "Buy milk"),
+        ("sticker", "Call Ann"),
+    ]);
+    let exported = holst
+        .on(surface)
+        .export_board("Old", "old.board", Export::new())
+        .await?;
+    then(&exported)
+        .failed_saying(FORMAT_REFUSAL)
+        .signalled_as(surface.unavailable());
     Ok(())
 }

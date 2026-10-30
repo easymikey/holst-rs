@@ -19,7 +19,7 @@ use holst_core::{
     },
     domain::{
         template::{Template, TemplateCategory},
-        text::{EMPTY, printable},
+        text::{EMPTY, counted, printable},
     },
 };
 use rmcp::model::CallToolResult;
@@ -117,7 +117,7 @@ impl McpServer {
             Some(category.slug.clone()),
             category
                 .template_count
-                .map(|count| format!("{count} templates")),
+                .map(|count| counted(count, "template")),
         ];
         joined_by_dots(head, details) + "\n"
     }

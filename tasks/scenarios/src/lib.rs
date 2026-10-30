@@ -5,6 +5,7 @@
     reason = "the scenarios drive the real binary against real temp directories and the real environment"
 )]
 
+mod board_tag;
 mod cli;
 mod comments;
 mod directory;
@@ -32,6 +33,7 @@ mod workspaces;
 pub use holst_core::fake::{FixtureObject, FixtureThread, ThreadAnchor};
 
 pub use crate::{
+    board_tag::TagEdit,
     comments::{CommentCommand, CommentsThen, ThreadPin, comments_of, read_time_of},
     edit::{BoardThen, ItemsFile, ObjectCall, board_of},
     error::ScenarioError,

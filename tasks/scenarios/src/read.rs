@@ -46,6 +46,8 @@ struct Listed {
     text_color: Option<String>,
     text_background: Option<String>,
     text_width: Option<f64>,
+    #[serde(default)]
+    detail: Map<String, Value>,
 }
 
 #[derive(Deserialize)]
@@ -319,6 +321,18 @@ pub(crate) fn cli_objects(stdout: &[u8]) -> Result<Observation, ScenarioError> {
                     .chain(listed.text_background.map(|color| format!("bg:{color}")))
                     .chain(listed.text_width.map(|width| format!("width:{width}")))
                     .collect(),
+                detail: listed
+                    .detail
+                    .into_iter()
+                    .map(|(word, value)| match value {
+                        Value::Array(items) => format!("{word}={}", items.len()),
+                        Value::String(text) => format!("{word}={text}"),
+                        other @ (Value::Null
+                        | Value::Bool(_)
+                        | Value::Number(_)
+                        | Value::Object(_)) => format!("{word}={other}"),
+                    })
+                    .collect(),
             })
             .collect(),
     ))
@@ -378,6 +392,8 @@ fn listed_object(line: &str) -> Option<ListedObject> {
                 && **word != "locked"
                 && !word.ends_with('°')
                 && !word.starts_with("link-to=")
+                && !word.starts_with('[')
+                && !word.ends_with(']')
         })
         .map(|(_, word)| *word)
         .collect();
@@ -413,6 +429,13 @@ fn listed_object(line: &str) -> Option<ListedObject> {
             .find_map(|word| word.strip_prefix('{')?.strip_suffix('}'))
             .into_iter()
             .flat_map(|inner| inner.split(','))
+            .map(str::to_owned)
+            .collect(),
+        detail: head
+            .split_once("  [")
+            .and_then(|(_, tail)| tail.split_once(']'))
+            .into_iter()
+            .flat_map(|(inner, _)| inner.split_whitespace())
             .map(str::to_owned)
             .collect(),
         ends: arrow.map(|at| {
@@ -660,6 +683,22 @@ impl Then<'_> {
                 .iter()
                 .any(|row| row.text == text && row.tags == tags),
             "expected {text:?} tagged {tags:?}, got {:?}",
+            self.observation
+        );
+    }
+
+    /// Expects an object of this kind to list these words of its kind, e.g.
+    /// `rows=2`.
+    ///
+    /// # Panics
+    /// When there is none, or it differs.
+    pub fn lists_object_detail(&self, kind: &str, words: &[&str]) {
+        assert!(
+            self.objects().iter().any(|row| row.kind == kind
+                && words
+                    .iter()
+                    .all(|word| row.detail.iter().any(|d| d == word))),
+            "expected a {kind} listing {words:?}, got {:?}",
             self.observation
         );
     }

@@ -1,38 +1,14 @@
 //! Ctrl-C, SIGTERM and SIGHUP: for awaited work and blocked questions.
 
-use std::{
-    convert::Infallible,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 
-pub(crate) use holst_form::signals::note_arrivals;
+use holst_form::signals::{Listeners, leave};
+pub(crate) use holst_form::signals::{Signal, note_arrivals};
 
 use crate::{
     error::{Error, Result},
-    output,
-    terminal::{awaiting::optional, tty},
+    terminal::awaiting::optional,
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
-pub(crate) enum Signal {
-    #[display("interrupted")]
-    Interrupt,
-    #[display("terminated")]
-    Terminate,
-    #[display("the terminal hung up")]
-    HangUp,
-}
-
-impl Signal {
-    #[must_use]
-    pub(crate) const fn exit_code(self) -> u8 {
-        match self {
-            Signal::Interrupt => 130,
-            Signal::Terminate => 143,
-            Signal::HangUp => 129,
-        }
-    }
-}
 
 impl From<Signal> for Error {
     fn from(signal: Signal) -> Self {
@@ -44,20 +20,16 @@ impl From<Signal> for Error {
     }
 }
 
-#[must_use]
 fn farewell(signal: Signal) -> String {
-    let show = holst_form::draw::SHOW_CURSOR;
     match signal {
-        Signal::Interrupt => format!("{show}\n└  {}", Error::Cancelled),
-        signal @ (Signal::Terminate | Signal::HangUp) => {
-            format!("{show}\n└  {signal}")
-        }
+        Signal::Interrupt => Error::Cancelled.to_string(),
+        signal @ (Signal::Terminate | Signal::HangUp) => signal.to_string(),
     }
 }
 
 /// Resolves with the first of Ctrl-C, SIGTERM and SIGHUP heard after the call.
 pub(crate) fn stopped() -> impl Future<Output = Signal> {
-    let mut listeners = imp::SignalListeners::new();
+    let mut listeners = Listeners::default();
     async move { listeners.next().await }
 }
 
@@ -102,102 +74,17 @@ pub(crate) fn watch_apart() -> std::io::Result<()> {
 }
 
 async fn watch() {
-    match leave(first_ending(&mut imp::SignalListeners::new()).await) {}
+    let signal = first_ending(&mut Listeners::default()).await;
+    match leave(&farewell(signal), signal.exit_code()) {}
 }
 
-async fn first_ending(listeners: &mut imp::SignalListeners) -> Signal {
+async fn first_ending(listeners: &mut Listeners) -> Signal {
     let signal = listeners.next().await;
     // A working command stops itself, so it can save a refreshed login.
     if holst_form::signals::is_answering() {
         signal
     } else {
         Box::pin(first_ending(listeners)).await
-    }
-}
-
-const SEIZE_PATIENCE: std::time::Duration = std::time::Duration::from_millis(500);
-
-#[expect(
-    clippy::exit,
-    clippy::disallowed_methods,
-    reason = "a signal ends the process from outside the command: nothing else can stop a blocking read"
-)]
-fn leave(signal: Signal) -> Infallible {
-    // Let a cut read put its settings back, then keep it from doing so.
-    let _owned = tty::seize(SEIZE_PATIENCE);
-    tty::restore().into_iter().for_each(output::stderr_line);
-    output::stderr_line(farewell(signal));
-    std::process::exit(i32::from(signal.exit_code()))
-}
-
-#[cfg(unix)]
-mod imp {
-    use std::future::pending;
-
-    use tokio::signal::unix::{Signal, SignalKind, signal};
-
-    use crate::terminal::awaiting::optional;
-
-    pub(super) struct SignalListeners {
-        interrupt: Option<Signal>,
-        terminate: Option<Signal>,
-        hangup: Option<Signal>,
-    }
-
-    impl SignalListeners {
-        pub(super) fn new() -> Self {
-            Self {
-                interrupt: signal(SignalKind::interrupt()).ok(),
-                terminate: signal(SignalKind::terminate()).ok(),
-                hangup: signal(SignalKind::hangup()).ok(),
-            }
-        }
-
-        pub(super) async fn next(&mut self) -> crate::terminal::signals::Signal {
-            tokio::select! {
-                () = heard(self.interrupt.as_mut()) => crate::terminal::signals::Signal::Interrupt,
-                () = heard(self.terminate.as_mut()) => crate::terminal::signals::Signal::Terminate,
-                () = heard(self.hangup.as_mut()) => crate::terminal::signals::Signal::HangUp,
-            }
-        }
-    }
-
-    async fn heard(listener: Option<&mut Signal>) {
-        let got = optional(listener.map(Signal::recv)).await.flatten();
-        optional(got.is_none().then(pending::<()>)).await;
-    }
-}
-
-#[cfg(not(unix))]
-mod imp {
-    use std::future::pending;
-
-    use tokio::signal::windows::{CtrlC, ctrl_c};
-
-    use crate::terminal::awaiting::optional;
-
-    pub(super) struct SignalListeners {
-        interrupt: Option<CtrlC>,
-    }
-
-    impl SignalListeners {
-        pub(super) fn new() -> Self {
-            Self {
-                interrupt: ctrl_c_listener(),
-            }
-        }
-
-        pub(super) async fn next(&mut self) -> crate::terminal::signals::Signal {
-            let got = optional(self.interrupt.as_mut().map(CtrlC::recv))
-                .await
-                .flatten();
-            optional(got.is_none().then(pending::<()>)).await;
-            crate::terminal::signals::Signal::Interrupt
-        }
-    }
-
-    fn ctrl_c_listener() -> Option<CtrlC> {
-        ctrl_c().ok()
     }
 }
 
@@ -255,12 +142,9 @@ mod tests {
     }
 
     #[test]
-    fn farewell_closes_the_form() {
-        assert_eq!(farewell(Signal::Interrupt), "\x1b[?25h\n└  login cancelled");
-        assert_eq!(
-            farewell(Signal::HangUp),
-            "\x1b[?25h\n└  the terminal hung up"
-        );
+    fn farewell_names_the_signal() {
+        assert_eq!(farewell(Signal::Interrupt), "login cancelled");
+        assert_eq!(farewell(Signal::HangUp), "the terminal hung up");
     }
 
     #[tokio::test(start_paused = true)]

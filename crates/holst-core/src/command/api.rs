@@ -20,10 +20,10 @@ use crate::{
         Error,
         Result,
         confirmation::{ChangeRisk, Unconfirmed},
-        input::InputError,
+        input::{InputError, Refusal},
     },
     remote::{
-        catalogue::{Body, Class, Endpoint, Need, Query, Refusal, check_body, find},
+        catalogue::{Body, Class, Endpoint, Need, Query, check_body, find},
         client::Client,
     },
 };

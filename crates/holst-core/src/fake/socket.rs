@@ -98,6 +98,11 @@ pub(crate) async fn serve(stream: TcpStream, state: Shared) -> io::Result<()> {
     let socket = tokio_tungstenite::accept_async(stream)
         .await
         .map_err(io::Error::other)?;
+    state
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .requests
+        .push("WS open".to_owned());
     let (outgoing, incoming) = socket.split();
     incoming
         .filter_map(|message| {
@@ -119,10 +124,14 @@ fn reply(message: &[u8], state: &Shared) -> Option<Vec<u8>> {
     let mut state = state.lock().unwrap_or_else(PoisonError::into_inner);
     match kind {
         REQUEST_DOCUMENT => {
+            state.requests.push(format!("WS RequestDocument {name}"));
             let room = room_of(name, &mut state);
             respond_to_request(name, rest, room.as_ref(), &state.sessions)
         }
-        UPDATE => accept_update(name, rest, &mut state),
+        UPDATE => {
+            state.requests.push(format!("WS Update {name}"));
+            accept_update(name, rest, &mut state)
+        }
         _ => None,
     }
 }

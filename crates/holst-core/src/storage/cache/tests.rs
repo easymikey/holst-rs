@@ -759,3 +759,29 @@ fn other_layouts_are_found() -> Result<()> {
     assert_eq!(found, ["v0", "v1", "v12"]);
     Ok(())
 }
+
+#[test]
+fn logout_drops_the_workspace_list_and_trees() -> Result<()> {
+    use crate::{
+        domain::account::Workspace,
+        effect::cache::AccountCache,
+        storage::cache::account::AccountDisk,
+    };
+    let root = Root::new("logout-lists")?;
+    let settings = root.settings(1 << 20);
+    let store = AccountDisk::from_settings(&settings)
+        .ok_or(Error::LocalData(LocalDataError::NoHome))?;
+    let space = Workspace {
+        id: board(1),
+        name: "One".into(),
+    };
+    store.keep_workspaces(ALICE, &[space])?;
+    store.keep_tree(ALICE, &board(1), "t", 1)?;
+    let alice = root.cache(ALICE, 1 << 20, 1)?;
+    alice.store(&board(1), &record(b"x"))?;
+    assert!(alice.dir().join("workspaces.json").exists());
+    Cache::forget(&settings, Some(ALICE))?;
+    assert!(!alice.dir().join("workspaces.json").exists());
+    assert!(!alice.dir().join("trees").exists());
+    Ok(())
+}

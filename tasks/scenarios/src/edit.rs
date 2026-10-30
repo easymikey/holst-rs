@@ -13,9 +13,11 @@ use crate::{
 };
 
 /// Flags the command line repeats and the tool takes as an array.
-const REPEATED: [&str; 4] = ["object", "tag", "label", "mark"];
+const REPEATED: [&str; 6] = ["object", "tag", "label", "mark", "choice", "reaction"];
 /// Flags that hold a count, a number for the tool.
-const COUNTS: [&str; 6] = ["offset", "limit", "padding", "radius", "check", "uncheck"];
+const COUNTS: [&str; 7] = [
+    "offset", "limit", "padding", "radius", "check", "uncheck", "faces",
+];
 /// Flags that hold a fraction, a number for the tool.
 const FRACTIONS: [&str; 4] = ["opacity", "stroke_width", "rotate", "scale"];
 

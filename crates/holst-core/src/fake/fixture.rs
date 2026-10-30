@@ -247,7 +247,7 @@ impl Fixture {
 
     /// Adds a board stored in `schema_version` of the board format on the
     /// server `provider` ("hud" or "hocuspocus"); the program reads only
-    /// version 2 on hud.
+    /// versions 2 and 3 on hud.
     #[must_use]
     pub fn board_stored_as(
         self,
@@ -630,6 +630,7 @@ impl State {
             ),
             failing: fixture.failing,
             unanswered: Vec::new(),
+            requests: Vec::new(),
             updates: 0,
         })
     }

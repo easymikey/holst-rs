@@ -17,13 +17,15 @@ pub enum SessionCheck {
     Unknown(Error),
 }
 
-/// The user the client's login belongs to.
+/// The user the client's login belongs to; the login keeps what was read.
 ///
 /// # Errors
 /// [`Client::send_json`] errors or
 /// [`crate::error::http::HttpError::MissingField`] (no user id).
 pub async fn account(client: &Client) -> Result<Account> {
-    Account::of(&api::user::current(client).await?)
+    let account = Account::of(&api::user::current(client).await?)?;
+    client.learn_account(&account);
+    Ok(account)
 }
 
 /// Asks the server whether the login is accepted.
@@ -52,12 +54,6 @@ pub async fn known_account_id(client: &Client) -> Option<String> {
 pub async fn account_id(client: &Client) -> Result<String> {
     match client.account_id() {
         Some(user) => Ok(user),
-        None => asked(client).await,
+        None => Ok(account(client).await?.id),
     }
-}
-
-async fn asked(client: &Client) -> Result<String> {
-    let user = account(client).await?.id;
-    client.learn_account_id(&user);
-    Ok(user)
 }

@@ -1,6 +1,6 @@
 ---
 source: crates/holst-cli/src/table.rs
-expression: help_of(line)
+expression: "help_of(&format!(\"{line} -h\"))"
 ---
 Read and write comment threads.
 
@@ -12,7 +12,8 @@ COMMANDS
   add:         Start a comment thread
   reply:       Reply in a thread
   resolve:     Resolve a thread, or reopen it
-  rm:          Delete a thread with its replies
+  edit:        Colour a thread or move it
+  rm:          Delete a thread with its replies, or one reply
   read:        Mark a thread as read
 
 EXAMPLES

@@ -19,7 +19,7 @@ use crate::{
         change::{receipt::Delivery, value::ChangedObject},
     },
     effect::{
-        board_write::{LoadSource, OpenedBoard, WriteInterpreter, WriteMode},
+        board_write::{LoadSource, WriteMode},
         board_write_plan::{Release, WritePlan},
         http::BoxFuture,
         socket::{BoardSocket, SocketConnector},
@@ -392,6 +392,45 @@ async fn opened(
         source: fetched,
         connection: connected,
     })
+}
+
+/// A board loaded for a write and what its interpreter keeps open with it.
+#[derive(Debug)]
+pub struct OpenedBoard<Session> {
+    pub connection: Session,
+    pub document: Doc,
+    pub right: EditRight,
+    pub source: LoadSource,
+}
+
+/// Loads a board for a write, then sends, reports or records its plan.
+pub trait WriteInterpreter: Sync {
+    /// What stays open between the load and the plan.
+    type Connection: Send;
+
+    /// Loads `board` into `seed` (see
+    /// [`writer_document`](fn@crate::remote::socket::write::writer_document)).
+    ///
+    /// # Errors
+    /// As [`load_with`](fn@crate::remote::socket::load::load_with).
+    fn open<'a>(
+        &'a self,
+        client: &'a Client,
+        board: &'a str,
+        seed: Doc,
+    ) -> BoxFuture<'a, Result<OpenedBoard<Self::Connection>>>;
+
+    /// Carries out `plan`: accepted once it went out, built while it stays.
+    ///
+    /// # Errors
+    /// As [`send`](fn@crate::remote::socket::write::ConnectedBoard::send) and
+    /// [`accepted`](fn@crate::remote::socket::write::SentUpdate::accepted).
+    fn carry<'a>(
+        &'a self,
+        client: &'a Client,
+        connection: Self::Connection,
+        plan: &'a WritePlan,
+    ) -> BoxFuture<'a, Result<Delivery>>;
 }
 
 impl WriteInterpreter for WriteOver<'_> {

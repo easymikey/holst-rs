@@ -66,10 +66,9 @@ fn page_text(listing: &Listing, link: &impl Fn(&str) -> String) -> String {
         });
         heading.into_iter().chain([node_line(node, link)])
     });
-    let more = listing
-        .cursor
-        .as_deref()
-        .map(|cursor| format!("more: --cursor {cursor}"));
+    let more = listing.cursor.as_deref().map(|cursor| {
+        format!("… {cursor} of {}; next: --cursor {cursor}", listing.total)
+    });
     joined(lines.chain(more), "\n").to_string()
 }
 
@@ -208,7 +207,7 @@ mod tests {
         );
         assert_eq!(
             listing_text(&page, link),
-            "TEAM (team)\nA  https://holst/id-A\nOPS (ops)\nB  https://holst/id-B\nmore: --cursor 2"
+            "TEAM (team)\nA  https://holst/id-A\nOPS (ops)\nB  https://holst/id-B\n… 2 of 2; next: --cursor 2"
         );
         assert_eq!(
             listing_text(&listing(&["team"], vec![], None), link),

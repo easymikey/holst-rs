@@ -256,6 +256,7 @@ fn input_code(error: &InputError) -> u8 {
         | InputError::NotArgument { .. }
         | InputError::NoArgument { .. }
         | InputError::NotArgumentValue { .. }
+        | InputError::ReplyNotFound { .. }
         | InputError::NotCommandArguments(_)
         | InputError::Refused(_)
         | InputError::LoginCall { .. }
@@ -345,7 +346,8 @@ fn socket_exit_code(refusal: &SocketErrorCode) -> u8 {
     match refusal {
         SocketErrorCode::Forbidden => EX_NOPERM,
         SocketErrorCode::NotFound => EX_NOINPUT,
-        SocketErrorCode::InternalError | SocketErrorCode::Other(_) => EX_UNAVAILABLE,
+        SocketErrorCode::InternalError => EX_TEMPFAIL,
+        SocketErrorCode::Other(_) => EX_UNAVAILABLE,
     }
 }
 
@@ -364,6 +366,8 @@ fn board_write_code(error: &BoardChangeError) -> u8 {
         | BoardChangeError::NotMovable { .. }
         | BoardChangeError::PlacedByContainer { .. }
         | BoardChangeError::NothingToChange
+        | BoardChangeError::NoTag { .. }
+        | BoardChangeError::TagTaken { .. }
         | BoardChangeError::NoCheckItem { .. }
         | BoardChangeError::NotPoint { .. }
         | BoardChangeError::OffBoard { .. }
@@ -478,7 +482,7 @@ mod tests {
     #[case::not_cached(core(LocalDataError::NotCached { board: "x".into() }), 66)]
     #[case::html_instead_of_json(core(HttpError::HtmlInsteadOfJson { status: 200 }), 69)]
     #[case::other_status(status(418), 69)]
-    #[case::hud_refused(core(BoardSocketError::NotSubscribed { code: SocketErrorCode::InternalError }), 69)]
+    #[case::hud_refused(core(BoardSocketError::NotSubscribed { code: SocketErrorCode::InternalError }), 75)]
     #[case::already_exists(
         core(LocalDataError::AlreadyExists { path: "board.holst".into() }),
         73

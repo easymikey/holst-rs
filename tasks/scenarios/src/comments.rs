@@ -60,22 +60,7 @@ impl On<'_> {
         text: &str,
         pin: ThreadPin<'_>,
     ) -> Result<Observation, ScenarioError> {
-        let object = |number: u32| {
-            self.holst
-                .fake()
-                .object_id(board, number)
-                .unwrap_or_else(|| NO_SUCH_OBJECT.to_owned())
-        };
-        let (at, on) = match pin {
-            ThreadPin::Free => (None, None),
-            ThreadPin::At(at) => (Some(at.to_owned()), None),
-            ThreadPin::Object(number) => (None, Some(object(number))),
-            ThreadPin::Listed(number) => {
-                let id = object(number);
-                (None, Some(format!("@{}", id.get(..8).unwrap_or(&id))))
-            }
-            ThreadPin::Both(at, number) => (Some(at.to_owned()), Some(object(number))),
-        };
+        let (at, on) = self.pinned(board, pin);
         let words = Words {
             positional: vec![("text", text)],
             options: at
@@ -124,6 +109,32 @@ impl On<'_> {
         self.comment_step(board, "resolve", words).await
     }
 
+    /// Colours the thread `thread` with `color` (`none` clears it) and pins it
+    /// as `pin` says.
+    ///
+    /// # Errors
+    /// As [`ScenarioError`].
+    pub async fn edit_comment(
+        &self,
+        board: &str,
+        thread: &str,
+        color: Option<&str>,
+        pin: ThreadPin<'_>,
+    ) -> Result<Observation, ScenarioError> {
+        let (at, on) = self.pinned(board, pin);
+        let words = Words {
+            positional: vec![("thread", thread)],
+            options: color
+                .map(|color| ("color", color))
+                .into_iter()
+                .chain(at.as_deref().map(|at| ("at", at)))
+                .chain(on.as_deref().map(|on| ("object", on)))
+                .collect(),
+            ..Words::default()
+        };
+        self.comment_step(board, "edit", words).await
+    }
+
     /// Deletes the thread `thread` with its replies.
     ///
     /// # Errors
@@ -135,6 +146,25 @@ impl On<'_> {
     ) -> Result<Observation, ScenarioError> {
         let words = Words {
             positional: vec![("thread", thread)],
+            ..Words::default()
+        };
+        self.comment_step(board, "rm", words).await
+    }
+
+    /// Deletes the reply `reply` (a message id or its number) of the thread
+    /// `thread`.
+    ///
+    /// # Errors
+    /// As [`ScenarioError`].
+    pub async fn delete_reply(
+        &self,
+        board: &str,
+        thread: &str,
+        reply: &str,
+    ) -> Result<Observation, ScenarioError> {
+        let words = Words {
+            positional: vec![("thread", thread)],
+            options: vec![("reply", reply)],
             ..Words::default()
         };
         self.comment_step(board, "rm", words).await
@@ -178,6 +208,29 @@ impl On<'_> {
             CommentCommand::Resolve => self.resolve_comment(board, thread, false).await,
             CommentCommand::Remove => self.delete_comment(board, thread).await,
             CommentCommand::Read => self.mark_comment_read(board, thread, None).await,
+        }
+    }
+
+    fn pinned(
+        &self,
+        board: &str,
+        pin: ThreadPin<'_>,
+    ) -> (Option<String>, Option<String>) {
+        let object = |number: u32| {
+            self.holst
+                .fake()
+                .object_id(board, number)
+                .unwrap_or_else(|| NO_SUCH_OBJECT.to_owned())
+        };
+        match pin {
+            ThreadPin::Free => (None, None),
+            ThreadPin::At(at) => (Some(at.to_owned()), None),
+            ThreadPin::Object(number) => (None, Some(object(number))),
+            ThreadPin::Listed(number) => {
+                let id = object(number);
+                (None, Some(format!("@{}", id.get(..8).unwrap_or(&id))))
+            }
+            ThreadPin::Both(at, number) => (Some(at.to_owned()), Some(object(number))),
         }
     }
 
@@ -282,6 +335,18 @@ impl CommentsThen {
             self.nth(number).map(|thread| thread.resolved),
             Some(resolved),
             "the resolved flag of thread {number}"
+        );
+    }
+
+    /// Expects the color of the `number`th thread to be `color`.
+    ///
+    /// # Panics
+    /// When it is not.
+    pub fn is_colored(&self, number: usize, color: Option<&str>) {
+        assert_eq!(
+            self.nth(number).map(|thread| thread.color.as_deref()),
+            Some(color),
+            "the color of thread {number}"
         );
     }
 

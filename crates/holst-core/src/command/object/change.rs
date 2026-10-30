@@ -3,7 +3,7 @@
 use std::num::NonZeroU32;
 
 use itertools::Itertools as _;
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 
 use crate::{
     command::{
@@ -11,12 +11,13 @@ use crate::{
         board_load::{self, CacheUse, RemoteBoard},
         board_write::{BoardWrite, Guard, change_board, refuse_withheld},
         change::{ChangeReport as Outcome, gate},
-        object::{EditArgs, EditItem, MarkChoice, RemoveArgs},
-        table::{Confirmation, not_value},
+        object::{EditArgs, EditFields, EditItem, MarkChoice, RemoveArgs},
+        table::{ArgumentGroup as _, Confirmation, not_value},
     },
     domain::{
         board::{LoadedBoard, arrow_look::ARROW_WIDTHS},
         change::{
+            kind_edit::{KindEdit, MOST_KINDS, StickerEdit, TextSize},
             receipt::{ChangeReport, Delivery},
             value::{
                 ArrowEdit,
@@ -63,12 +64,21 @@ const MAX_STROKE_WIDTH: f64 = 10.0;
 const MIN_OPACITY: f64 = 0.1;
 
 /// A removal: what it took, or would take, and what it waits for.
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub struct Removed {
-    #[serde(flatten)]
     pub report: ChangeReport,
     /// Whether the removal went out, was a dry run, or is held.
     pub outcome: Outcome<()>,
+}
+
+/// Flat JSON: the report, its `status` the outcome's, and `needs` when held.
+impl Serialize for Removed {
+    fn serialize<S: Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        self.report.told(&self.outcome).serialize(serializer)
+    }
 }
 
 /// The objects a call names: the one its board link names, then each
@@ -163,53 +173,15 @@ async fn edited(
 fn read_edits(args: &EditArgs, share: &str) -> Result<Vec<ObjectEdit>> {
     let linked = id::object_in(&args.board).map(|linked| linked.as_str().to_owned());
     if args.items.0.is_empty() {
-        let patch = patch_of(
-            &EditItem {
-                object: None,
-                text: args.text.clone(),
-                at: args.at.clone(),
-                size: args.size.clone(),
-                color: args.color.clone(),
-                shape: args.shape,
-                stroke_color: args.stroke_color.clone(),
-                stroke_width: args.stroke_width,
-                stroke_style: args.stroke_style,
-                radius: args.radius,
-                opacity: args.opacity,
-                mark: args.mark.clone(),
-                text_color: args.text_color.clone(),
-                text_background: args.text_background.clone(),
-                line: args.line,
-                heads: args.heads.clone(),
-                bend: args.bend.clone(),
-                from: args.from.clone(),
-                to: args.to.clone(),
-                label: args.label.clone(),
-                ratio: args.ratio,
-                background: args.background,
-                hide_content: args.hide_content.then_some(true),
-                show_content: args.show_content.then_some(true),
-                frame: args.frame.clone(),
-                rotate: args.rotate,
-                scale: args.scale,
-                link_to: args.link_to.clone(),
-                width: args.width.clone(),
-                check: args.check,
-                uncheck: args.uncheck,
-                order: None,
-                tag: Vec::new(),
-            },
-            args.text_format.unwrap_or_default(),
-            share,
-        )?;
+        let patch = patch_of(&args.edit, args.text_format.unwrap_or_default(), share)?;
         named(&args.board, &args.object, EDIT)?
             .into_iter()
             .map(|object| {
                 Ok(ObjectEdit {
                     object,
                     patch: patch.clone(),
-                    stacking: args.order,
-                    tags: tags_of(&args.tag),
+                    stacking: args.edit.order,
+                    tags: tags_of(&args.edit.tag),
                 })
             })
             .collect()
@@ -233,46 +205,12 @@ fn read_edits(args: &EditArgs, share: &str) -> Result<Vec<ObjectEdit>> {
 
 /// What the flags of one call cannot say beside `--items`.
 fn refuse_with_items(args: &EditArgs) -> Result<()> {
-    [
-        ("object", !args.object.is_empty()),
-        ("text", args.text.is_some()),
-        ("at", args.at.is_some()),
-        ("size", args.size.is_some()),
-        ("color", args.color.is_some()),
-        ("shape", args.shape.is_some()),
-        ("stroke_color", args.stroke_color.is_some()),
-        ("stroke_width", args.stroke_width.is_some()),
-        ("stroke_style", args.stroke_style.is_some()),
-        ("radius", args.radius.is_some()),
-        ("opacity", args.opacity.is_some()),
-        ("mark", !args.mark.is_empty()),
-        ("text_color", args.text_color.is_some()),
-        ("text_background", args.text_background.is_some()),
-        ("line", args.line.is_some()),
-        ("heads", args.heads.is_some()),
-        ("bend", args.bend.is_some()),
-        ("from", args.from.is_some()),
-        ("to", args.to.is_some()),
-        ("label", !args.label.is_empty()),
-        ("ratio", args.ratio.is_some()),
-        ("background", args.background.is_some()),
-        ("hide_content", args.hide_content),
-        ("show_content", args.show_content),
-        ("frame", args.frame.is_some()),
-        ("rotate", args.rotate.is_some()),
-        ("scale", args.scale.is_some()),
-        ("link_to", args.link_to.is_some()),
-        ("width", args.width.is_some()),
-        ("check", args.check.is_some()),
-        ("uncheck", args.uncheck.is_some()),
-        ("order", args.order.is_some()),
-        ("tag", !args.tag.is_empty()),
-    ]
-    .into_iter()
-    .find_map(|(name, given)| given.then_some(name))
-    .map_or(Ok(()), |name| {
-        Err(not_value(EDIT, name, "left out with --items"))
-    })
+    (!args.object.is_empty())
+        .then_some("object")
+        .or_else(|| args.edit.first_given())
+        .map_or(Ok(()), |name| {
+            Err(not_value(EDIT, name, "left out with --items"))
+        })
 }
 
 /// The edit one item asks for; an item with no object takes the linked one.
@@ -287,13 +225,17 @@ fn item_edit(
     })?;
     Ok(ObjectEdit {
         object: object.to_owned(),
-        patch: patch_of(item, format, share)?,
-        stacking: item.order,
-        tags: tags_of(&item.tag),
+        patch: patch_of(&item.edit, format, share)?,
+        stacking: item.edit.order,
+        tags: tags_of(&item.edit.tag),
     })
 }
 
-fn patch_of(item: &EditItem, format: TextFormat, address: &str) -> Result<ObjectPatch> {
+fn patch_of(
+    item: &EditFields,
+    format: TextFormat,
+    address: &str,
+) -> Result<ObjectPatch> {
     // The kind decides later: a shape takes 0 to 10, an arrow its nine widths.
     let stroke_width = item
         .stroke_width
@@ -334,6 +276,7 @@ fn patch_of(item: &EditItem, format: TextFormat, address: &str) -> Result<Object
             })
             .transpose()?,
         scale: scale_of(item)?,
+        kind_edits: kind_edits_of(item)?,
         link_to: item
             .link_to
             .as_deref()
@@ -369,14 +312,14 @@ fn patch_of(item: &EditItem, format: TextFormat, address: &str) -> Result<Object
         frame: FrameEdit {
             ratio: item.ratio,
             background: item.background,
-            hidden: hidden_of(EDIT, item.hide_content, item.show_content)?,
+            hidden: hidden_of(EDIT, Some(item.hide_content), Some(item.show_content))?,
         },
         reparent: item.frame.as_deref().map(reparent_of).transpose()?,
     })
 }
 
 /// What `--scale` says: a factor above 0, not beside a size that says the same.
-fn scale_of(item: &EditItem) -> Result<Option<f64>> {
+fn scale_of(item: &EditFields) -> Result<Option<f64>> {
     item.scale
         .map(|scale| match (item.size.is_some(), scale) {
             (true, _) => Err(not_value(EDIT, "scale", "left out with size")),
@@ -427,7 +370,7 @@ const HIDING: Guard = ("who_can_manage_frame_hide_content", |needs, holds| {
 
 /// What `--width` says: `auto`, or a width above 0. The width is read as
 /// drawn, so a size given beside it would change what it means.
-fn width_of(item: &EditItem) -> Result<Option<TextWidth>> {
+fn width_of(item: &EditFields) -> Result<Option<TextWidth>> {
     item.width
         .as_deref()
         .map(|raw| match (item.size.is_some(), raw.trim()) {
@@ -443,8 +386,61 @@ fn width_of(item: &EditItem) -> Result<Option<TextWidth>> {
         .transpose()
 }
 
+/// What `--text-size`, `--show-author`, `--hide-author` and `--reaction` say.
+fn kind_edits_of(item: &EditFields) -> Result<Vec<KindEdit>> {
+    let text_size = item.text_size.as_deref().map(text_size_of).transpose()?;
+    let author = match (item.hide_author, item.show_author) {
+        (true, true) => {
+            Err(not_value(EDIT, "show_author", "left out with hide_author"))
+        }
+        (true, false) => Ok(Some(false)),
+        (false, true) => Ok(Some(true)),
+        (false, false) => Ok(None),
+    }?;
+    Ok((text_size.is_some() || author.is_some())
+        .then_some(KindEdit::Sticker(StickerEdit { text_size, author }))
+        .into_iter()
+        .chain(reactions_of(&item.reaction)?)
+        .collect())
+}
+
+/// What `--reaction` says: the ids to leave, or `none` alone for no reaction.
+fn reactions_of(given: &[String]) -> Result<Option<KindEdit>> {
+    let ids: Vec<String> = given
+        .iter()
+        .map(|id| id.trim().to_owned())
+        .unique()
+        .collect();
+    match ids.as_slice() {
+        [] => Ok(None),
+        [none] if none == "none" => Ok(Some(KindEdit::Reaction(Vec::new()))),
+        many if many.iter().any(|id| id.is_empty() || id == "none") => {
+            Err(not_value(EDIT, "reaction", "reaction ids, or none alone"))
+        }
+        many if many.len() > MOST_KINDS => {
+            Err(not_value(EDIT, "reaction", "at most 8 different reactions"))
+        }
+        _ => Ok(Some(KindEdit::Reaction(ids))),
+    }
+}
+
+/// What `--text-size` says: `auto`, or a whole number 4 to 64.
+fn text_size_of(raw: &str) -> Result<TextSize> {
+    match raw.trim() {
+        "auto" => Ok(TextSize::Auto),
+        number => number
+            .parse()
+            .ok()
+            .filter(|points| TextSize::RANGE.contains(points))
+            .map(TextSize::Points)
+            .ok_or_else(|| {
+                not_value(EDIT, "text-size", "auto or a whole number 4 to 64")
+            }),
+    }
+}
+
 /// What `--check` and `--uncheck` say: one checklist item, from 1.
-fn tick_of(item: &EditItem) -> Result<Option<Tick>> {
+fn tick_of(item: &EditFields) -> Result<Option<Tick>> {
     let asked = match (item.check, item.uncheck) {
         (Some(_), Some(_)) => Err(not_value(EDIT, "check", "left out with uncheck")),
         (Some(number), None) => Ok(Some((number, true, "check"))),
@@ -486,7 +482,7 @@ fn with_scheme(address: &str) -> String {
 }
 
 /// The marks and colors of the whole text the flags ask for.
-fn look_of(item: &EditItem) -> Result<TextLook> {
+fn look_of(item: &EditFields) -> Result<TextLook> {
     Ok(TextLook {
         marks: marks_of(&item.mark),
         color: item.text_color.as_deref().map(str::parse).transpose()?,
@@ -518,12 +514,12 @@ fn marks_of(choices: &[MarkChoice]) -> Option<Vec<Mark>> {
     })
 }
 
-/// The tags asked for by title; a blank one asks for none.
+/// The tags asked for by title; a blank one or `none` asks for none.
 fn tags_of(tags: &[String]) -> Option<Vec<String>> {
     (!tags.is_empty()).then(|| {
         tags.iter()
             .map(|tag| tag.trim().to_owned())
-            .filter(|tag| !tag.is_empty())
+            .filter(|tag| !matches!(tag.as_str(), "" | "none"))
             .collect()
     })
 }
@@ -671,6 +667,13 @@ mod tests {
         Ok(())
     }
 
+    #[rstest::rstest]
+    #[case::empty("")]
+    #[case::none("none")]
+    #[case::none_padded(" none ")]
+    fn a_blank_or_none_tag_clears_the_tags(#[case] tag: &str) {
+        assert_eq!(super::tags_of(&[tag.to_owned()]), Some(Vec::new()));
+    }
     #[tokio::test]
     async fn a_tag_and_an_order_are_edits_of_a_sticker() -> Result<()> {
         let changed = edit_fields(
@@ -697,6 +700,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_object_flag_and_a_switch_are_refused_beside_items() -> Result<()> {
+        let items = json!([{"object": STICKER, "color": "blue3"}]);
+        let refused = [
+            edit_fields(json!({"object": [TEXT], "items": items})).await,
+            edit_fields(json!({"hide_content": true, "items": items})).await,
+        ]
+        .map(|result| result.err().map(|error| error.to_string()));
+        assert_eq!(
+            refused,
+            [
+                Some(
+                    "object of `object edit` must be left out with --items".to_owned()
+                ),
+                Some(
+                    "hide_content of `object edit` must be left out with --items"
+                        .to_owned()
+                )
+            ]
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn uncheck_zero_is_refused_under_its_own_name() -> Result<()> {
         let refused = edit_fields(json!({"object": [STICKER], "uncheck": 0}))
             .await
@@ -705,6 +731,111 @@ mod tests {
         assert_eq!(
             refused.as_deref(),
             Some("uncheck of `object edit` must be an item number from 1")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn the_options_of_a_sticker_are_one_edit() -> Result<()> {
+        let changed = edit_fields(
+            json!({"object": [STICKER], "text_size": "auto", "hide_author": true}),
+        )
+        .await?;
+        assert_eq!(
+            changed,
+            vec![(STICKER.to_owned(), vec!["text size and author"])]
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn both_author_flags_and_a_text_size_out_of_range_are_refused() -> Result<()>
+    {
+        let refused = [
+            json!({"object": [STICKER], "show_author": true, "hide_author": true}),
+            json!({"object": [STICKER], "text_size": "3"}),
+            json!({"object": [STICKER], "text_size": "65"}),
+            json!({"object": [STICKER], "text_size": "big"}),
+        ]
+        .map(|given| async move {
+            edit_fields(given)
+                .await
+                .err()
+                .map(|error| error.to_string())
+        });
+        let mut shown = Vec::new();
+        // imperative: each call awaits the fake socket
+        for call in refused {
+            shown.push(call.await);
+        }
+        assert_eq!(
+            shown,
+            vec![
+                Some(
+                    "show_author of `object edit` must be left out with hide_author"
+                        .to_owned()
+                ),
+                Some(
+                    "text-size of `object edit` must be auto or a whole number 4 to 64"
+                        .to_owned()
+                ),
+                Some(
+                    "text-size of `object edit` must be auto or a whole number 4 to 64"
+                        .to_owned()
+                ),
+                Some(
+                    "text-size of `object edit` must be auto or a whole number 4 to 64"
+                        .to_owned()
+                ),
+            ]
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reactions_and_none_are_an_edit_and_a_mixed_or_long_list_is_refused()
+    -> Result<()> {
+        let accepted = [
+            json!({"object": [STICKER], "reaction": ["like", "fire"]}),
+            json!({"object": [STICKER], "reaction": ["none"]}),
+        ]
+        .map(|given| async move { edit_fields(given).await });
+        let mut changed = Vec::new();
+        // imperative: each call awaits the fake socket
+        for call in accepted {
+            changed.push(call.await?);
+        }
+        let refused = [
+            json!({"object": [STICKER], "reaction": ["like", "none"]}),
+            json!({"object": [STICKER], "reaction": ["a", "b", "c", "d", "e", "f", "g", "h", "i"]}),
+        ]
+        .map(|given| async move {
+            edit_fields(given)
+                .await
+                .err()
+                .map(|error| error.to_string())
+        });
+        let mut shown = Vec::new();
+        // imperative: each call awaits the fake socket
+        for call in refused {
+            shown.push(call.await);
+        }
+        let one = vec![(STICKER.to_owned(), vec!["reactions"])];
+        assert_eq!(
+            (changed, shown),
+            (
+                vec![one.clone(), one],
+                vec![
+                    Some(
+                        "reaction of `object edit` must be reaction ids, or none alone"
+                            .to_owned()
+                    ),
+                    Some(
+                        "reaction of `object edit` must be at most 8 different reactions"
+                            .to_owned()
+                    ),
+                ]
+            )
         );
         Ok(())
     }
@@ -779,6 +910,30 @@ mod tests {
                 vec![STICKER.to_owned(), ARROW.to_owned()],
                 Delivery::Accepted,
                 json!({"status": "sent"})
+            )
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_held_removal_is_one_flat_result() -> Result<()> {
+        let (_, client) = signed_in([])?;
+        let args: RemoveArgs = arguments(json!({"object": [STICKER, TEXT]}))?;
+        let socket = board_of(&objects());
+        let done = removed(&client, over(&socket), &args).await?;
+        let flat = serde_json::to_value(&done)?;
+        assert_eq!(
+            (
+                flat.pointer("/status"),
+                flat.pointer("/needs"),
+                flat.pointer("/outcome"),
+                flat.pointer("/update_bytes").map(serde_json::Value::is_u64)
+            ),
+            (
+                Some(&json!("held")),
+                Some(&json!("removing 2 objects cannot be undone")),
+                None,
+                Some(true)
             )
         );
         Ok(())

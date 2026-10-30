@@ -230,7 +230,7 @@ fn rows_of_json(stdout: &[u8]) -> Result<ListedTree, ScenarioError> {
 }
 
 /// One line per node, `indent name[/] @N[ [in trash]]`, a heading per
-/// workspace when there are several, and `more: cursor C` at the end.
+/// workspace when there are several, and `… N of M; next: cursor C` at the end.
 fn rows_of_text(text: &str) -> ListedTree {
     ListedTree {
         rows: text
@@ -245,8 +245,8 @@ fn rows_of_text(text: &str) -> ListedTree {
             .collect(),
         cursor: text
             .lines()
-            .find_map(|line| line.strip_prefix("more: cursor "))
-            .map(str::to_owned),
+            .find_map(|line| line.split_once("; next: cursor "))
+            .map(|(_, cursor)| cursor.to_owned()),
     }
 }
 

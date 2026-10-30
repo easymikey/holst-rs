@@ -10,6 +10,7 @@ mod journal;
 mod link;
 mod lock;
 mod locked;
+mod made;
 mod many;
 mod markdown;
 mod new_kinds;
@@ -19,7 +20,9 @@ mod remove;
 mod reparent;
 mod resize;
 mod rotation;
+mod schema_v3;
 mod shape_edit;
+mod tags;
 mod text_width;
 
 use std::collections::HashMap;

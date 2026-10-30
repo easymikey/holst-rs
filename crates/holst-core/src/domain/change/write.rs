@@ -48,6 +48,8 @@ use crate::{
                 subtree,
             },
             journal,
+            kind_edit::KindEdit,
+            made,
             rich::{fill_blocks, restyle, tick},
             stacking::bounds,
             value::{
@@ -69,6 +71,7 @@ use crate::{
             write_group::{dissolve_after_removal, flagged, group, ungroup, unlock},
             write_many::{edit_all, paste},
             write_shape::{arrow_changes, shape_changes},
+            write_tags::tag_change,
         },
         geometry::{Point, Rectangle, Size},
         id_source::IdSource,
@@ -141,6 +144,7 @@ pub(super) struct DocumentRoots {
     pub(super) users: MapRef,
     pub(super) journal: MapRef,
     pub(super) tags: MapRef,
+    pub(super) reactions: MapRef,
     pub(super) note: XmlTextRef,
 }
 
@@ -165,6 +169,8 @@ pub(super) struct WriteTransaction<'a> {
     pub(super) states: &'a HashMap<String, Value>,
     pub(super) stamp: AuthorStamp,
     pub(super) context: &'a ChangeSources<'a>,
+    /// The id of the logged-in user.
+    pub(super) user: &'a str,
 }
 
 /// What an edit of many sets beside the patch: layer, tag ids, link, parent.
@@ -210,6 +216,9 @@ pub(super) fn write_change(
         CheckedChange::LockOnly(ids) => flagged(transaction, scope, &ids, true),
         CheckedChange::Unlock(ids) => unlock(transaction, scope, &ids),
         CheckedChange::Arrange(ids, how) => arrange(transaction, scope, &ids, how),
+        CheckedChange::Tag { tag, change } => {
+            tag_change(transaction, scope, tag, change)
+        }
     }
 }
 
@@ -225,10 +234,11 @@ fn note(
     fill_blocks(transaction, root, &content.parsed().blocks, ids);
 }
 
-/// An object just written: what it touches and the fields it holds.
-struct Made {
-    changed: ChangedObject,
-    fields: Value,
+/// An object just written: what it touches, its fields and its parts' fields.
+pub(super) struct Written {
+    pub(super) changed: ChangedObject,
+    pub(super) fields: Value,
+    pub(super) parts: Vec<(String, Value)>,
 }
 
 /// New objects one after another; an arrow's `#N` end is the id of the N-th.
@@ -258,11 +268,13 @@ fn add_all(
                 states: &states,
                 stamp: scope.stamp,
                 context: scope.context,
+                user: scope.user,
             },
             &new,
-            placement,
+            &placement,
         )?;
         states.insert(made.changed.id.clone(), made.fields);
+        states.extend(made.parts);
         touched.push(made.changed);
     }
     Ok(touched)
@@ -289,19 +301,39 @@ fn add(
     transaction: &mut TransactionMut<'_>,
     scope: &WriteTransaction<'_>,
     new: &NewObject,
-    placement: Placement,
-) -> Result<Made> {
+    placement: &Placement,
+) -> Result<Written> {
+    match new {
+        NewObject::Made(made) => made::write(transaction, scope, made, placement),
+        NewObject::Sticker { .. }
+        | NewObject::Text { .. }
+        | NewObject::Shape { .. }
+        | NewObject::Frame { .. }
+        | NewObject::Arrow { .. }
+        | NewObject::Link { .. }
+        | NewObject::Image { .. }
+        | NewObject::File { .. } => add_plain(transaction, scope, new, placement),
+    }
+}
+
+fn add_plain(
+    transaction: &mut TransactionMut<'_>,
+    scope: &WriteTransaction<'_>,
+    new: &NewObject,
+    placement: &Placement,
+) -> Result<Written> {
     let WriteTransaction {
         roots,
         states,
         stamp,
         context,
+        ..
     } = *scope;
     let id = context.ids.new_id();
     let (kind, fields, text) = stored_fields(new, states, context.ids);
-    let parent = placement
-        .parent
-        .map_or(json!({}), |parent| json!({ (PARENT_ID): parent }));
+    // BUNDLE: outside every frame, `parentId: null` (bundle, main@4058552).
+    let layer = layer(states, new, &id, placement.parent.as_deref());
+    let parent = json!({ (PARENT_ID): placement.parent });
     let document = text
         .map(|text| {
             let document = context.ids.new_id();
@@ -320,7 +352,7 @@ fn add(
             document
         })
         .map_or(json!({}), |document| json!({ (DOCUMENT_ID): document }));
-    let header = new_header(&id, &kind, layer(states, new, &id), stamp)
+    let header = new_header(&id, &kind, layer, stamp)
         .into_iter()
         .map(|(name, value)| (name.to_owned(), value));
     let rest = [fields, document, parent]
@@ -329,9 +361,10 @@ fn add(
         .flatten();
     let pairs: Vec<(String, Value)> = header.chain(rest).collect();
     insert_map(transaction, &roots.objects, id.as_str(), pairs.clone())?;
-    Ok(Made {
+    Ok(Written {
         changed: ChangedObject::created(id, kind),
         fields: Value::Object(pairs.into_iter().collect()),
+        parts: Vec::new(),
     })
 }
 
@@ -371,13 +404,27 @@ pub(super) fn beyond(states: &HashMap<String, Value>, id: &str, stacking: Edge) 
     }
 }
 
-fn layer(states: &HashMap<String, Value>, new: &NewObject, id: &str) -> f64 {
-    let stacking = if matches!(new, NewObject::Frame { .. }) {
-        Edge::Back
+/// The layer of a new object; a frame in a frame takes the outer one's.
+fn layer(
+    states: &HashMap<String, Value>,
+    new: &NewObject,
+    id: &str,
+    parent: Option<&str>,
+) -> f64 {
+    if matches!(new, NewObject::Frame { .. }) {
+        frame_layer(states, parent).unwrap_or_else(|| beyond(states, id, Edge::Back))
     } else {
-        Edge::Front
-    };
-    beyond(states, id, stacking)
+        beyond(states, id, Edge::Front)
+    }
+}
+
+/// BUNDLE: a new frame put into a frame takes the parent frame's `zIndex`;
+/// a move writes `parentId` only (main.a33651a4.js 214844-214853,
+/// 214876-214890).
+fn frame_layer(states: &HashMap<String, Value>, parent: Option<&str>) -> Option<f64> {
+    let parent =
+        parent.filter(|parent| kind_of(states, parent) == ObjectKind::Frame)?;
+    states.get(parent)?.get(Z_INDEX)?.as_f64()
 }
 
 fn stored_fields<'a>(
@@ -420,7 +467,7 @@ fn stored_fields<'a>(
                 ObjectKind::Shape,
                 json!({
                     (POSITION): at, (WIDTH): width, (HEIGHT): height,
-                    (SHAPE_TYPE): kind.stored_name(), "fixedSize": true,
+                    (SHAPE_TYPE): kind.stored_name(), "fixedSize": false,
                     (FILL_COLOR): fill(color.as_ref(), "white6"),
                     (STROKE_COLOR): { (COLOR): "gray12", (OPACITY): 1 }, (STROKE_WIDTH): 2,
                 }),
@@ -450,6 +497,11 @@ fn stored_fields<'a>(
             image_fields(upload, at, size.as_ref())
         }
         NewObject::File { upload, at } => file_fields(upload, at),
+        NewObject::Made(made) => (
+            made.kind.clone(),
+            Value::Object(made::own_fields(made).into_iter().collect()),
+            None,
+        ),
     }
 }
 
@@ -620,7 +672,7 @@ fn arrow_fields<'a>(
 }
 
 /// `text` as lines, or as the blocks of the markdown it holds for `kind`.
-fn fill_as(
+pub(super) fn fill_as(
     transaction: &mut TransactionMut<'_>,
     root: &XmlTextRef,
     text: &str,
@@ -670,7 +722,7 @@ pub(super) fn edit(
     let map = object_map(transaction, &scope.roots.objects, id, kind)?;
     let content = content_changes(transaction, scope, edited, &fields);
     rewrite_document(transaction, scope, &fields, &content, patch)?;
-    // A moved object with no parent or a frame for one goes into the deepest frame.
+    // A move with no parent or a frame parent goes into the deepest frame.
     let held = subtree(states, id);
     let placed = placed_rectangle(patch, &fields);
     let framed = parent_of(&fields)
@@ -686,15 +738,22 @@ pub(super) fn edit(
     let reparented = parent
         .clone()
         .filter(|candidate| candidate.as_deref() != parent_of(&fields));
+    let written = patch
+        .kind_edits
+        .iter()
+        .map(|edit| edit.write(transaction, scope, id, &fields))
+        .collect::<Result<Vec<_>>>()?;
+    let names = changed_names(patch, also, reparented.as_ref().map(|_| "parent"));
     let changed: Vec<(&'static str, Value)> = content
         .into_iter()
+        .chain(written.iter().flat_map(|done| done.fields.iter().cloned()))
         .chain(reparented.as_ref().map(|name| (PARENT_ID, json!(name))))
         .chain(also.layer.map(|layer| (Z_INDEX, json!(layer))))
         .chain(also.tag_ids.as_ref().map(|ids| (TAG_IDS, json!(ids))))
         .chain(also.link_to.as_ref().map(|link| (LINK_TO, json!(link))))
-        .chain([("updated", scope.stamp.json())])
+        .map(web_rounded)
         .collect();
-    insert_changes(transaction, &map, &changed)?;
+    insert_changes(transaction, &map, &stamped(changed, scope))?;
     // BUNDLE: auto width unsets both fields (main.a33651a4.js 199436-199446).
     if patch.width == Some(TextWidth::Auto) {
         // imperative: each removal writes to the transaction
@@ -727,10 +786,11 @@ pub(super) fn edit(
         id: id.to_owned(),
         kind: kind.clone(),
         change: ObjectChangeKind::Changed,
-        fields: changed_names(patch, also, reparented.as_ref().map(|_| "parent")),
+        fields: names,
         link: None,
     }]
     .into_iter()
+    .chain(written.into_iter().flat_map(|done| done.touched))
     .chain(carried)
     .chain(resized)
     .collect())
@@ -1167,6 +1227,7 @@ fn changed_names(
     .chain(patch.shape.fields())
     .chain(patch.arrow.fields())
     .chain(patch.frame.fields())
+    .chain(patch.kind_edits.iter().map(KindEdit::field))
     .collect()
 }
 
@@ -1196,6 +1257,20 @@ pub(super) fn stored_now<T: ReadTxn>(
     stored_json(&fields)
 }
 
+/// `changes` with the `updated` stamp, but for a change of `parentId` alone
+/// (`isOnlyParentIdUpdate`, main.a33651a4.js 148403-148412).
+fn stamped(
+    changes: Vec<(&'static str, Value)>,
+    scope: &WriteTransaction<'_>,
+) -> Vec<(&'static str, Value)> {
+    let stamp = match changes.as_slice() {
+        // No field of the object (a reaction), or only an adoption: no `updated`.
+        [] | [(PARENT_ID, _)] => None,
+        _ => Some((UPDATED, scope.stamp.json())),
+    };
+    changes.into_iter().chain(stamp).collect()
+}
+
 /// Writes `changes` and the `updated` stamp on the object `id`; reports it
 /// changed.
 pub(super) fn changed(
@@ -1207,8 +1282,7 @@ pub(super) fn changed(
 ) -> Result<ChangedObject> {
     let kind = kind_of(scope.states, &id);
     let map = object_map(transaction, &scope.roots.objects, &id, &kind)?;
-    insert_changes(transaction, &map, changes)?;
-    insert_changes(transaction, &map, &[("updated", scope.stamp.json())])?;
+    insert_changes(transaction, &map, &stamped(changes.to_vec(), scope))?;
     Ok(ChangedObject {
         id,
         kind,
@@ -1361,7 +1435,10 @@ pub(super) fn shift_objects(
             let changes = if kind == ObjectKind::Arrow {
                 arrow_moved(stored, moving, shift)
             } else {
-                vec![(POSITION, shifted(stored.get(POSITION)?, shift))]
+                vec![(
+                    POSITION,
+                    web_rounded((POSITION, shifted(stored.get(POSITION)?, shift))).1,
+                )]
             };
             Some((id.clone(), vec![moved_field(&kind)], changes))
         })
@@ -1399,6 +1476,47 @@ pub(super) fn moving_with(
         .map(|(id, _)| id.clone())
         .collect();
     held.iter().cloned().chain(arrows).chain(stamps).collect()
+}
+
+/// BUNDLE: `rz.eG(v, 2)` (main.a33651a4.js 215634-215645), which `updateMany`
+/// applies to `position`, `width` and `height` (129756-129766): the magnitude
+/// rounded to 3 places half up in decimal, then cut to 2 towards
+/// zero. So `.005` and `.006` go down and `20.456` is `20.45`.
+pub(super) fn web_round(value: f64) -> f64 {
+    let moved = |number: f64, places: i32| {
+        format!("{number}e{places}")
+            .parse::<f64>()
+            .unwrap_or(number)
+    };
+    if value == 0.0 || !value.is_finite() {
+        value
+    } else {
+        let near = moved(moved(value.abs(), 3).round(), -3);
+        (value.signum() * ((near * 100.0).trunc() / 100.0)) + 0.0
+    }
+}
+
+/// A change to `position`, `width` or `height` as the web client stores it.
+fn web_rounded((name, value): (&'static str, Value)) -> (&'static str, Value) {
+    let value = match (name, &value) {
+        (POSITION, Value::Object(point)) => Value::Object(
+            point
+                .iter()
+                .map(|(axis, number)| {
+                    let rounded = match (axis.as_str(), number.as_f64()) {
+                        (X | Y, Some(number)) => json!(web_round(number)),
+                        _ => number.clone(),
+                    };
+                    (axis.clone(), rounded)
+                })
+                .collect(),
+        ),
+        (WIDTH | HEIGHT, Value::Number(number)) => number
+            .as_f64()
+            .map_or(value.clone(), |n| json!(web_round(n))),
+        _ => value,
+    };
+    (name, value)
 }
 
 pub(super) fn shifted(point: &Value, (dx, dy): (f64, f64)) -> Value {

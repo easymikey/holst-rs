@@ -216,6 +216,213 @@ async fn a_thread_removal_needs_confirmation(
     Ok(())
 }
 
+fn with_three_replies() -> Given {
+    with_board().board(BOARD, "Team", None).thread(
+        BOARD,
+        FixtureThread::new("c1", AUTHOR, "Why?")
+            .at(10.0, 20.0)
+            .reply_by_me("Mine")
+            .reply(8, "Theirs")
+            .reply_by_me("Later"),
+    )
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_reply_removal_needs_confirmation(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_three_replies().start().await?;
+    let observation = holst.on(surface).delete_reply(BOARD, "c1", "c1r1").await?;
+    then(&observation)
+        .failed_saying("deleting the reply c1r1")
+        .signalled_as(surface.permission_denied());
+    comments_of(&holst, BOARD).has_messages(1, &["Why?", "Mine", "Theirs", "Later"]);
+    Ok(())
+}
+
+#[rstest]
+#[case::by_id("c1r1", &["Why?", "Theirs", "Later"])]
+#[case::by_number("3", &["Why?", "Mine", "Theirs"])]
+#[tokio::test]
+async fn a_confirmed_reply_removal_takes_only_that_reply(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+    #[case] reply: &str,
+    #[case] left: &[&str],
+) -> Result<(), ScenarioError> {
+    let holst = with_three_replies().start().await?;
+    let removed = holst
+        .on(surface)
+        .confirming()
+        .delete_reply(BOARD, "c1", reply)
+        .await?;
+    then(&removed).succeeded();
+    let threads = comments_of(&holst, BOARD);
+    threads.count(1);
+    threads.has_messages(1, left);
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_thread_is_coloured_and_the_colour_is_read_back(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_thread().start().await?;
+    let edited = holst
+        .on(surface)
+        .edit_comment(BOARD, "c1", Some("red10"), ThreadPin::Free)
+        .await?;
+    then(&edited).succeeded();
+    let threads = comments_of(&holst, BOARD);
+    threads.is_colored(1, Some("red10"));
+    threads.is_pinned_at(1, &ThreadAnchor::Point(10.0, 20.0));
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_colour_is_cleared_with_none(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_board()
+        .board(BOARD, "Team", None)
+        .thread(
+            BOARD,
+            FixtureThread::new("c1", AUTHOR, "Why?").colored("red10"),
+        )
+        .start()
+        .await?;
+    let edited = holst
+        .on(surface)
+        .edit_comment(BOARD, "c1", Some("none"), ThreadPin::Free)
+        .await?;
+    then(&edited).succeeded();
+    comments_of(&holst, BOARD).is_colored(1, None);
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_thread_moves_to_a_point(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_thread().start().await?;
+    let edited = holst
+        .on(surface)
+        .edit_comment(BOARD, "c1", Some("blue6"), ThreadPin::At("40,50"))
+        .await?;
+    then(&edited).succeeded();
+    let threads = comments_of(&holst, BOARD);
+    threads.is_pinned_at(1, &ThreadAnchor::Point(40.0, 50.0));
+    threads.is_colored(1, Some("blue6"));
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_thread_moves_onto_an_object(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_board()
+        .board_with_objects(BOARD, "Team", vec![FixtureObject::Sticker("Idea".into())])
+        .thread(
+            BOARD,
+            FixtureThread::new("c1", AUTHOR, "Why?").at(10.0, 20.0),
+        )
+        .start()
+        .await?;
+    let edited = holst
+        .on(surface)
+        .edit_comment(BOARD, "c1", None, ThreadPin::Object(1))
+        .await?;
+    then(&edited).succeeded();
+    comments_of(&holst, BOARD).is_pinned_at(1, &ThreadAnchor::Object(1));
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_colour_outside_the_thread_colours_is_refused(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_thread().start().await?;
+    let refused = holst
+        .on(surface)
+        .edit_comment(BOARD, "c1", Some("magenta"), ThreadPin::At("40,50"))
+        .await?;
+    then(&refused).fails_saying("violet6, gray8, none");
+    then(&refused).signalled_as(surface.usage());
+    let threads = comments_of(&holst, BOARD);
+    threads.is_colored(1, None);
+    threads.is_pinned_at(1, &ThreadAnchor::Point(10.0, 20.0));
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn an_edit_that_changes_nothing_is_refused(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_thread().start().await?;
+    let refused = holst
+        .on(surface)
+        .edit_comment(BOARD, "c1", None, ThreadPin::Free)
+        .await?;
+    then(&refused).signalled_as(surface.usage());
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_dry_run_edit_sends_nothing(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_thread().start().await?;
+    let shown = holst
+        .on(surface)
+        .dry_running()
+        .edit_comment(BOARD, "c1", Some("red10"), ThreadPin::At("40,50"))
+        .await?;
+    then(&shown).shows("would change thread c1: color, place");
+    let threads = comments_of(&holst, BOARD);
+    threads.is_colored(1, None);
+    threads.is_pinned_at(1, &ThreadAnchor::Point(10.0, 20.0));
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_reply_outside_the_thread_is_named_when_not_found(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_three_replies().start().await?;
+    let observation = holst
+        .on(surface)
+        .confirming()
+        .delete_reply(BOARD, "c1", "zzzzz")
+        .await?;
+    then(&observation).fails_saying("reply zzzzz not found in thread c1");
+    comments_of(&holst, BOARD).has_messages(1, &["Why?", "Mine", "Theirs", "Later"]);
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn another_authors_reply_is_not_removed(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_three_replies().start().await?;
+    let observation = holst
+        .on(surface)
+        .confirming()
+        .delete_reply(BOARD, "c1", "2")
+        .await?;
+    then(&observation).fails_saying("another author's reply stays");
+    comments_of(&holst, BOARD).has_messages(1, &["Why?", "Mine", "Theirs", "Later"]);
+    Ok(())
+}
+
 #[rstest]
 #[tokio::test]
 async fn a_confirmed_removal_takes_the_thread_with_its_replies(
@@ -256,6 +463,21 @@ async fn a_dry_run_of_a_comment_write_changes_nothing(
     threads.count(1);
     threads.has_messages(1, &["Why?"]);
     threads.is_resolved(1, false);
+    assert_eq!(read_time_of(&holst, BOARD, "c1"), None);
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_thread_is_not_marked_read_at_a_bad_time(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_thread().start().await?;
+    let refused = holst
+        .on(surface)
+        .mark_comment_read(BOARD, "c1", Some("yesterday"))
+        .await?;
+    then(&refused).fails_saying("ISO 8601, e.g. 2026-10-27T09:30:00Z");
     assert_eq!(read_time_of(&holst, BOARD, "c1"), None);
     Ok(())
 }

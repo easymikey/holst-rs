@@ -196,6 +196,37 @@ async fn api_get_of_the_token_list_hides_the_values() {
 }
 
 #[tokio::test]
+async fn api_get_keeps_what_the_server_remembers() {
+    let (holst, _) =
+        McpServer::scripted([CannedResponse::ok("{}"), CannedResponse::ok("{}")]);
+    // The first call logs in, which drops the memory; keep the board after it.
+    api_call(
+        &holst,
+        serde_json::json!({ "method": "GET", "path": "/gapi/current_user" }),
+    )
+    .await;
+    let index = std::sync::Arc::new(
+        holst_core::domain::board_text::index::BoardIndex::from_objects(
+            &[],
+            BOARD,
+            Vec::new(),
+        ),
+    );
+    holst
+        .state
+        .store_index(BOARD, index, holst.state.generation());
+    api_call(
+        &holst,
+        serde_json::json!({ "method": "GET", "path": "/gapi/current_user" }),
+    )
+    .await;
+    assert!(
+        holst.state.board(BOARD).is_some(),
+        "a GET dropped the board"
+    );
+}
+
+#[tokio::test]
 async fn api_expands_aliases_in_path_query_and_body() {
     let (holst, network) =
         McpServer::scripted([CannedResponse::ok("{}"), CannedResponse::ok("{}")]);
@@ -436,9 +467,12 @@ async fn a_board_listing_shows_300_and_says_of_how_many() {
         .await
         .into_text();
     let lines: Vec<_> = shown.lines().collect();
-    assert_eq!(lines.len(), 302, "{shown}");
-    assert_eq!(lines.get(300), Some(&"300 of 301"), "{shown}");
-    assert_eq!(lines.get(301), Some(&"more: cursor 300"), "{shown}");
+    assert_eq!(lines.len(), 301, "{shown}");
+    assert_eq!(
+        lines.get(300),
+        Some(&"… 300 of 301; next: cursor 300"),
+        "{shown}"
+    );
 }
 
 #[tokio::test]

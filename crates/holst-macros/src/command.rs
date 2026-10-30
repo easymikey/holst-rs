@@ -211,6 +211,7 @@ fn surfaces(keys: &[Key]) -> syn::Result<Vec<Ident>> {
 }
 
 struct ArgumentField {
+    ident: Ident,
     name: String,
     ty: Type,
     letter: Option<LitChar>,
@@ -280,6 +281,7 @@ impl ArgumentField {
         let kinds =
             value::<Listed>(keys, KINDS)?.map_or_else(Vec::new, |Listed(list)| list);
         Ok(Self {
+            ident: ident.clone(),
             name,
             ty: field.ty.clone(),
             letter,
@@ -291,6 +293,12 @@ impl ArgumentField {
             subcommand,
             kinds,
         })
+    }
+
+    /// `("name", given)`: whether the field holds a value the caller gave.
+    fn given(&self) -> Tokens {
+        let (name, ident) = (&self.name, &self.ident);
+        quote!((#name, crate::command::table::Given::given(&self.#ident)))
     }
 
     fn emit(&self) -> Tokens {
@@ -305,8 +313,9 @@ impl ArgumentField {
             surfaces,
             subcommand,
             kinds,
+            ..
         } = self;
-        let kinds = kinds.iter().map(Ident::to_string);
+        let kinds = kinds.iter().map(|kind| kind.to_string().replace('_', "-"));
         let (letter, tool_doc) =
             (optional(letter.as_ref()), optional(tool_doc.as_ref()));
         quote! {
@@ -539,9 +548,19 @@ pub(crate) fn expand_group(item: Tokens) -> syn::Result<Tokens> {
         .then_some(())
         .ok_or_else(|| syn::Error::new(name.span(), NO_NESTED_GROUP))?;
     let arguments = arguments(&members);
+    let given = members.iter().filter_map(|member| match member {
+        Member::Plain(argument) => Some(argument.given()),
+        Member::Group(_) => None,
+    });
     Ok(quote! {
         impl crate::command::table::ArgumentGroup for #name {
             const ARGUMENTS: &'static [crate::command::table::Argument] = #arguments;
+
+            fn first_given(&self) -> ::core::option::Option<&'static str> {
+                [#(#given),*]
+                    .into_iter()
+                    .find_map(|(name, given)| given.then_some(name))
+            }
         }
     })
 }

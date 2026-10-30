@@ -122,12 +122,13 @@ mod tests {
             card: None,
             tags: Vec::new(),
             style: TextStyle::default(),
+            detail: Vec::new(),
         }
     }
 
     fn listing(objects: Vec<ListedObject>, next: Option<usize>) -> Listing {
         Listing {
-            id: "b1".into(),
+            board: "b1".into(),
             link: "L".into(),
             edit_right: EditRight::Editable,
             rectangle: None,
@@ -136,6 +137,16 @@ mod tests {
             objects,
             next,
         }
+    }
+
+    #[test]
+    fn the_json_names_the_board_and_each_object_by_id() {
+        let json =
+            serde_json::to_value(listing(vec![listed(sticker("a1", ""))], None)).ok();
+        let at = |path| json.as_ref().and_then(|json| json.pointer(path));
+        assert_eq!(at("/board"), Some(&Value::from("b1")));
+        assert_eq!(at("/id"), None);
+        assert_eq!(at("/objects/0/id"), Some(&Value::from("a1")));
     }
 
     #[test]

@@ -11,6 +11,7 @@ use holst_core::{
             own,
             rights::{self, Settled, Shared},
             settings::{self, Edited},
+            tag::{self, Tagged},
             tree::{ListedNode, Listing, ls},
             tree_change::{self, Changed},
         },
@@ -25,7 +26,12 @@ use holst_core::{
 use rmcp::model::CallToolResult;
 use serde_json::{Map, Value};
 
-use crate::{login::HandedClient, server::McpServer, tools::files::checked_upload};
+use crate::{
+    login::HandedClient,
+    reply::change::written,
+    server::McpServer,
+    tools::files::checked_upload,
+};
 
 /// The nodes a listing shows when the call gives no limit.
 const LIST_DEFAULT: u32 = 300;
@@ -106,6 +112,14 @@ impl McpServer {
                 })
                 .await
             }
+            BoardVerb::Tag => {
+                self.change(
+                    arguments,
+                    async |client, args| tag::tag(client, &self.cache, args).await,
+                    Self::tagged_text,
+                )
+                .await
+            }
             BoardVerb::Grant => {
                 self.change(arguments, rights::grant, Self::shared_text)
                     .await
@@ -156,6 +170,11 @@ impl McpServer {
         self.by_mode(args.dry_run, call).await
     }
 
+    fn tagged_text(&self, tagged: &Tagged) -> String {
+        let touched = written(&tagged.report, &|id| self.state.alias(id));
+        format!("{}\n{touched}", tagged.head())
+    }
+
     fn tree_text(&self, listing: &Listing) -> String {
         if listing.nodes.is_empty() {
             format!("{EMPTY}\n")
@@ -168,7 +187,7 @@ impl McpServer {
                 heading.into_iter().chain([self.node_line(node)])
             });
             let more = listing.cursor.as_deref().map(|cursor| {
-                format!("{cursor} of {}\nmore: cursor {cursor}\n", listing.total)
+                format!("… {cursor} of {}; next: cursor {cursor}\n", listing.total)
             });
             lines.chain(more).collect()
         }

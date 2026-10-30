@@ -642,6 +642,70 @@ async fn a_path_that_fails_answers_with_its_status() -> Outcome<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn the_log_holds_each_request_in_order() -> Outcome<()> {
+    let fake = Fake::start(plan()).await?;
+    fake.fail("session/list", 503);
+    get(&fake, "current_user?lang=en").await?;
+    get(&fake, "session/list").await?;
+    send(&fake, "", "GET", "current_user", "").await?;
+    get(&fake, "nowhere").await?;
+    let address = fake.base_url().trim_start_matches("http://");
+    let mut stream = TcpStream::connect(address).await?;
+    stream
+        .write_all(b"GET /storage/report.pdf HTTP/1.1\r\nhost: fake\r\nconnection: close\r\n\r\n")
+        .await?;
+    stream.read_to_string(&mut String::new()).await?;
+    assert_eq!(
+        fake.requests(),
+        [
+            "GET /gapi/current_user",
+            "GET /gapi/session/list",
+            "GET /gapi/current_user",
+            "GET /gapi/nowhere",
+            "GET /storage/report.pdf",
+        ]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_log_holds_the_socket_messages() -> Outcome<()> {
+    let fake = Fake::start(plan()).await?;
+    let id = fake.id_of("Plan").ok_or(Failure::Malformed("board"))?;
+    let address = fake.base_url().trim_start_matches("http://");
+    let mut request = format!("ws://{address}/hud/ws").into_client_request()?;
+    request.headers_mut().insert(
+        "cookie",
+        ACCEPTED_COOKIES.parse().map_err(io::Error::other)?,
+    );
+    let (mut socket, _) =
+        tokio_tungstenite::client_async(request, TcpStream::connect(address).await?)
+            .await?;
+    let load = [string(id.as_bytes()), uint(1), string(b"{}")].concat();
+    socket.send(Message::binary(load)).await?;
+    assert!(socket.next().await.is_some());
+    let write = [
+        string(id.as_bytes()),
+        uint(0),
+        uint(0),
+        uint(0),
+        string(&[]),
+    ]
+    .concat();
+    socket.send(Message::binary(write)).await?;
+    assert!(socket.next().await.is_some());
+    assert_eq!(
+        fake.requests(),
+        [
+            "WS open".to_owned(),
+            format!("WS RequestDocument {id}"),
+            format!("WS Update {id}"),
+        ]
+    );
+    Ok(())
+}
+
 fn plan() -> Fixture {
     Fixture::default().workspace("Team").board_with_objects(
         "Plan",

@@ -15,7 +15,7 @@ use yrs::{
 
 use crate::{
     domain::{
-        board::{any, note_root},
+        board::{any, note_root, objects_root},
         change::{
             check::check,
             journal,
@@ -24,7 +24,7 @@ use crate::{
         },
     },
     error::Result,
-    protocol::document::{DOCUMENTS, OBJECTS, TAGS_STORE, USERS_IDS},
+    protocol::document::{DOCUMENTS, REACTIONS_STORE, TAGS_STORE, USERS_IDS},
 };
 
 /// Apply `op` to `document` as `user` in one transaction and encode just that
@@ -58,11 +58,12 @@ pub fn build_with(
     right: RemoveRight,
 ) -> Result<ChangeUpdate> {
     let roots = DocumentRoots {
-        objects: document.get_or_insert_map(OBJECTS),
+        objects: document.get_or_insert_map(objects_root(document)),
         documents: document.get_or_insert_map(DOCUMENTS),
         users: document.get_or_insert_map(USERS_IDS),
         journal: document.get_or_insert_map(journal::JOURNAL),
         tags: document.get_or_insert_map(TAGS_STORE),
+        reactions: document.get_or_insert_map(REACTIONS_STORE),
         note: note_root(document),
     };
     let mut transaction = document.transact_mut();
@@ -78,6 +79,7 @@ pub fn build_with(
         states: &states,
         stamp,
         context,
+        user,
     };
     let kept = checked.kept();
     let touched = write_change(&mut transaction, &scope, checked)?;
@@ -100,7 +102,7 @@ fn states<T: ReadTxn>(transaction: &T, objects: &MapRef) -> HashMap<String, Valu
 }
 
 /// The author number the board's users hold for `user`, if it holds one.
-fn known_author<T: ReadTxn>(
+pub(crate) fn known_author<T: ReadTxn>(
     transaction: &T,
     users: &MapRef,
     user: &str,

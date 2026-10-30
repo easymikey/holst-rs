@@ -284,6 +284,7 @@ pub struct Changed {
     pub name: Option<String>,
     /// How many objects a created template holds.
     pub objects: Option<usize>,
+    #[serde(flatten)]
     pub outcome: ChangeReport,
 }
 

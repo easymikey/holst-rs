@@ -7,6 +7,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::{
     domain::{
@@ -17,7 +18,7 @@ use crate::{
             frame_look::{FrameBackground, FrameRatio},
             shape_type::{ShapeType, StrokeStyle},
         },
-        change::receipt::Delivery,
+        change::{kind_edit::KindEdit, receipt::Delivery},
         geometry::{Point, Size},
         id_source::IdSource,
         palette::Color,
@@ -107,6 +108,45 @@ pub enum NewObject {
         upload: Upload,
         at: Point,
     },
+    /// An object as the web client stores it, built by its kind's own code.
+    Made(Made),
+}
+
+/// A new object of a kind the web client stores with more than its own map.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Made {
+    /// The stored type; `Other` for kanban, mind-map-node, ...
+    pub kind: ObjectKind,
+    /// From the parent's corner when `parent` is given.
+    pub at: Point,
+    /// For the free corner and the frame check only.
+    pub size: Option<Size>,
+    /// A holder that is not a frame; no frame search then.
+    pub parent: Option<String>,
+    /// Besides the header, `position` and `parentId`.
+    pub fields: Vec<(&'static str, Value)>,
+    /// Each a new text document, its id stored under that field.
+    pub texts: Vec<(&'static str, String)>,
+    /// Code, in the root `Y.Text` `code-mirror-<documentId>`.
+    pub code: Option<String>,
+    /// The objects it holds, `parentId` = the new object.
+    pub parts: Vec<Made>,
+    /// The board's stores it adds to.
+    pub entries: Vec<StoreEntry>,
+}
+
+/// An entry of one of the board's stores, a root map named `store`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoreEntry {
+    /// The root map's name, e.g. `kanban-infoStore`.
+    pub store: &'static str,
+    /// Drawn by the kind's code through the `new_id` closure it is given.
+    pub id: String,
+    pub fields: Vec<(&'static str, Value)>,
+    /// Written as nested `Y.Array`s (kanban columns, tag ids).
+    pub lists: Vec<(&'static str, Vec<Value>)>,
+    /// Written only when the store has no entry `id` (the default statuses).
+    pub keep: bool,
 }
 
 impl NewObject {
@@ -124,8 +164,11 @@ impl NewObject {
             | NewObject::Frame { at, .. }
             | NewObject::Link { at, .. }
             | NewObject::Image { at, .. }
-            | NewObject::File { at, .. } => Some(at),
-            NewObject::Arrow { .. } => None,
+            | NewObject::File { at, .. }
+            | NewObject::Made(Made {
+                at, parent: None, ..
+            }) => Some(at),
+            NewObject::Arrow { .. } | NewObject::Made(_) => None,
         };
         corner
             .map(|at| at.shifted(dx, dy).map(|to| *at = to))
@@ -155,6 +198,8 @@ pub struct ObjectPatch {
     pub arrow: ArrowEdit,
     pub frame: FrameEdit,
     pub reparent: Option<Reparent>,
+    /// What only some kinds take; none for now.
+    pub kind_edits: Vec<KindEdit>,
 }
 
 /// Where an edit puts an object: into a frame, or out of its frame.
@@ -464,6 +509,20 @@ pub enum BoardChange {
         objects: Vec<String>,
         how: Arrangement,
     },
+    /// A tag of the board, by title or id, renamed, recolored or removed.
+    Tag {
+        tag: String,
+        change: TagChange,
+    },
+}
+
+/// What is done to a tag definition; a removal wins over the rest.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TagChange {
+    pub name: Option<String>,
+    pub color: Option<Color>,
+    /// Delete the tag and take its id off every sticker and task card.
+    pub remove: bool,
 }
 
 /// What happened to an object.
@@ -594,8 +653,15 @@ mod tests {
 
     use crate::{
         domain::{
-            board::shape_type::ShapeType,
-            change::value::{ArrowLook, FrameEdit, ImageUpload, NewObject, Upload},
+            board::{ObjectKind, shape_type::ShapeType},
+            change::value::{
+                ArrowLook,
+                FrameEdit,
+                ImageUpload,
+                Made,
+                NewObject,
+                Upload,
+            },
             geometry::{Point, Size},
             response::LinkPreview,
         },
@@ -651,6 +717,17 @@ mod tests {
         size: Some(Size::SHAPE),
     })]
     #[case::file(|at| NewObject::File { upload: upload(), at })]
+    #[case::made(|at| NewObject::Made(Made {
+        kind: ObjectKind::Other("dice".into()),
+        at,
+        size: None,
+        parent: None,
+        fields: Vec::new(),
+        texts: Vec::new(),
+        code: None,
+        parts: Vec::new(),
+        entries: Vec::new(),
+    }))]
     fn shifting_moves_the_corner_and_keeps_the_rest(
         #[case] make: fn(Point) -> NewObject,
     ) -> Result<()> {

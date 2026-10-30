@@ -6,12 +6,15 @@ use yrs::{Doc, Transact as _, Update, updates::decoder::Decode as _};
 use crate::{
     domain::{board::EditRight, change::receipt::Delivery},
     effect::{
-        board_write::{LoadSource, OpenedBoard, WriteInterpreter},
+        board_write::LoadSource,
         board_write_plan::{Release, WritePlan},
         http::BoxFuture,
     },
     error::{Error, Result},
-    remote::{client::Client, socket::write::with_free_client_id},
+    remote::{
+        client::Client,
+        socket::write::{OpenedBoard, WriteInterpreter, with_free_client_id},
+    },
 };
 
 /// A board in memory for tests: records each plan, acks and keeps the released.

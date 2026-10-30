@@ -449,8 +449,12 @@ async fn index_cached(
 }
 
 fn stickers_by(client: u64, ids: &[&str]) -> (Vec<u8>, StateVector) {
+    stickers_in("objects", client, ids)
+}
+
+fn stickers_in(root: &str, client: u64, ids: &[&str]) -> (Vec<u8>, StateVector) {
     let doc = Doc::with_client_id(client);
-    let objects = doc.get_or_insert_map("objects");
+    let objects = doc.get_or_insert_map(root);
     ids.iter().fold((), |(), id| {
         let fields = json!({"id": id, "type": "sticker", "position": {"x": 1, "y": 2}});
         let sticker = Any::from_json(&fields.to_string()).unwrap_or(Any::Null);
@@ -853,7 +857,6 @@ async fn no_login_no_socket() -> Result<()> {
 }
 
 #[rstest::rstest]
-#[case::v3(json!({"schema_version": 3, "server_provider_type": "hud"}), 3, "hud")]
 #[case::no_version(json!({"server_provider_type": "hud"}), 1, "hud")]
 #[case::hocuspocus(
     json!({"schema_version": 2, "server_provider_type": "hocuspocus"}),
@@ -906,6 +909,65 @@ async fn a_board_in_format_v2_on_hud_loads(
     let loaded =
         load_cached(&client, &linked_board(&server), None, CacheUse::Use).await?;
     assert_eq!(ids_of(&loaded.0), ["cached"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_board_in_format_v3_on_hud_loads_and_reads_offline() -> Result<()> {
+    let (state, server) = stickers_in("objects_v3", 4, &["cached"]);
+    let memory = MemoryCache::new(1 << 20, FixedClock { unix_millis: 1 });
+    let format = json!({"schema_version": 3, "server_provider_type": "hud"});
+    let (_, client) = fake::on_fake(
+        [channel_with(&format), body(state)],
+        Some(fake::stored("tok", "s=1")),
+    )?;
+    let loaded = load_cached(
+        &client,
+        &linked_board(&server),
+        Some(&memory),
+        CacheUse::Use,
+    )
+    .await?;
+    assert_eq!(ids_of(&loaded.0), ["cached"]);
+    let offline =
+        load_cached(&client, &script([]), Some(&memory), CacheUse::Offline).await?;
+    assert_eq!(ids_of(&offline.0), ["cached"]);
+    Ok(())
+}
+
+async fn root_loaded(
+    client: &Client,
+    server: &StateVector,
+    memory: &MemoryCache,
+) -> Result<&'static str> {
+    let (loaded, _) =
+        load_cached(client, &linked_board(server), Some(memory), CacheUse::Use).await?;
+    Ok(crate::domain::board::objects_root(&loaded.document))
+}
+
+#[rstest::rstest]
+#[case::v2(2, "objects")]
+#[case::v3(3, "objects_v3")]
+#[tokio::test]
+async fn every_load_registers_the_objects_root_of_the_format(
+    #[case] schema: u32,
+    #[case] root: &str,
+) -> Result<()> {
+    let (state, server) = stickers_in(root, 4, &[]);
+    let memory = MemoryCache::new(1 << 20, FixedClock { unix_millis: 1 });
+    let format = json!({"schema_version": schema, "server_provider_type": "hud"});
+    let (_, client) = fake::on_fake(
+        [
+            channel_with(&format),
+            body(state.clone()),
+            channel_with(&format),
+            body(state),
+        ],
+        Some(fake::stored("tok", "s=1")),
+    )?;
+    let first = root_loaded(&client, &server, &memory).await?;
+    let second = root_loaded(&client, &server, &memory).await?;
+    assert_eq!([first, second], [root, root]);
     Ok(())
 }
 

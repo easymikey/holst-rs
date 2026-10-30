@@ -1,10 +1,14 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::error::{Error, Result, board_socket::BoardSocketError};
+use crate::{
+    error::{Error, Result, board_socket::BoardSocketError},
+    protocol::document::{OBJECTS, OBJECTS_V3},
+};
 
-/// The format v2 on hud, the only one the document code reads and writes.
-const SUPPORTED_SCHEMA: u32 = 2;
+/// The formats on hud that the document code reads and writes.
+const SCHEMA_V2: u32 = 2;
+const SCHEMA_V3: u32 = 3;
 const SUPPORTED_PROVIDER: &str = "hud";
 /// A workspace's default access for new root channels; `null` is private.
 const ROOT_ACCESS_KEY: &str = "default_new_root_channel_workspace_member_access";
@@ -36,21 +40,46 @@ pub(crate) struct BoardFormat {
 }
 
 impl BoardFormat {
+    /// The root of the document that holds the objects of the board.
+    ///
     /// # Errors
     ///
     /// [`BoardSocketError::UnsupportedFormat`] unless the board is in format v2
-    /// on hud; the web client reads a missing version as 1 and a missing
-    /// provider as hud.
-    pub(crate) fn supported(&self) -> Result<()> {
-        let schema = self.schema_version.unwrap_or(1);
-        let provider = self.provider.as_deref().unwrap_or(SUPPORTED_PROVIDER);
-        match (schema, provider) {
-            (SUPPORTED_SCHEMA, SUPPORTED_PROVIDER) => Ok(()),
-            _ => Err(Error::BoardSocket(BoardSocketError::UnsupportedFormat {
-                schema,
-                provider: provider.to_owned(),
-            })),
+    /// or version 3 on hud; the web client reads a missing version as 1 and a
+    /// missing provider as hud.
+    pub(crate) fn supported(&self) -> Result<&'static str> {
+        match (self.schema(), self.provider()) {
+            (SCHEMA_V2, SUPPORTED_PROVIDER) => Ok(OBJECTS),
+            (SCHEMA_V3, SUPPORTED_PROVIDER) => Ok(OBJECTS_V3),
+            _ => Err(self.refused()),
         }
+    }
+
+    /// # Errors
+    ///
+    /// As [`Self::supported`], and for a version 3 board: whole-board files are
+    /// v2 only.
+    pub(crate) fn whole_file(&self) -> Result<()> {
+        self.supported().and_then(|root| {
+            (root == OBJECTS)
+                .then_some(())
+                .ok_or_else(|| self.refused())
+        })
+    }
+
+    fn schema(&self) -> u32 {
+        self.schema_version.unwrap_or(1)
+    }
+
+    fn provider(&self) -> &str {
+        self.provider.as_deref().unwrap_or(SUPPORTED_PROVIDER)
+    }
+
+    fn refused(&self) -> Error {
+        Error::BoardSocket(BoardSocketError::UnsupportedFormat {
+            schema: self.schema(),
+            provider: self.provider().to_owned(),
+        })
     }
 }
 
@@ -58,7 +87,34 @@ impl BoardFormat {
 mod tests {
     use serde_json::json;
 
+    use super::BoardFormat;
     use crate::protocol::channel::root_access;
+
+    #[rstest::rstest]
+    #[case::v2(json!({"schema_version": 2}), Some("objects"), true)]
+    #[case::v3(json!({"schema_version": 3, "server_provider_type": "hud"}), Some("objects_v3"), false)]
+    #[case::v1(json!({"schema_version": 1}), None, false)]
+    #[case::unversioned(json!({}), None, false)]
+    #[case::hocuspocus(
+        json!({"schema_version": 2, "server_provider_type": "hocuspocus"}),
+        None,
+        false
+    )]
+    fn a_board_format_names_the_objects_root_or_is_refused(
+        #[case] channel: serde_json::Value,
+        #[case] root: Option<&str>,
+        #[case] whole_file: bool,
+    ) {
+        let format: BoardFormat =
+            serde_json::from_value(channel).unwrap_or(BoardFormat {
+                schema_version: None,
+                provider: None,
+            });
+        assert_eq!(
+            (format.supported().ok(), format.whole_file().is_ok()),
+            (root, whole_file)
+        );
+    }
 
     #[test]
     fn the_root_default_is_read_from_the_workspace_in_the_account() {

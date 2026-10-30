@@ -237,6 +237,21 @@ async fn a_template_name_is_looked_up_among_all_the_lists() -> Result<()> {
 }
 
 #[tokio::test]
+async fn the_json_carries_the_status_at_the_top() -> Result<()> {
+    let (_fake, client) = client([
+        json_reply(&json!({ "id": TEMPLATE, "name": "Retro" })),
+        json_reply(&json!({})),
+    ])?;
+    let changed = rm(&client, &arguments(json!({ "template": TEMPLATE }))?).await?;
+    let json = serde_json::to_value(&changed)?;
+    assert_eq!(
+        (json.pointer("/status"), json.pointer("/outcome")),
+        (Some(&json!("held")), None)
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_held_delete_and_a_dry_run_show_the_same_request() -> Result<()> {
     let request = async |given: Value| -> Result<Value> {
         let (_fake, client) = client([

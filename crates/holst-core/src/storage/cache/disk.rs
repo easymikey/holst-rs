@@ -29,6 +29,8 @@ use crate::{
             META_FILE,
             STATE_FILE,
             TALLY_FILE,
+            TREES_DIR,
+            WORKSPACES_FILE,
             files::{freed, layout},
         },
         file::{
@@ -404,6 +406,8 @@ impl CachePort for Cache {
             self.dir.join(BOARDS_DIR),
             self.dir.join(ASSETS_DIR),
             self.dir.join(TALLY_FILE),
+            self.dir.join(WORKSPACES_FILE),
+            self.dir.join(TREES_DIR),
         ]
         .into_iter()
         .chain(partials)

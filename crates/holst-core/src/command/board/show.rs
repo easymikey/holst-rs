@@ -7,35 +7,34 @@ use itertools::Itertools as _;
 use serde::Serialize;
 use serde_json::Value;
 
+pub use crate::command::loading::account_cache;
+pub(in crate::command) use crate::command::loading::{
+    Loading,
+    board_id,
+    cache_use,
+    chosen_area,
+    explicit_area,
+    through_cache,
+};
 use crate::{
     command::{
-        account,
-        board::{AreaArgs, Caching, ShowArgs, ShowPart, rights::Right},
-        board_load::{self, CacheUse, RemoteBoard},
-        lookup,
+        board::{AreaArgs, ShowArgs, ShowPart, rights::Right},
+        board_load::{self, RemoteBoard},
         table::not_value,
     },
     domain::{
         area::{Area, listed_area, scene::Scene},
-        board::{EditRight, Object, ObjectKind, note_text, objects},
+        board::{EditRight, Object, note_text, objects},
         geometry::Rectangle,
-        id::{self, BoardId, ObjectId},
+        id::{self},
         node::{NodeBrief, Parent},
         picture::BoardLength,
         sharing::Sharing,
     },
-    effect::{cache::CachePort, settings::CacheSettings, socket::SocketConnector},
-    error::{
-        Error,
-        Result,
-        input::InputError,
-        local_data::LocalDataError,
-        lookup::{LookupError, LookupKind, LookupMiss},
-        picture::PictureError,
-    },
+    effect::settings::CacheSettings,
+    error::{Error, Result, input::InputError},
     protocol::sharing::{self, HeldRole},
-    remote::{api, client::Client, socket::write::connector},
-    storage::cache::Cache,
+    remote::{api, client::Client},
 };
 
 const COMMAND: &str = "board show";
@@ -90,14 +89,6 @@ pub struct Holder {
     pub right: Right,
 }
 
-/// How a board is loaded: the socket, the cache and how the cache is used.
-#[derive(Clone, Copy)]
-pub(in crate::command) struct Loading<'a> {
-    pub(in crate::command) connector: &'a dyn SocketConnector,
-    pub(in crate::command) cache: Option<&'a dyn CachePort>,
-    pub(in crate::command) cache_use: CacheUse,
-}
-
 /// Shows the boards asked for. A reference that is not found is listed in
 /// [`Briefs::missing`] while another is shown; when none is found, its error is
 /// the result.
@@ -114,58 +105,6 @@ pub async fn show(
     let cache_use = cache_use(&args.caching, COMMAND)?;
     through_cache(client, cache, cache_use, async |loading| {
         shown(client, loading, args).await
-    })
-    .await
-}
-
-pub(in crate::command) fn cache_use(
-    caching: &Caching,
-    command: &str,
-) -> Result<CacheUse> {
-    match (caching.refresh, caching.offline) {
-        (true, true) => Err(not_value(command, "offline", "left out with --refresh")),
-        (true, false) => Ok(CacheUse::Refresh),
-        (false, true) => Ok(CacheUse::Offline),
-        (false, false) => Ok(CacheUse::Use),
-    }
-}
-
-/// The cache of the logged-in account; offline, the account must be known
-/// without asking.
-///
-/// # Errors
-/// Offline, an account that is not known.
-pub async fn account_cache(
-    client: &Client,
-    settings: &CacheSettings,
-    cache_use: CacheUse,
-) -> Result<Option<Cache>> {
-    match (cache_use, &settings.root) {
-        (_, None) => Ok(None),
-        (CacheUse::Offline, Some(_)) => client
-            .account_id()
-            .map(|user| Cache::from_settings(settings, &user, client.clock()))
-            .ok_or(Error::LocalData(LocalDataError::AccountUnknown)),
-        (CacheUse::Use | CacheUse::Refresh, Some(_)) => {
-            Ok(account::known_account_id(client)
-                .await
-                .and_then(|user| Cache::from_settings(settings, &user, client.clock())))
-        }
-    }
-}
-
-/// Opens the account's cache and runs `then` over the real socket and it.
-pub(in crate::command) async fn through_cache<T>(
-    client: &Client,
-    settings: &CacheSettings,
-    cache_use: CacheUse,
-    then: impl AsyncFnOnce(Loading<'_>) -> Result<T>,
-) -> Result<T> {
-    let account = account_cache(client, settings, cache_use).await?;
-    then(Loading {
-        connector: connector(),
-        cache: account.as_ref().map(Cache::as_port),
-        cache_use,
     })
     .await
 }
@@ -241,23 +180,6 @@ fn area_flag(selection: &AreaArgs) -> Option<&'static str> {
     ]
     .into_iter()
     .find_map(|(name, given)| given.then_some(name))
-}
-
-pub(in crate::command) fn explicit_area(selection: &AreaArgs) -> Result<Area> {
-    Area::of(
-        selection
-            .rectangle
-            .as_deref()
-            .map(str::trim)
-            .filter(|text| !text.is_empty())
-            .map(str::parse)
-            .transpose()?,
-        selection
-            .frame
-            .clone()
-            .filter(|frame| !frame.trim().is_empty()),
-        selection.object.clone(),
-    )
 }
 
 async fn board(
@@ -360,27 +282,6 @@ async fn read_board(
     }
 }
 
-/// A board by id, link or name; offline, only by id or link.
-pub(in crate::command) async fn board_id(
-    client: &Client,
-    reference: &str,
-    workspace: Option<&str>,
-    cache_use: CacheUse,
-) -> Result<String> {
-    match cache_use {
-        CacheUse::Offline => BoardId::find_in(reference)
-            .map(|id| id.as_str().to_owned())
-            .ok_or_else(|| {
-                Error::Input(InputError::OfflineByName {
-                    reference: reference.to_owned(),
-                })
-            }),
-        CacheUse::Use | CacheUse::Refresh => {
-            lookup::board_id(client, reference, workspace).await
-        }
-    }
-}
-
 /// The reply to a part asked for with `--with`, read by `read` into users
 /// with a right on the scale; nothing when not asked.
 async fn part<F: Future<Output = Result<Value>>>(
@@ -407,37 +308,6 @@ async fn part<F: Future<Output = Result<Value>>>(
             })
             .collect()
     }))
-}
-
-/// The flags' area, else the part a link to a frame or an object names.
-pub(in crate::command) fn chosen_area(
-    flags: &Area,
-    linked: Option<ObjectId>,
-    objects: &[Object],
-) -> Result<Area> {
-    match (flags, linked) {
-        (area, None) => Ok(area.clone()),
-        (Area::Board, Some(wanted)) => objects
-            .iter()
-            .find(|object| object.id.eq_ignore_ascii_case(wanted.as_str()))
-            .map(|object| {
-                if matches!(object.kind, ObjectKind::Frame) {
-                    Area::Frame(object.id.clone())
-                } else {
-                    Area::Objects(vec![object.id.clone()])
-                }
-            })
-            .ok_or_else(|| {
-                Error::Lookup(LookupError {
-                    kind: LookupKind::Object,
-                    reference: wanted.as_str().to_owned(),
-                    miss: LookupMiss::not_found(),
-                })
-            }),
-        (Area::Rectangle(_) | Area::Frame(_) | Area::Objects(_), Some(_)) => {
-            Err(Error::Picture(PictureError::SeveralAreas))
-        }
-    }
 }
 
 #[cfg(test)]

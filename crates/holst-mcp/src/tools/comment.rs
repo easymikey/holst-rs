@@ -1,7 +1,7 @@
 //! The `comment` tool: list, start, reply, resolve, delete, mark read.
 
 use holst_core::{
-    command::comment::{self, AddArgs, CommentReport, CommentVerb, LsArgs},
+    command::comment::{self, AddArgs, CommentReport, CommentVerb, EditArgs, LsArgs},
     domain::text::EMPTY,
     remote::client::Client,
 };
@@ -54,6 +54,12 @@ impl McpServer {
             CommentVerb::Resolve => {
                 self.change(arguments, comment::resolve, Self::phrased)
                     .await
+            }
+            CommentVerb::Edit => {
+                let edit = async |client: &Client, args: &EditArgs| {
+                    comment::edit(client, &self.cache, args).await
+                };
+                self.change(arguments, edit, Self::phrased).await
             }
             CommentVerb::Read => {
                 self.change(arguments, comment::read, Self::phrased).await

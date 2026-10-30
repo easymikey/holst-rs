@@ -17,7 +17,7 @@ use holst_core::{
         rename,
         show,
     },
-    domain::text::{EMPTY, printable},
+    domain::text::{EMPTY, counted, printable},
 };
 use rmcp::model::CallToolResult;
 use serde_json::{Map, Value, json};
@@ -132,7 +132,7 @@ impl McpServer {
                     let details = [
                         row.organization.clone(),
                         row.role.clone(),
-                        row.members.map(|count| format!("{count} members")),
+                        row.members.map(|count| counted(count, "member")),
                     ];
                     let name = format!(
                         "{} {}",
@@ -152,8 +152,8 @@ impl McpServer {
 
     fn shown_text(&self, shown: &WorkspaceBrief) -> String {
         let counts = [
-            shown.member_count.map(|count| format!("{count} members")),
-            shown.guest_count.map(|count| format!("{count} guests")),
+            shown.member_count.map(|count| counted(count, "member")),
+            shown.guest_count.map(|count| counted(count, "guest")),
         ];
         let name =
             format!("{} {}", printable(&shown.name), self.state.alias(&shown.id));
@@ -180,7 +180,9 @@ impl McpServer {
         let more = found
             .cursor
             .as_deref()
-            .map(|cursor| format!("cursor: {cursor}\n"))
+            .map(|cursor| {
+                format!("… {} shown; next: cursor {cursor}\n", found.events.len())
+            })
             .unwrap_or_default();
         let events = if found.events.is_empty() {
             EMPTY.to_owned()

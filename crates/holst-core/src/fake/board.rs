@@ -21,6 +21,8 @@ use yrs::{
     updates::decoder::Decode as _,
 };
 
+use crate::{domain::board::objects_root, protocol::document::OBJECTS_V3};
+
 /// What a filled board holds, numbered from 1; the last three wrap one.
 #[derive(Debug, Clone)]
 pub enum FixtureObject {
@@ -78,6 +80,15 @@ pub(crate) fn fixture_document(board: &str, objects: &[FixtureObject]) -> Doc {
     document
 }
 
+/// As [`fixture_document`], for a board stored in format version 3: its objects
+/// live under `objects_v3`, which an empty board has as well.
+pub(crate) fn fixture_document_v3(board: &str, objects: &[FixtureObject]) -> Doc {
+    let document = Doc::new();
+    document.get_or_insert_map(OBJECTS_V3);
+    add_objects(&document, board, 0, objects);
+    document
+}
+
 /// The document of the board `board` holding `objects`, as a snapshot keeps it:
 /// one Yjs v2 update.
 pub(crate) fn snapshot_bytes(board: &str, objects: &[FixtureObject]) -> Vec<u8> {
@@ -94,7 +105,7 @@ pub(crate) fn add_objects(
     held: u32,
     objects: &[FixtureObject],
 ) {
-    let roots = document.get_or_insert_map("objects");
+    let roots = document.get_or_insert_map(objects_root(document));
     let documents = document.get_or_insert_map("documents");
     let mut txn = document.transact_mut();
     objects.iter().zip(held + 1..).for_each(|(object, number)| {
@@ -121,7 +132,7 @@ pub(crate) fn add_objects(
 /// Returns the fields of every object of the document, in the order they
 /// came.
 pub(crate) fn objects_json(document: &Doc) -> Vec<Value> {
-    let objects = document.get_or_insert_map("objects");
+    let objects = document.get_or_insert_map(objects_root(document));
     let txn = document.transact();
     let mut all: Vec<Value> = objects
         .iter(&txn)

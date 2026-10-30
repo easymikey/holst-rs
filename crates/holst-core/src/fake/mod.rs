@@ -59,6 +59,7 @@ struct State {
     sessions: Sessions,
     failing: Vec<(String, u16)>,
     unanswered: Vec<String>,
+    requests: Vec<String>,
     updates: usize,
 }
 
@@ -292,5 +293,12 @@ impl Fake {
     #[must_use]
     pub fn unanswered(&self) -> Vec<String> {
         self.locked().unanswered.clone()
+    }
+
+    /// Returns every request the fake got, in order: `METHOD path` without the
+    /// query, `WS open`, `WS RequestDocument <room>` or `WS Update <room>`.
+    #[must_use]
+    pub fn requests(&self) -> Vec<String> {
+        self.locked().requests.clone()
     }
 }

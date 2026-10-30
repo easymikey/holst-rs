@@ -3,14 +3,19 @@
 use serde_json::{Value, json};
 use yrs::{Doc, Map as _, MapPrelim, Out, Transact as _, types::ToJson as _};
 
-use crate::fake::{
-    FixtureError,
-    board::{any_fields, object_id},
-    fixture::unknown,
-    http::{Parts, Request, Response, found, object_body, refused},
+use crate::{
+    domain::change::build::author_number,
+    fake::{
+        FixtureError,
+        board::{any_fields, object_id},
+        fixture::unknown,
+        http::{Parts, Request, Response, found, object_body, refused},
+    },
 };
 
 const STORE: &str = "commentsStore";
+/// The author number that stands for the signed-in user in a fixture.
+const SIGNED_IN: u32 = u32::MAX;
 const CREATED: f64 = 1_793_000_000_000.5;
 
 /// Where a thread is pinned.
@@ -116,6 +121,12 @@ impl FixtureThread {
         }
     }
 
+    /// Adds a reply by the signed-in user.
+    #[must_use]
+    pub fn reply_by_me(self, text: &str) -> Self {
+        self.reply(SIGNED_IN, text)
+    }
+
     /// Says the signed-in user read the thread at `time` (ISO 8601).
     #[must_use]
     pub fn read_at(self, time: &str) -> Self {
@@ -196,7 +207,7 @@ impl Comments {
                     .filter(|(id, _)| *id == board)
                     .map(|(_, thread)| thread)
                     .collect();
-                let room = filled_room(&board, &own);
+                let room = filled_room(&board, user, &own);
                 (board, room)
             })
             .collect();
@@ -315,8 +326,18 @@ impl Comments {
 
 /// The room of a board holding `threads`, with the entries the web client
 /// writes: a thread carries its first message, a reply points to its thread.
-fn filled_room(board: &str, threads: &[&FixtureThread]) -> Doc {
+fn filled_room(board: &str, user: &str, threads: &[&FixtureThread]) -> Doc {
     let doc = Doc::new();
+    let mine = author_number(user, 0);
+    let numbered = |author: u32| match author {
+        SIGNED_IN => mine,
+        other => other,
+    };
+    doc.get_or_insert_map("usersIds").insert(
+        &mut doc.transact_mut(),
+        user,
+        i64::from(mine),
+    );
     let store = doc.get_or_insert_map(STORE);
     {
         let mut txn = doc.transact_mut();
@@ -340,7 +361,7 @@ fn filled_room(board: &str, threads: &[&FixtureThread]) -> Doc {
             let first = thread.messages.first();
             let mut head = entry_fields(
                 &thread.id,
-                first.map_or(0, |first| first.author),
+                first.map_or(0, |first| numbered(first.author)),
                 first.map_or("", |first| first.text.as_str()),
                 created,
             );
@@ -382,7 +403,7 @@ fn filled_room(board: &str, threads: &[&FixtureThread]) -> Doc {
                     let id = format!("{}r{number}", thread.id);
                     let mut fields = entry_fields(
                         &id,
-                        reply.author,
+                        numbered(reply.author),
                         &reply.text,
                         created + f64::from(number) * 10.0,
                     );

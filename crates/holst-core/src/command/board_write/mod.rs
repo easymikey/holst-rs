@@ -28,7 +28,7 @@ use crate::{
         time::Timestamp,
     },
     effect::{
-        board_write::{LoadSource, WriteInterpreter, WriteMode},
+        board_write::{LoadSource, WriteMode},
         board_write_plan::{LoadedChange, WrittenChange, plan},
         cache::{CachePort, meta::ReadCheck},
         confirmation::ReleaseCheck,
@@ -42,7 +42,7 @@ use crate::{
     remote::{
         api,
         client::Client,
-        socket::write::{WriteOver, writer_document},
+        socket::write::{WriteInterpreter, WriteOver, writer_document},
     },
 };
 

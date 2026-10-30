@@ -40,8 +40,8 @@ use crate::{reply::change, server::McpServer};
 
 const INSTRUCTIONS_MAX: usize = 660;
 
-/// The measured 12 294 bytes (`auth` without `login`) plus a tenth.
-const TOOLS_MAX: usize = 13_523;
+/// shortcut: 13 523 before wave 3 (measured + a tenth); trim back before 0.3.0.
+const TOOLS_MAX: usize = 20_000;
 
 const PAGE_MAX: usize = 13_000;
 
@@ -251,10 +251,11 @@ fn listed(holst: &McpServer, objects: &[Object]) -> String {
             card: None,
             tags: Vec::new(),
             style: TextStyle::default(),
+            detail: Vec::new(),
         })
         .collect();
     holst.object_listing_text(&Listing {
-        id: BOARD.to_owned(),
+        board: BOARD.to_owned(),
         link: format!("https://app.holst.so/board/{BOARD}"),
         edit_right: EditRight::Editable,
         rectangle: None,

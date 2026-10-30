@@ -4,7 +4,7 @@ mod render;
 mod whole;
 
 use holst_core::command::{
-    board::{BoardVerb, own, rights, settings, tree, tree_change},
+    board::{BoardVerb, own, rights, settings, tag, tree, tree_change},
     table,
 };
 use serde_json::{Map, Value};
@@ -12,7 +12,7 @@ use serde_json::{Map, Value};
 use crate::{
     commands::change,
     error::Result,
-    output::OutputFormat,
+    output::{OutputFormat, report},
     run::{RunSettings, run_signed_in},
 };
 
@@ -80,6 +80,16 @@ pub(crate) async fn run(
                 format,
                 async |client, args| settings::edit(client, run.cache(), args).await,
                 render::edited,
+            )
+            .await
+        }
+        BoardVerb::Tag => {
+            change(
+                arguments,
+                run,
+                format,
+                async |client, args| tag::tag(client, run.cache(), args).await,
+                report,
             )
             .await
         }

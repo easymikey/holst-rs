@@ -1,5 +1,6 @@
 //! `object ls`: the objects of a board or a part of it.
 
+use itertools::Itertools as _;
 use serde::Serialize;
 use yrs::Doc;
 
@@ -34,6 +35,7 @@ use crate::{
         },
         geometry::Rectangle,
         id,
+        kinds::{self, Detail},
         limit::Limit,
         picture::BoardLength,
         rich_text::TextFormat,
@@ -51,7 +53,7 @@ const COMMAND: &str = "object ls";
 /// A page of a board's objects that match the filters.
 #[derive(Debug, Serialize)]
 pub struct Listing {
-    pub id: String,
+    pub board: String,
     /// A link to the board, or to the selected frame or object.
     pub link: String,
     pub edit_right: EditRight,
@@ -83,6 +85,12 @@ pub struct ListedObject {
     pub tags: Vec<String>,
     #[serde(flatten)]
     pub style: TextStyle,
+    /// The words the object's kind adds: `{"rows": 2, "columns": 3}`.
+    #[serde(
+        skip_serializing_if = "Vec::is_empty",
+        serialize_with = "serialize_detail"
+    )]
+    pub detail: Vec<(&'static str, serde_json::Value)>,
 }
 
 impl ListedObject {
@@ -138,6 +146,11 @@ impl ListedObject {
             .link_to
             .as_deref()
             .map_or_else(String::new, |link| format!("  link-to={link}"));
+        let detail = if self.detail.is_empty() {
+            String::new()
+        } else {
+            format!("  [{}]", self.detail.iter().map(detail_word).join(" "))
+        };
         let text = shortened(&one_line(&object.text), max_chars);
         let quoted = if text.is_empty() {
             String::new()
@@ -145,11 +158,35 @@ impl ListedObject {
             format!("  \"{text}\"")
         };
         format!(
-            "{} {:<7} {corner}{size}{inside}{color}{look}{style}{ends}{padlock}{turn}{linked}{tags}{quoted}",
+            "{} {:<7} {corner}{size}{inside}{color}{look}{style}{detail}{ends}{padlock}{turn}{linked}{tags}{quoted}",
             name(&object.id),
             object.kind.short_name(),
         )
     }
+}
+
+/// A word of the kind's detail: `rows=2`; a text with a space is quoted and a
+/// list is its length.
+fn detail_word((word, value): &(&'static str, serde_json::Value)) -> String {
+    let shown = match value {
+        serde_json::Value::String(text) => text.clone(),
+        serde_json::Value::Array(items) => items.len().to_string(),
+        value @ (serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::Object(_)) => value.to_string(),
+    };
+    match shown {
+        text if text.contains(' ') => format!("{word}=\"{text}\""),
+        text => format!("{word}={text}"),
+    }
+}
+
+fn serialize_detail<S: serde::Serializer>(
+    detail: &[(&'static str, serde_json::Value)],
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error> {
+    serializer.collect_map(detail.iter().map(|(word, value)| (word, value)))
 }
 
 /// The marks all of the text carries and the colors set on the object.
@@ -294,25 +331,32 @@ async fn listing(
         objects: page
             .shown
             .iter()
-            .map(|&object| ListedObject {
-                link: base.object_link(&board, &object.id),
-                drawn: object.ends.as_ref().and_then(|ends| ends.drawn),
-                file: object.file.as_ref().map(|file| ListedFile {
-                    name: file.name.clone(),
-                    original: file.original.clone(),
-                    url: format!("{storage}{}", file.name),
-                }),
-                card: LinkCard::of(object),
-                tags: tags.of_object(object),
-                style: TextStyle::of(&loaded.document, object),
-                object: Object {
-                    fields: serde_json::Value::Null,
-                    text: listed_text(&loaded.document, object, args.text_format),
-                    ..drawn_size(&scene, object)
-                },
+            .map(|&object| {
+                let Detail { text, words } = kinds::detail(&loaded.document, object);
+                let text = text.unwrap_or_else(|| {
+                    listed_text(&loaded.document, object, args.text_format)
+                });
+                ListedObject {
+                    link: base.object_link(&board, &object.id),
+                    drawn: object.ends.as_ref().and_then(|ends| ends.drawn),
+                    file: object.file.as_ref().map(|file| ListedFile {
+                        name: file.name.clone(),
+                        original: file.original.clone(),
+                        url: format!("{storage}{}", file.name),
+                    }),
+                    card: LinkCard::of(object),
+                    tags: tags.of_object(object),
+                    style: TextStyle::of(&loaded.document, object),
+                    detail: words,
+                    object: Object {
+                        fields: serde_json::Value::Null,
+                        text,
+                        ..drawn_size(&scene, object)
+                    },
+                }
             })
             .collect(),
-        id: board,
+        board,
     })
 }
 
@@ -348,6 +392,7 @@ mod tests {
     use serde_json::{Value, json};
     use yrs::{Any, Doc, Map as _, ReadTxn as _, StateVector, Transact as _};
 
+    use super::detail_word;
     use crate::{
         Result,
         command::{
@@ -377,6 +422,10 @@ mod tests {
                    "height": 600, "labelText": "Q3"}),
             json!({"id": "s3", "type": "sticker", "position": at(50, 550), "width": 192,
                    "height": 192, "labelText": "Inside"}),
+            json!({"id": "tb1", "type": "table", "position": at(2000, 0),
+                   "row-1": {"index": 0}, "row-2": {"index": 1},
+                   "column-1": {"index": 0}, "column-2": {"index": 1},
+                   "column-3": {"index": 2}}),
         ]
     }
 
@@ -459,6 +508,36 @@ mod tests {
             (
                 Some(&json!("https://example.com")),
                 Some(&json!("Example Domain"))
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_list_in_the_detail_is_shown_as_its_length() {
+        assert_eq!(
+            [
+                detail_word(&("choices", json!(["Pizza", "Sushi", "Soup"]))),
+                detail_word(&("selected", json!("none"))),
+                detail_word(&("selected", json!("Hot soup"))),
+            ],
+            ["choices=3", "selected=none", "selected=\"Hot soup\""]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_table_shows_its_rows_and_columns() -> Result<()> {
+        let listing = run(json!({ "kind": "table" })).await?;
+        let json = serde_json::to_value(&listing)?;
+        let line = listing
+            .objects
+            .first()
+            .map(|listed| listed.line(str::to_owned, 40));
+        assert_eq!(
+            (json.pointer("/objects/0/detail"), line.as_deref()),
+            (
+                Some(&json!({"rows": 2, "columns": 3})),
+                Some("tb1 table   (2000, 0)  [rows=2 columns=3]")
             )
         );
         Ok(())

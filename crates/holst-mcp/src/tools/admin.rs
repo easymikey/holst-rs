@@ -2,7 +2,7 @@
 
 use holst_core::{
     command::{
-        api::{self as operation_api, ApiArgs, refuse_admin_write},
+        api::{self as operation_api, ApiArgs, ApiReply, refuse_admin_write},
         change::ChangeReport,
         table::parse,
     },
@@ -51,18 +51,6 @@ impl McpServer {
 
     async fn send_api(&self, args: &ApiArgs) -> CallToolResult {
         let method = args.method.http();
-        let call = async |client: HandedClient| {
-            let sent = operation_api::request(&client, args).await?;
-            match sent.report {
-                ChangeReport::Sent => {
-                    Ok(self.state.render(sent.reply.unwrap_or(Value::Null)))
-                }
-                ChangeReport::DryRun { request } => Ok(self.state.alias_text(
-                    &format!("would send\n{}\n", request.lines().join("\n")),
-                )),
-                ChangeReport::Held { refusal, .. } => Err(Error::Unconfirmed(refusal)),
-            }
-        };
         match (
             refuse_admin_write(args),
             method.is_read(),
@@ -70,11 +58,36 @@ impl McpServer {
             self.raw_write,
         ) {
             (Err(refusal), ..) => self.fail(&Error::from(refusal)),
-            (Ok(()), true, ..) => self.run(call).await,
             (Ok(()), false, WriteMode::Send, RawWrite::Denied) => {
                 self.fail(&Error::RawWriteDisabled { method })
             }
-            (Ok(()), false, mode, _) => self.by_mode(mode, call).await,
+            // A read keeps what the server remembers.
+            (Ok(()), true, ..) => {
+                self.run(async |client: HandedClient| {
+                    let sent = operation_api::request(&client, args).await?;
+                    Ok(self.api_text(&sent))
+                })
+                .await
+            }
+            (Ok(()), false, ..) => {
+                self.changed(args, operation_api::request, |this, sent| {
+                    this.api_text(sent)
+                })
+                .await
+            }
+        }
+    }
+
+    fn api_text(&self, sent: &ApiReply) -> String {
+        match &sent.report {
+            ChangeReport::Sent => {
+                self.state.render(sent.reply.clone().unwrap_or(Value::Null))
+            }
+            ChangeReport::DryRun { request } => self
+                .state
+                .alias_text(&format!("would send\n{}\n", request.lines().join("\n"))),
+            // A held request is answered by its refusal before the text is asked.
+            ChangeReport::Held { .. } => String::new(),
         }
     }
 

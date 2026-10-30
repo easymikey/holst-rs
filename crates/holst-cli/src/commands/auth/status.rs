@@ -11,7 +11,7 @@ use holst_core::{
         StatusReport,
         WorkspaceStatus,
     },
-    domain::text::{counted, hide_tokens},
+    domain::text::counted,
     error::{
         hint::{LOGIN, Surface},
         login::LoginError,
@@ -184,12 +184,9 @@ impl SavedLogin {
                 workspaces,
                 tokens,
             }) => {
-                // Tokens are never shown with their secret.
                 let (tokens, tokens_error) = match tokens {
-                    Some(Ok(Value::Array(items))) => {
-                        (Some(items.iter().cloned().map(hide_tokens).collect()), None)
-                    }
-                    Some(Ok(other)) => (Some(vec![hide_tokens(other.clone())]), None),
+                    Some(Ok(Value::Array(items))) => (Some(items.clone()), None),
+                    Some(Ok(other)) => (Some(vec![other.clone()]), None),
                     Some(Err(err)) => (None, Some(err.to_string())),
                     None => (None, None),
                 };
@@ -376,8 +373,8 @@ mod tests {
 
     #[test]
     #[expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
-    fn tokens_are_listed_by_name_and_never_with_the_secret() -> holst_core::Result<()> {
-        let tokens = json!([{ "name": "ci", "token": "holst_pat_planted_secret" }]);
+    fn tokens_are_listed_by_name_as_core_returns_them() -> holst_core::Result<()> {
+        let tokens = json!([{ "name": "ci", "token": "***" }]);
         let report =
             SavedLogin::of("file", String::new(), 2, &active(Some(Ok(tokens)))?);
         assert!(
@@ -390,7 +387,6 @@ mod tests {
                 .and_then(|json| json.get("tokens").cloned()),
             Some(json!([{ "name": "ci", "token": "***" }]))
         );
-        assert!(!report.to_string().contains("planted"), "{report}");
         Ok(())
     }
 

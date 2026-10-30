@@ -10,6 +10,7 @@ pub mod geometry;
 pub mod id;
 pub mod id_source;
 pub mod image;
+pub mod kinds;
 pub mod limit;
 pub mod login;
 pub mod lookup;

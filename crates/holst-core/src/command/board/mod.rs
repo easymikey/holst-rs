@@ -6,6 +6,7 @@ pub mod picture;
 pub mod rights;
 pub mod settings;
 pub mod show;
+pub mod tag;
 pub mod tree;
 pub mod tree_change;
 
@@ -40,6 +41,7 @@ pub enum BoardVerb {
     Export,
     Import,
     Edit,
+    Tag,
     Rename,
     Mv,
     Cp,
@@ -67,6 +69,7 @@ impl BoardVerb {
             BoardVerb::Export => &ExportArgs::COMMAND,
             BoardVerb::Import => &ImportArgs::COMMAND,
             BoardVerb::Edit => &EditArgs::COMMAND,
+            BoardVerb::Tag => &TagArgs::COMMAND,
             BoardVerb::Rename => &RenameArgs::COMMAND,
             BoardVerb::Mv => &MoveArgs::COMMAND,
             BoardVerb::Cp => &CopyArgs::COMMAND,
@@ -550,6 +553,54 @@ pub struct EditArgs {
 }
 
 impl EnumArgument for NoteTemplate {}
+
+#[derive(Debug, Deserialize, CommandArgs)]
+#[holst_command(
+    group = Board,
+    verb = "tag",
+    risk = Destroy,
+    block = Change,
+    about = "Rename, recolour or remove a tag of a board",
+    help = "Rename or recolour a tag of the board, or with --remove delete it: its id comes off every object and task card that carries it.\n\
+            One of --name, -c and --remove is needed; --remove stands alone. It cannot be undone, so it needs -y; without it only the dry run is shown, with the number of objects that carry the tag.",
+    example = "holst b tag \"Roadmap\" urgent --name \"Urgent!\"",
+    example = "holst b tag \"Roadmap\" urgent -c red5",
+    example = "holst b tag \"Roadmap\" urgent --remove -y"
+)]
+pub struct TagArgs {
+    #[argument(positional, help = "The board whose tag to change")]
+    pub board: String,
+    #[argument(positional, help = "The tag: its title or id")]
+    pub tag: String,
+    #[argument(
+        letter = 'w',
+        value_name = "ws",
+        help = "Where names are looked up and new things go: a workspace id or part of its name; all of yours by default"
+    )]
+    pub workspace: Option<String>,
+    #[argument(
+        value_name = "text",
+        help = "The new title; another tag of the board cannot have it",
+        tool_doc = "The new title."
+    )]
+    pub name: Option<String>,
+    #[argument(
+        letter = 'c',
+        value_name = "color",
+        help = "The new color: a palette token, e.g. indigo5, the color of a new tag",
+        tool_doc = "E.g. indigo5."
+    )]
+    pub color: Option<String>,
+    #[argument(help = "Delete the tag; it comes off every object and task card")]
+    pub remove: bool,
+    #[argument(
+        letter = 'y',
+        help = "Confirm a risky change; a terminal asks instead; without one only the dry run is shown (exit code 77)"
+    )]
+    pub confirm: Confirmation,
+    #[argument(letter = 'n', help = "Show what would change; change nothing")]
+    pub dry_run: WriteMode,
+}
 
 #[derive(Debug, Deserialize, CommandArgs)]
 #[holst_command(

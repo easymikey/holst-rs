@@ -2,6 +2,8 @@
 
 // PROTOCOL: the maps of the document.
 pub(crate) const OBJECTS: &str = "objects";
+// PROTOCOL: schema 3 boards keep their objects under this root (bundle 152076).
+pub(crate) const OBJECTS_V3: &str = "objects_v3";
 pub(crate) const DOCUMENTS: &str = "documents";
 pub(crate) const USERS_IDS: &str = "usersIds";
 // PROTOCOL: the board's note is a slate-yjs `Y.XmlText` root (bundle 241680).
@@ -114,3 +116,12 @@ pub(crate) const LINK_INFO: &str = "linkInfo";
 // PROTOCOL: tags, `tagIds` and the board's definitions.
 pub(crate) const TAG_IDS: &str = "tagIds";
 pub(crate) const TAGS_STORE: &str = "task-card-tagsStore";
+/// Task cards' info: `tagIds` and `assigneeIds`, nested `Y.Array`s.
+pub(crate) const TASK_INFO_STORE: &str = "task-card-infoStore";
+
+// PROTOCOL: emoji reactions, one entry per user and reaction.
+pub(crate) const REACTIONS_STORE: &str = "reactionsStore";
+pub(crate) const TARGET_ID: &str = "targetId";
+pub(crate) const REACTION_ID: &str = "reactionId";
+pub(crate) const AUTHOR_ID: &str = "authorId";
+pub(crate) const CREATED_AT: &str = "createdAt";

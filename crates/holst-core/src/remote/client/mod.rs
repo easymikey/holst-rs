@@ -27,6 +27,7 @@ use tracing::Instrument as _;
 use self::exchange::{ExchangeRequest, json_or_text};
 use crate::{
     domain::{
+        account::Account,
         id_source::IdSource,
         node::CreationStamp,
         session::{Session, SessionState, SessionStatus},
@@ -219,6 +220,11 @@ impl Client {
     /// The active login's account became known; a new one is saved with it.
     pub fn learn_account_id(&self, user: &str) {
         self.transition(|state| state.learn_account_id(user));
+    }
+
+    /// The active login's account and name became known; a change is saved.
+    pub fn learn_account(&self, account: &Account) {
+        self.transition(|state| state.learn_account(account));
     }
 
     /// Where the login stands.

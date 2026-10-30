@@ -1,4 +1,6 @@
+mod added_kinds;
 mod aligning;
+mod board_tags;
 mod boards;
 mod comments;
 mod copying;
@@ -8,6 +10,7 @@ mod files;
 mod fixtures;
 mod folders;
 mod grouping;
+mod kind_edits;
 mod locking;
 mod search;
 mod session;

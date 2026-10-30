@@ -3,9 +3,8 @@
 use std::time::Duration;
 
 use holst_core::{
-    domain::session::{Session, SessionStatus},
+    domain::session::{Session, SessionStatus, SessionStoreKind},
     remote::client::Client,
-    storage::session_store::SessionStoreKind,
 };
 
 pub(crate) type Milliseconds = u64;
@@ -178,10 +177,7 @@ impl LoginState {
 mod tests {
     #![expect(clippy::panic_in_result_fn, reason = "assert is the point of a test")]
 
-    use holst_core::{
-        domain::session::Session,
-        storage::session_store::SessionStoreKind,
-    };
+    use holst_core::domain::session::{Session, SessionStoreKind};
 
     use crate::login::{
         fake::{self, Script},

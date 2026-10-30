@@ -20,6 +20,7 @@ LOOK
 
 CHANGE
   edit:        Change a board's cover or note
+  tag:         Rename, recolour or remove a tag of a board
   rename:      Rename a board or a folder
   mv:          Move a board or a folder into a folder or /
   cp:          Copy a board

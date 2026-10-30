@@ -330,6 +330,10 @@ fn a_paste_copies_a_frame_with_its_content_moved() -> Result<()> {
         ]
     );
     assert!(layer(&document, "m-1") < layer(&document, "seed-1"));
+    assert_eq!(
+        fields_of(&document, "m-1").get("parentId"),
+        Some(&Value::Null)
+    );
     Ok(())
 }
 

@@ -3,7 +3,16 @@
 use std::collections::HashMap;
 
 use serde_json::json;
-use yrs::{Any, Doc, Map as _, Text as _, Transact as _, Xml as _, XmlTextPrelim};
+use yrs::{
+    Any,
+    Doc,
+    Map as _,
+    ReadTxn as _,
+    Text as _,
+    Transact as _,
+    Xml as _,
+    XmlTextPrelim,
+};
 
 use crate::{
     domain::{
@@ -14,7 +23,9 @@ use crate::{
             EditRight,
             Object,
             ObjectKind,
+            insert_map,
             object,
+            objects,
             text_of,
             with_drawn_ends,
         },
@@ -410,4 +421,44 @@ fn listings_print_the_user_words_not_the_stored_names() {
         printed,
         ["document", "flipcard", "wheel", "task", "task"].map(|word| Some(json!(word)))
     );
+}
+
+/// A document holding one sticker `id` under the objects root named `root`.
+pub(crate) fn sticker_under(root: &str, id: &str) -> Result<Doc> {
+    let document = Doc::new();
+    let fields = json!({
+        "id": id, "type": "sticker", "position": { "x": 0, "y": 0 },
+        "width": 100, "height": 100,
+    });
+    let objects = document.get_or_insert_map(root);
+    insert_map(
+        &mut document.transact_mut(),
+        &objects,
+        id,
+        fields
+            .as_object()
+            .into_iter()
+            .flatten()
+            .map(|(name, value)| (name.clone(), value.clone())),
+    )?;
+    Ok(document)
+}
+
+#[test]
+fn a_v3_document_lists_the_objects_under_objects_v3() -> Result<()> {
+    let listed = objects(&sticker_under("objects_v3", "s")?);
+    assert_eq!(
+        listed.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(),
+        ["s"]
+    );
+    Ok(())
+}
+
+#[test]
+fn reading_a_v2_document_creates_no_objects_v3_root() -> Result<()> {
+    let document = sticker_under("objects", "s")?;
+    let listed = objects(&document);
+    assert_eq!(listed.len(), 1);
+    assert!(document.transact().get_map("objects_v3").is_none());
+    Ok(())
 }

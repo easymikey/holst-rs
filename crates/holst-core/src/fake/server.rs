@@ -59,6 +59,11 @@ enum Answer {
 
 fn answer(state: &Shared, request: &Request) -> Answer {
     let mut locked = state.lock().unwrap_or_else(PoisonError::into_inner);
+    locked.requests.push(format!(
+        "{} {}",
+        request.method,
+        request.path.split('?').next().unwrap_or_default()
+    ));
     // An uploaded update needs no session, like the storage; a snapshot does.
     let signed_in = locked.sessions.accepts(&request.cookie);
     match locked.files.download(request, signed_in) {

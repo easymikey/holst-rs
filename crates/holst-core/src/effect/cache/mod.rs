@@ -5,7 +5,7 @@ pub mod trust;
 use std::{iter::Sum, sync::Arc};
 
 use crate::{
-    domain::board::EditRight,
+    domain::{account::Workspace, board::EditRight},
     effect::cache::meta::{CacheMeta, ReadCheck},
     error::Result,
 };
@@ -100,6 +100,52 @@ pub trait CachePort: Send + Sync {
     fn store_assets(&self, _assets: &[(&str, &[u8])]) -> Result<()> {
         Ok(())
     }
+}
+
+/// A workspace's `tree` reply as it was kept, and when it was read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CachedTree {
+    pub text: String,
+    /// Unix milliseconds.
+    pub read_at: u64,
+}
+
+/// What [`AccountCache::forget`] drops.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Forget<'a> {
+    Workspaces,
+    Tree(&'a str),
+    Trees,
+    All,
+}
+
+/// The workspace list and trees of accounts, kept until logout.
+pub trait AccountCache: Send + Sync {
+    /// The kept workspace list; `None` when none is kept.
+    fn workspaces(&self, account: &str) -> Option<Vec<Workspace>>;
+    /// Keep the workspace list, replacing the old one.
+    ///
+    /// # Errors
+    /// [`crate::error::local_data::LocalDataError::FileWrite`].
+    fn keep_workspaces(&self, account: &str, workspaces: &[Workspace]) -> Result<()>;
+    /// The kept tree of a workspace; `None` when none is kept.
+    fn tree(&self, account: &str, workspace: &str) -> Option<CachedTree>;
+    /// Keep a workspace's tree reply and when it was read.
+    ///
+    /// # Errors
+    /// As [`AccountCache::keep_workspaces`].
+    fn keep_tree(
+        &self,
+        account: &str,
+        workspace: &str,
+        text: &str,
+        read_at: u64,
+    ) -> Result<()>;
+    /// Drop what `what` names.
+    ///
+    /// # Errors
+    /// [`crate::error::local_data::LocalDataError::FileRemove`].
+    fn forget(&self, account: &str, what: Forget<'_>) -> Result<()>;
 }
 
 #[cfg(test)]

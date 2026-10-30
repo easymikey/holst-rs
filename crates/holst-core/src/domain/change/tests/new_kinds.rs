@@ -92,7 +92,7 @@ fn a_link_card_is_written_as_the_web_client_pastes_it() -> Result<()> {
             Value::Null,
             json!({
                 "type": "link", "link": URL, "position": {"x": 1000, "y": 622},
-                "displayType": 1,
+                "displayType": 1, "parentId": null,
                 "linkInfo": {
                     "description": null, "faviconKey": null, "imageKey": null,
                     "link": URL, "title": "Example Domain",
@@ -187,7 +187,7 @@ fn an_image_object_holds_its_upload_and_pixels() -> Result<()> {
                 "type": "image", "name": "d033829f.png", "originalName": "zz.png",
                 "imageType": "image/png", "width": 16, "height": 12,
                 "naturalWidth": 16, "naturalHeight": 12, "isLoading": false,
-                "position": {"x": 712, "y": 445},
+                "position": {"x": 712, "y": 445}, "parentId": null,
             })
         )
     );
@@ -237,7 +237,7 @@ fn a_file_object_holds_its_type_size_and_stamp_display() -> Result<()> {
                 "type": "file", "fileName": "4301ae87.pdf",
                 "displayFileName": "zz.pdf", "fileType": "application/pdf",
                 "fileSize": 544, "displayType": "stamp",
-                "position": {"x": 720, "y": 453},
+                "position": {"x": 720, "y": 453}, "parentId": null,
             })
         )
     );

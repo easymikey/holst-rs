@@ -2,10 +2,11 @@
 
 use holst_core::{
     command::{
-        account::{SessionCheck, check},
-        login::{ServerSessionEnd, email::EmailLogin, logout},
+        account::{SessionCheck, account_id, check},
+        login::{ServerSessionEnd, email::EmailLogin, finish, logout},
     },
     domain::session::{Session, SessionStatus},
+    error::login::LoginError,
     fake::{Fake, Fixture, LOGIN_CODE},
     remote::client::Client,
     system::{clock::SystemClock, id::RandomIds},
@@ -76,5 +77,42 @@ async fn logging_out_ends_the_session_and_forgets_it() -> holst_core::Result<()>
     let again = connect(session, fake.base_url().parse()?)?;
     assert!(matches!(check(&again).await, SessionCheck::Revoked(_)));
     assert_eq!(logout(&again).await?, ServerSessionEnd::AlreadyEnded);
+    Ok(())
+}
+
+#[tokio::test]
+async fn finishing_a_login_keeps_the_account_id_and_name_after_one_request()
+-> holst_core::Result<()> {
+    let fake = Fake::start(Fixture::default()).await?;
+    let client = signed_in(&fake).await?;
+    let before = client.answered();
+    let done = finish(client, None, async |_| Ok::<_, holst_core::Error>(())).await;
+    let done = done.map_err(|_| holst_core::Error::Login(LoginError::NoSavedLogin))?;
+    let held = done.client.session();
+    let known = held.as_ref().and_then(Session::account);
+    assert_eq!(
+        known.map(|known| known.id.as_str()),
+        Some(done.account.id.as_str())
+    );
+    assert_eq!(
+        known.and_then(|known| known.name.clone()),
+        done.account.name
+    );
+    assert_eq!(done.client.answered() - before, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_login_saved_without_the_user_asks_once() -> holst_core::Result<()> {
+    let fake = Fake::start(Fixture::default()).await?;
+    let first = signed_in(&fake).await?;
+    let bare = first.session().map(|held| {
+        Session::with_cookies(held.token().clone(), held.cookies().clone())
+    });
+    let client = connect(bare, fake.base_url().parse()?)?;
+    let user = account_id(&client).await?;
+    let again = account_id(&client).await?;
+    assert_eq!((user.clone(), client.answered()), (again, 1));
+    assert_eq!(client.account_id(), Some(user));
     Ok(())
 }

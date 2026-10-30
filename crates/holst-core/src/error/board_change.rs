@@ -194,6 +194,12 @@ pub enum BoardChangeError {
     )]
     NothingToChange,
 
+    #[error("\"{reference}\" does not name a tag of the board")]
+    NoTag { reference: String },
+
+    #[error("another tag of the board is already titled \"{title}\"")]
+    TagTaken { title: String },
+
     #[error("the text has no checklist item {item}: it has {count}")]
     NoCheckItem { item: u32, count: usize },
 
@@ -322,6 +328,8 @@ impl BoardChangeError {
             | BoardChangeError::Locked { .. }
             | BoardChangeError::NotYours { .. }
             | BoardChangeError::NothingToChange
+            | BoardChangeError::NoTag { .. }
+            | BoardChangeError::TagTaken { .. }
             | BoardChangeError::NoCheckItem { .. }
             | BoardChangeError::NotPoint { .. }
             | BoardChangeError::OffBoard { .. }
@@ -371,6 +379,8 @@ impl BoardChangeError {
             | BoardChangeError::Locked { .. }
             | BoardChangeError::NotYours { .. }
             | BoardChangeError::NothingToChange
+            | BoardChangeError::NoTag { .. }
+            | BoardChangeError::TagTaken { .. }
             | BoardChangeError::NoCheckItem { .. }
             | BoardChangeError::NotPoint { .. }
             | BoardChangeError::OffBoard { .. }
@@ -465,6 +475,8 @@ pub(super) mod tests {
             (BoardChangeError::Locked { reference: text() }, None),
             (BoardChangeError::NotYours { reference: text() }, None),
             (BoardChangeError::NothingToChange, None),
+            (BoardChangeError::NoTag { reference: text() }, None),
+            (BoardChangeError::TagTaken { title: text() }, None),
             (BoardChangeError::NoCheckItem { item: 1, count: 0 }, None),
             (BoardChangeError::NotPoint { raw: text() }, None),
             (
