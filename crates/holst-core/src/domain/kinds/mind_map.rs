@@ -108,7 +108,7 @@ pub fn made(
 }
 
 /// Where a child goes: `MAJOR_GAP` beyond the edge of its parent, and past the
-/// children the parent has along that edge.
+/// children the parent has on that side.
 fn corner(under: &Under<'_>) -> Result<Point> {
     let Under {
         scene,
@@ -124,6 +124,12 @@ fn corner(under: &Under<'_>) -> Result<Point> {
         .objects()
         .iter()
         .filter(|object| object.parent.as_deref() == Some(parent.id.as_str()))
+        .filter(|object| match direction {
+            Direction::Right => object.x >= beside.right(),
+            Direction::Left => object.x < beside.x,
+            Direction::Down => object.y >= beside.bottom(),
+            Direction::Up => object.y < beside.y,
+        })
         .count();
     let rank = f64::from(u32::try_from(earlier).unwrap_or(u32::MAX));
     let (major, minor) = (MAJOR_GAP * scale, MINOR_GAP * scale);
@@ -237,6 +243,40 @@ mod tests {
                     "nodeType": 3, "strokeStyle": "dashed",
                     "nodeColor": {"color": "blue4", "opacity": 1}}}),
             ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_child_on_a_new_side_starts_level_with_its_parent() -> Result<()> {
+        let objects: Vec<Object> = [
+            json!({"id": "m1", "type": "mind-map-node", "position": {"x": 0, "y": 0}}),
+            json!({"id": "c1", "type": "mind-map-node", "parentId": "m1",
+                   "position": {"x": 260, "y": 0}}),
+            json!({"id": "c2", "type": "mind-map-node", "parentId": "m1",
+                   "position": {"x": 260, "y": 116}}),
+            json!({"id": "c3", "type": "mind-map-node", "parentId": "m1",
+                   "position": {"x": 260, "y": 232}}),
+        ]
+        .into_iter()
+        .filter_map(object_of)
+        .collect();
+        let scene = Scene::new(&objects);
+        let at = |direction| {
+            objects
+                .first()
+                .map(|parent| Under {
+                    scene: &scene,
+                    parent,
+                    direction,
+                })
+                .map(|under| made("a", None, Some(&under)))
+                .transpose()
+                .map(|made| made.map(|made| (made.at.x(), made.at.y())))
+        };
+        assert_eq!(
+            [at(Direction::Left)?, at(Direction::Right)?],
+            [Some((-260.0, 0.0)), Some((260.0, 348.0))]
         );
         Ok(())
     }

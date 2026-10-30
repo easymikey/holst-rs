@@ -5,13 +5,13 @@ use std::ops::RangeInclusive;
 use serde_json::{Value, json};
 use yrs::{Map as _, TransactionMut};
 
-use super::Written;
+use super::{Written, only};
 use crate::{
     domain::{
         board::ObjectKind,
         change::write::{WriteTransaction, object_map},
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::Result,
     protocol::document::{FONT_SIZE, SHOW_AUTHOR},
 };
 
@@ -68,12 +68,7 @@ impl StickerEdit {
     }
 
     pub(super) fn check(&self, kind: &ObjectKind) -> Result<()> {
-        (*kind == ObjectKind::Sticker).then_some(()).ok_or_else(|| {
-            Error::BoardChange(BoardChangeError::NotChangeable {
-                kind: kind.as_str().to_owned(),
-                field: self.field(),
-            })
-        })
+        only(kind, &ObjectKind::Sticker, self.field())
     }
 }
 

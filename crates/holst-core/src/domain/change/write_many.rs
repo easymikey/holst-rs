@@ -174,6 +174,11 @@ fn edited(
         context: scope.context,
         user: scope.user,
     };
+    asked
+        .patch
+        .kind_edits
+        .iter()
+        .try_for_each(|kind_edit| kind_edit.check(kind, &running.states, id))?;
     let touched = edit(
         transaction,
         &now,

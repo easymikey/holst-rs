@@ -10,11 +10,11 @@ use crate::{
     command::{
         board::show::{Loading, board_id},
         board_load::CacheUse,
-        board_write::{BoardWrite, change_board},
+        board_write::{BoardWrite, change_board_with},
         object::{
             EditArgs,
             EditFields,
-            change::{Removed, load_board, named, settled},
+            change::{Removed, load_board_read, named, settled},
         },
         table::{ArgumentGroup as _, not_value},
     },
@@ -67,7 +67,7 @@ pub(super) async fn extracted(
         CacheUse::Use,
     )
     .await?;
-    let loaded = load_board(client, &loading, &board).await?;
+    let (loaded, read) = load_board_read(client, &loading, &board).await?;
     // Before any conversion: a board that cannot be changed takes no page.
     match loaded.right {
         EditRight::Editable => Ok(()),
@@ -83,7 +83,7 @@ pub(super) async fn extracted(
         shift: Point::ORIGIN,
     };
     let write = async |mode| {
-        change_board(
+        change_board_with(
             client,
             loading,
             BoardWrite {
@@ -93,6 +93,7 @@ pub(super) async fn extracted(
                 guard: None,
                 mode,
             },
+            read.clone(),
         )
         .await
     };

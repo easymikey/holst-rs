@@ -102,6 +102,15 @@ impl Rig {
     /// Runs the given steps on the script, with no client program on the
     /// machine.
     async fn steps_on(&self, script: Script, steps: Steps) -> Outcome {
+        self.steps_for(script, steps, &Clients::Ask).await
+    }
+
+    async fn steps_for(
+        &self,
+        script: Script,
+        steps: Steps,
+        clients: &Clients,
+    ) -> Outcome {
         let form = Form::bare(script);
         let machine = Machine::with(&[]);
         let outcome = set_up(
@@ -110,7 +119,7 @@ impl Rig {
             &machine,
             "/opt/holst-mcp",
             steps,
-            &Clients::Ask,
+            clients,
         )
         .await;
         (outcome, form.terminal().written(), machine.calls.take())
@@ -294,6 +303,44 @@ async fn both_steps_log_in_then_connect() -> Result<(), Trouble> {
     assert!(shown.contains(LOGGED_IN), "{shown}");
     assert!(shown.contains("\"mcpServers\""), "{shown}");
     assert_eq!(asked, ["claude mcp get holst-rs", "codex mcp get holst-rs"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn named_clients_without_a_terminal_connect_and_never_ask_to_log_in()
+-> Result<(), Trouble> {
+    let rig = rig("scripted").await?;
+    rig.setup(&[EMAIL, "123456"]).await.0?;
+    let before = rig.saved()?;
+    let script = Script::new(TerminalKind::Redirected, [], []);
+    let (outcome, shown, asked) = rig
+        .steps_for(script, Steps::Both, &Clients::parse("claude")?)
+        .await;
+    outcome?;
+    assert!(!shown.contains("Log in again"), "{shown}");
+    assert!(!shown.contains("Email"), "{shown}");
+    assert_eq!(
+        asked.first().map(String::as_str),
+        Some("claude mcp get holst-rs")
+    );
+    assert_eq!(rig.saved()?, before);
+    Ok(())
+}
+
+#[tokio::test]
+async fn named_clients_without_a_terminal_or_a_login_say_where_to_log_in()
+-> Result<(), Trouble> {
+    let rig = rig("scripted-bare").await?;
+    let script = Script::new(TerminalKind::Redirected, [], []);
+    let (outcome, shown, asked) = rig
+        .steps_for(script, Steps::Both, &Clients::parse("claude")?)
+        .await;
+    assert_eq!(
+        outcome.err().map(|err| err.to_string()).as_deref(),
+        Some("There is no saved login: run holst-mcp setup in a terminal.")
+    );
+    assert!(!shown.contains("Email"), "{shown}");
+    assert!(asked.is_empty(), "{asked:?}");
     Ok(())
 }
 

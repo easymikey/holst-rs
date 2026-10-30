@@ -28,7 +28,7 @@ use crate::{
         rich_text::{kept_note, template::NoteTemplate},
     },
     effect::{board_write::WriteMode, confirmation::ALWAYS, settings::CacheSettings},
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{Error, Result, board_change::BoardChangeError, input::InputError},
     remote::{
         api::{
             self,
@@ -155,10 +155,11 @@ async fn edited(
     }?;
     let id = lookup::board_id(client, &args.board, args.workspace.as_deref()).await?;
     let sending = args.dry_run == WriteMode::Send;
-    // A file's right is read before it is uploaded; a reset draws the board first.
-    match &cover {
-        Some(Cover::File { .. }) => editable(client, loading, &id).await,
-        Some(Cover::Auto) | None => Ok(()),
+    // Read before any upload; a reset that sends reads it when it draws the board.
+    match (&cover, sending) {
+        (Some(Cover::File { .. } | Cover::Auto), false)
+        | (Some(Cover::File { .. }), true) => editable(client, loading, &id).await,
+        (Some(Cover::Auto), true) | (None, _) => Ok(()),
     }?;
     // Uploads first: a refused upload leaves the board as it was.
     let (cover, read) = match OptionFuture::from(
@@ -174,7 +175,9 @@ async fn edited(
         cover_fixed(client, &id, cover).await?;
     }
     // The note goes last: an error above leaves it as it was.
-    let note = note_written(client, loading, &id, note, (args.dry_run, read)).await?;
+    let note = note_written(client, loading, &id, note, (args.dry_run, read))
+        .await
+        .map_err(|error| cover_changed(cover.as_ref(), error))?;
     Ok(Edited {
         link: client.board_link(&id),
         board: id,
@@ -186,6 +189,23 @@ async fn edited(
             ChangeReport::DryRun { request: () }
         },
     })
+}
+
+/// The note's error, naming the cover when it has been changed already.
+fn cover_changed(cover: Option<&CoverEdit>, error: Error) -> Error {
+    match cover {
+        Some(
+            CoverEdit::File {
+                uploaded: Some(_), ..
+            }
+            | CoverEdit::Auto {
+                uploaded: Some(_), ..
+            },
+        ) => Error::from(InputError::Several {
+            errors: vec![error, Error::from(InputError::CoverChanged)],
+        }),
+        Some(CoverEdit::File { .. } | CoverEdit::Auto { .. }) | None => error,
+    }
 }
 
 /// The note as given, checked before anything is sent.
@@ -651,6 +671,23 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn a_failed_note_after_a_changed_cover_says_so() -> Result<()> {
+        let file = picture("cover.png", b"\x89PNG\r\n\x1a\n....")?;
+        let (_, done) = run(
+            &json!({ "board": BOARD, "cover": file, "note": "hello" }),
+            [channel(), uploaded(), channel_changed()],
+            &editable(),
+        )
+        .await?;
+        let said = done
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+        assert!(said.contains("the cover was changed"), "{said}");
+        Ok(())
+    }
+
     #[cfg(feature = "png")]
     #[tokio::test]
     async fn a_reset_preview_is_stored_under_the_boards_preview_key() -> Result<()> {
@@ -779,6 +816,21 @@ mod tests {
         let file = picture("cover.png", b"\x89PNG\r\n\x1a\n....")?;
         let (_, done) = run(
             &json!({ "board": BOARD, "cover": file, "dry_run": true }),
+            [channel()],
+            &acking([Some(empty_board(EditRight::ReadOnly))]),
+        )
+        .await?;
+        assert!(matches!(
+            done,
+            Err(Error::BoardChange(BoardChangeError::ReadOnly))
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_dry_run_cover_reset_on_a_read_only_board_is_refused() -> Result<()> {
+        let (_, done) = run(
+            &json!({ "board": BOARD, "cover": "reset", "dry_run": true }),
             [channel()],
             &acking([Some(empty_board(EditRight::ReadOnly))]),
         )

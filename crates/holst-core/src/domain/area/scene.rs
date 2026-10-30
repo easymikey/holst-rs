@@ -545,9 +545,19 @@ pub(crate) fn table_size(fields: &Value) -> StoredSize {
     )
 }
 
+/// A row or column number as text, whether the board stores it as text or as
+/// a number.
+pub(crate) fn track_word(value: Option<&Value>) -> Option<String> {
+    match value? {
+        Value::String(text) => Some(text.clone()),
+        Value::Number(number) => number.as_f64().map(|number| number.to_string()),
+        Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => None,
+    }
+}
+
 fn cell_place(cell: &Object, table: &Object) -> Option<TableCell> {
     let track = |id_field: &str, prefix: &str, default: f64, side: &str| {
-        let id = cell.fields.get(id_field).and_then(Value::as_str)?;
+        let id = track_word(cell.fields.get(id_field))?;
         let track = table.fields.get(format!("{prefix}{id}"))?;
         Some(Track {
             index: number(track, document::INDEX)?,

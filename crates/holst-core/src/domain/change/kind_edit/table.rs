@@ -4,15 +4,17 @@ use std::collections::HashMap;
 
 use itertools::Itertools as _;
 use serde_json::{Value, json};
-use yrs::{Map as _, TransactionMut};
+use yrs::{Any, Map as _, Out, Text as _, TransactionMut, XmlTextRef};
 
-use super::Written;
+use super::{Written, only};
 use crate::{
     domain::{
-        board::{ObjectKind, any, text_of},
+        area::scene::track_word,
+        board::{ObjectKind, any, document_root, text_of},
         change::{
             check::Placement,
             made,
+            rich::copy_into,
             value::{ChangedObject, Made},
             write::{
                 WriteTransaction,
@@ -190,8 +192,8 @@ fn cell_at<'a>(
         .filter(|(_, fields)| {
             text_of_field(fields, TYPE) == Some(CELL)
                 && text_of_field(fields, PARENT_ID) == Some(table)
-                && text_of_field(fields, ROW_ID) == Some(row)
-                && text_of_field(fields, COLUMN_ID) == Some(column)
+                && track_word(fields.get(ROW_ID)).as_deref() == Some(row)
+                && track_word(fields.get(COLUMN_ID)).as_deref() == Some(column)
         })
         .map(|(id, _)| id)
         .min()
@@ -208,7 +210,7 @@ fn cells_in<'a>(
         .filter(|(_, fields)| {
             text_of_field(fields, TYPE) == Some(CELL)
                 && text_of_field(fields, PARENT_ID) == Some(table)
-                && text_of_field(fields, track.id_field()) == Some(number)
+                && track_word(fields.get(track.id_field())).as_deref() == Some(number)
         })
         .map(|(id, _)| id)
         .sorted_unstable()
@@ -220,15 +222,6 @@ struct Block {
     key: String,
     leader: (String, String),
     reach: (usize, usize),
-}
-
-/// A track number as text, whether the table stores it as text or a number.
-fn word_of(value: Option<&Value>) -> Option<String> {
-    match value? {
-        Value::String(text) => Some(text.clone()),
-        Value::Number(number) => Some(number.to_string()),
-        Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => None,
-    }
 }
 
 fn blocks(fields: &Value) -> Vec<Block> {
@@ -249,13 +242,23 @@ fn blocks(fields: &Value) -> Vec<Block> {
             Some(Block {
                 key: key.clone(),
                 leader: (
-                    word_of(stored.get("row")).unwrap_or_else(|| row.to_owned()),
-                    word_of(stored.get("column")).unwrap_or_else(|| column.to_owned()),
+                    track_word(stored.get("row")).unwrap_or_else(|| row.to_owned()),
+                    track_word(stored.get("column"))
+                        .unwrap_or_else(|| column.to_owned()),
                 ),
                 reach: (reach("countRow"), reach("countColumn")),
             })
         })
         .collect()
+}
+
+/// The track number a block starts at and how many tracks of that kind it
+/// covers.
+const fn reach_on(block: &Block, track: Track) -> (&String, usize) {
+    match track {
+        Track::Row => (&block.leader.0, block.reach.0),
+        Track::Column => (&block.leader.1, block.reach.1),
+    }
 }
 
 /// The merged blocks that cover the track `number`, with how many tracks of
@@ -269,10 +272,7 @@ fn merged_over(fields: &Value, track: Track, number: &str) -> Vec<(String, usize
     blocks(fields)
         .into_iter()
         .filter_map(|block| {
-            let (leader, span) = match track {
-                Track::Row => (&block.leader.0, block.reach.0),
-                Track::Column => (&block.leader.1, block.reach.1),
-            };
+            let (leader, span) = reach_on(&block, track);
             let start = order.iter().position(|other| other == leader)?;
             place
                 .filter(|place| (start..start + span).contains(place))
@@ -288,12 +288,7 @@ pub(super) fn check(
     id: &str,
 ) -> Result<()> {
     let fields = states.get(id).unwrap_or(&Value::Null);
-    (*kind == ObjectKind::Table).then_some(()).ok_or_else(|| {
-        Error::BoardChange(BoardChangeError::NotChangeable {
-            kind: kind.as_str().to_owned(),
-            field: edit.field(),
-        })
-    })?;
+    only(kind, &ObjectKind::Table, edit.field())?;
     match edit {
         TableEdit::Cell { row, column, .. } => number_at(fields, Track::Row, *row)
             .and(number_at(fields, Track::Column, *column))
@@ -419,6 +414,18 @@ fn inserting(fields: &Value, track: Track, at: u32) -> Result<()> {
         Track::Column => rows * (columns + 1),
     };
     let limit = usize::try_from(CELL_LIMIT).unwrap_or(usize::MAX);
+    let slot = usize::try_from(at).unwrap_or_default().saturating_sub(1);
+    let order: Vec<String> = tracks(fields, track)
+        .into_iter()
+        .map(|(number, _)| number)
+        .collect();
+    let split = blocks(fields).iter().any(|block| {
+        let (leader, span) = reach_on(block, track);
+        order
+            .iter()
+            .position(|number| number == leader)
+            .is_some_and(|start| start < slot && slot < start + span)
+    });
     usize::try_from(at)
         .is_ok_and(|at| (1..=count + 1).contains(&at))
         .then_some(())
@@ -431,7 +438,13 @@ fn inserting(fields: &Value, track: Track, at: u32) -> Result<()> {
         })?;
     (after <= limit)
         .then_some(())
-        .ok_or_else(|| refuse(TableRefusal::TooBig))
+        .ok_or_else(|| refuse(TableRefusal::TooBig))?;
+    (!split).then_some(()).ok_or_else(|| {
+        refuse(TableRefusal::MergedBetween {
+            track: track.word(),
+            at,
+        })
+    })
 }
 
 fn deleting(fields: &Value, track: Track, at: u32) -> Result<()> {
@@ -544,6 +557,12 @@ fn rewrite(
     changed(transaction, scope, cell.to_owned(), &fields, vec!["text"])
 }
 
+/// A track number as the web client stores it: a number.
+fn track_value(word: &str) -> Value {
+    word.parse::<u64>()
+        .map_or_else(|_| json!(word), |number| json!(number))
+}
+
 /// A cell as the web client makes it when a cell gets text.
 fn create(
     transaction: &mut TransactionMut<'_>,
@@ -557,7 +576,7 @@ fn create(
         at: Point::ORIGIN,
         size: None,
         parent: None,
-        fields: [(ROW_ID, json!(row)), (COLUMN_ID, json!(column))]
+        fields: [(ROW_ID, track_value(row)), (COLUMN_ID, track_value(column))]
             .into_iter()
             .chain(styles)
             .collect(),
@@ -704,6 +723,35 @@ fn words_of(
         .unwrap_or_default()
 }
 
+/// The text document a cell holds now.
+fn document_of(
+    transaction: &TransactionMut<'_>,
+    scope: &WriteTransaction<'_>,
+    cell: &str,
+) -> Option<XmlTextRef> {
+    let map = object_map(
+        transaction,
+        &scope.roots.objects,
+        cell,
+        &ObjectKind::TableCell,
+    )
+    .ok()?;
+    match map.get(transaction, DOCUMENT_ID)? {
+        Out::Any(Any::String(document)) => {
+            document_root(transaction, &scope.roots.documents, &document)
+        }
+        Out::Any(_)
+        | Out::YText(_)
+        | Out::YArray(_)
+        | Out::YMap(_)
+        | Out::YXmlElement(_)
+        | Out::YXmlFragment(_)
+        | Out::YXmlText(_)
+        | Out::YDoc(_)
+        | Out::UndefinedRef(_) => None,
+    }
+}
+
 fn holds_text(
     transaction: &TransactionMut<'_>,
     scope: &WriteTransaction<'_>,
@@ -787,11 +835,17 @@ fn merge(
             let source = present(scope, table, &leader)
                 .and_then(|cell| scope.states.get(cell))
                 .unwrap_or(&Value::Null);
-            let text = present(scope, table, &leader)
-                .map(|cell| words_of(transaction, scope, cell))
-                .unwrap_or_default();
             let styles = restyled(scope, table, source);
-            set_up(transaction, scope, table, &corner, (&text, styles))
+            let led = present(scope, table, &leader)
+                .and_then(|cell| document_of(transaction, scope, cell));
+            let made = set_up(transaction, scope, table, &corner, ("", styles))?;
+            let into = document_of(transaction, scope, &made.id);
+            led.zip(into).iter().for_each(|(from, to)| {
+                let len = to.len(transaction);
+                to.remove_range(transaction, 0, len);
+                copy_into(transaction, (from, to), scope.context.ids);
+            });
+            Ok::<_, Error>(made)
         })
         .transpose()?;
     let counts = (
@@ -1016,7 +1070,7 @@ mod tests {
         types::ToJson as _,
     };
 
-    use super::{Span, TableEdit, Track};
+    use super::{Span, TableEdit, Track, track_word};
     use crate::{
         domain::{
             board::{self, any, insert_map, text_of},
@@ -1216,8 +1270,8 @@ mod tests {
             (
                 1,
                 &json!(the_table(&document).0),
-                &json!("1"),
-                &json!("2"),
+                &json!(1),
+                &json!(2),
                 &json!({"x": 0, "y": 0}),
                 "Hi".to_owned(),
                 vec![
@@ -1471,7 +1525,8 @@ mod tests {
             .into_iter()
             .map(|(_, fields)| fields)
             .find(|fields| {
-                at(fields, &["rowId"]) == row && at(fields, &["columnId"]) == column
+                track_word(fields.get("rowId")).as_deref() == Some(row)
+                    && track_word(fields.get("columnId")).as_deref() == Some(column)
             })
             .unwrap_or_default()
     }
@@ -1480,7 +1535,7 @@ mod tests {
     fn merging_two_cells_writes_the_key_and_keeps_the_leaders_text() -> Result<()> {
         let document = table_of(2, 2)?;
         edit(&document, cell(1, 2, "lead"))?;
-        edit(&document, TableEdit::Merge(span((1, 1), (1, 2))))?;
+        edit_as(&document, "m", TableEdit::Merge(span((1, 1), (1, 2))))?;
         let table = the_table(&document).1;
         let first = cell_at_place(&document, ("1", "1"));
         assert_eq!(
@@ -1633,6 +1688,135 @@ mod tests {
                 at(&table, &["fillColorIndex"]).clone()
             ),
             (json!("blue3"), json!(2))
+        );
+        Ok(())
+    }
+
+    fn a_web_cell_at(
+        document: &Doc,
+        id: &str,
+        (row, column): (u32, u32),
+    ) -> Result<()> {
+        put(
+            document,
+            id,
+            &json!({
+                "id": id, "type": "table-cell", "parentId": the_table(document).0,
+                "rowId": row, "columnId": column,
+                "position": { "x": 0, "y": 0 }, "zIndex": 1,
+            }),
+        )
+    }
+
+    fn markdown_at(document: &Doc, place: (&str, &str)) -> String {
+        board::object_of(cell_at_place(document, place))
+            .and_then(|cell| board::markdown_text(document, &cell))
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn cells_with_number_ids_or_text_ids_are_found() -> Result<()> {
+        let document = table_of(2, 2)?;
+        a_web_cell_at(&document, "web", (1, 1))?;
+        a_cell_at(&document, "beta", (2, 2))?;
+        edit(&document, cell(1, 1, "Bye"))?;
+        edit_as(&document, "m", cell(2, 2, "Yo"))?;
+        let texts: Vec<String> = of_type(&document, "table-cell")
+            .iter()
+            .map(|(id, made)| format!("{id}={}", cell_text(&document, made)))
+            .collect();
+        assert_eq!(texts, ["beta=Yo", "web=Bye"]);
+        Ok(())
+    }
+
+    #[test]
+    fn deleting_a_row_removes_the_cells_the_web_made() -> Result<()> {
+        let document = table_of(2, 2)?;
+        a_web_cell_at(&document, "web", (1, 1))?;
+        a_web_cell_at(&document, "kept", (2, 1))?;
+        edit(&document, TableEdit::Delete(Track::Row, 1))?;
+        let left: Vec<String> = of_type(&document, "table-cell")
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        assert_eq!(left, ["kept"]);
+        Ok(())
+    }
+
+    #[test]
+    fn two_deletes_of_one_table_in_one_call_are_checked_one_after_the_other()
+    -> Result<()> {
+        let document = table_of(2, 1)?;
+        let object = the_table(&document).0;
+        let delete = || ObjectEdit {
+            object: object.clone(),
+            patch: ObjectPatch {
+                kind_edits: vec![KindEdit::Table(TableEdit::Delete(Track::Row, 1))],
+                ..ObjectPatch::default()
+            },
+            stacking: None,
+            tags: None,
+        };
+        let change = BoardChange::EditAll(vec![delete(), delete()]);
+        let refused =
+            refusal(built_with_ids(&document, &SequentialIds::new("r"), &change));
+        assert_eq!(
+            refused.as_deref(),
+            Some("row 1 is the last row: remove the table instead")
+        );
+        Ok(())
+    }
+
+    fn tracks_of(document: &Doc, prefix: &str) -> usize {
+        the_table(document)
+            .1
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter(|(key, stored)| key.starts_with(prefix) && stored.is_object())
+            .count()
+    }
+
+    #[test]
+    fn a_merge_keeps_the_formatted_text_of_its_leader() -> Result<()> {
+        let document = table_of(1, 2)?;
+        edit(
+            &document,
+            TableEdit::Cell {
+                row: 1,
+                column: 2,
+                text: "**Total** [now](https://example.com)".to_owned(),
+                format: TextFormat::Markdown,
+            },
+        )?;
+        let leader = markdown_at(&document, ("1", "2"));
+        edit_as(&document, "m", TableEdit::Merge(span((1, 1), (1, 2))))?;
+        assert_eq!(
+            (markdown_at(&document, ("1", "1")), leader.is_empty()),
+            (leader, false)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_row_cannot_be_inserted_inside_a_merged_block() -> Result<()> {
+        let document = table_of(3, 2)?;
+        merge(
+            &document,
+            "merge-1-1",
+            &json!({"countRow": 2, "countColumn": 1, "row": "1", "column": "1"}),
+        )?;
+        let inside = refusal(edit(&document, TableEdit::Insert(Track::Row, 2)));
+        edit(&document, TableEdit::Insert(Track::Row, 1))?;
+        edit(&document, TableEdit::Insert(Track::Row, 4))?;
+        assert_eq!(
+            (inside.as_deref(), tracks_of(&document, "row-")),
+            (
+                Some(
+                    "a merged block crosses the place of new row 2: unmerge it in the web client first"
+                ),
+                5
+            )
         );
         Ok(())
     }

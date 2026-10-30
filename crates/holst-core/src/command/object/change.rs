@@ -12,7 +12,14 @@ use crate::{
         account::account_id,
         board::show::{Loading, board_id, through_cache},
         board_load::{self, CacheUse, RemoteBoard},
-        board_write::{BoardWrite, Guard, change_board, refuse_in, refuse_withheld},
+        board_write::{
+            BoardWrite,
+            Guard,
+            change_board,
+            change_board_with,
+            refuse_in,
+            refuse_withheld,
+        },
         change::{ChangeReport as Outcome, gate},
         lookup,
         node::missing_field,
@@ -267,8 +274,8 @@ async fn edited(
         Confirmation::Given => ALWAYS,
         Confirmation::Missing => UNLESS_CELL_TEXT,
     };
-    let write = async |changes: Vec<ObjectEdit>, mode: WriteMode| {
-        change_board(
+    let write = async |changes: Vec<ObjectEdit>, mode: WriteMode, read| {
+        change_board_with(
             client,
             loading,
             BoardWrite {
@@ -278,29 +285,34 @@ async fn edited(
                 guard: hides.then_some(HIDING),
                 mode,
             },
+            read,
         )
         .await
     };
     let report = match picture {
-        None => write(edits, args.dry_run).await?,
+        None => write(edits, args.dry_run, None).await?,
         Some((file, pixels)) => {
             let taking = |upload: &Upload| replaced(edits.clone(), upload, *pixels);
             // Before any upload: a board that cannot be changed takes no file.
-            match load_board(client, &loading, &board).await?.right {
+            let (loaded, read) = load_board_read(client, &loading, &board).await?;
+            match loaded.right {
                 EditRight::Editable => Ok(()),
                 EditRight::ReadOnly => {
                     Err(Error::BoardChange(BoardChangeError::ReadOnly))
                 }
             }?;
             // Before any upload: the edit is built, to see the object takes a picture.
-            let built =
-                write(taking(&file.upload(file.name.clone())), WriteMode::DryRun)
-                    .await?;
+            let built = write(
+                taking(&file.upload(file.name.clone())),
+                WriteMode::DryRun,
+                read.clone(),
+            )
+            .await?;
             match args.dry_run {
                 WriteMode::DryRun => built,
                 WriteMode::Send => {
                     let upload = uploaded(client, &board, file).await?;
-                    write(taking(&upload), WriteMode::Send).await?
+                    write(taking(&upload), WriteMode::Send, read).await?
                 }
             }
         }
@@ -835,7 +847,7 @@ fn kind_edits_of(item: &EditFields, format: TextFormat) -> Result<Vec<KindEdit>>
             hidden_of(EDIT, Some(item.hide_children), Some(item.show_children))?
                 .map(KindEdit::Children),
         )
-        .chain(item.flip.then_some(KindEdit::Flip))
+        .chain(placed_beside(item, "flip", item.flip)?.then_some(KindEdit::Flip))
         .chain(item.back.clone().map(|text| KindEdit::Back(text, format)))
         .chain((item.language.is_some() || item.theme.is_some()).then_some(
             KindEdit::Code {
@@ -961,7 +973,7 @@ fn card_move_of(item: &EditFields) -> Result<Option<KindEdit>> {
         title("column", &item.column)?,
         title("swimlane", &item.swimlane)?,
     );
-    match (item.kanban.as_deref().map(str::trim), column, swimlane) {
+    let moved = match (item.kanban.as_deref().map(str::trim), column, swimlane) {
         (None, None, None) => Ok(None),
         (Some(""), ..) => Err(not_value(EDIT, "kanban", "a kanban or none")),
         (Some(_), ..) if item.frame.is_some() => {
@@ -979,7 +991,26 @@ fn card_move_of(item: &EditFields) -> Result<Option<KindEdit>> {
             column,
             swimlane,
         }))),
-    }
+    }?;
+    placed_beside(item, "kanban", moved.is_some())?;
+    Ok(moved)
+}
+
+/// `given`, unless `--at`, `--rotate`, `--size` or `--scale` come beside it:
+/// the flip and the card move write the place, turn and size themselves.
+fn placed_beside(item: &EditFields, other: &str, given: bool) -> Result<bool> {
+    [
+        ("at", item.at.is_some()),
+        ("rotate", item.rotate.is_some()),
+        ("size", item.size.is_some()),
+        ("scale", item.scale.is_some()),
+    ]
+    .into_iter()
+    .filter(|(_, placed)| *placed && given)
+    .try_for_each(|(name, _)| {
+        Err(not_value(EDIT, name, &format!("left out with {other}")))
+    })
+    .map(|()| given)
 }
 
 /// `none` is [`Setting::Clear`], anything else is parsed.
@@ -2170,6 +2201,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_flip_or_a_card_move_is_refused_beside_a_place_turn_or_size() -> Result<()>
+    {
+        let refused = [
+            json!({"object": [STICKER], "flip": true, "at": "10,10"}),
+            json!({"object": [STICKER], "flip": true, "rotate": 90}),
+            json!({"object": [STICKER], "flip": true, "size": "10,10"}),
+            json!({"object": [STICKER], "flip": true, "scale": 2}),
+            json!({"object": [STICKER], "kanban": "K", "scale": 2}),
+            json!({"object": [STICKER], "kanban": "none", "at": "10,10"}),
+            json!({"object": [STICKER], "column": ["Done"], "size": "10,10"}),
+        ]
+        .map(|given| async move {
+            edit_fields(given)
+                .await
+                .err()
+                .map(|error| error.to_string())
+        });
+        let mut shown = Vec::new();
+        // imperative: each call awaits the fake socket
+        for call in refused {
+            shown.push(call.await);
+        }
+        assert_eq!(
+            shown,
+            [
+                "at of `object edit` must be left out with flip",
+                "rotate of `object edit` must be left out with flip",
+                "size of `object edit` must be left out with flip",
+                "scale of `object edit` must be left out with flip",
+                "scale of `object edit` must be left out with kanban",
+                "at of `object edit` must be left out with kanban",
+                "size of `object edit` must be left out with kanban",
+            ]
+            .map(|text| Some(text.to_owned()))
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn faces_off_the_die_set_and_more_than_fifty_rolls_are_refused() -> Result<()>
     {
         let many: Vec<String> = (0..51).map(|number| format!("o{number}")).collect();
@@ -2252,9 +2322,16 @@ mod tests {
     async fn remove(
         given: serde_json::Value,
     ) -> Result<(Vec<String>, Delivery, serde_json::Value)> {
+        remove_from(&objects(), given).await
+    }
+
+    async fn remove_from(
+        board: &[serde_json::Value],
+        given: serde_json::Value,
+    ) -> Result<(Vec<String>, Delivery, serde_json::Value)> {
         let (_, client) = signed_in([])?;
         let args: RemoveArgs = arguments(given)?;
-        let socket = board_of(&objects());
+        let socket = board_of(board);
         let done = removed(&client, over(&socket), &args).await?;
         Ok((
             done.report
@@ -2338,6 +2415,33 @@ mod tests {
                 json!({
                     "status": "held",
                     "needs": "removing the frame and 2 objects with it cannot be undone"
+                })
+            )
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_group_or_kanban_with_content_waits_for_the_confirmation() -> Result<()> {
+        let at = json!({"x": 0, "y": 0});
+        let held = async |kind: &str| {
+            let board = [
+                json!({"id": "p1", "type": kind, "position": at}),
+                json!({"id": "c1", "type": "sticker", "position": at, "parentId": "p1"}),
+            ];
+            remove_from(&board, json!({"object": ["p1"]})).await
+        };
+        let needs = |done: (Vec<String>, Delivery, serde_json::Value)| done.2;
+        assert_eq!(
+            (needs(held("group").await?), needs(held("kanban").await?)),
+            (
+                json!({
+                    "status": "held",
+                    "needs": "removing the group and 1 object with it cannot be undone"
+                }),
+                json!({
+                    "status": "held",
+                    "needs": "removing the kanban and 1 object with it cannot be undone"
                 })
             )
         );

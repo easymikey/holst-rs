@@ -10,6 +10,7 @@ mod board_write;
 mod comments;
 mod common;
 mod fake_routes;
+mod fill_speed;
 mod page_count;
 mod requests;
 mod resolve;

@@ -1,23 +1,18 @@
 //! A code block: its language and theme rewritten.
 
-use super::Written;
+use super::{Written, only};
 use crate::{
     domain::{
         board::ObjectKind,
         kinds::code::{LANGUAGE, Language, THEME, Theme},
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::Result,
 };
 
 pub(super) const CODE: &str = "code";
 
 pub(super) fn check(kind: &ObjectKind) -> Result<()> {
-    (*kind == ObjectKind::Code).then_some(()).ok_or_else(|| {
-        Error::BoardChange(BoardChangeError::NotChangeable {
-            kind: kind.as_str().to_owned(),
-            field: CODE,
-        })
-    })
+    only(kind, &ObjectKind::Code, CODE)
 }
 
 /// The language and the theme given, as the add writes them.

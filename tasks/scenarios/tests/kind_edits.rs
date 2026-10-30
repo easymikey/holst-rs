@@ -254,7 +254,7 @@ async fn a_cell_gets_text_and_a_row_is_inserted_and_listed(
             cell.get("rowId"),
             cell.get("columnId")
         ),
-        (Some(&json!(table)), Some(&json!("1")), Some(&json!("2")))
+        (Some(&json!(table)), Some(&json!(1)), Some(&json!(2)))
     );
     Ok(())
 }

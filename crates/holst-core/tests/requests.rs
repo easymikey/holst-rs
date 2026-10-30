@@ -147,8 +147,13 @@ impl AccountCache for Scratch {
         self.disk.keep_tree(account, workspace, text, read_at)
     }
 
-    fn forget(&self, account: &str, what: Forget<'_>) -> holst_core::Result<()> {
-        self.disk.forget(account, what)
+    fn forget(
+        &self,
+        account: &str,
+        what: Forget<'_>,
+        at: u64,
+    ) -> holst_core::Result<()> {
+        self.disk.forget(account, what, at)
     }
 }
 
@@ -673,15 +678,6 @@ async fn a_recent_board_no_kept_tree_holds_asks_the_trees_once()
     assert_eq!(names, ["Nova"]);
     Ok(())
 }
-/// The requests that change something: anything but a read.
-fn sent_changes(requests: &[String]) -> Vec<String> {
-    requests
-        .iter()
-        .filter(|request| !request.starts_with("GET "))
-        .cloned()
-        .collect()
-}
-
 /// A client on a cache that a `board ls` filled, running changes.
 async fn listed(fixture: Fixture) -> holst_core::Result<(Fake, Client)> {
     let (fake, client) = started(fixture).await?;
@@ -728,19 +724,6 @@ async fn a_warm_rename_by_name_sends_only_the_rename() -> holst_core::Result<()>
 }
 
 #[tokio::test]
-async fn a_warm_folder_removal_by_name_sends_only_the_delete() -> holst_core::Result<()>
-{
-    let (fake, client) = listed(with_folder()).await?;
-    let path = channel_path(&fake, "Archive", "/delete");
-    let before = fake.requests().len();
-    let given = json!({ "board": "Archive", "confirm": true });
-    tree_change::rm(&client, &args(&given)?).await?;
-    let sent = since(&fake, before);
-    assert_eq!(sent, [format!("POST {path}")]);
-    Ok(())
-}
-
-#[tokio::test]
 async fn a_warm_board_removal_by_name_sends_only_the_delete() -> holst_core::Result<()>
 {
     let (fake, client) = listed(plans()).await?;
@@ -759,33 +742,6 @@ async fn a_warm_board_in_a_folder_by_name_reads_no_tree() -> holst_core::Result<
     let given = json!({ "name": "Notes", "workspace": "Team", "folder": "Archive" });
     tree_change::create(&client, &args(&given)?).await?;
     assert_eq!(tree_reads(&since(&fake, before)), 0);
-    Ok(())
-}
-
-#[rstest]
-#[case::create(json!({ "name": "Notes", "workspace": "Team", "folder": "Archive" }), Change::Create)]
-#[case::rename(json!({ "board": "Plans", "name": "Plans2" }), Change::Rename)]
-#[case::mv(json!({ "board": "Plans", "folder": "Archive" }), Change::Move)]
-#[case::cp(json!({ "board": "Plans", "folder": "Archive" }), Change::Copy)]
-#[case::rm(json!({ "board": "Plans" }), Change::Remove)]
-#[case::rm_folder(json!({ "board": "Archive" }), Change::Remove)]
-#[tokio::test]
-async fn a_dry_run_sends_no_change(
-    #[case] given: Value,
-    #[case] change: Change,
-) -> holst_core::Result<()> {
-    let (fake, client) = listed(with_folder()).await?;
-    let dry = Value::Object(
-        given
-            .as_object()
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .chain([("dry_run".to_owned(), json!(true))])
-            .collect(),
-    );
-    change.run(&client, &dry).await?;
-    assert_eq!(sent_changes(&fake.requests()), Vec::<String>::new());
     Ok(())
 }
 
@@ -842,13 +798,52 @@ async fn a_board_made_is_found_by_name_by_the_next_command() -> holst_core::Resu
     Ok(())
 }
 
+#[rstest]
+#[case::create(json!({ "name": "Notes", "workspace": "Team", "dry_run": true }), Change::Create)]
+#[case::rename(json!({ "board": "Plans", "name": "Plans2", "dry_run": true }), Change::Rename)]
+#[case::mv(json!({ "board": "Plans", "folder": "Archive", "dry_run": true }), Change::Move)]
+#[case::cp(json!({ "board": "Plans", "folder": "Archive", "dry_run": true }), Change::Copy)]
+#[case::trash(json!({ "board": "Plans", "dry_run": true }), Change::Remove)]
+#[case::forever(json!({ "board": "Plans", "permanently": true, "dry_run": true }), Change::Remove)]
 #[tokio::test]
-async fn a_dry_run_create_forgets_the_tree_of_its_workspace() -> holst_core::Result<()>
-{
-    let (fake, client) = listed(plans()).await?;
-    let given = json!({ "name": "Notes", "workspace": "Team", "dry_run": true });
-    tree_change::create(&client, &args(&given)?).await?;
-    assert_eq!(show_reads_trees(&fake, &client, "Plans").await?, 1);
+async fn a_dry_run_keeps_the_tree(
+    #[case] given: Value,
+    #[case] change: Change,
+) -> holst_core::Result<()> {
+    let (fake, client) = listed(with_folder()).await?;
+    change.run(&client, &given).await?;
+    assert_eq!(show_reads_trees(&fake, &client, "Plans").await?, 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_held_change_keeps_the_tree() -> holst_core::Result<()> {
+    let (fake, client) = listed(in_folder().folder("Spare", "Team")).await?;
+    let given = json!({ "board": "Archive", "folder": "Spare" });
+    let held = tree_change::mv(&client, &args(&given)?).await?;
+    assert!(
+        matches!(
+            held.outcome,
+            holst_core::command::change::ChangeReport::Held { .. }
+        ),
+        "{held:?}"
+    );
+    assert_eq!(show_reads_trees(&fake, &client, "Plans").await?, 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_folder_removal_held_for_good_keeps_the_tree() -> holst_core::Result<()> {
+    let (fake, client) = listed(with_folder()).await?;
+    let held = tree_change::rm(&client, &args(&json!({ "board": "Archive" }))?).await?;
+    assert!(
+        matches!(
+            held.outcome,
+            holst_core::command::change::ChangeReport::Held { .. }
+        ),
+        "{held:?}"
+    );
+    assert_eq!(show_reads_trees(&fake, &client, "Plans").await?, 0);
     Ok(())
 }
 
@@ -1214,6 +1209,7 @@ fn world_fixture() -> Fixture {
             FixtureObject::Sticker("Roadmap".into()),
             FixtureObject::Sticker("Second".into()),
             FixtureObject::File("spec.pdf".into(), 1000),
+            FixtureObject::Task("Ship".into()),
         ]
     };
     Fixture::default()
@@ -1279,7 +1275,7 @@ impl World {
             | Setup::Tagged
             | Setup::Locked => Ok(()),
         }?;
-        let ids = (1..=3)
+        let ids = (1..=4)
             .filter_map(|number| {
                 fake.object_id("Plans", number)
                     .map(|id| (format!("<Plans.{number}>"), id))
@@ -1827,6 +1823,7 @@ async fn board_change_pins(
 #[case::object_add_by_id(Object(ObjectVerb::Add), json!({ "board": "<Plans>", "kind": "sticker", "text": "note" }), Setup::Write, sent().channel(1).socket(2).document(2).update(1), sent().channel(1).socket(2).document(2).update(1), 0)]
 #[case::object_edit(Object(ObjectVerb::Edit), json!({ "board": "Plans", "object": ["<Plans.1>"], "text": "changed", "confirm": true }), Setup::Write, sent().tree(2).channel(1).socket(1).document(1).update(1), sent().channel(1).socket(1).document(1).update(1), 1)]
 #[case::object_edit_dry(Object(ObjectVerb::Edit), json!({ "board": "Plans", "object": ["<Plans.1>"], "text": "changed", "dry_run": true }), Setup::Write, sent().tree(2).channel(1).socket(1).document(1), sent().channel(1).socket(1).document(1), 1)]
+#[case::object_edit_assignee(Object(ObjectVerb::Edit), json!({ "board": "Plans", "object": ["<Plans.4>"], "assignee": ["Ann"], "confirm": true }), Setup::Write, sent().tree(2).channel(1).socket(1).document(1).update(1).other(&["GET /gapi/workspace/<Team>"]), sent().channel(1).socket(1).document(1).update(1).other(&["GET /gapi/workspace/<Team>"]), 1)]
 #[case::object_cp_into(Object(ObjectVerb::Cp), json!({ "board": "Plans", "object": ["<Plans.1>"], "into": "Ideas" }), Setup::Write, sent().tree(2).channel(2).socket(3).document(3).update(1), sent().channel(2).socket(3).document(3).update(1), 2)]
 #[case::object_group(Object(ObjectVerb::Group), json!({ "board": "Plans", "object": ["<Plans.1>", "<Plans.2>"] }), Setup::Write, sent().tree(2).channel(1).socket(1).document(1).update(1), sent().channel(1).socket(1).document(1).update(1), 1)]
 #[case::object_lock(Object(ObjectVerb::Lock), json!({ "board": "Plans", "object": ["<Plans.1>"] }), Setup::Write, sent().tree(2).channel(1).socket(1).document(1).update(1), sent().channel(1).socket(1).document(1).update(1), 1)]
@@ -1893,4 +1890,52 @@ async fn template_and_backup_pins(
     #[case] later: usize,
 ) -> holst_core::Result<()> {
     pins(name, given, setup, cold, warm, later).await
+}
+
+/// The `channel/{id}` reads of one `object edit` that replaces a picture or
+/// extracts pages.
+async fn edit_channel_reads(
+    objects: Vec<FixtureObject>,
+    given: impl FnOnce(&str) -> Value,
+) -> holst_core::Result<usize> {
+    let seed = Fixture::default()
+        .workspace("Team")
+        .board_with_objects("Plans", "Team", objects)
+        .page_count("spec.pdf", 3, true);
+    let (fake, client) = started(seed).await?;
+    let first = fake.object_id("Plans", 1).unwrap_or_default();
+    let before = fake.requests().len();
+    change::edit(&client, &CacheSettings::default(), &args(&given(&first))?).await?;
+    let sent = since(&fake, before);
+    assert!(
+        sent.iter().any(|each| each.starts_with("WS Update")),
+        "{sent:?}"
+    );
+    Ok(channel_reads(&sent, fake.id_of("Plans").as_deref()))
+}
+
+#[tokio::test]
+async fn edit_path_reads_the_board_once() -> holst_core::Result<()> {
+    let scratch = Scratch::new()?;
+    fs::create_dir_all(&scratch.dir)?;
+    let picture = scratch.dir.join("new.png");
+    fs::write(&picture, holst_core::fake::png(8, 8))?;
+    let reads = edit_channel_reads(vec![FixtureObject::Image("old.png".into())], |first| {
+        json!({ "board": "Plans", "object": [first], "path": picture, "confirm": true })
+    })
+    .await?;
+    assert_eq!(reads, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn edit_extract_reads_the_board_once() -> holst_core::Result<()> {
+    let counted = FixtureObject::File("spec.pdf".into(), 1000)
+        .set("pagesInfo", json!({ "valid": true, "count": 3 }));
+    let reads = edit_channel_reads(vec![counted], |first| {
+        json!({ "board": "Plans", "object": [first], "extract": "1-2", "confirm": true })
+    })
+    .await?;
+    assert_eq!(reads, 1);
+    Ok(())
 }

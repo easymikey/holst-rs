@@ -220,7 +220,8 @@ async fn write<I: WriteInterpreter + ?Sized>(
         interpreter.open(client, board, seed),
     )
     .await;
-    let reply = known.or_else(|| asked.and_then(Result::ok));
+    let opened = opened?;
+    let reply = known.map(Ok).or(asked).transpose()?;
     let trashed = reply
         .as_ref()
         .and_then(|reply| NodeBrief::of(reply).ok())
@@ -240,7 +241,6 @@ async fn write<I: WriteInterpreter + ?Sized>(
     } else {
         BoardStatus::Live
     };
-    let opened = opened?;
     let context = ChangeSources {
         built_at: Timestamp::from_millis(client.unix_millis()),
         ids: client.ids(),

@@ -68,13 +68,13 @@ tokio::task_local! {
 
 const INSTRUCTIONS: &str = "\
 Holst (app.holst.so), unofficial, with the user's rights. Tools are holst CLI \
-groups, action = its command; board_write and object_write hold the changes. \
-Replies show ids as @N; a reference takes @N, an id, a link or part of a name; \
-several matches are listed, not guessed. A frame or object link selects \
-that part of a board; so do frame, object and rectangle \"x,y,width,height\" in \
-board units. Rights: none, viewer, commentator, editor, full. confirm: true \
-only after the user agreed; a risky action without it replies with what it \
-would do. dry_run: true sends nothing. output: json (board, object only) gives \
+groups, action = its command; board_write and object_write hold changes. \
+Ids show as @N. Part of a name finds a workspace, board, folder or frame; an \
+object or thread needs @N or id (object: or link). Several matches: listed, \
+not guessed. A frame or object link, or \"x,y,width,height\" in board units, \
+selects part of a board. Rights: none, viewer, commentator, editor, full. \
+confirm: true only once the user agreed; a risky action without it only says \
+what it would do. dry_run: true sends nothing. output: json (board, object only) gives \
 full JSON. No login: run `holst-mcp setup`.";
 
 /// Refuses an argument the command does not take on MCP, such as `offline` or

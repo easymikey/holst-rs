@@ -22,6 +22,7 @@ use futures_util::FutureExt as _;
 use secrecy::SecretString;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use tokio::sync::OnceCell;
 use tracing::Instrument as _;
 
 #[cfg(test)] pub(crate) use self::exchange::retry_wait;
@@ -30,6 +31,7 @@ use crate::{
     domain::{
         account::{Account, Workspace},
         id_source::IdSource,
+        kinds::icon::Manifest,
         node::CreationStamp,
         session::{Session, SessionState, SessionStatus},
         url::BaseUrl,
@@ -83,6 +85,7 @@ pub struct Client {
 struct Shared {
     answered: AtomicU64,
     account_cache: OnceLock<Arc<dyn AccountCache>>,
+    icons: OnceCell<Manifest>,
 }
 
 impl fmt::Debug for Client {
@@ -143,6 +146,11 @@ impl Client {
     pub fn with_response_limit(self, timeout: Duration, limit: usize) -> Result<Self> {
         let transport = Arc::clone(&self.transport).limited(timeout, limit)?;
         Ok(Self { transport, ..self })
+    }
+
+    /// The icon manifest this client and its clones read, once.
+    pub(crate) fn icons(&self) -> &OnceCell<Manifest> {
+        &self.shared.icons
     }
 
     /// The same client, on every clone, keeping the workspace list of its
@@ -280,30 +288,35 @@ impl Client {
         cache.tree(&self.account_id()?, workspace)
     }
 
-    /// Keeps a workspace's tree reply, read now; a failure is logged.
-    pub fn learn_tree(&self, workspace: &str, text: &str) {
-        let read_at = self.unix_millis();
+    /// Keeps a workspace's tree reply, asked at Unix milliseconds `started`; a
+    /// failure is logged.
+    pub fn learn_tree(&self, workspace: &str, text: &str, started: u64) {
         self.in_account_cache(|cache, account| {
-            cache.keep_tree(account, workspace, text, read_at)
+            cache.keep_tree(account, workspace, text, started)
         });
     }
 
     /// Drops the kept tree of one workspace.
     pub fn forget_tree(&self, workspace: &str) {
+        let now = self.unix_millis();
         self.in_account_cache(|cache, account| {
-            cache.forget(account, Forget::Tree(workspace))
+            cache.forget(account, Forget::Tree(workspace), now)
         });
     }
 
     /// Drops every kept tree of the login's account; the list stays.
     pub fn forget_all_trees(&self) {
-        self.in_account_cache(|cache, account| cache.forget(account, Forget::Trees));
+        let now = self.unix_millis();
+        self.in_account_cache(|cache, account| {
+            cache.forget(account, Forget::Trees, now)
+        });
     }
 
     /// Drops the kept workspace list of the login's account.
     pub fn forget_workspaces(&self) {
+        let now = self.unix_millis();
         self.in_account_cache(|cache, account| {
-            cache.forget(account, Forget::Workspaces)
+            cache.forget(account, Forget::Workspaces, now)
         });
     }
 

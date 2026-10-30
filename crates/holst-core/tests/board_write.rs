@@ -280,6 +280,21 @@ async fn a_withheld_hide_is_refused_with_nothing_sent() -> holst_core::Result<()
 }
 
 #[tokio::test]
+async fn a_failed_channel_read_is_an_error_not_permission_to_remove()
+-> holst_core::Result<()> {
+    let (fake, client, board) = started(with_frame()).await?;
+    let frame = frame_of(&client, &board).await?;
+    fake.fail(&format!("channel/{board}"), 502);
+    let sessions = seen(&fake, "WS Update");
+    let done = change(&client, &board, BoardChange::RemoveAll(vec![frame])).await;
+    assert_eq!(
+        (done.is_err(), seen(&fake, "WS Update") - sessions),
+        (true, 0)
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_note_reads_the_board_once() -> holst_core::Result<()> {
     let (fake, client, board) = started(with_frame()).await?;
     let given = board_edit(&json!({ "board": board, "note": "hello" }))?;

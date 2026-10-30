@@ -14,7 +14,7 @@ use yrs::{
     WriteTxn as _,
 };
 
-use super::Written;
+use super::{Written, not_changeable};
 use crate::{
     domain::{
         board::ObjectKind,
@@ -108,13 +108,6 @@ impl TaskEdit {
     }
 }
 
-fn not_changeable(kind: &ObjectKind, field: &'static str) -> Error {
-    Error::BoardChange(BoardChangeError::NotChangeable {
-        kind: kind.as_str().to_owned(),
-        field,
-    })
-}
-
 pub(super) fn check(
     edit: &TaskEdit,
     kind: &ObjectKind,
@@ -162,19 +155,43 @@ fn status_field(
     }
 }
 
-/// The schedule with the ends the days leave; none left gives `null`.
-fn schedule_field(start: Option<&Day>, due: Option<&Day>) -> Value {
+/// The stored schedule with the days set on its ends, their times and the
+/// time zone kept; no end left gives `null`.
+fn schedule_field(fields: &Value, start: Option<&Day>, due: Option<&Day>) -> Value {
+    let stored = fields
+        .get(SCHEDULE)
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
     let ends: Map<String, Value> = [("start", start), ("end", due)]
         .into_iter()
         .filter_map(|(end, day)| {
-            day.map(|day| (end.to_owned(), json!({ "date": day.as_str() })))
+            day.map(|day| {
+                let kept = stored
+                    .get(end)
+                    .and_then(Value::as_object)
+                    .cloned()
+                    .unwrap_or_default();
+                let dated = kept
+                    .into_iter()
+                    .chain([("date".to_owned(), json!(day.as_str()))])
+                    .collect();
+                (end.to_owned(), Value::Object(dated))
+            })
         })
         .collect();
     Some(ends)
         .filter(|ends| !ends.is_empty())
-        .map_or(Value::Null, Value::Object)
+        .map_or(Value::Null, |ends| {
+            Value::Object(
+                stored
+                    .into_iter()
+                    .filter(|(name, _)| name != "start" && name != "end")
+                    .chain(ends)
+                    .collect(),
+            )
+        })
 }
-
 /// The card's `displayOptions` with `fillBackground` set for the new color,
 /// its other options kept.
 fn display_options(fields: &Value, rgb: u32) -> Value {
@@ -268,7 +285,10 @@ pub(super) fn write(
         .transpose()?;
     let schedule = edit.schedule_given().then(|| {
         let (start, due) = edit.days(Some(fields));
-        (SCHEDULE, schedule_field(start.as_ref(), due.as_ref()))
+        (
+            SCHEDULE,
+            schedule_field(fields, start.as_ref(), due.as_ref()),
+        )
     });
     let description = edit.description.as_ref().map(|setting| {
         description_fields(setting, (transaction, scope), fields, edit.format)
@@ -498,6 +518,52 @@ mod tests {
             (
                 json!({"start": {"date": "2026-11-02"}}),
                 json!({"start": {"date": "2026-11-02"}, "end": {"date": "2026-12-01"}})
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_new_day_keeps_the_times_and_the_time_zone_of_the_schedule() -> Result<()> {
+        let mut made = task::made("Ship", None, (None, None), None, "i1".to_owned());
+        made.entries.truncate(1);
+        made.fields.retain(|(name, _)| *name != "schedule");
+        made.fields.push((
+            "schedule",
+            json!({
+                "start": {"date": "2026-11-01", "time": "09:00"},
+                "end": {"date": "2026-11-05", "time": "18:00"},
+                "timeZone": "Europe/Berlin",
+            }),
+        ));
+        let document = board_with(NewObject::Made(made))?;
+        edit(
+            &document,
+            TaskEdit {
+                due: day("2026-11-06").map(Setting::To),
+                ..TaskEdit::default()
+            },
+        )?;
+        let moved = field(&document, "schedule");
+        edit(
+            &document,
+            TaskEdit {
+                start: Some(Setting::Clear),
+                ..TaskEdit::default()
+            },
+        )?;
+        assert_eq!(
+            (moved, field(&document, "schedule")),
+            (
+                json!({
+                    "start": {"date": "2026-11-01", "time": "09:00"},
+                    "end": {"date": "2026-11-06", "time": "18:00"},
+                    "timeZone": "Europe/Berlin",
+                }),
+                json!({
+                    "end": {"date": "2026-11-06", "time": "18:00"},
+                    "timeZone": "Europe/Berlin",
+                })
             )
         );
         Ok(())

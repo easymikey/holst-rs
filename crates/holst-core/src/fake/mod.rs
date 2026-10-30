@@ -81,12 +81,14 @@ const PROBES: usize = 120;
 /// seconds and the client's connect then runs into its own timeout; the
 /// probes take that wait, so a client of the fake connects at once.
 async fn reachable(address: SocketAddr) {
+    let mut left = PROBES;
     // imperative: each probe waits for the socket
-    for _ in 0..PROBES {
-        let connected = timeout(PROBE, TcpStream::connect(address)).await;
-        if connected.is_ok_and(|stream| stream.is_ok()) {
-            return;
-        }
+    while left > 0
+        && !timeout(PROBE, TcpStream::connect(address))
+            .await
+            .is_ok_and(|stream| stream.is_ok())
+    {
+        left -= 1;
     }
 }
 
@@ -127,7 +129,7 @@ impl Fake {
         let (started, receiver) = mpsc::channel();
         drop(thread::spawn(move || {
             let outcome = runtime::Builder::new_current_thread()
-                .enable_io()
+                .enable_all()
                 .build()
                 .map(|runtime| {
                     runtime.block_on(async {

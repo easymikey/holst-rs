@@ -21,7 +21,10 @@ use yrs::{
     updates::decoder::Decode as _,
 };
 
-use crate::{domain::board::objects_root, protocol::document::OBJECTS_V3};
+use crate::{
+    domain::board::objects_root,
+    protocol::document::{OBJECTS_V3, TASK_INFO_STORE},
+};
 
 /// What a filled board holds, numbered from 1; the last three wrap one.
 #[derive(Debug, Clone)]
@@ -30,6 +33,8 @@ pub enum FixtureObject {
     FreeText(String),
     Shape(String),
     Frame(String),
+    /// A task card with this title and a stored info entry, no one assigned.
+    Task(String),
     /// A group; its members name it with `inside`.
     Group,
     /// A kind the clients know and holst-rs has no variant for.
@@ -107,6 +112,7 @@ pub(crate) fn add_objects(
 ) {
     let roots = document.get_or_insert_map(objects_root(document));
     let documents = document.get_or_insert_map("documents");
+    let infos = document.get_or_insert_map(TASK_INFO_STORE);
     let mut txn = document.transact_mut();
     objects.iter().zip(held + 1..).for_each(|(object, number)| {
         let ordinal = ordinal(board, number);
@@ -120,6 +126,22 @@ pub(crate) fn add_objects(
                 fields.as_object().cloned().unwrap_or_default(),
             )),
         );
+        fields
+            .get("taskCardInfoId")
+            .and_then(Value::as_str)
+            .into_iter()
+            .for_each(|info| {
+                infos.insert(
+                    &mut txn,
+                    info,
+                    MapPrelim::from_iter(any_fields(
+                        json!({ "id": info, "tagIds": [], "assigneeIds": [] })
+                            .as_object()
+                            .cloned()
+                            .unwrap_or_default(),
+                    )),
+                );
+            });
         object.text().into_iter().for_each(|text| {
             let root =
                 documents.insert(&mut txn, text_id.as_str(), XmlTextPrelim::new(""));
@@ -227,6 +249,7 @@ impl FixtureObject {
             | Self::FreeText(_)
             | Self::Shape(_)
             | Self::Frame(_)
+            | Self::Task(_)
             | Self::Group
             | Self::MindMapNode(_)
             | Self::Arrow(..)
@@ -239,6 +262,7 @@ impl FixtureObject {
             Self::Sticker(text)
             | Self::FreeText(text)
             | Self::Shape(text)
+            | Self::Task(text)
             | Self::MindMapNode(text) => Some(text),
             Self::Set(inner, ..) | Self::Inside(inner, _) => inner.text(),
             Self::Frame(_)
@@ -289,6 +313,10 @@ impl FixtureObject {
             Self::Frame(label) => json!({
                 "type": "frame", "width": 800, "height": 600, "labelText": label,
                 "fillColor": { "color": "white3", "opacity": 1 },
+            }),
+            Self::Task(_) => json!({
+                "type": "task-card", "titleDocumentId": document, "taskCardInfoId": document,
+                "width": 300, "scale": 1,
             }),
             Self::Group => json!({ "type": "group", "ignoreZIndex": true }),
             Self::Arrow(from, to) => json!({

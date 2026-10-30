@@ -30,8 +30,27 @@ use crate::{
         kinds::code::{Language, Theme},
         rich_text::TextFormat,
     },
-    error::Result,
+    error::{Error, Result, board_change::BoardChangeError},
 };
+
+/// The refusal of a field the kind does not have.
+pub(super) fn not_changeable(kind: &ObjectKind, field: &'static str) -> Error {
+    Error::BoardChange(BoardChangeError::NotChangeable {
+        kind: kind.as_str().to_owned(),
+        field,
+    })
+}
+
+/// Refuses the field unless `kind` is `only`, the one kind that takes it.
+pub(super) fn only(
+    kind: &ObjectKind,
+    only: &ObjectKind,
+    field: &'static str,
+) -> Result<()> {
+    (kind == only)
+        .then_some(())
+        .ok_or_else(|| not_changeable(kind, field))
+}
 
 /// What the edit writes: fields of the object and the other objects it touched.
 pub(super) struct Written {

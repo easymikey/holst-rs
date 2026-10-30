@@ -11,7 +11,7 @@ use crate::{
             ImportArgs,
             picture::{Place, stem_of},
             show::{Loading, through_cache},
-            tree_change::{Action, Plan, carry, node_of},
+            tree_change::{Action, Plan, Stale, carry, node_of},
         },
         board_file::{self, ImportRequest},
         board_load::CacheUse,
@@ -340,7 +340,8 @@ async fn new_board(
         Plan::plain(
             creation,
             node_of(Action::Create, None, Some(NodeKind::Board)),
-        ),
+        )
+        .staling(Stale::Workspace(workspace.id.clone())),
         (args.dry_run, Confirmation::Missing),
     )
     .await?;

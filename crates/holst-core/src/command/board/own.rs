@@ -100,7 +100,9 @@ pub async fn leave(client: &Client, args: &LeaveArgs) -> Result<Changed> {
             })
             .map_or_else(
                 || {
-                    lookup::forget_trees_holding(client, &board.id);
+                    // A dry run keeps the tree; only a sent leave changes it.
+                    matches!(args.dry_run, WriteMode::Send)
+                        .then(|| lookup::forget_trees_holding(client, &board.id));
                     api::channel::leave_request(&board.id)
                 },
                 |refusal| Err(refusal.into()),

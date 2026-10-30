@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 use yrs::TransactionMut;
 
-use super::Written;
+use super::{Written, only};
 use crate::{
     domain::{
         board::ObjectKind,
@@ -11,7 +11,7 @@ use crate::{
         kinds::flipcard::{BACK_DOCUMENT, HIGH, SIDE, WIDE},
         rich_text::TextFormat,
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::Result,
     protocol::document::{HEIGHT, POSITION, ROTATION, SCALE, WIDTH, X, Y},
 };
 
@@ -19,14 +19,7 @@ pub(super) const FLIP: &str = "flip";
 pub(super) const BACK: &str = "back";
 
 pub(super) fn check(kind: &ObjectKind, field: &'static str) -> Result<()> {
-    (*kind == ObjectKind::Flipcard)
-        .then_some(())
-        .ok_or_else(|| {
-            Error::BoardChange(BoardChangeError::NotChangeable {
-                kind: kind.as_str().to_owned(),
-                field,
-            })
-        })
+    only(kind, &ObjectKind::Flipcard, field)
 }
 
 /// The other side up, the width and height swapped, the centre kept (the web

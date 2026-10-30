@@ -133,6 +133,10 @@ pub enum TableRefusal {
         track: &'static str,
         at: u32,
     },
+    MergedBetween {
+        track: &'static str,
+        at: u32,
+    },
     LastTrack {
         track: &'static str,
         at: u32,
@@ -158,6 +162,10 @@ impl fmt::Display for TableRefusal {
             TableRefusal::MergedAcross { track, at } => write!(
                 f,
                 "a merged block crosses {track} {at}: unmerge it in the web client first"
+            ),
+            TableRefusal::MergedBetween { track, at } => write!(
+                f,
+                "a merged block crosses the place of new {track} {at}: unmerge it in the web client first"
             ),
             TableRefusal::LastTrack { track, at } => {
                 write!(

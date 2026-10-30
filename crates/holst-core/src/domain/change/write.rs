@@ -409,8 +409,16 @@ pub(super) enum Edge {
 
 /// The layer of `id` past every other object's, in front or at the back.
 pub(super) fn beyond(states: &HashMap<String, Value>, id: &str, stacking: Edge) -> f64 {
-    let layers = states
-        .iter()
+    beyond_among(states.iter(), id, stacking)
+}
+
+/// `beyond` over objects held in more than one map.
+pub(super) fn beyond_among<'a>(
+    objects: impl Iterator<Item = (&'a String, &'a Value)>,
+    id: &str,
+    stacking: Edge,
+) -> f64 {
+    let layers = objects
         .filter(|(other, _)| other.as_str() != id)
         .filter_map(|(_, fields)| fields.get(Z_INDEX).and_then(Value::as_f64));
     let lift = LAYER_STEP + LAYER_STEP * jitter(id);

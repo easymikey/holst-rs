@@ -141,11 +141,12 @@ pub trait AccountCache: Send + Sync {
         text: &str,
         read_at: u64,
     ) -> Result<()>;
-    /// Drop what `what` names.
+    /// Drop what `what` names, at Unix milliseconds `at`. A tree read that
+    /// started before `at` is not kept afterwards.
     ///
     /// # Errors
     /// [`crate::error::local_data::LocalDataError::FileRemove`].
-    fn forget(&self, account: &str, what: Forget<'_>) -> Result<()>;
+    fn forget(&self, account: &str, what: Forget<'_>, at: u64) -> Result<()>;
 }
 
 #[cfg(test)]

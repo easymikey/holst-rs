@@ -16,6 +16,8 @@ use serde_json::{Map, Value, json};
 
 use crate::tools::output::Output;
 
+const CONFIRM: &str = "confirm";
+
 /// Why a call to a table tool names no command, in words for the model.
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum CallError {
@@ -56,11 +58,13 @@ impl TableTool {
         &self,
         arguments: &mut Map<String, Value>,
     ) -> Result<CommandName, CallError> {
-        match self.commands.as_slice() {
+        let name = match self.commands.as_slice() {
             // A verbless command (`search`) has no `action` to take out.
             [only] if only.command().verb.is_none() => Ok(*only),
             _ => self.named(arguments),
-        }
+        }?;
+        drop_idle_confirm(name.command(), arguments);
+        Ok(name)
     }
 
     fn named(
@@ -197,6 +201,20 @@ impl TableTool {
             schema.insert("required".to_owned(), json!(required));
         }
         schema
+    }
+}
+
+/// A change that holds nothing takes `confirm: true` and does what it does
+/// without.
+fn drop_idle_confirm(command: &Command, arguments: &mut Map<String, Value>) {
+    let holds = command
+        .arguments_on(Surface::Mcp)
+        .any(|argument| argument.name == CONFIRM);
+    if command.risk != CommandRisk::Read
+        && !holds
+        && matches!(arguments.get(CONFIRM), Some(Value::Bool(_)))
+    {
+        arguments.remove(CONFIRM);
     }
 }
 
@@ -519,6 +537,38 @@ mod tests {
                 "required": ["boards"]
             })
         );
+    }
+
+    #[test]
+    fn a_write_action_takes_confirm_and_sends_what_it_sends_without() {
+        let offenders: Vec<String> = tools()
+            .iter()
+            .flat_map(|tool| {
+                tool.commands
+                    .iter()
+                    .filter(|name| name.command().risk != CommandRisk::Read)
+                    .filter_map(|name| {
+                        let verb = name.command().verb?;
+                        let mut arguments = Map::from_iter([
+                            ("action".to_owned(), json!(verb)),
+                            ("confirm".to_owned(), json!(true)),
+                        ]);
+                        let picked = tool.pick(&mut arguments).ok()?;
+                        let held = picked
+                            .command()
+                            .arguments_on(Surface::Mcp)
+                            .any(|argument| argument.name == CONFIRM);
+                        (held != arguments.contains_key(CONFIRM)).then(|| {
+                            format!(
+                                "{}: confirm is kept where nothing is held",
+                                picked.command().path()
+                            )
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        none("confirm on a write action", &offenders);
     }
 
     fn none(rule: &str, offenders: &[String]) {

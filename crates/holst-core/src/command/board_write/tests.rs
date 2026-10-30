@@ -354,12 +354,13 @@ async fn a_write_into_the_trash_is_marked() -> Result<()> {
 }
 
 #[tokio::test]
-async fn a_failed_board_reply_is_no_trash() -> Result<()> {
+async fn a_failed_board_reply_is_an_error_and_nothing_is_written() -> Result<()> {
     let me = fake::reply(200, &[], r#"{"id":"me"}"#);
     let (_, client) = fake::on_fake([me], Some(fake::stored("tok", "s=1")))?;
     let recorder = WriteRecorder::new(EditRight::Editable);
-    let written = written_by(&client, &recorder, &note("hi")).await?;
-    assert_eq!(written.placement, BoardStatus::Live);
+    let done = written_by(&client, &recorder, &note("hi")).await;
+    assert!(matches!(done, Err(Error::Http(_))));
+    assert_eq!(recorder.plans(), [], "no plan carried out");
     Ok(())
 }
 

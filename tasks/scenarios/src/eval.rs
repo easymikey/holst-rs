@@ -929,11 +929,11 @@ fn task_12(_ctx: &Ctx) -> Task {
                 .filter(|cell| {
                     named(cell, "/type", "table-cell")
                         && named(cell, "/parentId", table_id)
-                        && named(cell, "/rowId", "1")
+                        && at(cell, "/rowId") == Some(&json!(1))
                 })
                 .map(|cell| {
-                    let column = at(cell, "/columnId").and_then(Value::as_str);
-                    (column.unwrap_or_default().to_owned(), text(cell).to_owned())
+                    let column = at(cell, "/columnId").map(Value::to_string);
+                    (column.unwrap_or_default(), text(cell).to_owned())
                 })
                 .collect();
             first_row.sort();

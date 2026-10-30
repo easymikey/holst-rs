@@ -21,6 +21,9 @@ use crate::{
     },
 };
 
+/// Beside the trees: when the account's trees were last forgotten.
+const FORGOTTEN_FILE: &str = "forgotten-at";
+
 /// The workspace lists and trees of every account under one server's folder.
 #[derive(Debug, Clone)]
 pub struct AccountDisk {
@@ -52,6 +55,19 @@ impl AccountDisk {
                     .map(|dir| dir.join(TREES_DIR).join(workspace))
             })
             .flatten()
+    }
+
+    fn forgotten_at(&self, account: &str) -> Option<u64> {
+        let bytes = std::fs::read(self.dir(account)?.join(FORGOTTEN_FILE)).ok()?;
+        String::from_utf8(bytes).ok()?.trim().parse().ok()
+    }
+
+    /// Notes that trees were forgotten at `at`, or at the later time noted.
+    fn mark_forgotten(&self, account: &str, at: u64) -> Result<()> {
+        let at = at.max(self.forgotten_at(account).unwrap_or_default());
+        self.dir(account).map_or(Ok(()), |dir| {
+            self.write(&dir.join(FORGOTTEN_FILE), &[at.to_string().as_bytes()])
+        })
     }
 
     fn write(&self, path: &Path, chunks: &[&[u8]]) -> Result<()> {
@@ -109,23 +125,35 @@ impl AccountCache for AccountDisk {
         text: &str,
         read_at: u64,
     ) -> Result<()> {
-        self.tree_file(account, workspace).map_or(Ok(()), |path| {
-            let head = format!("{read_at}\n");
-            self.write(&path, &[head.as_bytes(), text.as_bytes()])
-        })
+        let stale = self
+            .forgotten_at(account)
+            .is_some_and(|forgotten| forgotten > read_at);
+        self.tree_file(account, workspace)
+            .filter(|_| !stale)
+            .map_or(Ok(()), |path| {
+                let head = format!("{read_at}\n");
+                self.write(&path, &[head.as_bytes(), text.as_bytes()])
+            })
     }
 
-    fn forget(&self, account: &str, what: Forget<'_>) -> Result<()> {
+    fn forget(&self, account: &str, what: Forget<'_>, at: u64) -> Result<()> {
         self.dir(account).map_or(Ok(()), |dir| {
             let list = dir.join(WORKSPACES_FILE);
             let trees = dir.join(TREES_DIR);
             match what {
                 Forget::Workspaces => remove_any(&list),
-                Forget::Trees => remove_any(&trees),
-                Forget::Tree(workspace) => self
-                    .tree_file(account, workspace)
-                    .map_or(Ok(()), |path| remove_any(&path)),
-                Forget::All => remove_any(&list).and(remove_any(&trees)),
+                Forget::Trees => self
+                    .mark_forgotten(account, at)
+                    .and_then(|()| remove_any(&trees)),
+                Forget::Tree(workspace) => {
+                    self.mark_forgotten(account, at).and_then(|()| {
+                        self.tree_file(account, workspace)
+                            .map_or(Ok(()), |path| remove_any(&path))
+                    })
+                }
+                Forget::All => self
+                    .mark_forgotten(account, at)
+                    .and_then(|()| remove_any(&list).and(remove_any(&trees))),
             }
         })
     }
@@ -136,6 +164,8 @@ mod tests {
     #![expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
 
     use std::{fs, io, path::PathBuf};
+
+    use rstest::rstest;
 
     use crate::{
         domain::account::Workspace,
@@ -237,19 +267,48 @@ mod tests {
             store.keep_tree(ALICE, TWO, "b", 2)
         };
         fill()?;
-        store.forget(ALICE, Forget::Workspaces)?;
+        store.forget(ALICE, Forget::Workspaces, 1)?;
         assert!(store.workspaces(ALICE).is_none() && store.tree(ALICE, ONE).is_some());
         fill()?;
-        store.forget(ALICE, Forget::Tree(ONE))?;
+        store.forget(ALICE, Forget::Tree(ONE), 1)?;
         assert!(store.tree(ALICE, ONE).is_none() && store.tree(ALICE, TWO).is_some());
         assert!(store.workspaces(ALICE).is_some());
         fill()?;
-        store.forget(ALICE, Forget::Trees)?;
+        store.forget(ALICE, Forget::Trees, 1)?;
         assert!(store.tree(ALICE, ONE).is_none() && store.tree(ALICE, TWO).is_none());
         assert!(store.workspaces(ALICE).is_some());
         fill()?;
-        store.forget(ALICE, Forget::All)?;
+        store.forget(ALICE, Forget::All, 1)?;
         assert!(store.workspaces(ALICE).is_none() && store.tree(ALICE, TWO).is_none());
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::one_tree("stale-one", Forget::Tree(ONE))]
+    #[case::all_trees("stale-trees", Forget::Trees)]
+    #[case::everything("stale-all", Forget::All)]
+    fn a_tree_read_that_started_before_a_forget_is_not_kept(
+        #[case] name: &str,
+        #[case] what: Forget<'_>,
+    ) -> Result<()> {
+        let (store, _) = store(name)?;
+        store.forget(ALICE, what, 10)?;
+        store.keep_tree(ALICE, ONE, "old", 9)?;
+        assert_eq!(store.tree(ALICE, ONE), None);
+        store.keep_tree(ALICE, ONE, "new", 10)?;
+        assert_eq!(
+            store.tree(ALICE, ONE).map(|tree| tree.text),
+            Some("new".into())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_forget_of_the_list_leaves_no_mark_on_trees() -> Result<()> {
+        let (store, _) = store("list-forget")?;
+        store.forget(ALICE, Forget::Workspaces, 10)?;
+        store.keep_tree(ALICE, ONE, "old", 9)?;
+        assert!(store.tree(ALICE, ONE).is_some());
         Ok(())
     }
 

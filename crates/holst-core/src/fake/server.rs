@@ -45,8 +45,9 @@ async fn respond(mut stream: TcpStream, state: Shared) {
 /// Answers the requests of one connection until the client hangs up, so a
 /// client that pools connections opens few of them.
 async fn serve(stream: &mut TcpStream, state: &Shared) -> io::Result<()> {
+    let mut open = true;
     // imperative: a keep-alive connection ends with an error at the hang-up
-    loop {
+    while open {
         let request = read_request(stream).await?;
         match answer(state, &request) {
             Answer::Update(bytes) => {
@@ -55,10 +56,9 @@ async fn serve(stream: &mut TcpStream, state: &Shared) -> io::Result<()> {
             }
             Answer::Json(reply) => write_response(stream, &reply).await?,
         }
-        if request.closes {
-            return Ok(());
-        }
+        open = !request.closes;
     }
+    Ok(())
 }
 
 enum Answer {
@@ -145,8 +145,7 @@ fn respond_api(state: &mut State, request: &Request) -> Response {
         ("GET", "/gapi/current_user") if signed_in => {
             found(&state.workspaces.current_user())
         }
-        // The socket handshake without the session cookie never reaches the
-        // socket.
+        // The socket handshake without the session cookie never reaches the socket.
         ("GET", "/gapi/current_user" | "/hud/ws") => unauthorized(),
         (_, _) if !signed_in => unauthorized(),
         (method, path) => {

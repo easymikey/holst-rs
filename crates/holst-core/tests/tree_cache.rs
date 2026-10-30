@@ -106,8 +106,13 @@ impl AccountCache for Scratch {
         self.disk.keep_tree(account, workspace, text, read_at)
     }
 
-    fn forget(&self, account: &str, what: Forget<'_>) -> holst_core::Result<()> {
-        self.disk.forget(account, what)
+    fn forget(
+        &self,
+        account: &str,
+        what: Forget<'_>,
+        at: u64,
+    ) -> holst_core::Result<()> {
+        self.disk.forget(account, what, at)
     }
 }
 
@@ -446,5 +451,108 @@ async fn a_lost_board_drops_the_trees_holding_it() -> holst_core::Result<()> {
     assert!(closed);
     assert!(client.known_tree(&team.id).is_none());
     assert!(client.known_tree(&other.id).is_some());
+    Ok(())
+}
+
+/// The cache holds the tree of `START`; `made` is then made elsewhere, and
+/// `change` runs half an hour later on that cache. Gives its result and the
+/// tree requests it sent.
+async fn change_after_web_edit(
+    made: Value,
+    change: impl AsyncFnOnce(&Fake, &Client) -> holst_core::Result<()>,
+) -> holst_core::Result<(holst_core::Result<()>, usize)> {
+    let fake = Fake::start(plans().folder("Archive", "Team")).await?;
+    let cache = Scratch::new()?;
+    lookup::board_id(&at(&fake, &cache, START)?, "Plans", None).await?;
+    tree_change::create(&bare(&fake)?, &args(&made)?).await?;
+    let before = fake.requests().len();
+    let writer = at(&fake, &cache, START + HOUR / 2)?.for_change();
+    let done = change(&fake, &writer).await;
+    Ok((done, trees_since(&fake, before)))
+}
+
+#[tokio::test]
+async fn a_board_made_in_the_web_is_moved_after_one_tree_read() -> holst_core::Result<()>
+{
+    let made = json!({ "name": "Q4", "workspace": "Team" });
+    let (done, asked) = change_after_web_edit(made, async |fake, writer| {
+        let given = json!({ "board": fake.id_of("Q4"), "folder": "Archive" });
+        tree_change::mv(writer, &args(&given)?).await.map(drop)
+    })
+    .await?;
+    assert!(done.is_ok(), "{done:?}");
+    assert_eq!(asked, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_board_made_in_the_web_is_trashed_after_one_tree_read()
+-> holst_core::Result<()> {
+    let made = json!({ "name": "Q4", "workspace": "Team" });
+    let (done, asked) = change_after_web_edit(made, async |fake, writer| {
+        let given = json!({ "board": fake.id_of("Q4") });
+        tree_change::rm(writer, &args(&given)?).await.map(drop)
+    })
+    .await?;
+    assert!(done.is_ok(), "{done:?}");
+    assert_eq!(asked, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_folder_made_in_the_web_takes_a_new_board_after_one_tree_read()
+-> holst_core::Result<()> {
+    let made = json!({ "name": "Fresh", "workspace": "Team", "kind": "folder" });
+    let (done, asked) = change_after_web_edit(made, async |_, writer| {
+        let given = json!({ "name": "Notes", "workspace": "Team", "folder": "Fresh" });
+        tree_change::create(writer, &args(&given)?).await.map(drop)
+    })
+    .await?;
+    assert!(done.is_ok(), "{done:?}");
+    assert_eq!(asked, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_folder_made_in_the_web_takes_a_moved_board_after_one_tree_read()
+-> holst_core::Result<()> {
+    let made = json!({ "name": "Fresh", "workspace": "Team", "kind": "folder" });
+    let (done, asked) = change_after_web_edit(made, async |_, writer| {
+        let given = json!({ "board": "Plans", "folder": "Fresh" });
+        tree_change::mv(writer, &args(&given)?).await.map(drop)
+    })
+    .await?;
+    assert!(done.is_ok(), "{done:?}");
+    assert_eq!(asked, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_folder_that_is_nowhere_costs_one_tree_read_before_not_found()
+-> holst_core::Result<()> {
+    let (done, asked) = change_after_web_edit(
+        json!({ "name": "Q4", "workspace": "Team" }),
+        async |_, writer| {
+            let given =
+                json!({ "name": "Notes", "workspace": "Team", "folder": "Nowhere" });
+            tree_change::create(writer, &args(&given)?).await.map(drop)
+        },
+    )
+    .await?;
+    assert!(matches!(done, Err(Error::Lookup(_))), "{done:?}");
+    assert_eq!(asked, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_tree_asked_before_a_forget_is_not_kept_after_it() -> holst_core::Result<()> {
+    let fake = Fake::start(plans()).await?;
+    let client = at(&fake, &Scratch::new()?, START)?;
+    let team = lookup::workspace(&client, Some("Team")).await?;
+    lookup::forget_trees(&client, Some(&team.id));
+    client.learn_tree(&team.id, "{\"channels\":[]}", START - 1);
+    assert!(client.known_tree(&team.id).is_none());
+    client.learn_tree(&team.id, "{\"channels\":[]}", START);
+    assert!(client.known_tree(&team.id).is_some());
     Ok(())
 }

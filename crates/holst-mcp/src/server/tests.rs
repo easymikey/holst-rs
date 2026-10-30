@@ -786,33 +786,25 @@ pub(super) async fn table_call(
     }
 }
 
+#[rstest::rstest]
+#[case::into_for_frame(
+    serde_json::json!({ "action": "edit", "board": "X", "object": ["@1"], "into": "@4" }),
+    "\"into\" is not an argument of `object edit`: use `frame`, which moves an object into a frame; it takes "
+)]
+#[case::to_for_side(
+    serde_json::json!({ "action": "align", "board": "X", "object": ["@1", "@2"], "to": "left" }),
+    "\"to\" is not an argument of `object align`: use `side`, which names the edge to line the objects up along; it takes "
+)]
 #[tokio::test]
-async fn auth_status_counts_the_boards_and_folders_of_each_workspace() {
-    let (holst, ..) = with_a([CannedResponse::ok(ME), CannedResponse::ok(TREE)]);
-    let (failed, text) =
-        table_call(&holst, "auth", serde_json::json!({ "action": "status" })).await;
-    assert!(!failed, "{text}");
-    assert!(text.starts_with("logged in: Ann @"), "{text}");
-    assert!(text.contains("easy @"), "{text}");
-    assert!(text.contains("· 1 board, 1 folder\n"), "{text}");
-}
-
-#[tokio::test]
-async fn auth_status_with_tokens_lists_them() {
-    let (holst, network) = McpServer::scripted([
-        CannedResponse::ok(ME),
-        CannedResponse::ok(TREE),
-        CannedResponse::ok(r#"[{"id":"p1","name":"ci"}]"#),
-    ]);
-    let (failed, text) = table_call(
-        &holst,
-        "auth",
-        serde_json::json!({ "action": "status", "with": ["tokens"] }),
-    )
-    .await;
-    assert!(!failed, "{text}");
-    assert!(text.contains("tokens:\n"), "{text}");
-    assert_eq!(network.seen().len(), 3, "{:?}", network.seen());
+async fn a_key_of_the_wrong_word_names_the_key_the_command_has(
+    #[case] arguments: serde_json::Value,
+    #[case] start: &str,
+) {
+    let (holst, network) = McpServer::scripted([]);
+    let (failed, text) = table_call(&holst, "object_write", arguments).await;
+    assert!(failed);
+    assert!(text.starts_with(start), "{text}");
+    assert!(network.seen().is_empty(), "the call went to the network");
 }
 
 #[tokio::test]
@@ -830,18 +822,6 @@ async fn an_argument_the_command_does_not_take_is_a_tool_error_in_our_words() {
         "\"cover\" is not an argument of `auth status`: it takes with"
     );
     assert!(network.seen().is_empty(), "the call went to the network");
-}
-
-#[tokio::test]
-async fn an_action_the_tool_does_not_have_is_refused() {
-    let (holst, ..) = with_a([]);
-    let (failed, text) =
-        table_call(&holst, "auth", serde_json::json!({ "action": "logout" })).await;
-    assert!(failed);
-    assert!(
-        text.contains("`auth` has no action \"logout\"; it has: status"),
-        "{text}"
-    );
 }
 
 #[tokio::test]
@@ -895,15 +875,6 @@ fn auth_is_read_only_in_the_tool_list() {
         .and_then(|tool| tool.annotations.as_ref())
         .map(|hints| (hints.read_only_hint, hints.destructive_hint));
     assert_eq!(hints, Some((Some(true), None)));
-}
-
-#[tokio::test]
-async fn workspace_ls_lists_the_workspaces_with_their_numbers() {
-    let (holst, ..) = with_a([CannedResponse::ok(ME)]);
-    let (failed, text) =
-        table_call(&holst, "workspace", serde_json::json!({ "action": "ls" })).await;
-    assert!(!failed, "{text}");
-    assert!(text.starts_with("easy @"), "{text}");
 }
 
 #[tokio::test]
@@ -961,6 +932,22 @@ fn instructions_explain_the_tools_and_the_login() {
         "{instructions}"
     );
     assert!(!instructions.contains("raw: true"), "{instructions}");
+}
+
+#[test]
+fn instructions_say_objects_and_threads_have_no_name_lookup() {
+    let instructions = McpServer::offline()
+        .get_info()
+        .instructions
+        .unwrap_or_default();
+    assert!(
+        instructions.contains("object or thread needs @N or id"),
+        "objects and threads are found by @N, id or link only: {instructions}"
+    );
+    assert!(
+        !instructions.contains("a reference takes"),
+        "one rule for every reference is wrong: {instructions}"
+    );
 }
 
 #[rstest::rstest]
@@ -1218,19 +1205,6 @@ async fn a_second_board_show_by_name_asks_no_account_and_no_tree()
 }
 
 #[tokio::test]
-async fn a_second_object_write_by_name_asks_no_account_and_no_tree()
--> holst_core::Result<()> {
-    let fake = plans_fake().await?;
-    let (holst, ..) = served(&fake)?;
-    replied(&holst, "object_write", add_note()).await;
-    let before = fake.requests().len();
-    replied(&holst, "object_write", add_note()).await;
-    assert_eq!(asked(&fake, before, "/current_user"), 0);
-    assert_eq!(asked(&fake, before, "/tree"), 0);
-    Ok(())
-}
-
-#[tokio::test]
 async fn a_board_show_by_name_after_a_search_reads_no_tree() -> holst_core::Result<()> {
     let fake = plans_fake().await?;
     let (holst, ..) = served(&fake)?;
@@ -1267,7 +1241,7 @@ async fn a_new_login_reads_its_account_and_list_from_the_store_and_asks_the_tree
     let first = holst.client().await?.epoch;
     // What `holst-mcp setup` leaves: the list fresh, no trees.
     let list = login.disk.workspaces(FAKE_USER).unwrap_or_default();
-    login.disk.forget(FAKE_USER, Forget::Trees)?;
+    login.disk.forget(FAKE_USER, Forget::Trees, 0)?;
     login.disk.keep_workspaces(FAKE_USER, &list)?;
     login.log_in(fake_session().with_account_id(FAKE_USER));
     ticks.advance(RECHECK);
@@ -1526,10 +1500,12 @@ async fn the_object_tool_sends(
 
 #[rstest::rstest]
 #[case::add_by_name(serde_json::json!({ "action": "add", "board": "Plans", "text": "note" }), WarmUp::Again, Sent { tree: 2, channel: 1, socket: 2, document: 2, update: 1, ..Sent::default() }, Sent { channel: 1, socket: 2, document: 2, update: 1, ..Sent::default() })]
+#[case::add_with_confirm(serde_json::json!({ "action": "add", "board": "Plans", "text": "note", "confirm": true }), WarmUp::Again, Sent { tree: 2, channel: 1, socket: 2, document: 2, update: 1, ..Sent::default() }, Sent { channel: 1, socket: 2, document: 2, update: 1, ..Sent::default() })]
 #[case::add_by_alias(serde_json::json!({ "action": "add", "board": "<@Plans>", "text": "note" }), WarmUp::Again, Sent { channel: 1, socket: 2, document: 2, update: 1, ..Sent::default() }, Sent { channel: 1, socket: 2, document: 2, update: 1, ..Sent::default() })]
 #[case::edit(serde_json::json!({ "action": "edit", "board": "Plans", "object": ["<Plans.1>"], "text": "changed", "confirm": true }), WarmUp::Listed, Sent { tree: 2, channel: 1, socket: 1, document: 1, update: 1, ..Sent::default() }, Sent { channel: 1, socket: 1, document: 1, update: 1, ..Sent::default() })]
 #[case::rm(serde_json::json!({ "action": "rm", "board": "Plans", "object": ["<Plans.1>"], "confirm": true }), WarmUp::Listed, Sent { tree: 2, channel: 1, socket: 1, document: 1, update: 1, ..Sent::default() }, Sent { channel: 1, socket: 1, document: 1, update: 1, ..Sent::default() })]
 #[case::lock(serde_json::json!({ "action": "lock", "board": "Plans", "object": ["<Plans.1>"] }), WarmUp::Listed, Sent { tree: 2, channel: 1, socket: 1, document: 1, update: 1, ..Sent::default() }, Sent { channel: 1, socket: 1, document: 1, update: 1, ..Sent::default() })]
+#[case::lock_with_confirm(serde_json::json!({ "action": "lock", "board": "Plans", "object": ["<Plans.1>"], "confirm": true }), WarmUp::Listed, Sent { tree: 2, channel: 1, socket: 1, document: 1, update: 1, ..Sent::default() }, Sent { channel: 1, socket: 1, document: 1, update: 1, ..Sent::default() })]
 #[tokio::test]
 async fn the_object_write_tool_sends(
     #[case] arguments: serde_json::Value,

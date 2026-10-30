@@ -18,14 +18,14 @@ use holst_form::{
     error::{FormError, Reason},
     form::{Form, Question},
     line::QuestionKind,
-    terminal::Terminal,
+    terminal::{Terminal, TerminalKind},
 };
 use secrecy::SecretString;
 
 use crate::login::store::{Backend as _, SystemBackend};
 
 mod connect;
-pub(crate) use connect::{Clients, Program, SERVER, System};
+pub(crate) use connect::{Clients, Program, SERVER, System, stable_binary};
 
 /// Tries for the code or password, as the CLI allows.
 const ATTEMPTS: u8 = 3;
@@ -87,6 +87,9 @@ pub(crate) enum SetupError {
     )]
     Refused(Secret),
 
+    #[error("There is no saved login: run holst-mcp setup in a terminal.")]
+    NoTerminal,
+
     #[error("unknown client {0}: --clients takes claude or codex, comma-separated")]
     UnknownClient(String),
 
@@ -129,13 +132,22 @@ pub(crate) async fn set_up<T: Terminal>(
     steps: Steps,
     clients: &Clients,
 ) -> Result<(), SetupError> {
-    match steps {
-        Steps::Both => {
+    let piped = form.terminal().kind() == TerminalKind::Redirected;
+    match (steps, clients) {
+        (Steps::Both | Steps::ConnectOnly, Clients::Named(_)) if piped => {
+            backend
+                .load()
+                .ok()
+                .flatten()
+                .ok_or(SetupError::NoTerminal)?;
+            connect::connect(programs, form, binary, clients)
+        }
+        (Steps::Both, _) => {
             run(backend, form).await?;
             connect::connect(programs, form, binary, clients)
         }
-        Steps::LoginOnly => run(backend, form).await,
-        Steps::ConnectOnly => connect::connect(programs, form, binary, clients),
+        (Steps::LoginOnly, _) => run(backend, form).await,
+        (Steps::ConnectOnly, _) => connect::connect(programs, form, binary, clients),
     }?;
     Ok(form.outro("Done")?)
 }

@@ -2,13 +2,13 @@
 
 #![expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
 
-use std::{cell::RefCell, io};
+use std::{cell::RefCell, io, path::Path};
 
 use holst_form::{fake::Script, form::Form, line::Keystroke, terminal::TerminalKind};
 
 use crate::setup::{
     SetupError,
-    connect::{Clients, Program, Ran, connect},
+    connect::{Clients, Program, Ran, connect, stable_binary},
 };
 
 const BINARY: &str = "/opt/holst/holst-mcp";
@@ -16,6 +16,7 @@ const BINARY: &str = "/opt/holst/holst-mcp";
 /// Client programs by command line; one not listed is missing from `PATH`.
 pub(in crate::setup) struct Machine {
     lines: &'static [(&'static str, bool, &'static str)],
+    said: &'static [(&'static str, &'static str)],
     pub(in crate::setup) calls: RefCell<Vec<String>>,
 }
 
@@ -25,8 +26,14 @@ impl Machine {
     ) -> Self {
         Self {
             lines,
+            said: &[],
             calls: RefCell::default(),
         }
+    }
+
+    /// What the command lines print on stdout.
+    fn saying(self, said: &'static [(&'static str, &'static str)]) -> Self {
+        Self { said, ..self }
     }
 }
 
@@ -39,6 +46,11 @@ impl Program for Machine {
             .find(|(known, ..)| *known == line)
             .map(|&(_, success, stderr)| Ran {
                 success,
+                stdout: self
+                    .said
+                    .iter()
+                    .find(|(known, _)| *known == line)
+                    .map_or_else(String::new, |(_, out)| (*out).to_owned()),
                 stderr: stderr.to_owned(),
             })
             .ok_or_else(|| io::ErrorKind::NotFound.into())
@@ -181,7 +193,8 @@ fn an_unknown_client_name_lists_the_known_ones() {
 
 #[test]
 fn an_existing_entry_is_kept_without_asking() -> Result<(), SetupError> {
-    let machine = Machine::with(&[("claude mcp get holst-rs", true, "")]);
+    let machine = Machine::with(&[("claude mcp get holst-rs", true, "")])
+        .saying(&[("claude mcp get holst-rs", "Command: /opt/holst/holst-mcp\n")]);
     let (shown, calls) = connected(&machine, &[])?;
     assert!(
         shown.contains("Claude Code has a holst-rs entry already; kept."),
@@ -219,4 +232,68 @@ fn a_command_that_cannot_start_is_told_and_skipped() -> Result<(), SetupError> {
     assert!(shown.contains("Could not run claude"), "{shown}");
     assert!(shown.contains("entity not found"), "{shown}");
     Ok(())
+}
+
+const MOVED: &[(&str, bool, &str)] = &[
+    ("claude mcp get holst-rs", true, ""),
+    ("claude mcp remove --scope user holst-rs", true, ""),
+    (
+        "claude mcp add --scope user holst-rs -- /opt/holst/holst-mcp",
+        true,
+        "",
+    ),
+];
+
+const GONE: &[(&str, bool, &str)] = &[
+    ("claude mcp get holst-rs", true, ""),
+    ("codex mcp get holst-rs", true, ""),
+    ("codex mcp remove holst-rs", true, ""),
+    ("codex mcp add holst-rs -- /opt/holst/holst-mcp", true, ""),
+];
+
+#[test]
+fn an_entry_for_another_path_is_replaced() -> Result<(), SetupError> {
+    let machine = Machine::with(MOVED).saying(&[(
+        "claude mcp get holst-rs",
+        "Command: /opt/homebrew/Cellar/holst-rs/0.2.0/bin/holst-mcp\n",
+    )]);
+    let script = Script::new(TerminalKind::Dumb, [], []);
+    let (shown, calls) = connected_on(&machine, script, &Clients::parse("claude")?)?;
+    assert!(!shown.contains("kept"), "{shown}");
+    assert!(shown.contains("Connected Claude Code."), "{shown}");
+    assert_eq!(
+        calls,
+        [
+            "claude mcp get holst-rs",
+            "claude mcp remove --scope user holst-rs",
+            "claude mcp add --scope user holst-rs -- /opt/holst/holst-mcp"
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn only_the_entry_for_another_path_is_replaced() -> Result<(), SetupError> {
+    let machine = Machine::with(GONE).saying(&[
+        ("claude mcp get holst-rs", "Command: /opt/holst/holst-mcp\n"),
+        ("codex mcp get holst-rs", "command: /gone/holst-mcp\n"),
+    ]);
+    let (shown, calls) = connected(&machine, &[])?;
+    assert!(
+        shown.contains("Claude Code has a holst-rs entry already; kept."),
+        "{shown}"
+    );
+    assert!(shown.contains("Connected Codex."), "{shown}");
+    assert_eq!(calls.len(), 4, "{calls:?}");
+    Ok(())
+}
+
+#[test]
+fn the_stable_brew_link_is_preferred_to_the_versioned_path() {
+    let cellar = Path::new("/opt/homebrew/Cellar/holst-rs/0.3.0/bin/holst-mcp");
+    let link = Path::new("/opt/homebrew/bin/holst-mcp");
+    assert_eq!(stable_binary(cellar, |_| true), link);
+    assert_eq!(stable_binary(cellar, |_| false), cellar);
+    let loose = Path::new("/usr/local/bin/holst-mcp");
+    assert_eq!(stable_binary(loose, |_| true), loose);
 }

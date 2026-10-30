@@ -576,6 +576,22 @@ mod tests {
     }
 
     #[test]
+    fn table_cells_the_web_made_name_their_line_and_column_by_number() {
+        let objects: Vec<Object> = [
+            json!({"id": "t", "type": "table", "position": {"x": 0, "y": 0},
+                   "column-1": {"index": 0, "width": 200}, "column-2": {"index": 1, "width": 300},
+                   "row-1": {"index": 0, "height": 50}, "row-2": {"index": 1, "height": 70}}),
+            json!({"id": "c", "type": "table-cell", "parentId": "t", "columnId": 2, "rowId": 2}),
+        ]
+        .iter()
+        .map(object)
+        .collect();
+        let scene = Scene::new(&objects);
+        let cell = scene.get("c").and_then(|c| scene.rectangle_of(c));
+        assert_eq!(cell, Some(Rectangle::new(200.0, 50.0, 300.0, 70.0)));
+    }
+
+    #[test]
     fn a_turned_object_covers_its_turned_box_from_the_rotation_it_holds() {
         let plain = object(
             &json!({"id": "h", "type": "shape", "position": {"x": 0, "y": 0}, "width": 400, "height": 100}),

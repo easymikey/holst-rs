@@ -3,7 +3,7 @@
 use itertools::Itertools as _;
 use serde_json::{Value, json};
 
-use super::Written;
+use super::{Written, not_changeable, only};
 use crate::{
     domain::{
         board::ObjectKind,
@@ -39,16 +39,7 @@ pub(super) fn check_roll(kind: &ObjectKind, fields: Option<&Value>) -> Result<()
 }
 
 pub(super) fn check_faces(kind: &ObjectKind) -> Result<()> {
-    (*kind == ObjectKind::Dice)
-        .then_some(())
-        .ok_or_else(|| not_changeable(kind, FACES))
-}
-
-fn not_changeable(kind: &ObjectKind, field: &'static str) -> Error {
-    Error::BoardChange(BoardChangeError::NotChangeable {
-        kind: kind.as_str().to_owned(),
-        field,
-    })
+    only(kind, &ObjectKind::Dice, FACES)
 }
 
 /// Rolls the die or spins the wheel `id`, drawing from a fresh id of the

@@ -136,7 +136,7 @@ pub enum InputError {
     )]
     GuestSharesNoTemplate { workspace: String },
 
-    #[error("\"{name}\" is not an argument of `{command}`: it takes {}", taken_list(.taken))]
+    #[error("\"{name}\" is not an argument of `{command}`: {}", takes(.command, .name, .taken))]
     NotArgument {
         command: String,
         name: String,
@@ -163,6 +163,8 @@ pub enum InputError {
         "the new empty board {board} is left in the workspace: moving it to the trash failed ({failed})"
     )]
     ImportBoardLeft { board: String, failed: Box<Error> },
+    #[error("the cover was changed, but the note was not written")]
+    CoverChanged,
     #[error("{} problems:{}", .errors.len(), listed(.errors))]
     Several { errors: Vec<Error> },
 
@@ -233,6 +235,7 @@ impl InputError {
             | InputError::ReplyNotFound { .. }
             | InputError::NotCommandArguments(_)
             | InputError::ImportBoardLeft { .. }
+            | InputError::CoverChanged
             | InputError::NoWorkspaces => None,
         }
     }
@@ -283,6 +286,7 @@ impl InputError {
             | InputError::ReplyNotFound { .. }
             | InputError::NotCommandArguments(_)
             | InputError::ImportBoardLeft { .. }
+            | InputError::CoverChanged
             // Each problem's own words say what to change.
             | InputError::Several { .. } => None,
         }
@@ -294,6 +298,34 @@ fn close_list(close: &[String]) -> String {
         [] => String::new(),
         _ => format!(" (close: {})", close.join(", ")),
     }
+}
+
+/// Wrong keys: (command, given, the key it has, what that key does).
+const MIXED_UP: [(&str, &str, &str, &str); 2] = [
+    (
+        "object edit",
+        "into",
+        "frame",
+        "moves an object into a frame",
+    ),
+    (
+        "object align",
+        "to",
+        "side",
+        "names the edge to line the objects up along",
+    ),
+];
+
+/// The keys a command takes, led by the one a mixed-up key stands for.
+fn takes(command: &str, name: &str, taken: &[&str]) -> String {
+    let instead = MIXED_UP
+        .iter()
+        .find(|(each, given, key, _)| {
+            *each == command && *given == name && taken.contains(key)
+        })
+        .map(|(_, _, key, does)| format!("use `{key}`, which {does}; "))
+        .unwrap_or_default();
+    format!("{instead}it takes {}", taken_list(taken))
 }
 
 fn taken_list(taken: &[&str]) -> String {
@@ -384,6 +416,7 @@ pub(super) mod tests {
                 None,
             ),
             (InputError::NoWorkspaces, None),
+            (InputError::CoverChanged, None),
             (
                 InputError::NotArgument {
                     command: text(),

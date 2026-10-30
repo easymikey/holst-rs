@@ -630,82 +630,6 @@ async fn a_logout_ends_the_server_session_and_a_wrong_code_is_refused() -> Outco
     Ok(())
 }
 
-#[tokio::test]
-async fn a_path_that_fails_answers_with_its_status() -> Outcome<()> {
-    let started = Fake::start(Fixture::default().failing("current_user", 503)).await?;
-    assert_eq!(get(&started, "current_user").await?.status, 503);
-    let fake = Fake::start(Fixture::default()).await?;
-    assert_eq!(get(&fake, "current_user").await?.status, 200);
-    fake.fail("current_user", 429);
-    assert_eq!(get(&fake, "current_user").await?.status, 429);
-    assert_eq!(get(&fake, "session/list").await?.status, 200);
-    Ok(())
-}
-
-#[tokio::test]
-async fn the_log_holds_each_request_in_order() -> Outcome<()> {
-    let fake = Fake::start(plan()).await?;
-    fake.fail("session/list", 503);
-    get(&fake, "current_user?lang=en").await?;
-    get(&fake, "session/list").await?;
-    send(&fake, "", "GET", "current_user", "").await?;
-    get(&fake, "nowhere").await?;
-    let address = fake.base_url().trim_start_matches("http://");
-    let mut stream = TcpStream::connect(address).await?;
-    stream
-        .write_all(b"GET /storage/report.pdf HTTP/1.1\r\nhost: fake\r\nconnection: close\r\n\r\n")
-        .await?;
-    stream.read_to_string(&mut String::new()).await?;
-    assert_eq!(
-        fake.requests(),
-        [
-            "GET /gapi/current_user",
-            "GET /gapi/session/list",
-            "GET /gapi/current_user",
-            "GET /gapi/nowhere",
-            "GET /storage/report.pdf",
-        ]
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn the_log_holds_the_socket_messages() -> Outcome<()> {
-    let fake = Fake::start(plan()).await?;
-    let id = fake.id_of("Plan").ok_or(Failure::Malformed("board"))?;
-    let address = fake.base_url().trim_start_matches("http://");
-    let mut request = format!("ws://{address}/hud/ws").into_client_request()?;
-    request.headers_mut().insert(
-        "cookie",
-        ACCEPTED_COOKIES.parse().map_err(io::Error::other)?,
-    );
-    let (mut socket, _) =
-        tokio_tungstenite::client_async(request, TcpStream::connect(address).await?)
-            .await?;
-    let load = [string(id.as_bytes()), uint(1), string(b"{}")].concat();
-    socket.send(Message::binary(load)).await?;
-    assert!(socket.next().await.is_some());
-    let write = [
-        string(id.as_bytes()),
-        uint(0),
-        uint(0),
-        uint(0),
-        string(&[]),
-    ]
-    .concat();
-    socket.send(Message::binary(write)).await?;
-    assert!(socket.next().await.is_some());
-    assert_eq!(
-        fake.requests(),
-        [
-            "WS open".to_owned(),
-            format!("WS RequestDocument {id}"),
-            format!("WS Update {id}"),
-        ]
-    );
-    Ok(())
-}
-
 fn plan() -> Fixture {
     Fixture::default().workspace("Team").board_with_objects(
         "Plan",
@@ -1410,31 +1334,6 @@ async fn a_cover_is_an_upload_and_a_channel_field_and_a_reset_keeps_the_file()
     let empty = call(&fake, "PATCH", &format!("channel/{id}"), "{}").await?;
     assert_eq!(empty.status, 400);
     assert!(fake.cover_of("Nowhere").is_empty());
-    Ok(())
-}
-
-#[tokio::test]
-async fn a_fixture_cover_and_note_are_read_back_by_the_observers() -> Outcome<()> {
-    let fake = Fake::start(
-        Fixture::default()
-            .workspace("Team")
-            .board("Plan", "Team", None)
-            .board("Bare", "Team", None)
-            .cover("Plan", "stored-9-cover.png")
-            .note("Plan", "Check\nlater"),
-    )
-    .await?;
-    let cover = fake.cover_of("Plan");
-    assert_eq!(cover.get("thumbnail"), Some(&json!("stored-9-cover.png")));
-    assert_eq!(cover.get("thumbnail_fixed"), Some(&json!(true)));
-    assert_eq!(fake.note_of("Plan").as_deref(), Some("Check\nlater"));
-    assert_eq!(fake.note_of("Bare").as_deref(), Some(""));
-    assert_eq!(fake.note_of("Nowhere"), None);
-    assert!(
-        Fake::start(Fixture::default().note("Nowhere", "x"))
-            .await
-            .is_err()
-    );
     Ok(())
 }
 

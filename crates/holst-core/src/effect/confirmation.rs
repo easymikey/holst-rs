@@ -4,6 +4,7 @@ use crate::{
     domain::{
         board::ObjectKind,
         change::value::{ChangeUpdate, ChangedObject, ObjectChangeKind},
+        kinds::kanban,
     },
     effect::board_write::WriteMode,
     error::confirmation::{ChangeRisk, Unconfirmed},
@@ -17,7 +18,7 @@ pub const ALWAYS: ReleaseCheck = |_| true;
 /// Holds back every change: its call is not confirmed and takes several.
 pub const NEVER: ReleaseCheck = |_| false;
 
-/// Holds back a change that removes a frame together with other objects.
+/// Holds back a change that removes a frame, group or kanban with its content.
 pub const UNLESS_FRAME_CONTENT: ReleaseCheck =
     |built| frame_content_count(&built.objects).is_none();
 
@@ -48,28 +49,33 @@ pub fn unless_confirmed(
     }
 }
 
-/// How many objects go with a removed frame, when the first object touched is
-/// a frame and others are removed after it.
-fn frame_content_count(touched: &[ChangedObject]) -> Option<usize> {
+/// The kind word of the first object touched and how many objects are removed
+/// after it, when it is a frame, a group or a kanban.
+fn frame_content_count(touched: &[ChangedObject]) -> Option<(&str, usize)> {
     let more = touched
         .iter()
         .skip(1)
         .filter(|object| object.change == ObjectChangeKind::Removed)
         .count();
     match (touched.first().map(|object| &object.kind), more) {
-        (Some(ObjectKind::Frame), 1..) => Some(more),
+        (Some(kind), 1..) if holds_content(kind) => Some((kind.as_str(), more)),
         (Some(_) | None, _) => None,
     }
 }
 
-/// The refusal to remove a frame together with its objects unasked; none when
-/// `touched` takes no other object along with a frame.
+fn holds_content(kind: &ObjectKind) -> bool {
+    matches!(kind, ObjectKind::Frame | ObjectKind::Group)
+        || kind.as_str() == kanban::STORED
+}
+
+/// The refusal to remove a frame, group or kanban together with its objects
+/// unasked; none when `touched` takes no other object along with one.
 #[must_use]
 pub fn frame_content_unconfirmed(touched: &[ChangedObject]) -> Option<Unconfirmed> {
-    frame_content_count(touched).map(|more| Unconfirmed {
+    frame_content_count(touched).map(|(kind, more)| Unconfirmed {
         change: match more {
-            1 => "removing the frame and 1 object with it".into(),
-            more => format!("removing the frame and {more} objects with it").into(),
+            1 => format!("removing the {kind} and 1 object with it").into(),
+            more => format!("removing the {kind} and {more} objects with it").into(),
         },
         risk: ChangeRisk::Irreversible,
     })
@@ -163,6 +169,15 @@ mod tests {
         };
         assert_eq!(refusal(&[ObjectKind::Sticker, ObjectKind::Arrow]), None);
         assert_eq!(refusal(&[ObjectKind::Frame]), None);
+        assert_eq!(
+            refusal(&[ObjectKind::Group, ObjectKind::Sticker]).as_deref(),
+            Some("removing the group and 1 object with it cannot be undone")
+        );
+        assert_eq!(
+            refusal(&[ObjectKind::Other("kanban".into()), ObjectKind::Task]).as_deref(),
+            Some("removing the kanban and 1 object with it cannot be undone")
+        );
+        assert_eq!(refusal(&[ObjectKind::Table, ObjectKind::TableCell]), None);
         assert_eq!(
             refusal(&[ObjectKind::Frame, ObjectKind::Sticker]).as_deref(),
             Some("removing the frame and 1 object with it cannot be undone")

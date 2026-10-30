@@ -150,9 +150,10 @@ async fn read_tree(
 }
 
 async fn asked_tree(client: &Client, workspace: &str) -> Result<Tree> {
+    let started = client.unix_millis();
     let text = crate::remote::api::workspace::tree_text(client, workspace).await?;
     let index = crate::remote::api::workspace::parse_tree(&text)?;
-    client.learn_tree(workspace, &text);
+    client.learn_tree(workspace, &text, started);
     Ok(Tree {
         index,
         kept_at: None,
@@ -164,7 +165,27 @@ async fn asked_tree(client: &Client, workspace: &str) -> Result<Tree> {
 /// # Errors
 /// Errors of the tree request.
 pub async fn tree(client: &Client, workspace: &str, fresh: Fresh) -> Result<NameIndex> {
-    let read = read_tree(client, workspace, fresh, client.runs_change()).await;
+    tree_holding(client, workspace, fresh, |_| true).await
+}
+
+/// As [`tree`]; a kept tree that `hit` says lacks what is wanted is asked once
+/// instead, as a node made elsewhere may be missing from it.
+///
+/// # Errors
+/// Errors of the tree request.
+pub async fn tree_holding(
+    client: &Client,
+    workspace: &str,
+    fresh: Fresh,
+    hit: impl Fn(&NameIndex) -> bool,
+) -> Result<NameIndex> {
+    let read = match read_tree(client, workspace, fresh, client.runs_change()).await {
+        Ok(Tree {
+            index,
+            kept_at: Some(_),
+        }) if !hit(&index) => asked_tree(client, workspace).await,
+        read => read,
+    };
     match read {
         Err(error) if error.is_board_closed() => {
             client.forget_tree(workspace);

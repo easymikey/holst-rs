@@ -2,13 +2,13 @@
 
 use serde_json::json;
 
-use super::Written;
+use super::{Written, only};
 use crate::{
     domain::{
         board::ObjectKind,
         kinds::mind_map::{HIDE_CHILDREN, NODE},
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::Result,
 };
 
 pub(super) const CHILDREN: &str = "children";
@@ -21,14 +21,7 @@ pub(super) fn write(hidden: bool) -> Written {
 }
 
 pub(super) fn check(kind: &ObjectKind) -> Result<()> {
-    (*kind == ObjectKind::of(NODE))
-        .then_some(())
-        .ok_or_else(|| {
-            Error::BoardChange(BoardChangeError::NotChangeable {
-                kind: kind.as_str().to_owned(),
-                field: CHILDREN,
-            })
-        })
+    only(kind, &ObjectKind::of(NODE), CHILDREN)
 }
 
 #[cfg(test)]

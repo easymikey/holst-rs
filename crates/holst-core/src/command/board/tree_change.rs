@@ -96,6 +96,24 @@ pub(super) struct Plan {
     request: ApiRequest,
     node: ChangedNode,
     unconfirmed: Option<Unconfirmed>,
+    stale: Option<Stale>,
+}
+
+/// The kept trees a change that went out makes stale.
+pub(super) enum Stale {
+    /// The tree of this workspace.
+    Workspace(String),
+    /// The trees that hold this node.
+    Holding(String),
+}
+
+impl Stale {
+    fn forget(&self, client: &Client) {
+        match self {
+            Self::Workspace(workspace) => lookup::forget_trees(client, Some(workspace)),
+            Self::Holding(id) => lookup::forget_trees_holding(client, id),
+        }
+    }
 }
 
 impl Plan {
@@ -105,6 +123,15 @@ impl Plan {
             request,
             node,
             unconfirmed: None,
+            stale: None,
+        }
+    }
+
+    /// The same change; once it went out, `stale` is forgotten.
+    pub(super) fn staling(self, stale: Stale) -> Self {
+        Self {
+            stale: Some(stale),
+            ..self
         }
     }
 }
@@ -249,7 +276,7 @@ pub async fn create(client: &Client, args: &CreateArgs) -> Result<Changed> {
     };
     let mut changed = carry(
         client,
-        Plan::plain(request, node),
+        Plan::plain(request, node).staling(Stale::Workspace(in_workspace.clone())),
         (args.dry_run, Confirmation::Missing),
     )
     .await?;
@@ -272,9 +299,9 @@ pub async fn rename(client: &Client, args: &RenameArgs) -> Result<Changed> {
             .name()
             .to_owned(),
     };
-    lookup::forget_trees_holding(client, &id);
     let request =
         api::channel::rename_request(&id, &api::channel::Rename::new(name.as_str()))?;
+    let stale = Stale::Holding(id.clone());
     let node = ChangedNode {
         name: Some(name.to_string()),
         previous_name: Some(before).filter(|before| !before.is_empty()),
@@ -282,7 +309,7 @@ pub async fn rename(client: &Client, args: &RenameArgs) -> Result<Changed> {
     };
     carry(
         client,
-        Plan::plain(request, node),
+        Plan::plain(request, node).staling(stale),
         (args.dry_run, Confirmation::Missing),
     )
     .await
@@ -298,7 +325,7 @@ pub async fn mv(client: &Client, args: &MoveArgs) -> Result<Changed> {
     let id: BoardId = node_id(client, &args.board, args.workspace.as_deref())
         .await?
         .parse()?;
-    let located = node::locate(client, &id).await?;
+    let located = node::locate(client, &id, Some(&args.folder)).await?;
     // The destination is found before the confirmation is asked for.
     let parent = located.parent(Some(&args.folder), choice::listed)?;
     let node = ChangedNode {
@@ -307,9 +334,10 @@ pub async fn mv(client: &Client, args: &MoveArgs) -> Result<Changed> {
         ..node_of(Action::Move, Some(id.to_string()), Some(located.kind))
     };
     let plan = Plan {
-        request: located.plan_move(client, &parent)?,
+        request: located.plan_move(&parent)?,
         node,
         unconfirmed: located.contents_unconfirmed(),
+        stale: Some(Stale::Holding(id.to_string())),
     };
     carry(client, plan, (args.dry_run, args.confirm)).await
 }
@@ -338,7 +366,7 @@ pub async fn cp(client: &Client, args: &CopyArgs) -> Result<Changed> {
     };
     carry(
         client,
-        Plan::plain(request, node),
+        Plan::plain(request, node).staling(Stale::Holding(id.to_string())),
         (args.dry_run, Confirmation::Missing),
     )
     .await
@@ -367,7 +395,7 @@ async fn trash(client: &Client, args: &RemoveArgs) -> Result<Plan> {
     let id: BoardId = node_id(client, &args.board, args.workspace.as_deref())
         .await?
         .parse()?;
-    let located = node::locate(client, &id).await?;
+    let located = node::locate(client, &id, None).await?;
     if located.kind == NodeKind::Folder {
         // A folder goes for good, so its name must be given whole.
         lookup::node(
@@ -381,13 +409,14 @@ async fn trash(client: &Client, args: &RemoveArgs) -> Result<Plan> {
         )
         .await?;
         let left = left_inside(located.index(), id.as_str());
-        forever(client, id.as_str(), &located.name, left)
+        forever(id.as_str(), &located.name, left)
     } else {
         let node = ChangedNode {
             name: Some(located.name.clone()),
             ..node_of(Action::Trash, Some(id.to_string()), Some(located.kind))
         };
-        Ok(Plan::plain(located.plan_trash(client)?, node))
+        Ok(Plan::plain(located.plan_trash()?, node)
+            .staling(Stale::Holding(id.to_string())))
     }
 }
 
@@ -401,17 +430,15 @@ async fn delete_forever(client: &Client, id: String) -> Result<Plan> {
     } else {
         (Vec::new(), None)
     };
-    forever(client, &id, brief.name(), left)
+    forever(&id, brief.name(), left)
 }
 
 /// The plan that deletes `id` for good; `left` is what it puts up a level.
 fn forever(
-    client: &Client,
     id: &str,
     name: &str,
     (left_behind, left_in): (Vec<LeftBehind>, Option<String>),
 ) -> Result<Plan> {
-    lookup::forget_trees_holding(client, id);
     let shown = if name.is_empty() { id } else { name };
     let unconfirmed = Unconfirmed {
         change: format!("deleting {shown} for good").into(),
@@ -427,6 +454,7 @@ fn forever(
         request: api::channel::delete_request(id, &DeleteMode::Permanent.into())?,
         node,
         unconfirmed: Some(unconfirmed),
+        stale: Some(Stale::Holding(id.to_owned())),
     })
 }
 
@@ -483,15 +511,15 @@ pub async fn restore(client: &Client, args: &RestoreArgs) -> Result<Changed> {
             lookup::trashed(client, &workspace.id, &args.board, choice::listed).await?;
         (id, None)
     };
-    lookup::forget_trees_holding(client, &id);
     let request = api::channel::restore_request(&id, &api::channel::Restore {})?;
+    let stale = Stale::Holding(id.clone());
     let node = ChangedNode {
         name,
         ..node_of(Action::Restore, Some(id), None)
     };
     carry(
         client,
-        Plan::plain(request, node),
+        Plan::plain(request, node).staling(stale),
         (args.dry_run, Confirmation::Missing),
     )
     .await
@@ -545,9 +573,14 @@ pub(super) async fn carry(
         request,
         mut node,
         unconfirmed,
+        stale,
     } = plan;
     let (outcome, reply) =
         settle(client, request, unconfirmed, (dry_run, confirm)).await?;
+    stale
+        .filter(|_| matches!(outcome, ChangeReport::Sent))
+        .iter()
+        .for_each(|stale| stale.forget(client));
     if let Some(reply) = &reply {
         node.learn(reply);
     }

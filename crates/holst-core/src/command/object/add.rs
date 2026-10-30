@@ -149,6 +149,10 @@ async fn added(
         .try_for_each(|name| scene.frame(name).map(|_| ()))?;
     // Before any upload: an icon the set lacks is refused with nothing sent.
     let unchecked = icons_checked(client, items).await?;
+    // Before any upload: what the tasks and the places can refuse is refused.
+    let unfetched: Vec<Fetched> = items.iter().map(|_| Fetched::Nothing).collect();
+    let planned = with_tasks(items, unfetched, &loaded.document, &scene)?;
+    entries(items, &planned, &scene, linked_frame(&scene, &args.board))?;
     let got = fetched(
         client,
         &board,
@@ -216,8 +220,8 @@ async fn icon_manifest(client: &Client) -> Option<icon::Manifest> {
     .await
 }
 
-/// Checks the icon names against the manifest, read once and only when an item
-/// is an icon; a manifest that cannot be read is a warning.
+/// Checks the icon names against the manifest, read once per client and only
+/// when an item is an icon; a manifest that cannot be read is a warning.
 async fn icons_checked(client: &Client, items: &[Item]) -> Result<Vec<String>> {
     let names: Vec<&str> = items
         .iter()
@@ -237,11 +241,14 @@ async fn icons_checked(client: &Client, items: &[Item]) -> Result<Vec<String>> {
             | What::Drawing { .. } => None,
         })
         .collect();
-    let asked =
-        future::OptionFuture::from(names.first().map(|_| icon_manifest(client)));
+    let asked = future::OptionFuture::from(names.first().map(|_| {
+        client
+            .icons()
+            .get_or_try_init(|| async { icon_manifest(client).await.ok_or(()) })
+    }));
     match asked.await {
         None => Ok(Vec::new()),
-        Some(Some(listed)) => names
+        Some(Ok(listed)) => names
             .iter()
             .try_for_each(|name| {
                 listed.has(name).then_some(()).ok_or_else(|| {
@@ -252,7 +259,7 @@ async fn icons_checked(client: &Client, items: &[Item]) -> Result<Vec<String>> {
                 })
             })
             .map(|()| Vec::new()),
-        Some(None) => Ok(vec![
+        Some(Err(())) => Ok(vec![
             "icons not checked: the icon list could not be read".to_owned(),
         ]),
     }
@@ -1970,6 +1977,7 @@ mod tests {
         added,
         entries,
         fetched,
+        icons_checked,
         linked_frame,
         read_items,
         with_tasks,
@@ -1991,6 +1999,7 @@ mod tests {
                 receipt::ChangeReport,
                 value::{Made, NewObject, Upload},
             },
+            kinds::icon::MANIFEST_PATH,
             response::LinkPreview,
         },
         effect::{http::HttpResponse, settings::CacheSettings},
@@ -3554,6 +3563,22 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn the_icon_manifest_is_read_once_for_the_client_and_its_clones() -> Result<()>
+    {
+        let (fake, client) = client(vec![reply(200, &[], ICON_MANIFEST)])?;
+        let items = read(&args(json!({"kind": "icon", "text": "star"}))?)?;
+        let first = icons_checked(&client, &items).await?;
+        let second = icons_checked(&client.clone(), &items).await?;
+        let reads = fake
+            .requests()
+            .iter()
+            .filter(|request| request.url.path().contains(MANIFEST_PATH))
+            .count();
+        assert_eq!((first, second, reads), (Vec::new(), Vec::new(), 1));
+        Ok(())
+    }
+
     /// A new file in a folder of its own: its path.
     fn local(name: &str, bytes: &[u8]) -> Result<String> {
         let path = directory()?.join(name);
@@ -3697,6 +3722,34 @@ mod tests {
             ),
             (true, 0)
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_task_with_an_unknown_status_is_refused_before_a_picture_is_uploaded()
+    -> Result<()> {
+        let (fake, client) = serving(vec![reply(200, &[], r#"{"name":"u-2.png"}"#)])?;
+        let path = local("a.png", &png(10, 10))?;
+        let arguments = args(json!({"items": [
+            {"kind": "image", "path": path},
+            {"kind": "task", "text": "x", "status": "Nope"}]}))?;
+        let refused = added(
+            &client,
+            Loading {
+                connector: &board_document(),
+                cache: None,
+                cache_use: CacheUse::Use,
+            },
+            &arguments,
+            &read(&arguments)?,
+        )
+        .await;
+        let uploads = fake
+            .requests()
+            .iter()
+            .filter(|request| request.url.path().contains("upload"))
+            .count();
+        assert_eq!((refused.is_err(), uploads), (true, 0));
         Ok(())
     }
 

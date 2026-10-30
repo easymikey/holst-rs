@@ -20,7 +20,14 @@ use crate::{
         change::{
             check::Placement,
             value::{ChangedObject, Made, StoreEntry},
-            write::{Edge, WriteTransaction, Written, beyond, fill_as, new_header},
+            write::{
+                Edge,
+                WriteTransaction,
+                Written,
+                beyond_among,
+                fill_as,
+                new_header,
+            },
         },
         rich_text::TextFormat,
     },
@@ -40,11 +47,11 @@ pub(super) fn own_fields(made: &Made) -> Vec<(String, Value)> {
         .collect()
 }
 
-/// The objects written so far, which the layer of the next one goes past.
+/// The objects written so far; the next layer goes past them and the board.
 struct Writing<'a> {
     scope: &'a WriteTransaction<'a>,
     format: TextFormat,
-    states: HashMap<String, Value>,
+    added: HashMap<String, Value>,
     /// The parts, at any depth, with the fields each was written with.
     held: Vec<(String, Value)>,
 }
@@ -59,7 +66,7 @@ pub(super) fn write(
     let mut writing = Writing {
         scope,
         format: placement.format,
-        states: scope.states.clone(),
+        added: HashMap::new(),
         held: Vec::new(),
     };
     let (id, fields) =
@@ -100,7 +107,8 @@ fn put(
         root.insert(transaction, 0, code);
         (DOCUMENT_ID.to_owned(), json!(document))
     });
-    let layer = beyond(&writing.states, &id, Edge::Front);
+    let layer =
+        beyond_among(scope.states.iter().chain(&writing.added), &id, Edge::Front);
     let header = new_header(&id, &made.kind, layer, scope.stamp)
         .into_iter()
         .map(|(name, value)| (name.to_owned(), value));
@@ -112,7 +120,7 @@ fn put(
         .collect();
     insert_map(transaction, &scope.roots.objects, &id, pairs.clone())?;
     let fields = Value::Object(pairs.into_iter().collect());
-    writing.states.insert(id.clone(), fields.clone());
+    writing.added.insert(id.clone(), fields.clone());
     made.parts.iter().try_for_each(|part| {
         let written = put(transaction, writing, part, Some(&id))?;
         writing.held.push(written);

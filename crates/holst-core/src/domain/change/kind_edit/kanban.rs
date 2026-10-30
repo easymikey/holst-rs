@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use serde_json::{Value, json};
 use yrs::TransactionMut;
 
-use super::Written;
+use super::{Written, only};
 use crate::{
     domain::{
         board::ObjectKind,
@@ -107,12 +107,7 @@ pub(super) fn check(
     states: &HashMap<String, Value>,
     id: &str,
 ) -> Result<()> {
-    (*kind == ObjectKind::Task).then_some(()).ok_or_else(|| {
-        Error::BoardChange(BoardChangeError::NotChangeable {
-            kind: kind.as_str().to_owned(),
-            field: edit.field(),
-        })
-    })?;
+    only(kind, &ObjectKind::Task, edit.field())?;
     let card = states.get(id).unwrap_or(&Value::Null);
     let inside = held_by(states, card)
         .map(|_| ())
@@ -216,7 +211,7 @@ fn scale_of(kanban: &Value) -> f64 {
 }
 
 /// The card taken out of its kanban, where its column is drawn: the kanban's
-/// corner moved right by the columns before it.
+/// corner moved right by the columns before it, in the kanban's own parent.
 fn out_fields(
     transaction: &TransactionMut<'_>,
     states: &HashMap<String, Value>,
@@ -243,7 +238,10 @@ fn out_fields(
             .unwrap_or_default()
     };
     vec![
-        (PARENT_ID, Value::Null),
+        (
+            PARENT_ID,
+            holder.get(PARENT_ID).cloned().unwrap_or_default(),
+        ),
         (SWIMLANE_ID, Value::Null),
         (COLUMN_ID, Value::Null),
         (
@@ -284,7 +282,7 @@ mod tests {
     #![expect(clippy::panic_in_result_fn, reason = "assert is the point of a test")]
 
     use serde_json::{Value, json};
-    use yrs::{Doc, Map as _, ReadTxn as _, Transact as _, types::ToJson as _};
+    use yrs::{Doc, Map as _, MapRef, ReadTxn as _, Transact as _, types::ToJson as _};
 
     use super::CardMove;
     use crate::{
@@ -475,6 +473,29 @@ mod tests {
                 json!({"x": 780, "y": 50}),
             )
         );
+        Ok(())
+    }
+
+    #[test]
+    fn a_card_moved_out_of_a_kanban_in_a_frame_stays_in_the_frame() -> Result<()> {
+        let document = board()?;
+        let (kanban, card) = (
+            the(&document, "kanban", |_| true),
+            the(&document, "task-card", at(10.0)),
+        );
+        let mut transaction = document.transact_mut();
+        transaction
+            .get_map("objects")
+            .and_then(|objects| objects.get(&transaction, &kanban))
+            .and_then(|held| held.cast::<MapRef>().ok())
+            .into_iter()
+            .for_each(|map| {
+                map.insert(&mut transaction, "parentId", "f1");
+            });
+        drop(transaction);
+        moved(&document, &card, &into(Some("done")))?;
+        moved(&document, &card, &CardMove::Out)?;
+        assert_eq!(word(&fields(&document, &card), "parentId"), json!("f1"));
         Ok(())
     }
 

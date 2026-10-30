@@ -4,13 +4,13 @@ use itertools::Itertools as _;
 use serde_json::{Value, json};
 use yrs::{Map as _, TransactionMut, types::ToJson as _};
 
-use super::Written;
+use super::{Written, only};
 use crate::{
     domain::{
         board::{ObjectKind, insert_map, json as stored_json},
         change::write::WriteTransaction,
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::Result,
     protocol::document::{AUTHOR_ID, CREATED_AT, ID, REACTION_ID, TARGET_ID},
 };
 
@@ -20,12 +20,7 @@ pub(super) const FIELD: &str = "reactions";
 pub const MOST_KINDS: usize = 8;
 
 pub(super) fn check(kind: &ObjectKind) -> Result<()> {
-    (*kind == ObjectKind::Sticker).then_some(()).ok_or_else(|| {
-        Error::BoardChange(BoardChangeError::NotChangeable {
-            kind: kind.as_str().to_owned(),
-            field: FIELD,
-        })
-    })
+    only(kind, &ObjectKind::Sticker, FIELD)
 }
 
 /// Makes the entries of the caller on `id` exactly `wanted`; other users' stay.

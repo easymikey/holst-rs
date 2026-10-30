@@ -2,6 +2,7 @@
 
 use std::{
     io,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
 };
 
@@ -13,9 +14,10 @@ use super::SetupError;
 /// The name the server is registered under in every client.
 pub(crate) const SERVER: &str = "holst-rs";
 
-/// What a client command did: whether it succeeded, and what it said on stderr.
+/// What a client command did: whether it succeeded, and what it said.
 pub(crate) struct Ran {
     pub(crate) success: bool,
+    pub(crate) stdout: String,
     pub(crate) stderr: String,
 }
 
@@ -39,9 +41,22 @@ impl Program for System {
             .output()
             .map(|output| Ran {
                 success: output.status.success(),
+                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
                 stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
             })
     }
+}
+
+/// Under Homebrew the versioned `Cellar` path is gone after an upgrade; the
+/// `bin` link stays.
+pub(crate) fn stable_binary(exe: &Path, linked: impl Fn(&Path) -> bool) -> PathBuf {
+    exe.ancestors()
+        .find(|dir| dir.file_name().is_some_and(|name| name == "Cellar"))
+        .and_then(Path::parent)
+        .zip(exe.file_name())
+        .map(|(prefix, name)| prefix.join("bin").join(name))
+        .filter(|link| linked(link))
+        .unwrap_or_else(|| exe.to_path_buf())
 }
 
 /// The clients that have a command to register a server.
@@ -68,16 +83,28 @@ impl Cli {
         }
     }
 
-    /// The arguments of the client's `mcp add` for the server.
-    fn add(self, binary: &str) -> Vec<&str> {
-        let scope: &[&str] = match self {
+    const fn scope(self) -> &'static [&'static str] {
+        match self {
             Cli::Claude => &["--scope", "user"],
             Cli::Codex => &[],
-        };
+        }
+    }
+
+    /// The arguments of the client's `mcp add` for the server.
+    fn add(self, binary: &str) -> Vec<&str> {
         ["mcp", "add"]
             .into_iter()
-            .chain(scope.iter().copied())
+            .chain(self.scope().iter().copied())
             .chain([SERVER, "--", binary])
+            .collect()
+    }
+
+    /// The arguments of the client's `mcp remove` for the server.
+    fn remove(self) -> Vec<&'static str> {
+        ["mcp", "remove"]
+            .into_iter()
+            .chain(self.scope().iter().copied())
+            .chain([SERVER])
             .collect()
     }
 }
@@ -120,7 +147,7 @@ pub(super) fn connect<T: Terminal>(
     binary: &str,
     clients: &Clients,
 ) -> Result<(), SetupError> {
-    let without = without_entry(programs, form, clients)?;
+    let without = without_entry(programs, form, binary, clients)?;
     chosen(form, clients, &without)?
         .into_iter()
         .try_for_each(|cli| add(programs, form, binary, cli))?;
@@ -130,29 +157,58 @@ pub(super) fn connect<T: Terminal>(
 }
 
 /// The wanted clients that can take an entry; a named client off `PATH` stays,
-/// so that its failure is told.
+/// so that its failure is told. An entry for another binary is replaced here.
 fn without_entry<T: Terminal>(
     programs: &impl Program,
     form: &Form<T>,
+    binary: &str,
     clients: &Clients,
 ) -> Result<Vec<Cli>, SetupError> {
-    Ok(Cli::ALL
+    Cli::ALL
         .into_iter()
         .filter(|cli| clients.names(*cli))
         .map(
             |cli| match programs.run(cli.program(), &["mcp", "get", SERVER]) {
                 Err(_) if *clients == Clients::Ask => Ok(None),
-                Ok(ran) if ran.success => form
+                Ok(ran) if ran.success && points_at(&ran.stdout, binary) => Ok(form
                     .step(
                         &format!("{} has a {SERVER} entry already; kept.", cli.label()),
                         "",
                     )
-                    .map(|()| None),
+                    .map(|()| None)?),
+                Ok(ran) if ran.success => {
+                    replace(programs, form, binary, cli).map(|()| None)
+                }
                 _ => Ok(Some(cli)),
             },
         )
         .filter_map(Result::transpose)
-        .collect::<Result<_, FormError>>()?)
+        .collect()
+}
+
+/// Whether the entry a client printed runs `binary`.
+fn points_at(printed: &str, binary: &str) -> bool {
+    printed.split_whitespace().any(|word| word == binary)
+}
+
+/// Removes the entry that runs another binary and adds the current one.
+fn replace<T: Terminal>(
+    programs: &impl Program,
+    form: &Form<T>,
+    binary: &str,
+    cli: Cli,
+) -> Result<(), SetupError> {
+    let (label, program) = (cli.label(), cli.program());
+    match programs.run(program, &cli.remove()) {
+        Ok(ran) if ran.success => add(programs, form, binary, cli),
+        Ok(ran) => Ok(form.step(
+            &format!("Could not replace the {SERVER} entry of {label}"),
+            ran.stderr.trim(),
+        )?),
+        Err(err) => {
+            Ok(form.step(&format!("Could not run {program}"), &err.to_string())?)
+        }
+    }
 }
 
 /// All of `without` when named, else the ones the person leaves picked.

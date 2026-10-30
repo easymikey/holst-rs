@@ -260,7 +260,8 @@ fn input_code(error: &InputError) -> u8 {
         | InputError::NotArgumentValue { .. }
         | InputError::ReplyNotFound { .. }
         | InputError::NotCommandArguments(_)
-        | InputError::ImportBoardLeft { .. } => EX_USAGE,
+        | InputError::ImportBoardLeft { .. }
+        | InputError::CoverChanged => EX_USAGE,
     }
 }
 

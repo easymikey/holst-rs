@@ -150,7 +150,7 @@ fn usage(arg: &str) -> Result<String, StartError> {
             "holst-mcp {VERSION} — the Holst MCP server on stdio.\n\
              Log in and connect Claude Code and Codex: holst-mcp setup [--no-connect | --connect-only] [--clients claude,codex]\n\
              (in a terminal; in a container: docker exec -it <container> holst-mcp setup)\n\
-             \x20 --clients connects those clients without asking, for scripts\n\
+             \x20 --clients connects those clients without asking, for scripts (without a terminal: connects only, needs a saved login)\n\
              Other clients: setup prints the entry to put in their config\n\
              HTTP, for agents in containers: holst-mcp --http 127.0.0.1:<port> [--print-config]\n\
              \x20 serves http://<addr>/mcp for the bearer token of HOLST_MCP_TOKEN or <holst home>/mcp-token;\n\
@@ -271,6 +271,7 @@ async fn set_up(flags: &[String]) -> Result<(), StartError> {
         .then(|| {
             std::env::current_exe()
                 .ok()
+                .map(|exe| setup::stable_binary(&exe, std::path::Path::is_file))
                 .and_then(|path| path.to_str().map(str::to_owned))
                 .ok_or(StartError::Binary)
         })

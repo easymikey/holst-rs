@@ -11,7 +11,7 @@ use yrs::{
     Xml as _,
     XmlTextPrelim,
     XmlTextRef,
-    types::{Attrs, text::YChange},
+    types::{Attrs, ToJson as _, text::YChange},
 };
 
 use crate::{
@@ -121,6 +121,57 @@ fn marks_of(run: &Run, linked: bool) -> Attrs {
         .map(|mark| (Arc::from(mark.name()), Any::Bool(true)))
         .chain(linked.then(|| (Arc::from("color"), Any::from(LINK_COLOR))))
         .collect()
+}
+
+/// The content of `from` appended under `to`, marks and elements as they are,
+/// each element with a fresh `key`.
+pub(super) fn copy_into(
+    transaction: &mut TransactionMut<'_>,
+    (from, to): (&XmlTextRef, &XmlTextRef),
+    ids: &dyn IdSource,
+) {
+    let chunks = from.diff(&*transaction, YChange::identity);
+    // imperative: each chunk is appended after the last
+    for chunk in chunks {
+        let at = to.len(transaction);
+        match chunk.insert {
+            Out::Any(Any::String(run)) => to.insert_with_attributes(
+                transaction,
+                at,
+                &run,
+                chunk.attributes.map(|marks| *marks).unwrap_or_default(),
+            ),
+            Out::YXmlText(child) => {
+                let attributes: Vec<(String, Any)> = child
+                    .attributes(&*transaction)
+                    .filter(|(name, _)| *name != "key")
+                    .map(|(name, value)| {
+                        (name.to_owned(), value.to_json(&*transaction))
+                    })
+                    .collect();
+                let element = to.insert_embed_with_attributes(
+                    transaction,
+                    at,
+                    XmlTextPrelim::new(""),
+                    Attrs::new(),
+                );
+                element.insert_attribute(transaction, "key", ids.new_id());
+                // imperative: each attribute is set on the new element
+                for (name, value) in attributes {
+                    element.insert_attribute(transaction, name, value);
+                }
+                copy_into(transaction, (&child, &element), ids);
+            }
+            other @ (Out::Any(_)
+            | Out::YText(_)
+            | Out::YArray(_)
+            | Out::YMap(_)
+            | Out::YXmlElement(_)
+            | Out::YXmlFragment(_)
+            | Out::YDoc(_)
+            | Out::UndefinedRef(_)) => drop(other),
+        }
+    }
 }
 
 /// The marks and colours of `look` on every leaf of the text under `root`.
