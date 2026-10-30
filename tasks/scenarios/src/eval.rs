@@ -766,18 +766,50 @@ fn task_7(ctx: &Ctx) -> Task {
             })),
         ],
         |seen| {
-            let group = seen.one_added(ROADMAP, "group")?;
-            let group_id = group.get("id").and_then(Value::as_str).unwrap_or("");
-            let held = [ASK_DESIGN, SHIP].iter().all(|member| {
-                seen.object(*member)
-                    .is_some_and(|object| named(object, "/parentId", group_id))
-            });
-            ensure(
-                held && at(group, "/locked") == Some(&Value::Bool(true)),
-                format!("not one locked group of both: {group}"),
-            )?;
+            locked_group_of_both(seen)?;
             seen.rest_unchanged(on_roadmap_touching(&[ASK_DESIGN, SHIP]))
         },
+    )
+}
+
+/// One new locked group holds both members, directly or through new groups.
+fn locked_group_of_both(seen: &Seen<'_>) -> Result<(), Mismatch> {
+    let added = seen.added(ROADMAP);
+    let id_of = |object: &Value| {
+        object
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned()
+    };
+    let all_groups = added.iter().all(|object| named(object, "/type", "group"));
+    let locked: Vec<&&Value> = added
+        .iter()
+        .filter(|object| at(object, "/locked") == Some(&Value::Bool(true)))
+        .collect();
+    let top_id = match locked.as_slice() {
+        [top] => Ok(id_of(top)),
+        _ => Err(Mismatch(format!("not one new locked group: {added:?}"))),
+    }?;
+    let parent = |object: &Value| {
+        object
+            .get("parentId")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    };
+    let reaches = |member: u32| {
+        std::iter::successors(seen.object(member).and_then(parent), |id| {
+            added
+                .iter()
+                .find(|object| id_of(object) == *id)
+                .and_then(|object| parent(object))
+        })
+        .take(added.len() + 1)
+        .any(|id| id == top_id)
+    };
+    ensure(
+        all_groups && reaches(ASK_DESIGN) && reaches(SHIP),
+        format!("not one locked group of both: {top_id}"),
     )
 }
 
@@ -1560,6 +1592,50 @@ mod tests {
                 },
             ]
         );
+    }
+
+    fn nested_snapshot(parent_of_ship: &str) -> (Snapshot, Snapshot) {
+        let member = |id: &str, parent: &str| json!({"id": id, "parentId": parent});
+        let group = |id: &str, locked: bool| json!({"id": id, "type": "group", "locked": locked});
+        let ids: Vec<String> = (1..=8).map(|n| format!("o{n}")).collect();
+        let before = Snapshot {
+            boards: BTreeMap::from([(
+                ROADMAP.to_owned(),
+                vec![member("o3", ""), member("o4", "")],
+            )]),
+            names: vec![],
+            threads: vec![],
+            ids,
+            exports: BTreeMap::new(),
+        };
+        let mut after = before.clone();
+        after.boards.insert(
+            ROADMAP.to_owned(),
+            vec![
+                member("o3", "inner"),
+                member("o4", parent_of_ship),
+                group("inner", false),
+                group("outer", true),
+            ],
+        );
+        after.boards.get_mut(ROADMAP).unwrap()[2]["parentId"] = json!("outer");
+        (before, after)
+    }
+
+    #[test]
+    fn a_locked_group_around_a_new_group_holds_both_members() {
+        let (before, after) = nested_snapshot("outer");
+        let seen = Seen {
+            before: &before,
+            after: &after,
+        };
+        assert_eq!(locked_group_of_both(&seen), Ok(()));
+        let (before, after) = nested_snapshot("elsewhere");
+        let seen = Seen {
+            before: &before,
+            after: &after,
+        };
+        assert!(locked_group_of_both(&seen).is_err());
     }
 
     async fn broken_checks() -> Vec<String> {
