@@ -11,6 +11,7 @@ expression: "*holst.tools"
         "with": {
           "items": {
             "enum": [
+              "sessions",
               "tokens"
             ],
             "type": "string"

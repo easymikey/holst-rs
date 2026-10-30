@@ -771,7 +771,15 @@ mod tests {
 
     #[test]
     fn an_unknown_choice_is_a_usage_error() {
-        assert_eq!(parsed("holst auth status --with sessions"), None);
+        assert_eq!(parsed("holst auth status --with cookies"), None);
+    }
+
+    #[test]
+    fn status_parts_are_comma_separated() {
+        assert_eq!(
+            parsed("holst auth status --with sessions,tokens"),
+            Some(json!({ "with": ["sessions", "tokens"] }))
+        );
     }
 
     #[rstest]

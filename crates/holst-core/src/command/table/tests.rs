@@ -200,7 +200,7 @@ fn the_derive_reads_names_kinds_and_texts_from_the_fields() {
             ("name", ValueKind::Text, true),
             (
                 "with",
-                ValueKind::List(&ValueKind::Choice(&["tokens"])),
+                ValueKind::List(&ValueKind::Choice(&["sessions", "tokens"])),
                 false
             ),
             ("local_only", ValueKind::Switch, false),
@@ -246,14 +246,14 @@ fn a_dry_run_field_gives_the_mode() -> crate::Result<()> {
 )]
 #[case::value_not_a_choice(
     json!({ "name": "x", "with": ["tokens", "cookies"] }),
-    &["with of `auth probe` must be a list, each one of tokens"]
+    &["with of `auth probe` must be a list, each one of sessions, tokens"]
 )]
 #[case::all_at_once(
     json!({ "with": "tokens", "cover": true }),
     &[
         "\"cover\" is not an argument of `auth probe`: it takes name, with, local_only",
         "name is required by `auth probe`",
-        "with of `auth probe` must be a list, each one of tokens",
+        "with of `auth probe` must be a list, each one of sessions, tokens",
     ]
 )]
 fn wrong_arguments_are_reported_in_our_words(

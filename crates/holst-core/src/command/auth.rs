@@ -2,7 +2,6 @@
 
 use holst_macros::CommandArgs;
 use serde::Deserialize;
-use serde_json::Value;
 
 use crate::{
     command::{
@@ -11,10 +10,10 @@ use crate::{
         table::{ArgumentValue, Command, CommandArgs, EnumArgument, ValueKind},
     },
     domain::{
+        access::{Session, Token},
         account::{Account, Workspace},
         login::Email,
         node::NodeKind,
-        text::hide_tokens,
         tree::name_index::build::NameIndex,
     },
     error::{Error, Result},
@@ -140,14 +139,14 @@ impl ArgumentValue for LogoutMode {
     risk = Read,
     about = "Show the saved login, account and workspaces",
     help = "Show the saved login, the account and each workspace with its board and folder count.\n\
-            Counts come from one request per workspace; --with adds the tokens.",
+            Counts come from one request per workspace; --with adds the sessions and the tokens.",
     example = "holst auth status",
-    example = "holst auth status --with tokens -o json"
+    example = "holst auth status --with sessions,tokens -o json"
 )]
 pub struct StatusArgs {
     #[argument(
         value_name = "parts",
-        help = "Also show these parts, comma separated: tokens; none by default"
+        help = "Also show these parts, comma separated: sessions, tokens; none by default"
     )]
     pub with: Vec<StatusPart>,
 }
@@ -157,6 +156,7 @@ pub struct StatusArgs {
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum StatusPart {
+    Sessions,
     Tokens,
 }
 
@@ -177,8 +177,10 @@ pub enum StatusReport {
 pub struct AccountStatus {
     pub account: Account,
     pub workspaces: Vec<WorkspaceStatus>,
-    /// `None` unless asked for; token values are hidden.
-    pub tokens: Option<Result<Value>>,
+    /// `None` unless asked for.
+    pub sessions: Option<Result<Vec<Session>>>,
+    /// `None` unless asked for; the secrets are never read.
+    pub tokens: Option<Result<Vec<Token>>>,
 }
 
 /// A workspace with what its tree holds; a tree that failed fails alone.
@@ -244,15 +246,25 @@ async fn account_status(
                 counts: tree.map(|tree| NodeCounts::of(&tree)),
             })
             .collect();
-    let tokens = if status.with.contains(&StatusPart::Tokens) {
-        Some(api::user::pat_list(client).await.map(hide_tokens))
-    } else {
-        None
-    };
+    let asked = |part| status.with.contains(&part);
+    let sessions =
+        read_if(asked(StatusPart::Sessions), api::user::session_list(client)).await;
+    let tokens = read_if(asked(StatusPart::Tokens), api::user::pat_list(client)).await;
     AccountStatus {
         account,
         workspaces,
+        sessions,
         tokens,
+    }
+}
+
+async fn read_if<T>(
+    asked: bool,
+    read: impl Future<Output = Result<T>>,
+) -> Option<Result<T>> {
+    match asked.then_some(read) {
+        Some(read) => Some(read.await),
+        None => None,
     }
 }
 
@@ -265,11 +277,13 @@ mod tests {
     use crate::{
         Result,
         command::auth::{NodeCounts, StatusArgs, StatusPart, StatusReport, status},
+        domain::access::{Session, Token},
         remote::client::fake::{on_fake, reply, stored},
     };
 
     const TREE_PATH: &str = "/tree";
     const TOKENS_PATH: &str = "/gapi/personal_access_token/list";
+    const SESSIONS_PATH: &str = "/gapi/session/list";
 
     fn id(ordinal: u32) -> String {
         format!("00000001-0000-4000-8000-{ordinal:012x}")
@@ -314,23 +328,25 @@ mod tests {
         }
     }
 
-    fn listed_tokens(report: &StatusReport) -> Option<serde_json::Value> {
+    fn token_lines(report: &StatusReport) -> Option<Vec<String>> {
         match report {
             StatusReport::Active(active) => active
                 .tokens
                 .as_ref()
                 .and_then(|tokens| tokens.as_ref().ok())
-                .cloned(),
+                .map(|tokens| tokens.iter().map(Token::line).collect()),
             StatusReport::Revoked(_) | StatusReport::Unknown(_) => None,
         }
     }
 
-    fn has_tokens(report: &StatusReport) -> bool {
+    fn session_lines(report: &StatusReport) -> Option<Vec<String>> {
         match report {
-            StatusReport::Active(active) => {
-                active.tokens.as_ref().is_some_and(Result::is_ok)
-            }
-            StatusReport::Revoked(_) | StatusReport::Unknown(_) => false,
+            StatusReport::Active(active) => active
+                .sessions
+                .as_ref()
+                .and_then(|sessions| sessions.as_ref().ok())
+                .map(|sessions| sessions.iter().map(Session::line).collect()),
+            StatusReport::Revoked(_) | StatusReport::Unknown(_) => None,
         }
     }
 
@@ -386,33 +402,97 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn status_hides_the_token_values() -> Result<()> {
-        let listed = r#"[{"name":"ci","token":"holst_pat_planted_fake"}]"#;
+    async fn status_never_reads_the_token_values() -> Result<()> {
+        let listed = r#"[{"id":"t1","name":"ci","token":"holst_pat_planted_fake"}]"#;
         let (report, _) = run(vec![StatusPart::Tokens], &[listed]).await?;
+        let shown = format!("{report:?}");
+        assert_eq!(token_lines(&report), Some(vec!["ci".to_owned()]));
+        assert!(!shown.contains("planted"), "{shown}");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn status_asks_for_a_part_only_when_it_is_named() -> Result<()> {
+        let (plain, requested) = run(Vec::new(), &[]).await?;
+        let (tokens, tokens_asked) = run(vec![StatusPart::Tokens], &["[]"]).await?;
+        let (sessions, sessions_asked) =
+            run(vec![StatusPart::Sessions], &["[]"]).await?;
+        let seen = |paths: &[String]| {
+            (
+                paths.iter().any(|path| path == SESSIONS_PATH),
+                paths.iter().any(|path| path == TOKENS_PATH),
+            )
+        };
         assert_eq!(
-            listed_tokens(&report),
-            Some(json!([{ "name": "ci", "token": "***" }]))
+            (token_lines(&plain), session_lines(&plain), seen(&requested)),
+            (None, None, (false, false))
+        );
+        assert_eq!(
+            (
+                token_lines(&tokens),
+                session_lines(&tokens),
+                seen(&tokens_asked)
+            ),
+            (Some(Vec::new()), None, (false, true))
+        );
+        assert_eq!(
+            (
+                token_lines(&sessions),
+                session_lines(&sessions),
+                seen(&sessions_asked)
+            ),
+            (None, Some(Vec::new()), (true, false))
         );
         Ok(())
     }
 
     #[tokio::test]
-    async fn status_asks_for_tokens_only_with_tokens() -> Result<()> {
-        let (without, plain) = run(Vec::new(), &[]).await?;
-        let (with, asked) = run(vec![StatusPart::Tokens], &["[]"]).await?;
+    async fn status_marks_the_session_that_asked() -> Result<()> {
+        let listed = json!([
+            {
+                "id": "s1", "isCurrent": true, "deviceName": "holst-rs",
+                "deviceOS": "macOS", "startTime": "2026-10-27T11:35:52.116491Z",
+                "lastActiveAt": "2026-10-27T12:40:26.381268Z",
+                "location": { "city": "Moscow", "country": "Russia", "postalCode": "1" }
+            },
+            { "id": "s2", "isCurrent": false, "deviceName": "Chrome", "location": {} }
+        ])
+        .to_string();
+        let (report, _) = run(vec![StatusPart::Sessions], &[listed.as_str()]).await?;
         assert_eq!(
-            (
-                has_tokens(&without),
-                plain.iter().any(|path| path == TOKENS_PATH)
-            ),
-            (false, false)
+            session_lines(&report),
+            Some(vec![
+                "holst-rs · macOS · Moscow, Russia · last active 2026-10-27 (this session)"
+                    .to_owned(),
+                "Chrome".to_owned()
+            ])
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn status_reads_a_token_without_an_expiry() -> Result<()> {
+        let listed = json!([
+            {
+                "id": "t1", "name": "audit", "tokenPrefix": "holst_pat_ab",
+                "scopes": ["organization:audit_events_read"], "status": "active",
+                "createdAt": "2026-10-01T00:00:00Z", "expiresAt": null,
+                "revokedAt": null, "lastUsedAt": "2026-10-20T08:00:00Z"
+            },
+            {
+                "id": "t2", "name": "ci", "tokenPrefix": "holst_pat_cd", "scopes": [],
+                "expiresAt": "2027-01-01T00:00:00Z", "lastUsedAt": null
+            }
+        ])
+        .to_string();
+        let (report, _) = run(vec![StatusPart::Tokens], &[listed.as_str()]).await?;
         assert_eq!(
-            (
-                has_tokens(&with),
-                asked.iter().any(|path| path == TOKENS_PATH)
-            ),
-            (true, true)
+            token_lines(&report),
+            Some(vec![
+                "audit · holst_pat_ab… · organization:audit_events_read · last used 2026-10-20"
+                    .to_owned(),
+                "ci · holst_pat_cd… · expires 2027-01-01".to_owned()
+            ])
         );
         Ok(())
     }

@@ -11,7 +11,10 @@ use holst_core::{
         StatusReport,
         WorkspaceStatus,
     },
-    domain::text::counted,
+    domain::{
+        access::{Session, Token},
+        text::counted,
+    },
     error::{
         hint::{LOGIN, Surface},
         login::LoginError,
@@ -19,7 +22,6 @@ use holst_core::{
     storage::session_store::SessionStoreKind,
 };
 use serde::Serialize;
-use serde_json::Value;
 
 use crate::{
     error::{Error, Result},
@@ -138,7 +140,8 @@ enum CheckStatus {
     Unknown,
 }
 
-/// The JSON of `auth status -o json`; `tokens` is there only when asked for.
+/// The JSON of `auth status -o json`; `sessions` and `tokens` are there only
+/// when asked for.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct SavedLogin {
     logged_in: bool,
@@ -149,7 +152,11 @@ struct SavedLogin {
     name: Option<String>,
     workspaces: Vec<ListedWorkspace>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    tokens: Option<Vec<Value>>,
+    sessions: Option<Vec<Session>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sessions_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tokens: Option<Vec<Token>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tokens_error: Option<String>,
     error: Option<String>,
@@ -172,6 +179,8 @@ impl SavedLogin {
             status,
             name: None,
             workspaces: Vec::new(),
+            sessions: None,
+            sessions_error: None,
             tokens: None,
             tokens_error: None,
             error: Some(err.to_string()),
@@ -182,14 +191,11 @@ impl SavedLogin {
             StatusReport::Active(AccountStatus {
                 account,
                 workspaces,
+                sessions,
                 tokens,
             }) => {
-                let (tokens, tokens_error) = match tokens {
-                    Some(Ok(Value::Array(items))) => (Some(items.clone()), None),
-                    Some(Ok(other)) => (Some(vec![other.clone()]), None),
-                    Some(Err(err)) => (None, Some(err.to_string())),
-                    None => (None, None),
-                };
+                let (sessions, sessions_error) = read(sessions.as_ref());
+                let (tokens, tokens_error) = read(tokens.as_ref());
                 Self {
                     logged_in: true,
                     store,
@@ -197,6 +203,8 @@ impl SavedLogin {
                     status: CheckStatus::Active,
                     name: Some(display_name(account).to_owned()),
                     workspaces: workspaces.iter().map(ListedWorkspace::of).collect(),
+                    sessions,
+                    sessions_error,
                     tokens,
                     tokens_error,
                     error: None,
@@ -207,6 +215,17 @@ impl SavedLogin {
             StatusReport::Revoked(err) => failed(CheckStatus::Revoked, err),
             StatusReport::Unknown(err) => failed(CheckStatus::Unknown, err),
         }
+    }
+}
+
+/// A part asked for, split into its rows and the words of its failure.
+fn read<T: Clone>(
+    part: Option<&holst_core::Result<Vec<T>>>,
+) -> (Option<Vec<T>>, Option<String>) {
+    match part {
+        Some(Ok(rows)) => (Some(rows.clone()), None),
+        Some(Err(err)) => (None, Some(err.to_string())),
+        None => (None, None),
     }
 }
 
@@ -235,7 +254,20 @@ impl fmt::Display for SavedLogin {
                         workspace.counted()
                     )
                 })?;
-                self.write_tokens(f)
+                write_part(
+                    f,
+                    "sessions",
+                    self.sessions.as_ref(),
+                    self.sessions_error.as_ref(),
+                    Session::line,
+                )?;
+                write_part(
+                    f,
+                    "tokens",
+                    self.tokens.as_ref(),
+                    self.tokens_error.as_ref(),
+                    Token::line,
+                )
             }
             CheckStatus::Revoked => {
                 write!(f, "status:  revoked ({error}). Run `{LOGIN}`")
@@ -245,26 +277,21 @@ impl fmt::Display for SavedLogin {
     }
 }
 
-impl SavedLogin {
-    fn write_tokens(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match (&self.tokens, &self.tokens_error) {
-            (Some(items), _) => {
-                write!(f, "\ntokens: {}", items.len())?;
-                items.iter().try_for_each(|item| {
-                    write!(
-                        f,
-                        "\n  {}",
-                        item.get("name")
-                            .and_then(Value::as_str)
-                            .unwrap_or("(unnamed)")
-                    )
-                })
-            }
-            (None, Some(error)) => {
-                write!(f, "\ntokens: could not be listed: {error}")
-            }
-            (None, None) => Ok(()),
+fn write_part<T>(
+    f: &mut fmt::Formatter<'_>,
+    label: &str,
+    rows: Option<&Vec<T>>,
+    error: Option<&String>,
+    line: fn(&T) -> String,
+) -> fmt::Result {
+    match (rows, error) {
+        (Some(rows), _) => {
+            write!(f, "\n{label}: {}", rows.len())?;
+            rows.iter()
+                .try_for_each(|row| write!(f, "\n  {}", line(row)))
         }
+        (None, Some(error)) => write!(f, "\n{label}: could not be listed: {error}"),
+        (None, None) => Ok(()),
     }
 }
 
@@ -272,7 +299,10 @@ impl SavedLogin {
 mod tests {
     use holst_core::{
         command::auth::{AccountStatus, NodeCounts, StatusReport, WorkspaceStatus},
-        domain::account::Account,
+        domain::{
+            access::{Session, Token},
+            account::Account,
+        },
         error::{hint::LOGIN, login::LoginError},
     };
     use serde_json::json;
@@ -280,7 +310,8 @@ mod tests {
     use crate::commands::auth::status::{MissingLogin, SavedLogin};
 
     fn active(
-        tokens: Option<holst_core::Result<serde_json::Value>>,
+        sessions: Option<holst_core::Result<Vec<Session>>>,
+        tokens: Option<holst_core::Result<Vec<Token>>>,
     ) -> holst_core::Result<StatusReport> {
         let me = json!({ "id": "u1", "name": "Ann", "workspaces": [{ "id": "w1", "name": "easy" }] });
         let account = Account::of(&me)?;
@@ -299,6 +330,7 @@ mod tests {
         Ok(StatusReport::Active(AccountStatus {
             account,
             workspaces,
+            sessions,
             tokens,
         }))
     }
@@ -307,7 +339,7 @@ mod tests {
     #[expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
     fn the_status_names_whose_session_it_is() -> holst_core::Result<()> {
         let report =
-            SavedLogin::of("file", "(12 characters)".into(), 2, &active(None)?);
+            SavedLogin::of("file", "(12 characters)".into(), 2, &active(None, None)?);
         assert_eq!(
             report.to_string(),
             "source:        file\nsession token: (12 characters)\ncookies:       2\nstatus:  active, logged in as Ann\nworkspaces: 1\n  easy (w1): 2 boards, 1 folder"
@@ -344,7 +376,7 @@ mod tests {
         };
         let (refused_text, down_text) = (refused.to_string(), down.to_string());
         assert_eq!(
-            shape(&active(None)?),
+            shape(&active(None, None)?),
             Some(json!({
                 "logged_in": true, "source": "file", "cookies": 2, "status": "active",
                 "name": "Ann",
@@ -373,19 +405,59 @@ mod tests {
 
     #[test]
     #[expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
-    fn tokens_are_listed_by_name_as_core_returns_them() -> holst_core::Result<()> {
-        let tokens = json!([{ "name": "ci", "token": "***" }]);
-        let report =
-            SavedLogin::of("file", String::new(), 2, &active(Some(Ok(tokens)))?);
+    fn sessions_and_tokens_are_listed_as_lines_and_as_typed_json()
+    -> holst_core::Result<()> {
+        let sessions = vec![Session {
+            id: "s1".into(),
+            device: Some("holst-rs".into()),
+            current: true,
+            ..Session::default()
+        }];
+        let tokens = vec![Token {
+            id: "t1".into(),
+            name: Some("ci".into()),
+            ..Token::default()
+        }];
+        let report = SavedLogin::of(
+            "file",
+            String::new(),
+            2,
+            &active(Some(Ok(sessions)), Some(Ok(tokens)))?,
+        );
         assert!(
-            report.to_string().ends_with("\ntokens: 1\n  ci"),
+            report
+                .to_string()
+                .ends_with("\nsessions: 1\n  holst-rs (this session)\ntokens: 1\n  ci"),
             "{report}"
         );
+        let json = serde_json::to_value(&report).ok();
         assert_eq!(
-            serde_json::to_value(&report)
-                .ok()
-                .and_then(|json| json.get("tokens").cloned()),
-            Some(json!([{ "name": "ci", "token": "***" }]))
+            json.as_ref().and_then(|json| json.get("sessions")),
+            Some(&json!([{ "id": "s1", "device": "holst-rs", "current": true }]))
+        );
+        assert_eq!(
+            json.as_ref().and_then(|json| json.get("tokens")),
+            Some(&json!([{ "id": "t1", "name": "ci", "scopes": [] }]))
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
+    fn an_empty_list_says_none_and_a_failed_one_says_why() -> holst_core::Result<()> {
+        let down = holst_core::Error::Login(LoginError::SessionRevoked);
+        let report = SavedLogin::of(
+            "file",
+            String::new(),
+            2,
+            &active(Some(Ok(Vec::new())), Some(Err(down)))?,
+        );
+        assert!(
+            report.to_string().ends_with(&format!(
+                "\nsessions: 0\ntokens: could not be listed: {}",
+                LoginError::SessionRevoked
+            )),
+            "{report}"
         );
         Ok(())
     }

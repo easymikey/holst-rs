@@ -268,6 +268,10 @@ fn requests_are_what_the_web_client_sends() -> Result<()> {
             format!("GET {gapi}/personal_access_token/list?statuses=active\n"),
         ),
         (
+            wire(user::session_list_request())?,
+            format!("GET {gapi}/session/list\n"),
+        ),
+        (
             wire(comment::thread_list_request("b"))?,
             format!("GET {gapi}/comment/thread_list/b?channelId=b\n"),
         ),

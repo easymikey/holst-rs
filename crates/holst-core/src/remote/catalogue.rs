@@ -326,6 +326,7 @@ mod tests {
         GET /gapi/current_user Read Names([]) None
         GET /gapi/current_user/joinable_workspaces Read Names([]) None
         GET /gapi/personal_access_token/list Read Names([("statuses", Required)]) None
+        GET /gapi/session/list Read Names([]) None
         GET /gapi/link_preview Read Names([("link", Required)]) None
         GET /gapi/workspace/{workspace_id} Read Names([]) None
         GET /gapi/workspace/{workspace_id}/trash Read Names([]) None

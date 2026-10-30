@@ -11,6 +11,20 @@ use crate::fake::{
 /// The code every email login accepts, as the CLI's own tests use it.
 pub const LOGIN_CODE: &str = "123456";
 
+const STAMP: &str = "2026-10-27T11:35:52.116491Z";
+
+fn session(id: &str, device: &str, location: &Value, current: bool) -> Value {
+    json!({
+        "id": id,
+        "startTime": STAMP,
+        "lastActiveAt": STAMP,
+        "isCurrent": current,
+        "deviceOS": "macOS",
+        "deviceName": device,
+        "location": location,
+    })
+}
+
 /// The cookies the server accepts, and the socket tokens it handed out.
 #[derive(Debug)]
 pub(crate) struct Sessions {
@@ -107,45 +121,55 @@ impl Sessions {
         }
     }
 
-    /// The live sessions, the one of `cookie` marked, then the filled others.
+    /// The live sessions as the live API lists them (a bare array), the one
+    /// of `cookie` marked, then the filled others.
     fn sessions(&self, cookie: &str) -> Value {
         let own = self.alive_in(cookie);
         let live = self.alive.iter().enumerate().map(|(index, alive)| {
-            json!({
-                "id": format!("session-{index}"),
-                "client": "holst-rs",
-                "current": own == Some(alive.as_str()),
-            })
+            session(
+                &format!("session-{index}"),
+                "holst-rs",
+                &json!({ "city": "Moscow", "country": "Russia" }),
+                own == Some(alive.as_str()),
+            )
         });
         let others = self
             .other_clients
             .iter()
             .enumerate()
             .map(|(index, client)| {
-                json!({
-                    "id": format!("session-other-{index}"),
-                    "client": client,
-                    "current": false,
-                })
+                session(
+                    &format!("session-other-{index}"),
+                    client,
+                    &json!({ "country": "Russia" }),
+                    false,
+                )
             });
-        json!({ "sessions": live.chain(others).collect::<Vec<_>>() })
+        Value::Array(live.chain(others).collect())
     }
 
-    /// The tokens by name; a secret is shown once, when made, never again.
+    /// The active tokens by name as the live API lists them (a bare array);
+    /// a secret is shown once, when made, never again.
     fn token_names(&self) -> Value {
-        json!({
-            "tokens": self
-                .access_tokens
+        Value::Array(
+            self.access_tokens
                 .iter()
                 .enumerate()
-                .map(|(index, name)| json!({
-                    "id": format!("token-{index}"),
-                    "name": name,
-                    "scopes": [],
-                    "status": "active",
-                }))
-                .collect::<Vec<_>>(),
-        })
+                .map(|(index, name)| {
+                    json!({
+                        "id": format!("token-{index}"),
+                        "name": name,
+                        "tokenPrefix": format!("holst_pat_{index:02}"),
+                        "scopes": ["organization:audit_events_read"],
+                        "status": "active",
+                        "createdAt": STAMP,
+                        "expiresAt": null,
+                        "revokedAt": null,
+                        "lastUsedAt": null,
+                    })
+                })
+                .collect(),
+        )
     }
 
     fn alive_in(&self, cookie: &str) -> Option<&str> {

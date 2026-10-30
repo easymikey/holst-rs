@@ -594,20 +594,24 @@ async fn tokens_and_sessions_are_listed_without_secrets() -> Outcome<()> {
     )
     .await?;
     let tokens = get(&fake, "personal_access_token/list?statuses=active").await?;
-    assert_eq!(tokens.count("/tokens"), 2);
-    assert_eq!(tokens.text("/tokens/0/name"), Some("Audit export"));
+    assert_eq!(tokens.count(""), 2);
+    assert_eq!(tokens.text("/0/name"), Some("Audit export"));
+    assert_eq!(tokens.text("/0/status"), Some("active"));
+    assert!(tokens.body.pointer("/0/tokenPrefix").is_some());
     assert!(!tokens.body.to_string().contains("secret"));
     let sessions = get(&fake, "session/list").await?;
-    assert_eq!(sessions.count("/sessions"), 2);
+    assert_eq!(sessions.count(""), 2);
     assert_eq!(
-        sessions.body.pointer("/sessions/0/current"),
+        sessions.body.pointer("/0/isCurrent"),
         Some(&Value::Bool(true))
     );
-    assert_eq!(sessions.text("/sessions/1/client"), Some("Chrome"));
+    assert_eq!(sessions.text("/1/deviceName"), Some("Chrome"));
     assert_eq!(
-        sessions.body.pointer("/sessions/1/current"),
+        sessions.body.pointer("/1/isCurrent"),
         Some(&Value::Bool(false))
     );
+    assert_eq!(sessions.text("/1/location/country"), Some("Russia"));
+    assert!(sessions.body.pointer("/0/lastActiveAt").is_some());
     Ok(())
 }
 

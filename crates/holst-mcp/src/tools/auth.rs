@@ -9,7 +9,10 @@ use holst_core::{
         WorkspaceStatus,
         status,
     },
-    domain::text::counted,
+    domain::{
+        access::{Session, Token},
+        text::counted,
+    },
     error::hint::Surface,
 };
 use rmcp::model::CallToolResult;
@@ -89,16 +92,9 @@ impl McpServer {
             .iter()
             .map(|each| self.workspace_status(each))
             .collect();
-        let tokens = match found.tokens {
-            None => String::new(),
-            Some(Ok(list)) => {
-                format!("tokens:\n{}", self.state.render(list))
-            }
-            Some(Err(err)) => {
-                format!("tokens: not read: {}\n", err.on(Surface::Mcp))
-            }
-        };
-        account + &workspaces + &tokens
+        let sessions = listed("sessions", found.sessions, Session::line);
+        let tokens = listed("tokens", found.tokens, Token::line);
+        account + &workspaces + &sessions + &tokens
     }
 
     fn workspace_status(&self, each: &WorkspaceStatus) -> String {
@@ -115,5 +111,22 @@ impl McpServer {
             ),
             Err(err) => format!("{name} · not counted: {}\n", err.on(Surface::Mcp)),
         }
+    }
+}
+
+/// A part asked for: its count and a line per row, or why it was not read.
+fn listed<T>(
+    label: &str,
+    part: Option<holst_core::Result<Vec<T>>>,
+    line: fn(&T) -> String,
+) -> String {
+    match part {
+        None => String::new(),
+        Some(Ok(rows)) => rows
+            .iter()
+            .fold(format!("{label}: {}\n", rows.len()), |text, row| {
+                text + "  " + &line(row) + "\n"
+            }),
+        Some(Err(err)) => format!("{label}: not read: {}\n", err.on(Surface::Mcp)),
     }
 }

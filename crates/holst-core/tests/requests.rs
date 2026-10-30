@@ -1719,6 +1719,8 @@ async fn a_login_asks_the_account_once_and_ends_the_session_it_replaces()
 
 #[rstest]
 #[case::auth_status(Auth(AuthVerb::Status), json!({}), Setup::Read, sent().current_user(1).tree(2), sent().current_user(1).tree(2), 0)]
+#[case::auth_status_sessions(Auth(AuthVerb::Status), json!({ "with": ["sessions"] }), Setup::Read, sent().current_user(1).tree(2).other(&["GET /gapi/session/list"]), sent().current_user(1).tree(2).other(&["GET /gapi/session/list"]), 0)]
+#[case::auth_status_tokens(Auth(AuthVerb::Status), json!({ "with": ["tokens"] }), Setup::Read, sent().current_user(1).tree(2).other(&["GET /gapi/personal_access_token/list"]), sent().current_user(1).tree(2).other(&["GET /gapi/personal_access_token/list"]), 0)]
 #[case::auth_logout(Auth(AuthVerb::Logout), json!({}), Setup::Write, sent().other(&["POST /gapi/logout"]), sent().other(&["POST /gapi/logout"]), 0)]
 #[case::ws_ls(Workspace(WorkspaceVerb::Ls), json!({}), Setup::Read, sent().current_user(1), sent().current_user(1), 0)]
 #[case::ws_show(Workspace(WorkspaceVerb::Show), json!({ "workspace": "Team" }), Setup::Read, sent().other(&["GET /gapi/workspace/<Team>"]), sent().other(&["GET /gapi/workspace/<Team>"]), 0)]
