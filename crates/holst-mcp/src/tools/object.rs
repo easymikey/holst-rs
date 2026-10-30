@@ -385,6 +385,13 @@ mod tests {
         assert_eq!(parent, Some(&json!(ID)));
     }
 
+    #[test]
+    fn a_listing_writes_the_board_link_once_and_no_object_link() {
+        let text = McpServer::offline().object_listing_text(&one_object_listing(1));
+        assert_eq!(text.matches('L').count(), 1, "{text}");
+        assert!(!text.contains("L/a1"), "{text}");
+    }
+
     #[rstest]
     #[case::one(1, "1 object · editable · L\n")]
     #[case::two(2, "2 objects · editable · L\n")]
