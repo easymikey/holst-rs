@@ -316,7 +316,7 @@ mod verbs {
             .into_iter()
             .find(|line| line.contains("RcT01"))
             .unwrap_or_default();
-        assert!(line.contains("area 10,50 20x30"), "{line}");
+        assert!(line.contains("area 10,50 20×30"), "{line}");
         let value = serde_json::to_value(&listed)?;
         assert_eq!(
             value.pointer("/threads/2/anchor"),

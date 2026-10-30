@@ -1,15 +1,15 @@
 ---
 source: crates/holst-cli/src/table.rs
-expression: help_of(line)
+expression: "help_of(&format!(\"{line} -h\"))"
 ---
 Create a board from a board file, as the web app's Import does; it prints the new board with its link.
 With --into it writes the file into an existing board instead, which needs -y.
 
 USAGE
-  holst board import <file> [flags]
+  holst board import <path> [flags]
 
 ARGUMENTS
-  file   A board file from `holst b export` or `holst backup get`
+  path   A board file from `holst b export` or `holst backup get`
 
 FLAGS
   -w, --workspace ws    The workspace a new thing goes to: id or part of its name; needed when you have several

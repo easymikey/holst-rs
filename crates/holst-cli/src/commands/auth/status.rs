@@ -11,7 +11,7 @@ use holst_core::{
         StatusReport,
         WorkspaceStatus,
     },
-    domain::text::hide_tokens,
+    domain::text::{counted, hide_tokens},
     error::{
         hint::{LOGIN, Surface},
         login::LoginError,
@@ -119,17 +119,14 @@ impl ListedWorkspace {
     fn counted(&self) -> String {
         match (self.boards, self.folders) {
             (Some(boards), Some(folders)) => {
-                format!("{}, {}", plural(boards, "board"), plural(folders, "folder"))
+                format!(
+                    "{}, {}",
+                    counted(boards, "board"),
+                    counted(folders, "folder")
+                )
             }
             (None, _) | (_, None) => String::from("could not be counted"),
         }
-    }
-}
-
-fn plural(count: usize, noun: &str) -> String {
-    match count {
-        1 => format!("1 {noun}"),
-        many => format!("{many} {noun}s"),
     }
 }
 

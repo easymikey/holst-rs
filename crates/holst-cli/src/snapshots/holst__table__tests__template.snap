@@ -1,6 +1,6 @@
 ---
 source: crates/holst-cli/src/table.rs
-expression: help_of(line)
+expression: "help_of(&format!(\"{line} -h\"))"
 ---
 Work with board templates.
 
@@ -16,4 +16,4 @@ COMMANDS
 
 EXAMPLES
   $ holst tpl ls --view standard --category strategic-planning
-  $ holst tpl create "Roadmap" --name "Quarter plan" --for workspace
+  $ holst tpl create "Roadmap" "Quarter plan" --for workspace

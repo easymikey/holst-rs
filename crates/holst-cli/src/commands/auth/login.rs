@@ -32,7 +32,7 @@ use crate::{
         Question,
         draw::NoteTone,
         line::QuestionKind,
-        terminal::{Console, Terminal, TerminalKind},
+        terminal::{Console, Terminal},
     },
     output,
     output::{
@@ -171,45 +171,27 @@ const fn secret_kind(awaiting: &Awaiting) -> SecretKind {
 }
 
 async fn ask_and_log_in<T: Terminal>(
-    awaiting: Awaiting,
+    awaiting: &Awaiting,
     form: &Form<T>,
-    refused: Option<InvalidAnswer>,
-    attempts_left: u8,
 ) -> Result<Client> {
-    let secret = secret_kind(&awaiting);
-    let Question { label, kind } = question(secret);
-    let typed = refused.map_or_else(
-        || form.ask(label, kind, &reason_of(parse_secret)),
-        |invalid| {
-            form.ask_again(
-                Question { label, kind },
-                &reason_of(parse_secret),
-                invalid.reason(),
-            )
-        },
-    )?;
+    let secret = secret_kind(awaiting);
     let logged_in = form
-        .wait("Signing in", async {
-            Ok::<_, Error>(awaiting.log_in(&typed).await)
-        })
-        .await??;
-    let can_ask_again =
-        attempts_left > 1 && form.terminal().kind() != TerminalKind::Redirected;
-    match logged_in.map_err(|err| (err.is_wrong_secret(), err)) {
-        Ok(client) => Ok(client),
-        Err((true, _)) if can_ask_again => {
-            let problem = secret.wrong_answer();
-            Box::pin(ask_and_log_in(
-                awaiting,
-                form,
-                Some(problem),
-                attempts_left - 1,
-            ))
-            .await
-        }
-        Err((true, err)) => Err(Error::WrongSecret { secret, error: err }),
-        Err((false, err)) => Err(Error::Holst(err)),
-    }
+        .ask_until(
+            question(secret),
+            &reason_of(parse_secret),
+            async |typed: &SecretString| awaiting.log_in(typed).await,
+            |error| {
+                error
+                    .is_wrong_secret()
+                    .then_some(secret.wrong_answer().reason())
+            },
+            ATTEMPTS,
+        )
+        .await?;
+    logged_in.map_err(|error| match (error.is_wrong_secret(), error) {
+        (true, error) => Error::WrongSecret { secret, error },
+        (false, error) => Error::Holst(error),
+    })
 }
 
 /// Checks the login, saves it (unless `--no-save`) and ends the replaced one.
@@ -311,7 +293,7 @@ async fn log_in_by_email<T: Terminal>(
         |email| form.step("Email", email.as_str()).map(|()| email),
     )?;
     let awaiting = prepare(EmailLogin::new(client, email), form).await?;
-    ask_and_log_in(awaiting, form, None, ATTEMPTS).await
+    ask_and_log_in(&awaiting, form).await
 }
 
 // The form shows the reason as text; the command keeps the enum.

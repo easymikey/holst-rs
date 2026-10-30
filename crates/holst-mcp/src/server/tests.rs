@@ -974,7 +974,7 @@ async fn offline_reads_only_the_cache(
 async fn embed_gives_the_picture_inline() -> holst_core::Result<()> {
     let (_fake, holst, _) = on_fake().await?;
     let call = serde_json::json!({
-        "action": "snap", "board": "Plans", "format": "svg", "embed": true
+        "action": "snap", "board": "Plans", "picture_format": "svg", "embed": true
     });
     let (failed, text) = table_call(&holst, "board", call).await;
     assert!(!failed, "{text}");

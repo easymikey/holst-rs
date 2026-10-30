@@ -196,9 +196,9 @@ pub struct RenameArgs {
     block = Targeted,
     about = "Show the workspace event log",
     help = "Show the workspace event log, newest first.\n\
-            The server filters it by the query parameters you give with -q.",
+            The server filters it by the query parameters you give with -p.",
     example = "holst ws log",
-    example = "holst ws log easy -q limit=50"
+    example = "holst ws log easy -p limit=50"
 )]
 pub struct LogArgs {
     #[argument(
@@ -209,12 +209,12 @@ pub struct LogArgs {
     )]
     pub workspace: Option<String>,
     #[argument(
-        letter = 'q',
+        letter = 'p',
         value_name = "key=value",
-        help = "A query parameter of the log request, repeatable, e.g. -q limit=50"
+        help = "A query parameter of the log request, repeatable, e.g. -p limit=50"
     )]
     #[serde(default, deserialize_with = "query_object")]
-    pub query: Vec<QueryParameter>,
+    pub param: Vec<QueryParameter>,
 }
 
 /// A workspace of `workspace ls`.
@@ -625,7 +625,7 @@ pub async fn rename(client: &Client, args: &RenameArgs) -> Result<WorkspaceChang
 /// # Errors
 /// Errors of the workspace lookup and of the request.
 pub async fn log(client: &Client, args: &LogArgs) -> Result<EventLog> {
-    let own = args.query.iter().any(|each| each.name == "workspaceId");
+    let own = args.param.iter().any(|each| each.name == "workspaceId");
     let scope = OptionFuture::from(
         (!own).then(|| lookup::workspace(client, args.workspace.as_deref())),
     )
@@ -635,7 +635,7 @@ pub async fn log(client: &Client, args: &LogArgs) -> Result<EventLog> {
         .map(|workspace| ("workspaceId", workspace.id))
         .into_iter()
         .chain(
-            args.query
+            args.param
                 .iter()
                 .map(|each| (each.name.as_str(), each.value.clone())),
         )

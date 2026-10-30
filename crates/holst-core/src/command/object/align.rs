@@ -45,18 +45,18 @@ pub async fn align(
 
 /// What `args` ask: a side, or a direction to spread in, not both.
 fn arrangement(args: &AlignArgs) -> Result<Arrangement> {
-    match (&args.to, args.distribute) {
+    match (&args.side, args.distribute) {
         (Some(side), None) => side
             .trim()
             .parse::<Alignment>()
             .map(Arrangement::Align)
-            .map_err(|_| not_value(ALIGN, "to", &Alignment::VARIANTS.join(", "))),
+            .map_err(|_| not_value(ALIGN, "side", &Alignment::VARIANTS.join(", "))),
         (None, Some(axis)) => Ok(Arrangement::Distribute(axis)),
         (None, None) => Err(not_value(
             ALIGN,
-            "to",
+            "side",
             "left, center, right, top, middle or bottom, unless distribute is given",
         )),
-        (Some(_), Some(_)) => Err(not_value(ALIGN, "distribute", "left out with to")),
+        (Some(_), Some(_)) => Err(not_value(ALIGN, "distribute", "left out with side")),
     }
 }

@@ -211,8 +211,8 @@ impl Error {
     /// let err = Error::from(LocalDataError::PlainGz {
     ///     path: PathBuf::from("b.gz"),
     /// });
-    /// assert!(err.on(Surface::Cli).contains("--uncompressed"));
-    /// assert!(err.on(Surface::Mcp).contains("uncompressed: true"));
+    /// assert!(err.on(Surface::Cli).contains("--no-compress"));
+    /// assert!(err.on(Surface::Mcp).contains("no_compress: true"));
     /// ```
     #[must_use]
     pub fn on(&self, surface: Surface) -> String {

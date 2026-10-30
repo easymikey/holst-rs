@@ -36,28 +36,30 @@ pub enum RightsChange<'a> {
 impl<'a> RightsChange<'a> {
     /// Returns the action and what it takes besides the board and workspace.
     fn words(self, board: &'a str, workspace: &'a str) -> (&'static str, Words<'a>) {
-        let (action, user, options, switches) = match self {
-            RightsChange::Grant { user, right } => {
-                ("grant", Some(user), vec![("right", right)], vec![])
+        let (action, rest, options, switches) = match self {
+            RightsChange::Grant { user, right } => (
+                "grant",
+                vec![("user", user), ("right", right)],
+                vec![],
+                vec![],
+            ),
+            RightsChange::Revoke { user } => {
+                ("revoke", vec![("user", user)], vec![], vec![])
             }
-            RightsChange::Revoke { user } => ("revoke", Some(user), vec![], vec![]),
             RightsChange::Transfer { user, with_boards } => (
                 "transfer",
-                Some(user),
+                vec![("user", user)],
                 vec![],
                 with_boards.then_some("with_boards").into_iter().collect(),
             ),
             RightsChange::Share { settings } => {
-                ("share", None, settings.to_vec(), vec![])
+                ("share", vec![], settings.to_vec(), vec![])
             }
         };
         (
             action,
             Words {
-                positional: [("board", board)]
-                    .into_iter()
-                    .chain(user.map(|user| ("user", user)))
-                    .collect(),
+                positional: [("board", board)].into_iter().chain(rest).collect(),
                 options: options
                     .into_iter()
                     .chain([("workspace", workspace)])

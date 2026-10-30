@@ -52,7 +52,7 @@ expression: "*holst.tools"
         "name": {
           "type": "string"
         },
-        "query": {
+        "param": {
           "additionalProperties": {
             "type": [
               "string",
@@ -131,13 +131,6 @@ expression: "*holst.tools"
         "folder": {
           "type": "string"
         },
-        "format": {
-          "enum": [
-            "png",
-            "svg"
-          ],
-          "type": "string"
-        },
         "frame": {
           "type": "string"
         },
@@ -173,6 +166,13 @@ expression: "*holst.tools"
         },
         "padding": {
           "type": "number"
+        },
+        "picture_format": {
+          "enum": [
+            "png",
+            "svg"
+          ],
+          "type": "string"
         },
         "rectangle": {
           "type": "string"
@@ -307,6 +307,9 @@ expression: "*holst.tools"
         "name": {
           "type": "string"
         },
+        "no_compress": {
+          "type": "boolean"
+        },
         "note": {
           "description": "The new note.",
           "type": "string"
@@ -345,6 +348,10 @@ expression: "*holst.tools"
         "padding": {
           "type": "number"
         },
+        "path": {
+          "description": "export: a new file; import: a board file.",
+          "type": "string"
+        },
         "permanently": {
           "type": "boolean"
         },
@@ -369,9 +376,6 @@ expression: "*holst.tools"
         },
         "tools": {
           "type": "string"
-        },
-        "uncompressed": {
-          "type": "boolean"
         },
         "user": {
           "type": "string"
@@ -562,11 +566,11 @@ expression: "*holst.tools"
         "key": {
           "type": "string"
         },
+        "no_compress": {
+          "type": "boolean"
+        },
         "provider": {
           "type": "string"
-        },
-        "uncompressed": {
-          "type": "boolean"
         },
         "workspace": {
           "type": "string"
@@ -744,6 +748,9 @@ expression: "*holst.tools"
           "description": "Hide frame content.",
           "type": "boolean"
         },
+        "into": {
+          "type": "string"
+        },
         "items": {
           "description": "Many at once, each with the arguments of one; at most 100 per call.",
           "items": {
@@ -787,9 +794,20 @@ expression: "*holst.tools"
         },
         "mark": {
           "description": "Whole text: bold,italic,underline,strikethrough,code or none.",
-          "type": "string"
+          "items": {
+            "enum": [
+              "bold",
+              "italic",
+              "underline",
+              "strikethrough",
+              "code",
+              "none"
+            ],
+            "type": "string"
+          },
+          "type": "array"
         },
-        "no_embed": {
+        "no_preview": {
           "description": "Plain card.",
           "type": "boolean"
         },
@@ -917,11 +935,14 @@ expression: "*holst.tools"
           "description": "Show frame content.",
           "type": "boolean"
         },
-        "size": {
-          "description": "WxH.",
+        "side": {
           "type": "string"
         },
-        "stroke": {
+        "size": {
+          "description": "W,H.",
+          "type": "string"
+        },
+        "stroke_color": {
           "description": "Outline color.",
           "type": "string"
         },
@@ -948,7 +969,7 @@ expression: "*holst.tools"
           "description": "Lines are paragraphs.",
           "type": "string"
         },
-        "text_bg": {
+        "text_background": {
           "description": "Whole text, e.g. yellow4 or none.",
           "type": "string"
         },
@@ -1063,10 +1084,7 @@ expression: "*holst.tools"
           ],
           "type": "string"
         },
-        "path": {
-          "type": "string"
-        },
-        "query": {
+        "param": {
           "additionalProperties": {
             "type": [
               "string",
@@ -1074,6 +1092,9 @@ expression: "*holst.tools"
             ]
           },
           "type": "object"
+        },
+        "path": {
+          "type": "string"
         }
       },
       "required": [

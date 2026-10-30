@@ -432,7 +432,7 @@ const TEMPLATE: GroupHelp = GroupHelp {
     arguments: None,
     examples: &[
         "holst tpl ls --view standard --category strategic-planning",
-        "holst tpl create \"Roadmap\" --name \"Quarter plan\" --for workspace",
+        "holst tpl create \"Roadmap\" \"Quarter plan\" --for workspace",
     ],
 };
 

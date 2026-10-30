@@ -14,9 +14,13 @@ use yrs::{Any, Doc, Map as _, MapPrelim, ReadTxn as _, StateVector, Transact as 
 
 use crate::{
     Result,
-    command::table::{CommandArgs, parse},
+    command::{
+        board::show::Loading,
+        board_load::CacheUse,
+        table::{CommandArgs, parse},
+    },
     domain::board::{EditRight, Object, object_of},
-    effect::http::HttpResponse,
+    effect::{http::HttpResponse, socket::SocketConnector},
     protocol::hud::{DocumentResponse, SocketFrame, UpdatePayload},
     remote::{
         client::{
@@ -79,6 +83,15 @@ pub(in crate::command) fn arguments<A: CommandArgs>(given: Value) -> Result<A> {
         map.entry("board").or_insert_with(|| json!(BOARD));
     }
     parse(map)
+}
+
+/// Loading over `connector` with no cache.
+pub(in crate::command) const fn over(connector: &dyn SocketConnector) -> Loading<'_> {
+    Loading {
+        connector,
+        cache: None,
+        cache_use: CacheUse::Use,
+    }
 }
 
 /// A signed-in client over a fake server that answers with `replies`.

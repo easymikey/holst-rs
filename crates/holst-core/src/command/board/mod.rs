@@ -333,9 +333,9 @@ pub struct SnapArgs {
         value_name = "format",
         help = "The picture format: png or svg; from the file's extension, else png"
     )]
-    pub format: Option<PictureFormat>,
+    pub picture_format: Option<PictureFormat>,
     #[argument(
-        value_name = "scale",
+        value_name = "n",
         help = "Pixels per board unit, lowered so the picture fits --max-side; 1 by default"
     )]
     pub scale: Option<f64>,
@@ -418,7 +418,7 @@ pub struct SaveArgs {
     help = "Save the whole board as a board file, gzip by default; `holst b import` writes it back.\n\
             The file goes to ~/Downloads/<name>-<id>.ydoc.gz unless a file is given; it only reads the board.",
     example = "holst b export \"Roadmap\"",
-    example = "holst b export \"Roadmap\" roadmap.ydoc --uncompressed --object-list"
+    example = "holst b export \"Roadmap\" roadmap.ydoc --no-compress --object-list"
 )]
 pub struct ExportArgs {
     #[argument(positional, help = "The board to save")]
@@ -437,7 +437,7 @@ pub struct ExportArgs {
     )]
     pub workspace: Option<String>,
     #[argument(help = "Save without gzip; the default file name then has no .gz")]
-    pub uncompressed: bool,
+    pub no_compress: bool,
     #[argument(
         help = "Also save the objects beside the file, one per line: <file>.objects.jsonl"
     )]
@@ -459,11 +459,11 @@ pub struct ExportArgs {
 pub struct ImportArgs {
     #[argument(
         positional,
-        value_name = "file",
+        value_name = "path",
         help = "A board file from `holst b export` or `holst backup get`",
         tool_doc = "export: a new file; import: a board file."
     )]
-    pub file: String,
+    pub path: String,
     #[argument(
         letter = 'w',
         value_name = "ws",
@@ -824,8 +824,8 @@ pub struct LeaveArgs {
     about = "Give a user a right on a board",
     help = "Give a user a right on a board: viewer, commentator, editor or full.\n\
             It changes who can work on the board, so it needs -y; without it only the dry run is shown.",
-    example = "holst b grant \"Roadmap\" anna --right editor -y",
-    example = "holst b grant \"Roadmap\" anna --right viewer -n"
+    example = "holst b grant \"Roadmap\" anna editor -y",
+    example = "holst b grant \"Roadmap\" anna viewer -n"
 )]
 pub struct GrantArgs {
     #[argument(positional, help = "The board to give the right on")]
@@ -836,16 +836,16 @@ pub struct GrantArgs {
     )]
     pub user: String,
     #[argument(
+        positional,
+        help = "The board right: viewer, commentator, editor or full"
+    )]
+    pub right: Right,
+    #[argument(
         letter = 'w',
         value_name = "ws",
         help = "Where names are looked up and new things go: a workspace id or part of its name; all of yours by default"
     )]
     pub workspace: Option<String>,
-    #[argument(
-        value_name = "right",
-        help = "The board right: viewer, commentator, editor or full; required"
-    )]
-    pub right: Right,
     #[argument(
         letter = 'y',
         help = "Confirm a risky change; a terminal asks instead; without one only the dry run is shown (exit code 77)"

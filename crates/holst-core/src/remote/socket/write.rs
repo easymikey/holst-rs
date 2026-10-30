@@ -81,7 +81,7 @@ impl std::fmt::Debug for SentUpdate {
 ///
 /// # Errors
 /// As [`load_with`](fn@crate::remote::socket::load::load_with).
-pub async fn open_with(
+pub(crate) async fn open_with(
     client: &Client,
     connector: &dyn SocketConnector,
     board: &str,
@@ -98,7 +98,7 @@ pub async fn open_with(
 /// [`crate::error::board_socket::BoardSocketError::Decode`] or
 /// [`crate::error::board_socket::BoardSocketError::UpdateNotMerged`] for a
 /// broken state.
-pub fn writer_document(client: &Client, state: Option<&[u8]>) -> Result<Doc> {
+pub(crate) fn writer_document(client: &Client, state: Option<&[u8]>) -> Result<Doc> {
     // A 31-bit client id like the web client's; `own_client` checks it is free.
     let doc = Doc::with_client_id(crate::domain::change::build::client_id(
         &client.new_id(),
@@ -119,7 +119,7 @@ pub fn writer_document(client: &Client, state: Option<&[u8]>) -> Result<Doc> {
 ///
 /// # Errors
 /// As [`load_with`](fn@crate::remote::socket::load::load_with).
-pub async fn open_seeded(
+pub(crate) async fn open_seeded(
     client: &Client,
     connector: &dyn SocketConnector,
     board: &str,

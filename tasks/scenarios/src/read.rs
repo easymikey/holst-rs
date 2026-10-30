@@ -257,7 +257,7 @@ impl On<'_> {
     }
 }
 
-/// Reads `@N name[/] [· place] [(trash)]`, a name hit, or `@N kind in @M
+/// Reads `@N name[/] [· place] [[in trash]]`, a name hit, or `@N kind in @M
 /// Board: excerpt`, a text hit.
 fn listed_match(line: &str) -> Option<ListedMatch> {
     let rest = line.strip_prefix('@')?.split_once(' ')?.1;
@@ -270,7 +270,7 @@ fn listed_match(line: &str) -> Option<ListedMatch> {
 
 fn listed_name(rest: &str) -> Option<ListedMatch> {
     let (rest, in_trash) = rest
-        .strip_suffix(" (trash)")
+        .strip_suffix(" [in trash]")
         .map_or((rest, false), |rest| (rest, true));
     let name = rest.split(" · ").next()?;
     Some(ListedMatch::Name(ListedName {

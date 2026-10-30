@@ -391,7 +391,7 @@ impl ListedThread {
                 y,
                 width,
                 height,
-            } => format!("  area {x},{y} {width}x{height}"),
+            } => format!("  area {x},{y} {width}×{height}"),
             ThreadAnchor::Point { .. } | ThreadAnchor::Object { .. } => String::new(),
         };
         format!(

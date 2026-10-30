@@ -1,17 +1,35 @@
 #![expect(clippy::panic_in_result_fn, reason = "assert is the point of a test")]
 
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
+
 use rstest::rstest;
 use serde_json::{Value, json};
 
 use crate::{
     Result,
     command::{
-        fixture::uuid,
-        search::{NameMatch, Plan, SearchArgs, SearchHit, merged, search},
+        board::show::Loading,
+        board_load::CacheUse,
+        fixture::{channel, uuid},
+        search::{NameMatch, Plan, SearchArgs, SearchHit, merged, search, searched},
         table::parse,
     },
     domain::{limit::Limit, node::NodeKind},
-    remote::client::fake::{on_fake, reply, stored},
+    effect::{
+        clock::FixedClock,
+        http::BoxFuture,
+        settings::CacheSettings,
+        socket::{BoardSocket, SocketConnector, SocketSession},
+    },
+    error::{Error, board_socket::BoardSocketError},
+    remote::client::{
+        Client,
+        fake::{Fake, on_fake, reply, stored},
+    },
+    storage::cache::memory::MemoryCache,
 };
 
 fn account() -> String {
@@ -55,7 +73,7 @@ async fn run(given: &Value, replies: &[String]) -> Result<(Vec<String>, usize)> 
         .iter()
         .map(|body| reply(200, &[("content-type", "application/json")], body));
     let (fake, client) = on_fake(canned, Some(stored("tok", "s=1")))?;
-    let found = search(&client, &arguments(given)?, None).await?;
+    let found = search(&client, &CacheSettings::default(), &arguments(given)?).await?;
     let lines = found
         .hits
         .iter()
@@ -200,4 +218,116 @@ fn merged_hits_are_best_first_and_cut_to_the_limit() {
         Limit::from(2),
     );
     assert_eq!(named(&two), ["b", "d"]);
+}
+
+/// A socket connector that counts the sockets asked of it and opens none.
+#[derive(Default)]
+struct Counted(AtomicUsize);
+
+impl SocketConnector for Counted {
+    fn open<'a>(
+        &'a self,
+        _: &'a SocketSession,
+    ) -> BoxFuture<'a, Result<Box<dyn BoardSocket>>> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Box::pin(std::future::ready(Err(Error::BoardSocket(
+            BoardSocketError::Connection(Box::new(
+                tungstenite::Error::ConnectionClosed,
+            )),
+        ))))
+    }
+}
+
+fn on_tree() -> Result<(Arc<Fake>, Client)> {
+    let canned = [one_workspace(), easy_tree()]
+        .map(|body| reply(200, &[("content-type", "application/json")], &body));
+    let canned = canned.into_iter().chain([channel()]);
+    on_fake(canned, Some(stored("tok", "s=1")))
+}
+
+#[tokio::test]
+async fn offline_text_search_never_asks_for_a_socket() -> Result<()> {
+    let sockets = Counted::default();
+    let memory = MemoryCache::new(1 << 20, FixedClock { unix_millis: 1 });
+    let given = json!({ "query": "x", "mode": "board_text", "board": uuid(13) });
+    let (fake, client) = on_tree()?;
+    let found =
+        searched(&client, offline(&sockets, &memory), &arguments(&given)?).await?;
+    assert_eq!(
+        (
+            sockets.0.load(Ordering::SeqCst),
+            fake.requests().len(),
+            found.skipped_boards.len()
+        ),
+        (0, 0, 1)
+    );
+    Ok(())
+}
+
+fn offline<'a>(sockets: &'a Counted, memory: &'a MemoryCache) -> Loading<'a> {
+    Loading {
+        connector: sockets,
+        cache: Some(memory),
+        cache_use: CacheUse::Offline,
+    }
+}
+
+#[rstest]
+#[case::no_board(json!({ "query": "x" }))]
+#[case::a_name(json!({ "query": "x", "board": "Retro" }))]
+#[tokio::test]
+async fn offline_names_and_boards_by_name_are_refused_before_any_request(
+    #[case] given: Value,
+) -> Result<()> {
+    let memory = MemoryCache::new(1 << 20, FixedClock { unix_millis: 1 });
+    let (fake, client) = on_tree()?;
+    let refused = searched(
+        &client,
+        offline(&Counted::default(), &memory),
+        &arguments(&given)?,
+    )
+    .await
+    .err()
+    .map(|error| error.to_string())
+    .unwrap_or_default();
+    assert!(refused.contains("offline of `search`"), "{refused}");
+    assert_eq!(fake.requests().len(), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn online_text_search_reads_the_board_over_the_connector() -> Result<()> {
+    let sockets = Counted::default();
+    let given = json!({ "query": "x", "mode": "board_text", "board": uuid(13) });
+    let found = searched(
+        &on_tree()?.1,
+        Loading {
+            connector: &sockets,
+            cache: None,
+            cache_use: CacheUse::Use,
+        },
+        &arguments(&given)?,
+    )
+    .await?;
+    assert_eq!(
+        (sockets.0.load(Ordering::SeqCst), found.skipped_boards.len()),
+        (1, 1)
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn refresh_with_offline_is_refused() -> Result<()> {
+    let given = json!({ "query": "x", "refresh": true, "offline": true });
+    let refused = search(
+        &on_tree()?.1,
+        &CacheSettings::default(),
+        &arguments(&given)?,
+    )
+    .await
+    .err()
+    .map(|error| error.to_string())
+    .unwrap_or_default();
+    assert!(refused.contains("offline of `search`"), "{refused}");
+    Ok(())
 }

@@ -1,6 +1,6 @@
 ---
 source: crates/holst-cli/src/table.rs
-expression: help_of(line)
+expression: "help_of(&format!(\"{line} -h\"))"
 ---
 Add objects of one kind to a board; the kind word is the default kind of every --items item.
 Without --at each goes to a free corner, in --frame if given, else in the frame a linked object sits in. It prints one line per object with @N and its link.
@@ -28,7 +28,7 @@ EXAMPLES
   $ holst o add frame "Roadmap" "Q4" --items q4.json
   $ holst o add arrow "Roadmap" --from a1b2c3d4 --to e5f6a7b8
   $ holst o add link "Roadmap" https://example.com
-  $ holst o add image "Roadmap" mock.png --size 400x300
+  $ holst o add image "Roadmap" mock.png --size 400,300
 
 LEARN MORE
   How a board is given: `holst b -h`.

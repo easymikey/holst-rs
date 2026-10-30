@@ -14,13 +14,18 @@ use serde_json::{Value, json};
 use crate::{
     Result,
     command::{
-        board::file::{Exported, exported, imported, listing_path},
-        fixture::{arguments, client, directory, json_reply},
+        board::{
+            file::{Exported, exported, imported, listing_path},
+            show::Loading,
+        },
+        board_load::CacheUse,
+        fixture::{arguments, client, directory, json_reply, over},
     },
     domain::{
         board::EditRight,
         board_file::compression::{self, Compression},
     },
+    effect::{cache::CachePort, clock::FixedClock},
     protocol::hud::{DocumentResponse, UpdatePayload},
     remote::{
         client::fake::Fake,
@@ -36,6 +41,7 @@ use crate::{
             update,
         },
     },
+    storage::cache::memory::MemoryCache,
 };
 
 const WORKSPACE: &str = "00000001-0000-4000-8000-000000000001";
@@ -77,7 +83,29 @@ async fn export(
     replies: usize,
 ) -> Result<Exported> {
     let (_, client) = client(std::iter::repeat_n((), replies + 1).map(|()| channel()))?;
-    exported(&client, &full().0, downloads, &arguments(given.clone())?).await
+    exported(
+        &client,
+        over(&full().0),
+        downloads,
+        &arguments(given.clone())?,
+    )
+    .await
+}
+
+#[tokio::test]
+async fn an_export_goes_through_the_cache() -> Result<()> {
+    let memory = MemoryCache::new(1 << 20, FixedClock { unix_millis: 1 });
+    let (_, client) = client([channel(), channel()])?;
+    let socket = full().0;
+    let loading = Loading {
+        connector: &socket,
+        cache: Some(&memory),
+        cache_use: CacheUse::Use,
+    };
+    let args = arguments(json!({ "board": BOARD, "file": "-" }))?;
+    exported(&client, loading, None, &args).await?;
+    assert!(memory.load_document(BOARD).is_some());
+    Ok(())
 }
 
 fn names(dir: &Path) -> Result<Vec<String>> {
@@ -136,7 +164,7 @@ async fn the_default_name_ends_in_gz_only_when_compressed() -> Result<()> {
     export(&given, Some(&dir), 1).await?;
     export(&given, Some(&dir), 1).await?;
     export(
-        &json!({ "board": BOARD, "uncompressed": true }),
+        &json!({ "board": BOARD, "no_compress": true }),
         Some(&dir),
         1,
     )
@@ -214,8 +242,12 @@ async fn a_failed_import_removes_the_new_board() -> Result<()> {
         channel(),
         json_reply(&json!({})),
     ])?;
-    let refused =
-        imported(&client, &dropping(), &arguments(json!({ "file": file }))?).await;
+    let refused = imported(
+        &client,
+        over(&dropping()),
+        &arguments(json!({ "path": file }))?,
+    )
+    .await;
     let deletes = writes(&fake)
         .into_iter()
         .filter(|(_, path)| path.contains(BOARD) && path.ends_with("/delete"))
@@ -228,8 +260,12 @@ async fn a_failed_import_removes_the_new_board() -> Result<()> {
 async fn a_failed_import_that_cannot_remove_its_board_names_it() -> Result<()> {
     let file = board_file(&directory()?, "roadmap.ydoc.gz")?;
     let (_, client) = client([account(), account(), made(), channel()])?;
-    let refused =
-        imported(&client, &dropping(), &arguments(json!({ "file": file }))?).await;
+    let refused = imported(
+        &client,
+        over(&dropping()),
+        &arguments(json!({ "path": file }))?,
+    )
+    .await;
     assert!(
         refused.is_err_and(|error| error.to_string().contains(BOARD)),
         "the error does not name the board"
@@ -243,17 +279,19 @@ async fn only_into_takes_merge_and_only_a_new_board_takes_a_name() -> Result<()>
     let refused = |given: Value| async move {
         let (_, client) = client([])?;
         let socket = empty();
-        let error = imported(&client, &socket, &arguments(given)?).await.err();
+        let error = imported(&client, over(&socket), &arguments(given)?)
+            .await
+            .err();
         Ok::<_, crate::Error>(error.map(|error| error.to_string()))
     };
     assert_eq!(
-        refused(json!({ "file": file, "merge": true })).await?,
+        refused(json!({ "path": file, "merge": true })).await?,
         Some(
             "merge of `board import` must be left out unless into is given".to_owned()
         )
     );
     assert_eq!(
-        refused(json!({ "file": file, "into": BOARD, "name": "X" })).await?,
+        refused(json!({ "path": file, "into": BOARD, "name": "X" })).await?,
         Some("name of `board import` must be left out with into".to_owned())
     );
     Ok(())

@@ -10,9 +10,11 @@ use crate::{
             ExportArgs,
             ImportArgs,
             picture::{Place, stem_of},
+            show::{Loading, through_cache},
             tree_change::{Action, Plan, carry, node_of},
         },
         board_file::{self, ImportRequest},
+        board_load::CacheUse,
         change::{ChangeReport, PlannedRequest, gate},
         lookup,
         node,
@@ -29,14 +31,14 @@ use crate::{
         lookup::choice,
         node::{DeleteMode, NewNode, NodeBrief, NodeKind, NodeName},
     },
-    effect::{board_write::WriteMode, socket::SocketConnector},
+    effect::{board_write::WriteMode, settings::CacheSettings},
     error::{
         Error,
         Result,
         confirmation::{ChangeRisk, Unconfirmed},
         input::InputError,
     },
-    remote::{api, client::Client, socket::write::connector},
+    remote::{api, client::Client},
     storage::file::{read, write_new},
 };
 
@@ -82,15 +84,19 @@ pub struct ObjectList {
 /// requests.
 pub async fn export(
     client: &Client,
+    cache: &CacheSettings,
     downloads: Option<&Path>,
     args: &ExportArgs,
 ) -> Result<Exported> {
-    exported(client, connector(), downloads, args).await
+    through_cache(client, cache, CacheUse::Use, async |loading| {
+        exported(client, loading, downloads, args).await
+    })
+    .await
 }
 
 async fn exported(
     client: &Client,
-    connector: &dyn SocketConnector,
+    loading: Loading<'_>,
     downloads: Option<&Path>,
     args: &ExportArgs,
 ) -> Result<Exported> {
@@ -113,12 +119,12 @@ async fn exported(
             "given: there is no home directory to find ~/Downloads in",
         ))?,
     };
-    let (compression, extension) = if args.uncompressed {
+    let (compression, extension) = if args.no_compress {
         (Compression::Plain, "ydoc")
     } else {
         (Compression::Gzip, "ydoc.gz")
     };
-    let saved = board_file::export_with(client, connector, &id).await?;
+    let saved = board_file::export_with(client, loading, &id).await?;
     let document = compression::compressed(&saved.document, compression)?;
     let lines = args
         .object_list
@@ -196,22 +202,29 @@ pub type ImportReport = ChangeReport<Option<PlannedRequest>>;
 /// `name` where they do not apply, a name that is blank, a workspace, folder or
 /// board that is not found, a board that is read only or, without `merge`, not
 /// empty, and errors of the requests.
-pub async fn import(client: &Client, args: &ImportArgs) -> Result<Imported> {
-    imported(client, connector(), args).await
+pub async fn import(
+    client: &Client,
+    cache: &CacheSettings,
+    args: &ImportArgs,
+) -> Result<Imported> {
+    through_cache(client, cache, CacheUse::Use, async |loading| {
+        imported(client, loading, args).await
+    })
+    .await
 }
 
 async fn imported(
     client: &Client,
-    connector: &dyn SocketConnector,
+    loading: Loading<'_>,
     args: &ImportArgs,
 ) -> Result<Imported> {
     refuse_stray(args)?;
-    let file = read(&args.file)?;
+    let file = read(&args.path)?;
     let state = compression::uncompressed(&file)?;
     let saved = document::saved_objects(&state)?;
     match &args.into {
-        Some(into) => into_board(client, connector, into, &state, args).await,
-        None => new_board(client, connector, &state, saved, args).await,
+        Some(into) => into_board(client, loading, into, &state, args).await,
+        None => new_board(client, loading, &state, saved, args).await,
     }
 }
 
@@ -235,7 +248,7 @@ fn refuse_stray(args: &ImportArgs) -> Result<()> {
 
 async fn into_board(
     client: &Client,
-    connector: &dyn SocketConnector,
+    loading: Loading<'_>,
     into: &str,
     state: &[u8],
     args: &ImportArgs,
@@ -246,7 +259,7 @@ async fn into_board(
     let gated = gate(Some(unconfirmed), (args.dry_run, args.confirm), || None);
     let done = board_file::import_with(
         client,
-        connector,
+        loading,
         ImportRequest {
             board: &target.id,
             document: state,
@@ -279,14 +292,14 @@ async fn into_board(
 
 async fn new_board(
     client: &Client,
-    connector: &dyn SocketConnector,
+    loading: Loading<'_>,
     state: &[u8],
     saved: usize,
     args: &ImportArgs,
 ) -> Result<Imported> {
     let name: NodeName = match &args.name {
         Some(name) => name.parse()?,
-        None => named_after(Path::new(&args.file))?.parse()?,
+        None => named_after(Path::new(&args.path))?.parse()?,
     };
     let shown = name.to_string();
     let workspace = lookup::workspace(client, args.workspace.as_deref()).await?;
@@ -342,7 +355,7 @@ async fn new_board(
             let id = made.node.id.ok_or_else(|| node::missing_field("id"))?;
             let filled = board_file::import_with(
                 client,
-                connector,
+                loading,
                 ImportRequest {
                     board: &id,
                     document: state,

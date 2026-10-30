@@ -138,20 +138,20 @@ pub struct ShowArgs {
     about = "Save a board or a part of it as a template",
     help = "Save a board or a part of it as a template.\n\
             The objects are converted to the web app's format and a thumbnail drawn by holst is uploaded. It prints the new template with its id.",
-    example = "holst tpl create \"Roadmap\" --name \"Quarter plan\" --for workspace",
-    example = "holst tpl create \"Roadmap\" --name \"Q3 frame\" --frame \"Q3\""
+    example = "holst tpl create \"Roadmap\" \"Quarter plan\" --for workspace",
+    example = "holst tpl create \"Roadmap\" \"Q3 frame\" --frame \"Q3\""
 )]
 pub struct CreateArgs {
     #[argument(positional, help = "The board to take the objects from")]
     pub board: String,
+    #[argument(positional, help = "The template's name")]
+    pub name: String,
     #[argument(
         letter = 'w',
         value_name = "ws",
         help = "The workspace a new thing goes to: id or part of its name; needed when you have several"
     )]
     pub workspace: Option<String>,
-    #[argument(value_name = "name", help = "The template's name; required")]
-    pub name: String,
     #[argument(
         value_name = "text",
         help = "The template's description; none by default"
@@ -207,15 +207,15 @@ impl EnumArgument for Audience {}
     about = "Replace a template's body",
     help = "Replace a template's body.\n\
             The old body is lost, so it needs -y; without it only the dry run is shown.",
-    example = "holst tpl edit \"Retro\" --body @body.json -y",
-    example = "holst tpl edit \"Retro\" --body @body.json -n"
+    example = "holst tpl edit \"Retro\" @body.json -y",
+    example = "holst tpl edit \"Retro\" @body.json -n"
 )]
 pub struct EditArgs {
     #[argument(positional, help = "The template: id or name")]
     pub template: String,
     #[argument(
-        value_name = "body",
-        help = "The new body: a JSON string, @file to read a file, - for stdin; required"
+        positional,
+        help = "The new body: a JSON string, @file to read a file, - for stdin"
     )]
     pub body: TextOrFile,
     #[argument(

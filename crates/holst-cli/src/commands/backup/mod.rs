@@ -11,7 +11,7 @@ use holst_core::command::{
 use serde_json::{Map, Value};
 
 use crate::{
-    commands::refused,
+    commands,
     error::Result,
     output::{self, OutputFormat, OutputTarget},
     run::{RunSettings, run_signed_in},
@@ -36,13 +36,13 @@ pub(crate) async fn run(
         }
         BackupVerb::Get => get(table::parse(arguments)?, run, format).await,
         BackupVerb::Restore => {
-            let args = table::parse(arguments)?;
-            run_signed_in(run, async |client| {
-                let restored = backup::restore(client, &args).await?;
-                // The plan is shown first; the refusal is the exit code.
-                render::restored(format, &restored)?;
-                refused(restored.outcome.refusal())
-            })
+            commands::change(
+                arguments,
+                run,
+                format,
+                async |client, args| backup::restore(client, run.cache(), args).await,
+                render::restored,
+            )
             .await
         }
     }

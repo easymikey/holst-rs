@@ -365,7 +365,7 @@ fn read_items(args: &AddArgs) -> Result<Vec<Item>> {
         ("label", !args.label.is_empty()),
         ("url", args.url.is_some()),
         ("path", args.path.is_some()),
-        ("no_embed", args.no_embed),
+        ("no_preview", args.no_preview),
         ("ratio", args.ratio.is_some()),
         ("background", args.background.is_some()),
         ("hide_content", args.hide_content),
@@ -393,7 +393,7 @@ fn read_items(args: &AddArgs) -> Result<Vec<Item>> {
         label: args.label.clone(),
         url: args.url.clone(),
         path: args.path.clone(),
-        no_embed: args.no_embed.then_some(true),
+        no_preview: args.no_preview.then_some(true),
         ratio: args.ratio,
         background: args.background,
         hide_content: args.hide_content.then_some(true),
@@ -527,7 +527,7 @@ impl Reader {
         refuse("url", !linked && item.url.is_some())?;
         refuse("path", !uploaded && item.path.is_some())?;
         let rich = self.rich(kind, word)?;
-        refuse("no_embed", !linked && item.no_embed.is_some())?;
+        refuse("no_preview", !linked && item.no_preview.is_some())?;
         self.refuse_foreign(kind, AddKind::Frame, &item.frame_keys())?;
         let at = item.at.as_deref().map(str::parse).transpose()?;
         let size = item.size.as_deref().map(str::parse).transpose()?;
@@ -558,7 +558,7 @@ impl Reader {
             AddKind::Link => What::Link {
                 url: item.url.clone().ok_or_else(|| self.missing("url"))?,
                 at,
-                embed: item.no_embed != Some(true),
+                embed: item.no_preview != Some(true),
             },
             AddKind::Image => {
                 let (name, bytes) = self.read(item.path.as_deref())?;
@@ -1125,7 +1125,7 @@ mod tests {
                 refused(json!({"items": [{"kind": "arrow", "from": "x"}]}))?,
                 refused(json!({"items": [{"text": "a", "from": "x"}]}))?,
                 refused(
-                    json!({"items": [{"kind": "text", "text": "a", "size": "10x10"}]})
+                    json!({"items": [{"kind": "text", "text": "a", "size": "10,10"}]})
                 )?,
                 refused(json!({"items": [{"kind": "frame"}, {"kind": "sticker"}]}))?,
             ],
@@ -1168,7 +1168,7 @@ mod tests {
         let found = placed_on(
             &board,
             json!({"items": [
-                {"kind": "frame", "text": "New", "at": "2000,0", "size": "800x600"},
+                {"kind": "frame", "text": "New", "at": "2000,0", "size": "800,600"},
                 {"text": "x", "frame": "#1"},
                 {"text": "y", "frame": "#1"}]}),
         )?;
@@ -1268,7 +1268,7 @@ mod tests {
             {"text": "Start", "shape": "diamond"},
             {"kind": "sticker", "text": "Ask", "color": "blue3"},
             {"kind": "arrow", "from": "#1", "to": "#2"},
-            {"kind": "frame", "text": "Plan", "at": "1000,0", "size": "400x300"}]}))?;
+            {"kind": "frame", "text": "Plan", "at": "1000,0", "size": "400,300"}]}))?;
         let report = added(
             &client,
             Loading {
@@ -1405,7 +1405,7 @@ mod tests {
         assert_eq!(
             (
                 embedded(json!({"kind": "link", "url": url}))?,
-                embedded(json!({"kind": "link", "url": url, "no_embed": true}))?,
+                embedded(json!({"kind": "link", "url": url, "no_preview": true}))?,
             ),
             (Some((true, true)), Some((false, true)))
         );
@@ -1536,7 +1536,7 @@ mod tests {
                 shown(2000, 500, None)?,
                 shown(500, 3000, None)?,
                 shown(16, 16, None)?,
-                shown(2000, 500, Some("300x200"))?,
+                shown(2000, 500, Some("300,200"))?,
             ),
             (
                 Some((1000.0, 250.0)),

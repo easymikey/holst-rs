@@ -311,7 +311,7 @@ async fn png(svg: &str, images: &Images) -> Result<Vec<u8>> {
 fn png(_: &str, _: &Images) -> impl Future<Output = Result<Vec<u8>>> {
     std::future::ready(Err(not_value(
         SNAP,
-        "format",
+        "picture-format",
         "svg: this build draws no PNG",
     )))
 }
@@ -330,7 +330,7 @@ fn picture_format(
     match (asked, by_extension, extension) {
         (Some(asked), Some(found), _) if asked != found => Err(not_value(
             SNAP,
-            "format",
+            "picture-format",
             &format!("{}, as the file's name says", found.extension()),
         )),
         (None, None, Some(_)) => {
@@ -366,7 +366,7 @@ pub(super) async fn snapped(
     args: &SnapArgs,
 ) -> Result<Snapped> {
     let file = args.file.as_ref().map(|file| file.0.as_path());
-    let format = picture_format(args.format, file)?;
+    let format = picture_format(args.picture_format, file)?;
     let board = Drawing::of(
         client,
         loading,

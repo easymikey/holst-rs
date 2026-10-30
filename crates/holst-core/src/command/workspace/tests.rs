@@ -283,7 +283,7 @@ async fn log_with_a_workspace_id_query_looks_up_no_workspace() -> Result<()> {
     let (fake, client) = served(&[me(), json!({ "events": [] })])?;
     let args = LogArgs {
         workspace: None,
-        query: vec![QueryParameter {
+        param: vec![QueryParameter {
             name: "workspaceId".to_owned(),
             value: "w9".to_owned(),
         }],
@@ -298,7 +298,7 @@ async fn log_asks_for_the_workspace_given() -> Result<()> {
     let (fake, client) = served(&[me(), json!({ "events": [] })])?;
     let args = LogArgs {
         workspace: Some("Team".to_owned()),
-        query: vec![QueryParameter {
+        param: vec![QueryParameter {
             name: "limit".to_owned(),
             value: "5".to_owned(),
         }],
@@ -324,19 +324,19 @@ async fn log_asks_for_the_workspace_given() -> Result<()> {
 
 #[test]
 fn a_query_is_an_object_of_text_or_numbers() {
-    let wrong = |query: &Value| {
-        parse::<LogArgs>(arguments(&json!({ "query": query })))
+    let wrong = |param: &Value| {
+        parse::<LogArgs>(arguments(&json!({ "param": param })))
             .err()
             .map(|error| error.to_string())
     };
-    let words = "query of `workspace log` must be an object of text or number values";
+    let words = "param of `workspace log` must be an object of text or number values";
     assert_eq!(
         (
             wrong(&json!(["limit=50"])).as_deref(),
             wrong(&json!({ "limit": true })).as_deref(),
             parse::<LogArgs>(Map::new())
                 .ok()
-                .map(|args| args.query.len())
+                .map(|args| args.param.len())
         ),
         (Some(words), Some(words), Some(0))
     );

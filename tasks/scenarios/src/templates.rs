@@ -176,29 +176,22 @@ impl On<'_> {
             ),
         };
         let dry_run = self.mode == SendMode::DryRun;
-        let line: Vec<String> = [
-            "template",
-            "create",
-            board,
-            "--name",
-            name,
-            "--for",
-            audience.word(),
-        ]
-        .map(str::to_owned)
-        .into_iter()
-        .chain(
-            frame
+        let line: Vec<String> =
+            ["template", "create", board, name, "--for", audience.word()]
+                .map(str::to_owned)
                 .into_iter()
-                .flat_map(|frame| ["--frame".to_owned(), frame.to_owned()]),
-        )
-        .chain(
-            objects
-                .iter()
-                .flat_map(|id| ["--object".to_owned(), id.clone()]),
-        )
-        .chain(dry_run.then(|| "-n".to_owned()))
-        .collect();
+                .chain(
+                    frame
+                        .into_iter()
+                        .flat_map(|frame| ["--frame".to_owned(), frame.to_owned()]),
+                )
+                .chain(
+                    objects
+                        .iter()
+                        .flat_map(|id| ["--object".to_owned(), id.clone()]),
+                )
+                .chain(dry_run.then(|| "-n".to_owned()))
+                .collect();
         let words: Vec<&str> = line.iter().map(String::as_str).collect();
         let arguments = Value::Object(
             [
@@ -235,8 +228,7 @@ impl On<'_> {
         std::fs::write(&path, body)?;
         let from_file = format!("@{}", path.display());
         let words = Words {
-            positional: vec![("template", &id)],
-            options: vec![("body", &from_file)],
+            positional: vec![("template", &id), ("body", &from_file)],
             confirms: true,
             writes: true,
             ..Words::default()

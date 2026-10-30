@@ -773,7 +773,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::grant("holst b grant Roadmap anna --right owner")]
+    #[case::grant("holst b grant Roadmap anna owner")]
     #[case::link("holst b share Roadmap --link owner")]
     #[case::members("holst b share Roadmap --members owner")]
     fn an_unknown_right_is_a_usage_error_listing_the_scale(#[case] line: &str) {
@@ -792,7 +792,7 @@ mod tests {
     #[test]
     fn a_right_is_typed_as_a_word_and_sent_as_text() {
         assert_eq!(
-            parsed("holst b grant Roadmap anna --right editor"),
+            parsed("holst b grant Roadmap anna editor"),
             Some(json!({ "board": "Roadmap", "user": "anna", "right": "editor" }))
         );
         assert_eq!(
@@ -881,7 +881,7 @@ mod tests {
     #[test]
     fn a_template_command_takes_its_arguments_as_json() {
         assert_eq!(
-            parsed("holst tpl create Roadmap --name Q --for workspace --object a,b"),
+            parsed("holst tpl create Roadmap Q --for workspace --object a,b"),
             Some(json!({
                 "board": "Roadmap",
                 "name": "Q",
@@ -890,7 +890,7 @@ mod tests {
             }))
         );
         assert_eq!(
-            parsed("holst tpl edit t1 --body @body.json -y"),
+            parsed("holst tpl edit t1 @body.json -y"),
             Some(json!({ "template": "t1", "body": "@body.json", "confirm": true }))
         );
     }
@@ -948,7 +948,7 @@ mod tests {
     fn a_flag_is_only_on_the_kinds_it_is_for() {
         assert!(parsed("holst o add shape Plans --shape ellipse").is_some());
         assert_eq!(parsed("holst o add sticker Plans --shape ellipse"), None);
-        assert_eq!(parsed("holst o add arrow Plans --size 10x10"), None);
+        assert_eq!(parsed("holst o add arrow Plans --size 10,10"), None);
         assert_eq!(parsed("holst o add text Plans hi --from a1"), None);
     }
 
@@ -975,7 +975,7 @@ mod tests {
             parsed("holst o add file Plans a.pdf"),
             Some(json!({ "kind": "file", "board": "Plans", "path": "a.pdf" }))
         );
-        assert_eq!(parsed("holst o add file Plans a.pdf --size 10x10"), None);
+        assert_eq!(parsed("holst o add file Plans a.pdf --size 10,10"), None);
         assert_eq!(parsed("holst o add link Plans https://a.b -c red"), None);
     }
 
@@ -1003,10 +1003,10 @@ mod tests {
     #[test]
     fn repeated_pairs_come_back_as_one_object_with_numbers_kept() {
         assert_eq!(
-            parsed("holst ws log -q limit=50 -q after=007 -q kind=a=b"),
-            Some(json!({ "query": { "limit": 50, "after": "007", "kind": "a=b" } }))
+            parsed("holst ws log -p limit=50 -p after=007 -p kind=a=b"),
+            Some(json!({ "param": { "limit": 50, "after": "007", "kind": "a=b" } }))
         );
-        assert_eq!(parsed("holst ws log -q limit"), None);
+        assert_eq!(parsed("holst ws log -p limit"), None);
     }
 
     const fn argument(
@@ -1137,7 +1137,7 @@ mod tests {
 
         /// The letters that mean one flag everywhere.
         const LETTERS: [(char, &str); 3] =
-            [('o', "output"), ('w', "workspace"), ('q', "query")];
+            [('o', "output"), ('w', "workspace"), ('p', "param")];
 
         fn none(rule: &str, offenders: &[String]) {
             assert!(
@@ -1388,7 +1388,7 @@ mod tests {
                 })
             });
             let offenders: Vec<String> = wrong.chain(differing).collect();
-            none("-o, -w, -q", &offenders);
+            none("-o, -w, -p", &offenders);
         }
 
         /// The MCP name of a long flag: its dashes are underscores, and `--yes`

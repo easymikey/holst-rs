@@ -26,6 +26,15 @@ enum KeyReadEnd {
     },
 }
 
+/// Shows the cursor again when dropped, also while a panic unwinds.
+struct CursorHidden<'a, T: Terminal>(&'a Form<T>);
+
+impl<T: Terminal> Drop for CursorHidden<'_, T> {
+    fn drop(&mut self) {
+        self.0.write(draw::SHOW_CURSOR).unwrap_or_default();
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Question {
     pub label: &'static str,
@@ -101,6 +110,58 @@ impl<T: Terminal> Form<T> {
                 question: question.label,
                 reason: invalid,
             }),
+        }
+    }
+
+    /// Asks, runs `attempt` on the answer and asks again while `retryable`
+    /// gives a reason, `tries` times at most; a redirected input is asked
+    /// once.
+    ///
+    /// # Errors
+    ///
+    /// The terminal failed, or the person stopped the form. The attempt's own
+    /// error, the last one when the tries run out, is in the inner `Result`.
+    pub async fn ask_until<V, A, E>(
+        &self,
+        question: Question,
+        parse: &impl Fn(&str) -> std::result::Result<V, Reason>,
+        attempt: impl AsyncFn(&V) -> std::result::Result<A, E>,
+        retryable: impl Fn(&E) -> Option<Reason>,
+        tries: u8,
+    ) -> Result<std::result::Result<A, E>> {
+        let answer = self.ask_with(question, parse, QuestionFooter::Plain)?;
+        self.try_answer(question, answer, parse, &attempt, &retryable, tries)
+            .await
+    }
+
+    async fn try_answer<V, A, E>(
+        &self,
+        question: Question,
+        answer: V,
+        parse: &impl Fn(&str) -> std::result::Result<V, Reason>,
+        attempt: &impl AsyncFn(&V) -> std::result::Result<A, E>,
+        retryable: &impl Fn(&E) -> Option<Reason>,
+        tries: u8,
+    ) -> Result<std::result::Result<A, E>> {
+        let outcome = self.wait("Signing in", attempt(&answer)).await?;
+        let again =
+            outcome.as_ref().err().and_then(retryable).filter(|_| {
+                tries > 1 && self.terminal.kind() != TerminalKind::Redirected
+            });
+        match again {
+            None => Ok(outcome),
+            Some(reason) => {
+                let next = self.ask_again(question, parse, reason)?;
+                Box::pin(self.try_answer(
+                    question,
+                    next,
+                    parse,
+                    attempt,
+                    retryable,
+                    tries - 1,
+                ))
+                .await
+            }
         }
     }
 
@@ -185,10 +246,9 @@ impl<T: Terminal> Form<T> {
         let done = self
             .terminal
             .hidden(|_| {
-                self.write(draw::HIDE_CURSOR).and_then(|()| {
-                    let done = self.press_keys(label, prompt);
-                    self.write(draw::SHOW_CURSOR).and(done)
-                })
+                let _shown_again = CursorHidden(self);
+                self.write(draw::HIDE_CURSOR)
+                    .and_then(|()| self.press_keys(label, prompt))
             })
             .map_err(FormError::Terminal)?;
         self.terminal.discard_typeahead();
@@ -536,14 +596,17 @@ fn clean_answer(kind: QuestionKind, text: &str) -> Zeroizing<String> {
 mod tests {
     #![expect(clippy::panic_in_result_fn, reason = "assert is the point of a test")]
 
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
     use rstest::rstest;
 
     use crate::{
+        coloring::Coloring,
         error::{FormError, Reason, Result},
         fake::{Script, screen, without_escapes},
         form::{Form, Question},
         line::{Keystroke, QuestionKind},
-        prompt::Choice,
+        prompt::{Choice, Prompt, Step},
         terminal::TerminalKind,
     };
 
@@ -1006,5 +1069,87 @@ mod tests {
             (true, true, 1),
             "{result:?} {written:?}"
         );
+    }
+
+    struct Broken;
+
+    impl Prompt for Broken {
+        type Answer = ();
+
+        fn press(self, _: Keystroke) -> Step<Self, ()> {
+            Step::Submit(())
+        }
+
+        #[expect(clippy::panic, reason = "the prompt breaks on purpose")]
+        fn view(&self, _: Coloring, _: Option<usize>) -> Vec<String> {
+            panic!("the prompt broke")
+        }
+
+        fn summary(&self) -> String {
+            String::new()
+        }
+
+        fn listing(&self) -> Vec<String> {
+            Vec::new()
+        }
+
+        fn typed(&self, _: &str) -> Vec<Keystroke> {
+            Vec::new()
+        }
+    }
+
+    #[test]
+    fn the_cursor_is_back_when_a_key_prompt_panics() {
+        let form = Form::bare(Script::new(TerminalKind::Live, [], []));
+        let broke = catch_unwind(AssertUnwindSafe(|| form.run_keys("Which?", Broken)));
+        let written = form.terminal().written();
+        assert_eq!(
+            (broke.is_err(), written.matches("\x1b[?25h").count()),
+            (true, 1),
+            "{written:?}"
+        );
+    }
+
+    const CODE: Question = Question {
+        label: "Code",
+        kind: QuestionKind::LoginCode,
+    };
+
+    fn right_code(code: &str) -> Result<(), Reason> {
+        match code {
+            "123456" => Ok(()),
+            _ => Err(WRONG_CODE),
+        }
+    }
+
+    #[rstest]
+    #[case::second_try_takes(Script::new(TerminalKind::Live, chars("000000").chain([Keystroke::Enter]).chain(chars("123456")).chain([Keystroke::Enter]), []), 3, Ok(()), 1)]
+    #[case::tries_run_out(Script::new(TerminalKind::Live, chars("000000").chain([Keystroke::Enter]).chain(chars("111111")).chain([Keystroke::Enter]), []), 2, Err(WRONG_CODE), 1)]
+    #[case::piped_is_asked_once(Script::new(TerminalKind::Redirected, [], ["000000", "123456"]), 3, Err(WRONG_CODE), 0)]
+    #[tokio::test]
+    async fn ask_until_asks_again_only_while_it_can(
+        #[case] script: Script,
+        #[case] tries: u8,
+        #[case] expected: Result<(), Reason>,
+        #[case] warnings: usize,
+    ) -> Result<()> {
+        let form = form(script)?;
+        let done = form
+            .ask_until(
+                CODE,
+                &not_empty,
+                async |code: &String| right_code(code),
+                |_| Some(WRONG_CODE),
+                tries,
+            )
+            .await?;
+        let raw = form.terminal().written();
+        assert_eq!(done, expected);
+        assert_eq!(
+            raw.matches("▲ that code did not match").count(),
+            warnings,
+            "{raw:?}"
+        );
+        Ok(())
     }
 }

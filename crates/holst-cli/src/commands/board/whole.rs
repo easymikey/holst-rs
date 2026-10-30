@@ -19,7 +19,7 @@ use holst_core::{
 use serde_json::{Map, Value};
 
 use crate::{
-    commands::refused,
+    commands,
     error::{Error, Result},
     output::{self, DiagnosticLabel, OutputFormat, OutputTarget, view::size_text},
     run::{RunSettings, run_signed_in},
@@ -67,7 +67,7 @@ pub(super) async fn snap(
     let target = OutputTarget::of(output::stdout_kind());
     if stdout {
         // The bytes never go to a terminal: refused before any request.
-        refuse_terminal(target, args.format == Some(PictureFormat::Svg))?;
+        refuse_terminal(target, args.picture_format == Some(PictureFormat::Svg))?;
     }
     let downloads = run.downloads_dir().filter(|_| !stdout);
     run_signed_in(run, async |client| {
@@ -119,7 +119,8 @@ pub(super) async fn export(
     let args = table::parse(arguments)?;
     let downloads = run.downloads_dir();
     run_signed_in(run, async |client| {
-        let exported = file::export(client, downloads.as_deref(), &args).await?;
+        let exported =
+            file::export(client, run.cache(), downloads.as_deref(), &args).await?;
         match &exported.inline {
             Some(document) => {
                 target.put(document)?;
@@ -138,12 +139,13 @@ pub(super) async fn import(
     run: &RunSettings,
     format: OutputFormat,
 ) -> Result<()> {
-    let args = table::parse(arguments)?;
-    run_signed_in(run, async |client| {
-        let imported = file::import(client, &args).await?;
-        output::print(format, &imported_text(&imported), &imported)?;
-        refused(imported.outcome.refusal())
-    })
+    commands::change(
+        arguments,
+        run,
+        format,
+        async |client, args| file::import(client, run.cache(), args).await,
+        |format, imported| output::print(format, &imported_text(imported), imported),
+    )
     .await
 }
 

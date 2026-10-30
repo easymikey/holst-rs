@@ -159,7 +159,7 @@ fn an_embed_preview_makes_an_embedded_card() -> Result<()> {
 }
 
 #[test]
-fn no_embed_keeps_a_plain_card_for_an_embed_preview() -> Result<()> {
+fn no_preview_keeps_a_plain_card_for_an_embed_preview() -> Result<()> {
     let mut fields = written(link(Some(youtube()), false)?)?;
     common(&mut fields);
     assert_eq!(fields.get("displayType"), Some(&json!(1)));

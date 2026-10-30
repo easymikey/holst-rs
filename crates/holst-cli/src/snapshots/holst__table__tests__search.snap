@@ -18,6 +18,8 @@ FLAGS
   -k, --kind kind      Only this kind: board, folder or any for names; sticker, text, shape, frame, arrow, image… for board text
       --trash          Also look in the trash
   -l, --limit n        At most this many matches; 0 shows all; 20 by default
+      --refresh        Ignore the cached copy and download the board again
+      --offline        No network: read the text of the --board, an id or link, from the cache, or fail when there is none
 
 INHERITED FLAGS
   --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`

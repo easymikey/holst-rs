@@ -130,6 +130,23 @@ async fn wrong_code_is_asked_again() -> Result<()> {
 }
 
 #[tokio::test]
+async fn an_email_padded_with_spaces_is_trimmed() -> Result<()> {
+    let server = FakeServer::responding(&[
+        (OPTIONS, 200, code_account()),
+        (SEND, 200, json!({})),
+        (LOGIN, 200, json!({ "token": "csrf-1" })),
+    ]);
+    let strokes = chars("  you@example.com  ").chain(chars("123456"));
+    let form =
+        Form::intro(Script::new(TerminalKind::Live, strokes, []), "holst login")?;
+    let granted = log_in_by_email(&form, client(&server)?, None).await?;
+    assert_eq!(granted.status(), SessionStatus::Active);
+    let raw = form.terminal().written();
+    assert!(!raw.contains("enter an address"), "{raw:?}");
+    Ok(())
+}
+
+#[tokio::test]
 async fn piped_wrong_code_is_an_error() -> Result<()> {
     let server = FakeServer::responding(&[
         (OPTIONS, 200, code_account()),

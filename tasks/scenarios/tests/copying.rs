@@ -34,7 +34,7 @@ async fn a_board_that_withholds_copying_is_not_copied_from(
     withhold_copying(&holst, "Plans", "editor", "viewer");
     let call = ObjectCall::copy()
         .with("object", holst.fixture_object("Plans", 1)?)
-        .with("to", "Notes");
+        .with("into", "Notes");
     let observation = holst.on(surface).object("Plans", call).await?;
     then(&observation)
         .failed_saying("held to editor")
@@ -53,7 +53,7 @@ async fn a_board_copied_from_with_the_right_held_copies(
     withhold_copying(&holst, "Plans", "editor", "editor");
     let call = ObjectCall::copy()
         .with("object", holst.fixture_object("Plans", 1)?)
-        .with("to", "Notes");
+        .with("into", "Notes");
     holst.on(surface).object("Plans", call).await?;
     then(&holst.on(surface).objects("Notes").await?).lists_this_many_objects(1);
     Ok(())

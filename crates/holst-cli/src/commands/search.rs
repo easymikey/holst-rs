@@ -2,13 +2,10 @@
 
 use holst_core::{
     command::{
-        board::show::account_cache,
-        board_load::CacheUse,
         search::{self, Found, NameMatch, SearchHit, TextMatch},
         table,
     },
-    domain::{node::NodeKind, text::printable},
-    storage::cache::Cache,
+    domain::{id::short_id, node::NodeKind, text::printable},
 };
 use serde_json::{Map, Value};
 
@@ -25,10 +22,7 @@ pub(crate) async fn run(
 ) -> Result<()> {
     let args = table::parse(arguments)?;
     run_signed_in(run, async |client| {
-        let cache = account_cache(client, run.cache(), CacheUse::Use)
-            .await?
-            .map(Cache::into_shared);
-        let found = search::search(client, &args, cache).await?;
+        let found = search::search(client, run.cache(), &args).await?;
         match format {
             OutputFormat::Text => {
                 output::line(text(&found, output::stdout_coloring()))?;
@@ -70,7 +64,7 @@ fn name_line(found: &NameMatch) -> String {
         NodeKind::Folder => "/",
         NodeKind::Board | NodeKind::Other => "",
     };
-    let trash = if found.in_trash { " (trash)" } else { "" };
+    let trash = if found.in_trash { " [in trash]" } else { "" };
     let link = found
         .link
         .as_deref()
@@ -89,12 +83,11 @@ fn text_line(found: &TextMatch, coloring: Coloring) -> String {
     let part = |start: usize, end: usize| -> String {
         chars.get(start..end).unwrap_or_default().iter().collect()
     };
-    let short = found.object.get(..8).unwrap_or(&found.object);
     format!(
         "{} / {} @{} : {}{}{}  {}",
         printable(&found.board_name),
         printable(&found.kind),
-        printable(short),
+        printable(short_id(&found.object)),
         printable(&part(0, from)),
         coloring.yellow(&printable(&part(from, to))),
         printable(&part(to, chars.len())),
@@ -205,7 +198,7 @@ mod tests {
         assert_eq!(
             [name_line(&board), name_line(&folder)],
             [
-                "board  Road map · Team/Q3 (trash)  https://x/b1",
+                "board  Road map · Team/Q3 [in trash]  https://x/b1",
                 "folder Road map/ · Team"
             ]
         );

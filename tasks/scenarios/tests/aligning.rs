@@ -37,7 +37,7 @@ async fn left_lines_the_objects_up_against_the_leftmost(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = scattered().start().await?;
-    let call = call_of(&holst, &[1, 2, 3])?.with("to", "left");
+    let call = call_of(&holst, &[1, 2, 3])?.with("side", "left");
     holst.on(surface).object("Plans", call).await?;
     let read = holst.on(surface).objects("Plans").await?;
     then(&read).lists_object_at("One", (100, 100));
@@ -52,7 +52,7 @@ async fn middle_centres_the_objects_between_top_and_bottom(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = scattered().start().await?;
-    let call = call_of(&holst, &[1, 2, 3])?.with("to", "middle");
+    let call = call_of(&holst, &[1, 2, 3])?.with("side", "middle");
     holst.on(surface).object("Plans", call).await?;
     let read = holst.on(surface).objects("Plans").await?;
     // the box covers 100..592 down, so each 192 tall sticker starts at 250
@@ -89,7 +89,7 @@ async fn a_locked_object_refuses_the_call_and_nothing_is_written(
     ])
     .start()
     .await?;
-    let call = call_of(&holst, &[2, 3])?.with("to", "left");
+    let call = call_of(&holst, &[2, 3])?.with("side", "left");
     let observation = holst.on(surface).object("Plans", call).await?;
     then(&observation)
         .failed_saying("is locked on the board")
@@ -104,7 +104,7 @@ async fn a_dry_run_align_changes_nothing(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = scattered().start().await?;
-    let call = call_of(&holst, &[1, 2, 3])?.with("to", "left");
+    let call = call_of(&holst, &[1, 2, 3])?.with("side", "left");
     holst
         .on(surface)
         .dry_running()
@@ -128,11 +128,11 @@ async fn a_side_or_a_spread_is_needed_but_not_both(
         .failed_saying("unless distribute is given")
         .signalled_as(surface.usage());
     let both = call_of(&holst, &[1, 2, 3])?
-        .with("to", "left")
+        .with("side", "left")
         .with("distribute", "vertical");
     let observation = holst.on(surface).object("Plans", both).await?;
     then(&observation)
-        .failed_saying("left out with to")
+        .failed_saying("left out with side")
         .signalled_as(surface.usage());
     board_of(&holst).got_no_update();
     Ok(())

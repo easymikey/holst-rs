@@ -7,8 +7,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     command::{
-        board::{file::ImportReport, picture::Delivery},
+        board::{
+            file::ImportReport,
+            picture::Delivery,
+            show::{Loading, through_cache},
+        },
         board_file,
+        board_load::CacheUse,
+        board_write::{Guard, refuse_withheld},
         change::{ChangeReport, gate},
         lookup,
         table::{Command, CommandArgs, Confirmation, NewFile},
@@ -22,17 +28,18 @@ use crate::{
         change::receipt::UpdateReceipt,
         text::joined,
     },
-    effect::{board_write::WriteMode, socket::SocketConnector},
+    effect::{board_write::WriteMode, settings::CacheSettings},
     error::{
         Error,
         Result,
+        board_change::BoardChangeError,
         board_socket::BoardSocketError,
         confirmation::{ChangeRisk, Unconfirmed},
         http::{HTML_BODY, HttpError},
         input::InputError,
         lookup::{LookupError, LookupKind, LookupMiss},
     },
-    remote::{api, client::Client, socket::write::connector},
+    remote::{api, client::Client},
     storage::file::{create_dir_all, write_new, write_numbered},
 };
 
@@ -89,7 +96,7 @@ pub struct LsArgs {
     help = "Download a backup by its key from `backup ls`; a gzip board file.\n\
             The file goes to ~/Downloads unless a file is given; `holst b import` reads it.",
     example = "holst backup get 1761552000",
-    example = "holst backup get 1761552000 roadmap.ydoc --uncompressed"
+    example = "holst backup get 1761552000 roadmap.ydoc --no-compress"
 )]
 pub struct GetArgs {
     #[argument(positional, help = "The backup's key from `holst backup ls`")]
@@ -106,7 +113,7 @@ pub struct GetArgs {
     )]
     pub provider: Option<String>,
     #[argument(help = "Save without gzip, which adds .gz to the file name")]
-    pub uncompressed: bool,
+    pub no_compress: bool,
 }
 
 #[derive(Debug, Deserialize, CommandArgs)]
@@ -175,7 +182,7 @@ impl fmt::Display for Fetched {
     }
 }
 
-/// Downloads a backup and packs it: gzip unless `uncompressed`. A given file
+/// Downloads a backup and packs it: gzip unless `no_compress`. A given file
 /// is named as `compression::file_name` says; with none, the file is
 /// `backup-<key>.ydoc[.gz]` in `downloads`, and with no `downloads` either the
 /// bytes come back inline. The file is new and never replaces one.
@@ -188,7 +195,7 @@ pub async fn get(
     downloads: Option<&Path>,
     args: &GetArgs,
 ) -> Result<Fetched> {
-    let (packing, extension) = if args.uncompressed {
+    let (packing, extension) = if args.no_compress {
         (Compression::Plain, "ydoc")
     } else {
         (Compression::Gzip, "ydoc.gz")
@@ -294,6 +301,11 @@ impl Restored {
     }
 }
 
+/// A restore removes what the backup lacks: it needs `who_can_delete_content`.
+const REMOVING: Guard = ("who_can_delete_content", |needs, holds| {
+    BoardChangeError::DeleteWithheld { needs, holds }
+});
+
 /// Returns a board to one of its backups: every part of the document, the
 /// objects with their texts, the stores, the note and the comments, becomes
 /// what the backup holds, and what the backup lacks is removed. It needs the
@@ -306,17 +318,25 @@ impl Restored {
 /// backup of another provider than `hud` (stored in Yjs version 1, which this
 /// version does not write; nothing is downloaded), and errors of the
 /// requests.
-pub async fn restore(client: &Client, args: &RestoreArgs) -> Result<Restored> {
-    restored(client, connector(), args).await
+pub async fn restore(
+    client: &Client,
+    cache: &CacheSettings,
+    args: &RestoreArgs,
+) -> Result<Restored> {
+    through_cache(client, cache, CacheUse::Use, async |loading| {
+        restored(client, loading, args).await
+    })
+    .await
 }
 
 async fn restored(
     client: &Client,
-    socket: &dyn SocketConnector,
+    loading: Loading<'_>,
     args: &RestoreArgs,
 ) -> Result<Restored> {
     let target =
         lookup::exact_board(client, &args.board, args.workspace.as_deref()).await?;
+    refuse_withheld(client, &target.id, REMOVING).await?;
     let listed = api::backup::list(client, &target.id).await?;
     let backup = listed
         .as_slice()
@@ -336,7 +356,7 @@ async fn restored(
     let gated = gate(Some(unconfirmed), (args.dry_run, args.confirm), || None);
     let done = board_file::replace_with(
         client,
-        socket,
+        loading,
         &target.id,
         &state,
         gated
@@ -483,14 +503,20 @@ mod tests {
         Result,
         command::{
             backup::{GetArgs, RestoreArgs, get, restored},
-            fixture::{arguments, client, json_reply},
+            board::show::Loading,
+            board_load::{CacheUse, tests::cached_copy},
+            fixture::{arguments, client, json_reply, over},
         },
         domain::{
             board::EditRight,
             board_file::{compression, document},
         },
-        effect::http::HttpResponse,
-        error::{board_socket::BoardSocketError, input::InputError},
+        effect::{cache::CachePort, clock::FixedClock, http::HttpResponse},
+        error::{
+            board_change::BoardChangeError,
+            board_socket::BoardSocketError,
+            input::InputError,
+        },
         protocol::hud::{DocumentResponse, OutgoingUpdate, UpdatePayload},
         remote::{
             client::fake::reply,
@@ -505,6 +531,7 @@ mod tests {
                 update,
             },
         },
+        storage::cache::memory::MemoryCache,
     };
 
     const WORKSPACE: &str = "00000001-0000-4000-8000-000000000001";
@@ -561,10 +588,16 @@ mod tests {
     /// The provider a dry-run restore names in its download, when the list
     /// puts the backup in `listed`.
     async fn downloaded_from(listed: &str) -> Result<Option<String>> {
-        let (fake, client) =
-            client([channel(), account(), listing_by(listed), body()?, channel()])?;
+        let (fake, client) = client([
+            channel(),
+            account(),
+            channel(),
+            listing_by(listed),
+            body()?,
+            channel(),
+        ])?;
         let args = json!({ "board": BOARD, "key": "k1", "dry_run": true });
-        restored(&client, &empty(), &arguments::<RestoreArgs>(args)?).await?;
+        restored(&client, over(&empty()), &arguments::<RestoreArgs>(args)?).await?;
         Ok(fake
             .requests()
             .iter()
@@ -610,9 +643,9 @@ mod tests {
     async fn refused(listed: &str) -> Result<()> {
         let socket = empty();
         let (fake, client) =
-            client([channel(), account(), listing_by(listed), body()?])?;
+            client([channel(), account(), channel(), listing_by(listed), body()?])?;
         let args = json!({ "board": BOARD, "key": "k1", "confirm": true });
-        let error = restored(&client, &socket, &arguments::<RestoreArgs>(args)?)
+        let error = restored(&client, over(&socket), &arguments::<RestoreArgs>(args)?)
             .await
             .err();
         assert!(matches!(
@@ -703,10 +736,16 @@ mod tests {
             update(0, UpdatePayload::Inline(document::encoded(&live))),
         ])]);
         let server = document::decoded(&document::encoded(&live))?;
-        let (_, client) =
-            client([channel(), account(), listing(), packed(&saved)?, channel()])?;
+        let (_, client) = client([
+            channel(),
+            account(),
+            channel(),
+            listing(),
+            packed(&saved)?,
+            channel(),
+        ])?;
         let args = json!({ "board": BOARD, "key": "k1", "confirm": true });
-        restored(&client, &socket, &arguments::<RestoreArgs>(args)?).await?;
+        restored(&client, over(&socket), &arguments::<RestoreArgs>(args)?).await?;
         server
             .transact_mut()
             .apply_update(Update::decode_v2(&update_sent(&socket))?)?;
@@ -714,6 +753,66 @@ mod tests {
             served(&server),
             ("backup".to_owned(), vec!["s1".to_owned()], 0)
         );
+        Ok(())
+    }
+
+    /// The board's reply when it keeps removal to co-owners and the caller
+    /// holds the permit of an editor.
+    fn withholding() -> HttpResponse {
+        json_reply(&json!({
+            "id": BOARD, "name": "Plan", "workspace_id": WORKSPACE,
+            "schema_version": 2, "server_provider_type": "hud",
+            "permits": ["read", "write"], "who_can_delete_content": "co_owner",
+        }))
+    }
+
+    #[tokio::test]
+    async fn a_restore_onto_a_board_that_withholds_removal_is_refused() -> Result<()> {
+        let socket = empty();
+        let (fake, client) = client([channel(), account(), withholding()])?;
+        let args = json!({ "board": BOARD, "key": "k1", "confirm": true });
+        let error = restored(&client, over(&socket), &arguments::<RestoreArgs>(args)?)
+            .await
+            .err();
+        assert!(
+            matches!(
+                error,
+                Some(Error::BoardChange(BoardChangeError::DeleteWithheld { .. }))
+            ),
+            "{error:?}"
+        );
+        assert_eq!(updates(&socket), 0);
+        assert!(
+            fake.requests()
+                .iter()
+                .all(|sent| !sent.url.path().ends_with("backup/download"))
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn an_accepted_restore_drops_the_cached_copy() -> Result<()> {
+        let memory = MemoryCache::new(1 << 20, FixedClock { unix_millis: 1 });
+        cached_copy(&memory, &sticker_by(4, "old").0)?;
+        let saved = document::encoded(&board_saying("backup"));
+        let socket = empty();
+        let (_, client) = client([
+            channel(),
+            account(),
+            channel(),
+            listing(),
+            packed(&saved)?,
+            channel(),
+        ])?;
+        let args = json!({ "board": BOARD, "key": "k1", "confirm": true });
+        let loading = Loading {
+            connector: &socket,
+            cache: Some(&memory),
+            cache_use: CacheUse::Use,
+        };
+        restored(&client, loading, &arguments::<RestoreArgs>(args)?).await?;
+        assert_eq!(updates(&socket), 1);
+        assert_eq!(memory.load_document(BOARD), None);
         Ok(())
     }
 }

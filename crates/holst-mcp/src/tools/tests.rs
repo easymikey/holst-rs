@@ -185,7 +185,7 @@ async fn api_get_of_the_token_list_hides_the_values() {
         serde_json::json!({
             "method": "GET",
             "path": "/gapi/personal_access_token/list",
-            "query": { "statuses": "active" },
+            "param": { "statuses": "active" },
         }),
     )
     .await;
@@ -206,7 +206,7 @@ async fn api_expands_aliases_in_path_query_and_body() {
         serde_json::json!({
             "method": "GET",
             "path": "/gapi/channel_user/users",
-            "query": { "channel_id": board },
+            "param": { "channel_id": board },
         }),
     )
     .await;

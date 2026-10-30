@@ -2,7 +2,7 @@
 
 use holst_core::{
     command::{
-        api::{self, ApiReply, Method},
+        api::{self, ApiArgs, ApiReply, Method},
         change::{ChangeReport, PlannedRequest},
         table,
     },
@@ -12,10 +12,10 @@ use holst_core::{
 use serde_json::{Map, Value};
 
 use crate::{
-    commands::refused,
+    commands,
     error::Result,
     output::{self, OutputFormat, ReplyKind},
-    run::{RunSettings, run_signed_in},
+    run::RunSettings,
 };
 
 /// Runs `api` with the arguments the command line gave it. A request held for
@@ -25,27 +25,28 @@ pub(crate) async fn run(
     run: &RunSettings,
     format: OutputFormat,
 ) -> Result<()> {
-    let args: api::ApiArgs = table::parse(arguments)?;
-    let kind = match args.method {
+    let kind = match table::parse::<ApiArgs>(arguments.clone())?.method {
         Method::Get => ReplyKind::Read,
         Method::Post | Method::Patch | Method::Delete => ReplyKind::Change,
     };
-    run_signed_in(run, async |client| {
-        let ApiReply { report, reply } = api::request(client, &args).await?;
-        match &report {
-            ChangeReport::Sent => {
-                output::reply(format, kind, &reply.unwrap_or(Value::Null))?;
-            }
-            ChangeReport::DryRun { request } => {
-                shown(format, &report, Some(DRY_RUN), request)?;
-            }
-            ChangeReport::Held { request, .. } => {
-                shown(format, &report, None, request)?;
-            }
-        }
-        refused(report.refusal())
+    commands::change(arguments, run, format, api::request, |format, done| {
+        render(format, kind, done)
     })
     .await
+}
+
+fn render(format: OutputFormat, kind: ReplyKind, done: &ApiReply) -> Result<()> {
+    match &done.report {
+        ChangeReport::Sent => {
+            output::reply(format, kind, done.reply.as_ref().unwrap_or(&Value::Null))
+        }
+        ChangeReport::DryRun { request } => {
+            shown(format, &done.report, Some(DRY_RUN), request)
+        }
+        ChangeReport::Held { request, .. } => {
+            shown(format, &done.report, None, request)
+        }
+    }
 }
 
 /// Prints the request that was not sent.

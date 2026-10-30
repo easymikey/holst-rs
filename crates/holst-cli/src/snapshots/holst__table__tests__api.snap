@@ -1,6 +1,6 @@
 ---
 source: crates/holst-cli/src/table.rs
-expression: help_of(line)
+expression: "help_of(&format!(\"{line} -h\"))"
 ---
 Send a request the Holst API catalogue knows, for an endpoint no command covers. Only known calls are sent, never money or login calls.
 GET is sent at once. Any other method may change what cannot be undone, so it needs -y; without it only the dry run is shown.
@@ -13,7 +13,7 @@ ARGUMENTS
   path     The path from the root, for example /gapi/current_user
 
 FLAGS
-  -q, --query key=value   A query parameter, repeat for several
+  -p, --param key=value   A query parameter, repeat for several
       --body body         The request body: a JSON string, @file to read a file, - for stdin
   -y, --yes               Confirm a change other than GET; a terminal asks instead; without one only the dry run is shown (exit code 77)
   -n, --dry-run           Show the request; send nothing

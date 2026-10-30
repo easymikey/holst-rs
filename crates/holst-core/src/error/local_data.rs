@@ -47,7 +47,7 @@ pub enum LocalDataError {
     UnpackTooLarge { limit_mib: u64 },
 
     #[error(
-        "{} ends in .gz, but --uncompressed writes plain bytes: drop .gz or the flag",
+        "{} ends in .gz, but --no-compress writes plain bytes: drop .gz or the flag",
         .path.display()
     )]
     PlainGz { path: PathBuf },
@@ -139,8 +139,8 @@ impl LocalDataError {
     pub(super) fn mcp_words(&self) -> Option<String> {
         match self {
             LocalDataError::PlainGz { path } => Some(format!(
-                "{} ends in .gz, but uncompressed: true writes plain bytes: drop .gz or \
-                 uncompressed",
+                "{} ends in .gz, but no_compress: true writes plain bytes: drop .gz or \
+                 no_compress",
                 path.display()
             )),
             #[cfg(not(target_os = "macos"))]

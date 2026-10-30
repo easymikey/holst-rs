@@ -75,12 +75,12 @@ pub struct ApiArgs {
     )]
     pub path: String,
     #[argument(
-        letter = 'q',
+        letter = 'p',
         value_name = "key=value",
         help = "A query parameter, repeat for several"
     )]
     #[serde(default, deserialize_with = "query_object")]
-    pub query: Vec<QueryParameter>,
+    pub param: Vec<QueryParameter>,
     #[argument(
         value_name = "body",
         help = "The request body: a JSON string, @file to read a file, - for stdin"
@@ -157,7 +157,7 @@ fn is_login(path: &str) -> bool {
 fn catalogued(args: &ApiArgs, path: &ApiPath) -> Result<Vec<&'static Endpoint>> {
     let method = args.method.http();
     let (route, inline) = path.as_str().split_once('?').unwrap_or((path.as_str(), ""));
-    let items = args.query.iter().map(|pair| pair.name.as_str());
+    let items = args.param.iter().map(|pair| pair.name.as_str());
     let wire = format!("{route}?{inline}&{}", items.clone().join("&"));
     let found = find(method, &wire).map_err(refused)?;
     check_body(&found, args.body.is_some()).map_err(refused)?;
@@ -252,7 +252,7 @@ pub async fn request(client: &Client, args: &ApiArgs) -> Result<ApiReply> {
     let request = ApiRequest {
         method,
         path: path.as_str().to_owned(),
-        query: args.query.clone(),
+        query: args.param.clone(),
         body,
         authorization: Authorization::Session,
     };

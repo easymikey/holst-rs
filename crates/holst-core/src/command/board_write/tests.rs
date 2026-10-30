@@ -19,6 +19,7 @@ use crate::{
             receipt::{BoardStatus, Delivery},
             value::BoardChange,
         },
+        id::short_id,
         id_source::SequentialIds,
     },
     effect::{
@@ -235,12 +236,13 @@ async fn a_dry_run_sends_nothing_but_the_request() -> Result<()> {
         .first()
         .map(|t| t.id.clone())
         .unwrap_or_default();
+    let short = short_id(&id);
     let bytes = written.change.update.len();
     let outcome = written.report(BOARD, |object| format!("L/{object}"));
     assert_eq!(
         outcome.to_string(),
         format!(
-            "would create sticker {id}  L/{id}\ndry run, nothing sent: update of {bytes} \
+            "would create sticker @{short}  L/{id}\ndry run, nothing sent: update of {bytes} \
                  bytes built"
         )
     );

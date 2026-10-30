@@ -144,7 +144,7 @@ fn a_thread_line_shows_number_state_start_replies_and_read_mark() {
         list.lines(),
         [
             "@1  weVza  open  Why?  (no replies, unread)".to_owned(),
-            "@2  Zz9ab  open  area 10,50.5 20x30  Why?  (no replies, unread)"
+            "@2  Zz9ab  open  area 10,50.5 20×30  Why?  (no replies, unread)"
                 .to_owned(),
             format!(
                 "@3  B9ckv  resolved  {}…  (1 reply, read 2026-10-27T09:30:00Z)",

@@ -8,6 +8,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     command::{
+        board::{
+            Caching,
+            show::{Loading, cache_use, through_cache},
+        },
+        board_load::CacheUse,
         board_text,
         lookup::{self, IndexedNodes},
         table::{EnumArgument, not_value},
@@ -37,7 +42,7 @@ use crate::{
             query::{NodeFilter, WorkspaceNameHit, board_names, name_hits},
         },
     },
-    effect::cache::CachePort,
+    effect::settings::CacheSettings,
     error::{Error, Result},
     remote::client::Client,
 };
@@ -117,6 +122,16 @@ pub struct SearchArgs {
         help = "At most this many matches; 0 shows all; 20 by default"
     )]
     pub limit: Option<u32>,
+    #[argument(
+        help = "Ignore the cached copy and download the board again",
+        surfaces = [Cli]
+    )]
+    pub refresh: bool,
+    #[argument(
+        help = "No network: read the text of the --board, an id or link, from the cache, or fail when there is none",
+        surfaces = [Cli]
+    )]
+    pub offline: bool,
 }
 
 /// The matches of a search, best first.
@@ -191,7 +206,8 @@ pub struct TextMatch {
 }
 
 /// A board's text index, read by whoever reads boards for the search.
-pub type BoardRead = Pin<Box<dyn Future<Output = Result<Arc<BoardIndex>>> + Send>>;
+pub type BoardRead<'a> =
+    Pin<Box<dyn Future<Output = Result<Arc<BoardIndex>>> + Send + 'a>>;
 
 /// Where a search reads from: requests, or what a server keeps.
 pub trait Reads: Sync {
@@ -210,20 +226,24 @@ pub trait Reads: Sync {
     ) -> impl Future<Output = Result<TreeReads<Self::Tree>>> + Send;
 
     /// The text index of one board.
-    fn board(&self, board: String) -> BoardRead;
+    fn board(&self, board: String) -> BoardRead<'_>;
 }
 
-/// Every read is a request, the boards through `cache` when there is one.
+/// Every read is a request, the boards through the cache of `loading`.
 struct Requests<'a> {
     client: &'a Client,
-    cache: Option<Arc<dyn CachePort>>,
+    loading: Loading<'a>,
 }
 
 impl Reads for Requests<'_> {
     type Tree = NameIndex;
 
     async fn workspaces(&self) -> Result<Vec<Workspace>> {
-        lookup::workspaces(self.client).await
+        match self.loading.cache_use {
+            // Offline there are no workspaces to read the trees of.
+            CacheUse::Offline => Ok(Vec::new()),
+            CacheUse::Use | CacheUse::Refresh => lookup::workspaces(self.client).await,
+        }
     }
 
     async fn trees(
@@ -234,10 +254,9 @@ impl Reads for Requests<'_> {
         choice::partition_reads(lookup::indexes(self.client, workspaces, nodes).await)
     }
 
-    fn board(&self, board: String) -> BoardRead {
-        let (client, cache) = (self.client.clone(), self.cache.clone());
+    fn board(&self, board: String) -> BoardRead<'_> {
         Box::pin(async move {
-            board_text::load_index(&client, &board, cache.as_deref())
+            board_text::load_index(self.client, self.loading, &board)
                 .await
                 .map(Arc::new)
         })
@@ -245,7 +264,8 @@ impl Reads for Requests<'_> {
 }
 
 /// Searches the names, the text on the boards, or both, and merges the matches
-/// best first. Boards are read through `cache` when there is one.
+/// best first. Boards are read through the account's cache as `cache` and the
+/// `--refresh` and `--offline` of `args` say.
 ///
 /// # Errors
 /// An argument that does not fit the mode, a workspace or board that is not
@@ -253,10 +273,40 @@ impl Reads for Requests<'_> {
 /// that cannot be read is reported in the result.
 pub async fn search(
     client: &Client,
+    cache: &CacheSettings,
     args: &SearchArgs,
-    cache: Option<Arc<dyn CachePort>>,
 ) -> Result<Found> {
-    search_with(client, args, &Requests { client, cache }).await
+    let caching = Caching {
+        refresh: args.refresh,
+        offline: args.offline,
+    };
+    let cache_use = cache_use(&caching, COMMAND)?;
+    through_cache(client, cache, cache_use, async |loading| {
+        searched(client, loading, args).await
+    })
+    .await
+}
+
+async fn searched(
+    client: &Client,
+    loading: Loading<'_>,
+    args: &SearchArgs,
+) -> Result<Found> {
+    offline_board(loading.cache_use, args)?;
+    search_with(client, args, &Requests { client, loading }).await
+}
+
+/// Offline only the text of a board named by id or link can be searched: the
+/// names and the boards of a workspace come from requests.
+fn offline_board(cache_use: CacheUse, args: &SearchArgs) -> Result<()> {
+    match (cache_use, args.board.as_deref().and_then(BoardId::find_in)) {
+        (CacheUse::Offline, None) => Err(not_value(
+            COMMAND,
+            "offline",
+            "left out, or used with --board and a board id or link",
+        )),
+        (CacheUse::Offline | CacheUse::Use | CacheUse::Refresh, _) => Ok(()),
+    }
 }
 
 /// [`search`] with the reads in `reads`; `client` only makes the links.
@@ -520,7 +570,7 @@ async fn text_found<I, Load, Loading>(
 where
     I: Borrow<NameIndex>,
     Load: Fn(String) -> Loading,
-    Loading: Future<Output = Result<Arc<BoardIndex>>> + Send + 'static,
+    Loading: Future<Output = Result<Arc<BoardIndex>>>,
 {
     let known = board_names(trees);
     let boards = match text.board {

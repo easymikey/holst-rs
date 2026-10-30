@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
-use itertools::Itertools as _;
-use tokio::{sync::Semaphore, task::JoinSet};
+use futures_util::{StreamExt as _, stream};
 
 use crate::{
-    command::{board_load, board_load::CacheUse},
+    command::{
+        board::show::Loading,
+        board_load::{self, RemoteBoard},
+    },
     domain::board_text::{
         BoardLoads,
         BoardTextHits,
@@ -13,31 +15,31 @@ use crate::{
         index::BoardIndex,
         split_loaded,
     },
-    effect::cache::CachePort,
     error::Result,
-    remote::{client::Client, socket::stream::TungsteniteConnector},
+    remote::client::Client,
 };
 
 pub const LOAD_CONCURRENCY: usize = 6;
 
-/// The index of one board through `cache`: a cached index the server announces
-/// nothing beyond, else read over the socket; nothing is written to the board.
+/// The index of one board through the cache of `loading`: a cached index the
+/// server announces nothing beyond, else read over its socket; nothing is
+/// written to the board.
 ///
 /// # Errors
 /// As [`crate::remote::socket::load::load`].
-pub async fn load_index(
+pub(in crate::command) async fn load_index(
     client: &Client,
+    loading: Loading<'_>,
     board: &str,
-    cache: Option<&dyn CachePort>,
 ) -> Result<BoardIndex> {
     let (_, index) = board_load::index(
-        board_load::RemoteBoard {
+        RemoteBoard {
             client,
-            connector: &TungsteniteConnector,
+            connector: loading.connector,
             board,
         },
-        cache,
-        CacheUse::Use,
+        loading.cache,
+        loading.cache_use,
     )
     .await?;
     Ok(index)
@@ -55,7 +57,7 @@ pub async fn search_text<Load, Loading>(
 ) -> Result<BoardTextHits>
 where
     Load: Fn(String) -> Loading,
-    Loading: Future<Output = Result<Arc<BoardIndex>>> + Send + 'static,
+    Loading: Future<Output = Result<Arc<BoardIndex>>>,
 {
     let ids = boards.iter().map(|(id, _)| id.clone()).collect();
     let loaded = load_all_with(ids, LOAD_CONCURRENCY, load).await;
@@ -80,30 +82,16 @@ pub async fn load_all_with<Key, Load, Loading, Read>(
     load: Load,
 ) -> Vec<(Key, Read)>
 where
-    Key: Clone + Send + 'static,
+    Key: Clone,
     Load: Fn(Key) -> Loading,
-    Loading: Future<Output = Read> + Send + 'static,
-    Read: Send + 'static,
+    Loading: Future<Output = Read>,
 {
-    let limit = Arc::new(Semaphore::new(limit));
-    let set: JoinSet<_> = keys
-        .into_iter()
-        .enumerate()
-        .map(|(position, key)| {
-            let limit = Arc::clone(&limit);
+    stream::iter(keys)
+        .map(|key| {
             let loading = load(key.clone());
-            async move {
-                // The semaphore is never closed, so a permit always comes.
-                let _permit = limit.acquire_owned().await.ok();
-                let read = loading.await;
-                (position, key, read)
-            }
+            async move { (key, loading.await) }
         })
-        .collect();
-    set.join_all()
-        .await
-        .into_iter()
-        .sorted_by_key(|(position, ..)| *position)
-        .map(|(_, key, read)| (key, read))
+        .buffered(limit)
         .collect()
+        .await
 }

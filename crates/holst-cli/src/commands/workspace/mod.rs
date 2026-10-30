@@ -9,7 +9,7 @@ use holst_core::command::{
 use serde_json::{Map, Value};
 
 use crate::{
-    commands::refused,
+    commands,
     error::Result,
     output::OutputFormat,
     run::{RunSettings, run_signed_in},
@@ -39,21 +39,12 @@ pub(crate) async fn run(
             .await
         }
         WorkspaceVerb::Create => {
-            let args = table::parse(arguments)?;
-            run_signed_in(run, async |client| {
-                render::change(format, &workspace::create(client, &args).await?)
-            })
-            .await
+            commands::change(arguments, run, format, workspace::create, render::change)
+                .await
         }
         WorkspaceVerb::Rename => {
-            let args = table::parse(arguments)?;
-            run_signed_in(run, async |client| {
-                let change = workspace::rename(client, &args).await?;
-                render::change(format, &change)?;
-                // The plan is shown first; the refusal is the exit code.
-                refused(change.report.refusal())
-            })
-            .await
+            commands::change(arguments, run, format, workspace::rename, render::change)
+                .await
         }
         WorkspaceVerb::Log => {
             let args = table::parse(arguments)?;

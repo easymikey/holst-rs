@@ -1,38 +1,51 @@
 //! Copying a whole board document: export from one board, import into another.
 
+use futures_util::future::OptionFuture;
 use yrs::Doc;
 
 use crate::{
+    command::{
+        board::show::Loading,
+        board_load::{self, RemoteBoard},
+    },
     domain::{
         board::{BoardContent, EditRight},
         board_file::document::{ImportPlan, Overwrite},
         change::receipt::{Delivery, UpdateReceipt},
     },
-    effect::{board_write::WriteMode, socket::SocketConnector},
+    effect::board_write::WriteMode,
     error::{Error, Result, board_change::BoardChangeError},
     remote::client::Client,
 };
 
 /// A board as exported: its listing and its whole document.
 #[derive(Debug, Clone, PartialEq)]
-pub struct BoardFile {
-    pub content: BoardContent,
-    pub document: Vec<u8>,
+pub(in crate::command) struct BoardFile {
+    pub(in crate::command) content: BoardContent,
+    pub(in crate::command) document: Vec<u8>,
 }
 
-/// Load the board fully over `connector` and take its whole state; only reads.
+/// Load the board fully through the cache of `loading` and take its whole
+/// state; only reads.
 ///
 /// # Errors
 /// As [`crate::remote::socket::load::load_with`]: an incomplete board is never
 /// saved.
-pub async fn export_with(
+pub(in crate::command) async fn export_with(
     client: &Client,
-    connector: &dyn SocketConnector,
+    loading: Loading<'_>,
     board: &str,
 ) -> Result<BoardFile> {
-    super::board_load::supported(client, board).await?;
-    let loaded =
-        crate::remote::socket::load::load_with(client, connector, board).await?;
+    let (loaded, _) = board_load::load(
+        RemoteBoard {
+            client,
+            connector: loading.connector,
+            board,
+        },
+        loading.cache,
+        loading.cache_use,
+    )
+    .await?;
     Ok(BoardFile {
         content: BoardContent {
             edit_right: loaded.right,
@@ -44,16 +57,15 @@ pub async fn export_with(
 
 /// A saved state written into a board, or in a dry run only planned.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ImportedBoardFile {
-    pub plan: ImportPlan,
-    pub update_id: u64,
-    pub delivery: Delivery,
+pub(in crate::command) struct ImportedBoardFile {
+    pub(in crate::command) plan: ImportPlan,
+    pub(in crate::command) update_id: u64,
+    pub(in crate::command) delivery: Delivery,
 }
 
 impl ImportedBoardFile {
     /// The receipt of the update: built only, or confirmed.
-    #[must_use]
-    pub const fn receipt(&self) -> UpdateReceipt {
+    pub(in crate::command) const fn receipt(&self) -> UpdateReceipt {
         UpdateReceipt {
             bytes: self.plan.update.len(),
             id: self.update_id,
@@ -64,11 +76,11 @@ impl ImportedBoardFile {
 
 /// What to import: the saved state, the target board and how to write.
 #[derive(Debug, Clone, Copy)]
-pub struct ImportRequest<'a> {
-    pub board: &'a str,
-    pub document: &'a [u8],
-    pub overwrite: Overwrite,
-    pub mode: WriteMode,
+pub(in crate::command) struct ImportRequest<'a> {
+    pub(in crate::command) board: &'a str,
+    pub(in crate::command) document: &'a [u8],
+    pub(in crate::command) overwrite: Overwrite,
+    pub(in crate::command) mode: WriteMode,
 }
 
 /// Load the target, plan the import and, unless dry, send it and await the ack.
@@ -77,9 +89,9 @@ pub struct ImportRequest<'a> {
 /// Decode errors,
 /// [`crate::error::board_change::BoardChangeError::ReadOnly`],
 /// [`crate::error::board_change::BoardChangeError::NotEmpty`], I/O.
-pub async fn import_with(
+pub(in crate::command) async fn import_with(
     client: &Client,
-    connector: &dyn SocketConnector,
+    loading: Loading<'_>,
     request: ImportRequest<'_>,
 ) -> Result<ImportedBoardFile> {
     let ImportRequest {
@@ -89,7 +101,7 @@ pub async fn import_with(
         mode,
     } = request;
     let saved = crate::domain::board_file::document::saved_objects(state)?;
-    write_with(client, connector, board, mode, |document| {
+    write_with(client, loading, board, mode, |document| {
         crate::domain::board_file::document::import_plan(document, state, saved, fill)
     })
     .await
@@ -101,15 +113,15 @@ pub async fn import_with(
 /// # Errors
 /// Decode errors, [`crate::error::board_change::BoardChangeError::ReadOnly`],
 /// I/O.
-pub async fn replace_with(
+pub(in crate::command) async fn replace_with(
     client: &Client,
-    connector: &dyn SocketConnector,
+    loading: Loading<'_>,
     board: &str,
     state: &[u8],
     mode: WriteMode,
 ) -> Result<ImportedBoardFile> {
     let saved = crate::domain::board_file::document::saved_objects(state)?;
-    write_with(client, connector, board, mode, |document| {
+    write_with(client, loading, board, mode, |document| {
         crate::domain::board_file::document::replace_plan(document, state, saved)
     })
     .await
@@ -121,16 +133,17 @@ pub async fn replace_with(
 /// # Errors
 /// Those of `plan`,
 /// [`crate::error::board_change::BoardChangeError::ReadOnly`], I/O.
-pub async fn write_with(
+pub(in crate::command) async fn write_with(
     client: &Client,
-    connector: &dyn SocketConnector,
+    loading: Loading<'_>,
     board: &str,
     mode: WriteMode,
     plan: impl FnOnce(&Doc) -> Result<ImportPlan>,
 ) -> Result<ImportedBoardFile> {
-    super::board_load::supported(client, board).await?;
+    board_load::supported(client, board).await?;
     let connected =
-        crate::remote::socket::write::open_with(client, connector, board).await?;
+        crate::remote::socket::write::open_with(client, loading.connector, board)
+            .await?;
     let plan = if matches!(connected.right(), EditRight::Editable) {
         plan(connected.document())
     } else {
@@ -147,6 +160,11 @@ pub async fn write_with(
                 update_id,
             )
             .await?;
+            // The cached copy is the board before this write.
+            OptionFuture::from(
+                loading.cache.map(|cache| board_load::forget(cache, board)),
+            )
+            .await;
             Delivery::Accepted
         }
     };

@@ -69,7 +69,7 @@ fn put_is_no_method_of_the_api() {
     "GET /gapi/recent/channels/page takes the query pageSize, cursor; not size"
 )]
 #[case::query_item(
-    json!({ "method": "GET", "path": "/gapi/recent/channels/page", "query": { "pageSize": "3", "size": "3" } }),
+    json!({ "method": "GET", "path": "/gapi/recent/channels/page", "param": { "pageSize": "3", "size": "3" } }),
     "GET /gapi/recent/channels/page takes the query pageSize, cursor; not size"
 )]
 #[case::no_body(
@@ -81,7 +81,7 @@ fn put_is_no_method_of_the_api() {
     "the body does not fit POST /gapi/recent/set: unknown field `channel`, expected `channelId` at line 1 column 10"
 )]
 #[case::missing_query_key(
-    json!({ "method": "GET", "path": "/gapi/recent/channels/page", "query": { "cursor": "c" } }),
+    json!({ "method": "GET", "path": "/gapi/recent/channels/page", "param": { "cursor": "c" } }),
     "GET /gapi/recent/channels/page needs the query pageSize"
 )]
 #[case::missing_query_key_when_none_given(
@@ -129,7 +129,7 @@ async fn a_login_call_is_refused_and_points_to_auth_login(
 async fn a_known_get_is_sent_at_once() -> Result<()> {
     let (fake, client) = client([json_reply(&json!({ "id": "u1" }))])?;
     let args = arguments::<ApiArgs>(
-        json!({ "method": "GET", "path": "/gapi/link_preview", "query": { "link": "v" } }),
+        json!({ "method": "GET", "path": "/gapi/link_preview", "param": { "link": "v" } }),
     )?;
     let ApiReply { report, reply } = request(&client, &args).await?;
     assert!(matches!(report, ChangeReport::Sent));
@@ -227,7 +227,7 @@ async fn a_body_that_is_not_json_is_refused() -> Result<()> {
 fn a_query_item_without_a_name_is_refused() {
     assert!(
         arguments::<ApiArgs>(
-            json!({ "method": "GET", "path": "/gapi/current_user", "query": ["=v", "k"] })
+            json!({ "method": "GET", "path": "/gapi/current_user", "param": ["=v", "k"] })
         )
         .is_err()
     );

@@ -44,7 +44,10 @@ impl On<'_> {
                     Map::from_iter([
                         ("action".to_owned(), Value::from("snap")),
                         ("board".to_owned(), Value::from(board)),
-                        ("format".to_owned(), Value::from(picture.extension())),
+                        (
+                            "picture_format".to_owned(),
+                            Value::from(picture.extension()),
+                        ),
                     ]),
                     picture_of,
                 )
@@ -438,7 +441,7 @@ impl On<'_> {
                     ]
                     .into_iter()
                     .map(std::ffi::OsString::from)
-                    .chain(how.uncompressed.then(|| "--uncompressed".into()))
+                    .chain(how.uncompressed.then(|| "--no-compress".into()))
                     .chain(how.object_list.then(|| "--object-list".into())),
                     |_| Ok(Observation::Done),
                 )
@@ -452,7 +455,7 @@ impl On<'_> {
                         ("action".to_owned(), Value::from("export")),
                         ("board".to_owned(), Value::from(board)),
                         ("file".to_owned(), Value::from(path.to_string_lossy())),
-                        ("uncompressed".to_owned(), Value::from(how.uncompressed)),
+                        ("no_compress".to_owned(), Value::from(how.uncompressed)),
                         ("object_list".to_owned(), Value::from(how.object_list)),
                     ]),
                     |_| Observation::Done,
@@ -518,7 +521,7 @@ impl On<'_> {
                 })
                 .chain([
                     ("action".to_owned(), Value::from("import")),
-                    ("file".to_owned(), Value::from(path.to_string_lossy())),
+                    ("path".to_owned(), Value::from(path.to_string_lossy())),
                     ("merge".to_owned(), Value::from(how.merge)),
                     ("dry_run".to_owned(), Value::from(dry)),
                     ("confirm".to_owned(), Value::from(confirmed)),

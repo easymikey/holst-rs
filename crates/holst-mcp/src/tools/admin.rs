@@ -86,8 +86,8 @@ impl McpServer {
         if let Some(Value::String(path)) = arguments.get_mut("path") {
             *path = expand_path(path, expand)?;
         }
-        if let Some(query @ Value::Object(_)) = arguments.get_mut("query") {
-            expand_json(query, &expand)?;
+        if let Some(param @ Value::Object(_)) = arguments.get_mut("param") {
+            expand_json(param, &expand)?;
         }
         // A string that is a whole `@N` is expanded; a body not JSON is left.
         if let Some(Value::String(text)) = arguments.get_mut("body")

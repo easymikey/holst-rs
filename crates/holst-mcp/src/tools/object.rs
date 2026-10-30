@@ -49,13 +49,14 @@ const LIST_DEFAULT_JSON: u32 = 25;
 const LIST_MAX: u32 = 1_000;
 const TEXT_MAX_CHARS: usize = 120;
 /// The arguments that name a board, a frame or an object.
-const REFERENCES: [&str; 7] = [
+const REFERENCES: [&str; 8] = [
     "board",
     "workspace",
     "frame",
     "object",
     "from",
     "to",
+    "into",
     "link_to",
 ];
 

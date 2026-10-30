@@ -350,7 +350,15 @@ impl FromStr for Rectangle {
 
 impl fmt::Display for Rectangle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{},{},{},{}", self.x, self.y, self.width, self.height)
+        let whole = |value: f64| value.round() + 0.0;
+        write!(
+            f,
+            "{:.0},{:.0},{:.0},{:.0}",
+            whole(self.x),
+            whole(self.y),
+            whole(self.width),
+            whole(self.height)
+        )
     }
 }
 
@@ -414,7 +422,7 @@ impl FromStr for Size {
 
     fn from_str(raw: &str) -> Result<Self> {
         let bad = || Error::BoardChange(BoardChangeError::NotSize { raw: raw.into() });
-        let (width, height) = raw.split_once(['x', 'X', '×']).ok_or_else(bad)?;
+        let (width, height) = raw.split_once(',').ok_or_else(bad)?;
         let (width, height) = number(width).zip(number(height)).ok_or_else(bad)?;
         Size::new(width, height)
     }
@@ -422,7 +430,7 @@ impl FromStr for Size {
 
 impl fmt::Display for Size {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}x{}", self.width, self.height)
+        write!(f, "{},{}", self.width, self.height)
     }
 }
 

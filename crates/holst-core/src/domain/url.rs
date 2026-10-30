@@ -3,7 +3,7 @@
 use std::{borrow::Cow, str::FromStr};
 
 use derive_more::{AsRef, Display};
-use reqwest::Url;
+use url::Url;
 
 use crate::error::{Error, Result, input::InputError};
 
@@ -392,8 +392,8 @@ impl FromStr for ApiPath {
 mod tests {
     use std::borrow::Cow;
 
-    use reqwest::Url;
     use rstest::rstest;
+    use url::Url;
 
     use crate::{
         domain::{

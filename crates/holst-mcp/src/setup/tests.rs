@@ -196,6 +196,26 @@ async fn three_wrong_codes_fail_and_save_nothing() -> Result<(), Trouble> {
 }
 
 #[tokio::test]
+async fn a_padded_email_is_trimmed() -> Result<(), Trouble> {
+    let rig = rig("padded").await?;
+    let (outcome, shown) = rig.setup(&["  ada@example.com  ", "123456"]).await;
+    outcome?;
+    assert!(!shown.contains("enter an address"), "{shown}");
+    assert!(rig.saved()?.is_some());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_piped_wrong_code_is_refused_without_asking_again() -> Result<(), Trouble> {
+    let rig = rig("piped").await?;
+    let script = Script::new(TerminalKind::Redirected, [], [EMAIL, "000000", "123456"]);
+    let (outcome, _, _) = rig.steps_on(script, Steps::LoginOnly).await;
+    assert!(matches!(outcome, Err(SetupError::Refused(Secret::Code))));
+    assert_eq!(rig.saved()?, None);
+    Ok(())
+}
+
+#[tokio::test]
 async fn an_existing_login_stays_unless_the_answer_is_yes() -> Result<(), Trouble> {
     let rig = rig("existing").await?;
     rig.setup(&[EMAIL, "123456"]).await.0?;

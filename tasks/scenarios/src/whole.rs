@@ -266,7 +266,8 @@ fn board_of_block(block: &str) -> Option<ShownBoard> {
     let (name, _alias) = head.rsplit_once(' ')?;
     let place = rest.split_once(" · ")?.1.split(" · ").next()?;
     let (count, kinds) = lines.iter().find_map(|line| {
-        let (count, kinds) = line.split_once(" objects")?;
+        let (count, kinds) = line.split_once(" object")?;
+        let kinds = kinds.strip_prefix('s').unwrap_or(kinds);
         Some((
             count.parse().ok()?,
             kinds
@@ -314,12 +315,12 @@ struct Drawn {
     height: u32,
 }
 
-/// Reads the `WxH px` of the words about a picture.
+/// Reads the `W×H px` of the words about a picture.
 fn size_of_text(text: &str) -> Option<Observation> {
     let (width, height) = text
         .split(" · ")
         .find_map(|part| part.strip_suffix(" px"))?
-        .split_once('x')?;
+        .split_once('×')?;
     Some(Observation::Size {
         width: width.parse().ok()?,
         height: height.parse().ok()?,
@@ -424,7 +425,10 @@ impl On<'_> {
                 let (_, mut arguments) = look.arguments();
                 arguments.insert("action".to_owned(), Value::from("snap"));
                 arguments.insert("board".to_owned(), Value::from(board));
-                arguments.insert("format".to_owned(), Value::from(picture.extension()));
+                arguments.insert(
+                    "picture_format".to_owned(),
+                    Value::from(picture.extension()),
+                );
                 mcp::call(
                     self.holst.command("holst-mcp")?,
                     "board",

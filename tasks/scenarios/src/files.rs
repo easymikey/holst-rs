@@ -53,8 +53,8 @@ impl On<'_> {
             arguments.insert("provider".to_owned(), json!(provider));
         }
         if !gzipped {
-            line.push("--uncompressed");
-            arguments.insert("uncompressed".to_owned(), json!(true));
+            line.push("--no-compress");
+            arguments.insert("no_compress".to_owned(), json!(true));
         }
         self.changing(&line, "backup", arguments.into()).await
     }
@@ -68,7 +68,7 @@ impl On<'_> {
         &self,
         key: &str,
     ) -> Result<Observation, ScenarioError> {
-        let line = ["backup", "get", key, "--uncompressed"];
+        let line = ["backup", "get", key, "--no-compress"];
         self.changing(&line, "backup", json!({})).await
     }
 
@@ -82,7 +82,7 @@ impl On<'_> {
     ) -> Result<Observation, ScenarioError> {
         let observation = cli::run(
             self.holst.command("holst")?,
-            ["backup", "get", key, "-", "--uncompressed"],
+            ["backup", "get", key, "-", "--no-compress"],
             |stdout| {
                 Ok(Observation::Shown(
                     String::from_utf8_lossy(stdout).into_owned(),

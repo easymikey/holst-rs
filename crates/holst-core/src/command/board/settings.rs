@@ -396,7 +396,8 @@ async fn uploaded(
 
 /// The board drawn small by our renderer, as PNG.
 async fn preview(client: &Client, loading: Loading<'_>, id: &str) -> Result<Vec<u8>> {
-    let drawing = json!({ "board": id, "format": "png", "max_side": PREVIEW_SIDE });
+    let drawing =
+        json!({ "board": id, "picture_format": "png", "max_side": PREVIEW_SIDE });
     let args: SnapArgs = parse(drawing.as_object().cloned().unwrap_or_default())?;
     match snapped(client, loading, None, &args).await?.delivery {
         Delivery::Inline { bytes } => Ok(bytes),

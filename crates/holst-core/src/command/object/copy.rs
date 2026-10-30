@@ -34,7 +34,7 @@ use crate::{
 const COMMAND: &str = "object cp";
 
 /// Copies the objects with what a frame holds and the arrows between them,
-/// onto their board or the one `--to` names, as one write.
+/// onto their board or the one `--into` names, as one write.
 ///
 /// # Errors
 /// No object, an object that is not found or cannot be copied, an arrow
@@ -61,8 +61,8 @@ async fn copied(
     let references = named(&args.board, &args.object, COMMAND)?;
     let workspace = args.workspace.as_deref();
     let source = board_id(client, &args.board, workspace, loading.cache_use).await?;
-    let target = match args.to.as_deref() {
-        Some(to) => board_id(client, to, workspace, loading.cache_use).await?,
+    let target = match args.into.as_deref() {
+        Some(into) => board_id(client, into, workspace, loading.cache_use).await?,
         None => source.clone(),
     };
     let loaded = load_board(client, &loading, &source).await?;
@@ -261,7 +261,7 @@ fn refuse_files(chosen: &Chosen, elsewhere: bool) -> Result<()> {
         .map_or(Ok(()), |object| {
             Err(not_value(
                 COMMAND,
-                "to",
+                "into",
                 &format!(
                     "the board of the objects while {} {} is among them",
                     object.kind.short_name(),
@@ -477,14 +477,14 @@ mod tests {
 
     #[tokio::test]
     async fn an_image_stays_off_another_board() -> Result<()> {
-        let refused = copies(json!({"object": [IMAGE], "to": OTHER}))
+        let refused = copies(json!({"object": [IMAGE], "into": OTHER}))
             .await
             .err()
             .map(|error| error.to_string());
         assert_eq!(
             refused.as_deref(),
             Some(
-                "to of `object cp` must be the board of the objects while image i1 is among them"
+                "into of `object cp` must be the board of the objects while image i1 is among them"
             )
         );
         Ok(())

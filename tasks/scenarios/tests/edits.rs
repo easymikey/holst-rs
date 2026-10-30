@@ -344,9 +344,10 @@ async fn marks_and_colours_of_the_whole_text_are_written_and_read_back(
     let sticker = holst.fixture_object("Plans", 1)?;
     let call = ObjectCall::edit()
         .with("object", sticker)
-        .with("mark", "bold,underline")
+        .with("mark", "bold")
+        .with("mark", "underline")
         .with("text_color", "red6")
-        .with("text_bg", "yellow4");
+        .with("text_background", "yellow4");
     holst.on(surface).object("Plans", call).await?;
     let shown = holst.on(surface).objects("Plans").await?;
     then(&shown).lists_object_styled(
@@ -427,7 +428,7 @@ async fn a_shape_edit_changes_its_kind_outline_corners_and_opacity(
     let call = ObjectCall::edit()
         .with("object", shape)
         .with("shape", shape_name(surface, "bpmn_gateway"))
-        .with("stroke", "gray12")
+        .with("stroke_color", "gray12")
         .with("stroke_width", "3")
         .with("stroke_style", "dashed")
         .with("radius", "8")
@@ -755,7 +756,7 @@ async fn a_size_and_colour_are_kept(
     let holst = two_notes().start().await?;
     let call = ObjectCall::add("sticker")
         .text("Call Ann")
-        .with("size", "200x100")
+        .with("size", "200,100")
         .with("color", "yellow4");
     holst.on(surface).object("Plans", call).await?;
     let observation = holst.on(surface).objects("Plans").await?;
@@ -1294,7 +1295,7 @@ fn one_of_kind(kind: &str) -> Given {
 }
 
 #[rstest]
-#[case::size("size", "384x384", "384x384")]
+#[case::size("size", "384,384", "384x384")]
 #[case::scale("scale", "0.5", "96x96")]
 #[tokio::test]
 async fn a_die_is_resized_by_scale_and_read_back(
@@ -1322,7 +1323,7 @@ async fn a_kanban_is_scaled_but_has_no_size(
     let kanban = holst.fixture_object("Plans", 1)?;
     let call = ObjectCall::edit()
         .with("object", kanban)
-        .with("size", "400x300");
+        .with("size", "400,300");
     let observation = holst.on(surface).object("Plans", call).await?;
     then(&observation)
         .failed_saying("kanban objects have no size to change")
@@ -1340,7 +1341,7 @@ async fn a_size_and_a_scale_together_are_refused(
     let die = holst.fixture_object("Plans", 1)?;
     let call = ObjectCall::edit()
         .with("object", die)
-        .with("size", "100x100")
+        .with("size", "100,100")
         .with("scale", "2");
     let observation = holst.on(surface).object("Plans", call).await?;
     then(&observation)

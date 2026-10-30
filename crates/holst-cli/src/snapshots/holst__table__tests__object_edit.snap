@@ -12,43 +12,43 @@ ARGUMENTS
   board   The board: id, link or part of its name
 
 FLAGS
-      --object object        An object, repeat for several: id, link, @N or the first 8 characters of its id
-  -w, --workspace ws         Where names are looked up and new things go: a workspace id or part of its name; all of yours by default
-      --text text            The new text; lines become paragraphs; unchanged by default
-      --text-format format   How the new text is read: plain, or markdown for headings, lists, checkboxes, links and bold, italic, strike marks; plain by default
-      --at x,y               The new top-left corner in board units; unchanged by default
-      --size wxh             The new size as width x height, e.g. 260x160; unchanged by default
-  -c, --color color          The new fill, or an arrow's line color: a palette token, e.g. yellow4; unchanged by default
-      --shape shape          Change a shape's kind, e.g. ellipse, flowchart-decision or bpmn-gateway; unchanged by default
-      --stroke color         A shape's outline color: a palette token, e.g. gray12; unchanged by default
-      --stroke-width n       A shape's outline width, 0 to 10, or an arrow's line width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17; unchanged by default
-      --stroke-style style   A shape's outline or an arrow's line: solid, dashed or dotted; unchanged by default
-      --radius n             A shape's corner radius, at most as the shape's size allows; unchanged by default
-      --opacity n            A shape's fill opacity, 0.1 to 1; unchanged by default
-      --mark marks           The marks of the whole text of a sticker, text or shape, and no others: any of bold, italic, underline, strikethrough, code, comma apart, or none; unchanged by default
-      --text-color color     The color of the whole text of a sticker, text or shape: a palette token, e.g. red6; unchanged by default
-      --text-bg color        The background of the whole text of a sticker, text or shape: a palette token, e.g. yellow4, or none; unchanged by default
-      --line line            An arrow's line: straight, elbow or curved; unchanged by default
-      --heads start,end      An arrow's heads, e.g. none,triangle-filled: none, figma, miro, arc, triangle-filled, triangle, circle-filled, circle, rhombus-filled, rhombus, stick, stick-stick, triadius, triadius-stick, triadius-circle, stick-circle or slash; an empty side keeps that end; unchanged by default
-      --bend x,y             Bend an arrow: x,y for a straight or curved one, x, or ,y for an elbow, whose middle run sits there; unchanged by default
-      --from end             Move an arrow's start: object:side (top, right, bottom or left) or x,y; unchanged by default
-      --to end               Move an arrow's end: object:side (top, right, bottom or left) or x,y; unchanged by default
-      --label text[@pos]     An arrow's labels, repeat for several; they replace the ones it has; text@0.25 puts one a quarter of the way from the start, in the middle by default; unchanged by default
-      --ratio ratio          A frame's ratio: 16:9, 4:3, 1:1, a4 or a4-landscape; the area is kept; unchanged by default
-      --background style     A frame's background: fill, border or outline; unchanged by default
-      --hide-content         Hide the content of a frame; needs the board's right to hide frame content
-      --show-content         Show the content of a frame again
-      --frame frame|none     Move it into this frame: id, link, title or part of a title; none takes it out onto the board. It keeps its place relative to the frame, or goes to a free spot in it when that would put it outside, and goes to the front there; unchanged by default
-      --rotate deg           Turn to this angle in clockwise degrees, any number taken modulo 360; the corner moves so that the object turns about its centre; not for a frame, a table, a table cell, a group or an arrow; unchanged by default
-      --scale s              Scale a link, drawing, code, file, kanban, flipcard, dice, wheel or task to this factor above 0, or a sticker, text or sticker stack text to it; the corner stays; not with --size; unchanged by default
-      --link-to link         What the object opens on click: a web address (http:// is added without a scheme), another object of the board by id, or none to take the link away; unchanged by default
-      --width auto|n         A text's width: auto wraps it by its content, a number fixes it in board units; unchanged by default
-      --check n              Tick the n-th checklist item of a sticker, text or shape, counting from 1 in reading order; unchanged by default
-      --uncheck n            Untick the n-th checklist item of a sticker, text or shape, counting from 1 in reading order; unchanged by default
-      --order order          Where it stands among the objects: front or back, or forward or backward for one step past the next overlapping object; unchanged by default
-      --tag tag              The object's tags, repeat for several; a new tag is made, '' clears; unchanged by default
-      --items file           Many in one write: a JSON array or JSON lines file, - for stdin; its keys are the flags of one call
-  -n, --dry-run              Show what would change; change nothing
+      --object object           An object, repeat for several: id, link, @N or the first 8 characters of its id
+  -w, --workspace ws            Where names are looked up and new things go: a workspace id or part of its name; all of yours by default
+      --text text               The new text; lines become paragraphs; unchanged by default
+      --text-format format      How the new text is read: plain, or markdown for headings, lists, checkboxes, links and bold, italic, strike marks; plain by default
+      --at x,y                  The new top-left corner in board units; unchanged by default
+      --size w,h                The new size as width,height, e.g. 260,160; unchanged by default
+  -c, --color color             The new fill, or an arrow's line color: a palette token, e.g. yellow4; unchanged by default
+      --shape shape             Change a shape's kind, e.g. ellipse, flowchart-decision or bpmn-gateway; unchanged by default
+      --stroke-color color      A shape's outline color: a palette token, e.g. gray12; unchanged by default
+      --stroke-width n          A shape's outline width, 0 to 10, or an arrow's line width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17; unchanged by default
+      --stroke-style style      A shape's outline or an arrow's line: solid, dashed or dotted; unchanged by default
+      --radius n                A shape's corner radius, at most as the shape's size allows; unchanged by default
+      --opacity n               A shape's fill opacity, 0.1 to 1; unchanged by default
+      --mark marks              The marks of the whole text of a sticker, text or shape, and no others: any of bold, italic, underline, strikethrough, code, comma apart, or none; unchanged by default
+      --text-color color        The color of the whole text of a sticker, text or shape: a palette token, e.g. red6; unchanged by default
+      --text-background color   The background of the whole text of a sticker, text or shape: a palette token, e.g. yellow4, or none; unchanged by default
+      --line line               An arrow's line: straight, elbow or curved; unchanged by default
+      --heads start,end         An arrow's heads, e.g. none,triangle-filled: none, figma, miro, arc, triangle-filled, triangle, circle-filled, circle, rhombus-filled, rhombus, stick, stick-stick, triadius, triadius-stick, triadius-circle, stick-circle or slash; an empty side keeps that end; unchanged by default
+      --bend x,y                Bend an arrow: x,y for a straight or curved one, x, or ,y for an elbow, whose middle run sits there; unchanged by default
+      --from end                Move an arrow's start: object:side (top, right, bottom or left) or x,y; unchanged by default
+      --to end                  Move an arrow's end: object:side (top, right, bottom or left) or x,y; unchanged by default
+      --label text[@pos]        An arrow's labels, repeat for several; they replace the ones it has; text@0.25 puts one a quarter of the way from the start, in the middle by default; unchanged by default
+      --ratio ratio             A frame's ratio: 16:9, 4:3, 1:1, a4 or a4-landscape; the area is kept; unchanged by default
+      --background style        A frame's background: fill, border or outline; unchanged by default
+      --hide-content            Hide the content of a frame; needs the board's right to hide frame content
+      --show-content            Show the content of a frame again
+      --frame frame|none        Move it into this frame: id, link, title or part of a title; none takes it out onto the board. It keeps its place relative to the frame, or goes to a free spot in it when that would put it outside, and goes to the front there; unchanged by default
+      --rotate deg              Turn to this angle in clockwise degrees, any number taken modulo 360; the corner moves so that the object turns about its centre; not for a frame, a table, a table cell, a group or an arrow; unchanged by default
+      --scale factor            Scale a link, drawing, code, file, kanban, flipcard, dice, wheel or task to this factor above 0, or a sticker, text or sticker stack text to it; the corner stays; not with --size; unchanged by default
+      --link-to link            What the object opens on click: a web address (http:// is added without a scheme), another object of the board by id, or none to take the link away; unchanged by default
+      --width auto|n            A text's width: auto wraps it by its content, a number fixes it in board units; unchanged by default
+      --check n                 Tick the n-th checklist item of a sticker, text or shape, counting from 1 in reading order; unchanged by default
+      --uncheck n               Untick the n-th checklist item of a sticker, text or shape, counting from 1 in reading order; unchanged by default
+      --order order             Where it stands among the objects: front or back, or forward or backward for one step past the next overlapping object; unchanged by default
+      --tag tag                 The object's tags, repeat for several; a new tag is made, '' clears; unchanged by default
+      --items file              Many in one write: a JSON array or JSON lines file, - for stdin; its keys are the flags of one call
+  -n, --dry-run                 Show what would change; change nothing
 
 INHERITED FLAGS
   --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`

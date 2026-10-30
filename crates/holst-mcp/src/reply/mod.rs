@@ -2,7 +2,6 @@
 
 pub(crate) mod change;
 pub(crate) mod compact;
-pub(crate) mod objects;
 pub(crate) mod render;
 
 use rmcp::model::{CallToolResult, ContentBlock};
@@ -236,7 +235,7 @@ mod tests {
             },
         ));
         let text = explain(&plain_gz);
-        assert!(text.contains("uncompressed: true"), "{text}");
+        assert!(text.contains("no_compress: true"), "{text}");
         let outside = Error::Holst(holst_core::Error::BoardChange(
             holst_core::error::board_change::BoardChangeError::OutsideFrame {
                 reference: "Plan".into(),

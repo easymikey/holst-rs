@@ -533,7 +533,7 @@ fn a_known_command_without_dry_run_still_exists_and_writes() {
 /// What `-w` and `-q` are: the long name and the kind of value, everywhere.
 const LETTERS: [(char, &str, ValueKind); 2] = [
     ('w', "workspace", ValueKind::Text),
-    ('q', "query", ValueKind::QueryParameter),
+    ('p', "param", ValueKind::QueryParameter),
 ];
 
 fn letter_flaws(command: &super::Command) -> Vec<String> {
@@ -564,7 +564,7 @@ fn letter_flaws(command: &super::Command) -> Vec<String> {
 #[test]
 fn o_w_and_q_mean_one_thing_everywhere() {
     let offenders: Vec<String> = commands().flat_map(letter_flaws).collect();
-    assert_none("-o, -w, -q", &offenders);
+    assert_none("-o, -w, -p", &offenders);
 }
 
 #[test]

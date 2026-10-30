@@ -20,20 +20,21 @@ use holst_core::{
         change::{ChangeReport, PlannedRequest},
         table::{CommandName, parse},
     },
-    domain::{picture::MAX_SIDE_MODEL, text::printable},
+    domain::{
+        picture::MAX_SIDE_MODEL,
+        text::{counted, printable},
+    },
+    remote::client::Client,
 };
 use rmcp::model::{CallToolResult, ContentBlock};
 use serde_json::{Map, Value};
 
 use crate::{
     error::{Error, Result},
-    login::HandedClient,
-    reply::objects,
     server::McpServer,
     tools::{
         files::{checked_download, checked_place, checked_upload},
         picture::inline_svg,
-        said,
     },
 };
 
@@ -110,9 +111,13 @@ impl McpServer {
             match self.named_place(args.file.as_deref()) {
                 Ok(()) => {
                     self.run(async |client| {
-                        let exported =
-                            file::export(&client, self.downloads.as_deref(), &args)
-                                .await?;
+                        let exported = file::export(
+                            &client,
+                            &self.cache,
+                            self.downloads.as_deref(),
+                            &args,
+                        )
+                        .await?;
                         Ok(Self::exported_text(&exported))
                     })
                     .await
@@ -128,15 +133,12 @@ impl McpServer {
         arguments: Map<String, Value>,
     ) -> CallToolResult {
         self.parsed(arguments, async |args: ImportArgs| {
-            match checked_upload(Path::new(&args.file), &self.secrets) {
+            match checked_upload(Path::new(&args.path), &self.secrets) {
                 Ok(()) => {
-                    let call = async |client: HandedClient| {
-                        let imported = file::import(&client, &args).await?;
-                        said(imported.outcome.refusal(), || {
-                            self.imported_text(&imported)
-                        })
+                    let make = async |client: &Client, import: &ImportArgs| {
+                        file::import(client, &self.cache, import).await
                     };
-                    self.by_mode(args.dry_run, call).await
+                    self.changed(&args, make, Self::imported_text).await
                 }
                 Err(err) => self.fail(&err),
             }
@@ -180,13 +182,13 @@ impl McpServer {
             .collect::<Vec<_>>()
             .join(", ");
         let counts = if kinds.is_empty() {
-            format!("{} objects", board.count)
+            counted(board.count, "object")
         } else {
-            format!("{} objects: {kinds}", board.count)
+            format!("{}: {kinds}", counted(board.count, "object"))
         };
         let rectangle = board
             .rectangle
-            .map(|rect| format!("rectangle {}\n", objects::rounded(&rect)))
+            .map(|rect| format!("rectangle {rect}\n"))
             .unwrap_or_default();
         let parts = [
             (
@@ -264,7 +266,8 @@ impl McpServer {
             format!("\nlisting: {} bytes: {}", list.bytes, list.file.display())
         });
         let text = format!(
-            "exported {objects} objects, {bytes} bytes{before}: {}{}",
+            "exported {}, {bytes} bytes{before}: {}{}",
+            counted(objects, "object"),
             exported.file.display(),
             listing.collect::<String>()
         );
@@ -283,8 +286,8 @@ impl McpServer {
         };
         let board = imported.board.as_deref().map(|id| self.state.alias(id));
         let head = format!(
-            "{verb} {} objects into {} / {}{}; the board had {}, now {}",
-            imported.saved_objects,
+            "{verb} {} into {} / {}{}; the board had {}, now {}",
+            counted(imported.saved_objects, "object"),
             imported.workspace_name,
             imported.name,
             board.map(|alias| format!(" {alias}")).unwrap_or_default(),
@@ -310,9 +313,9 @@ fn snapped_blocks(snapped: Snapped) -> Vec<ContentBlock> {
         .map(|warning| format!("warning: {warning}\n"))
         .unwrap_or_default();
     let about = format!(
-        "rectangle {} · {} objects · {}x{} px · {}\n{warning}",
-        objects::rounded(&snapped.rectangle),
-        snapped.objects,
+        "rectangle {} · {} · {}×{} px · {}\n{warning}",
+        snapped.rectangle,
+        counted(snapped.objects, "object"),
         snapped.width,
         snapped.height,
         snapped.link

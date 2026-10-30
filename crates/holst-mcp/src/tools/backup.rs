@@ -9,17 +9,14 @@ use holst_core::{
         backup::Backups,
         text::{EMPTY, printable},
     },
+    remote::client::Client,
 };
 use rmcp::model::CallToolResult;
 use serde_json::{Map, Value};
 
 use crate::{
-    login::HandedClient,
     server::McpServer,
-    tools::{
-        files::{checked_download, out_file},
-        said,
-    },
+    tools::files::{checked_download, out_file},
 };
 
 /// The backups a listing shows, newest first as the server sends them.
@@ -59,9 +56,13 @@ impl McpServer {
                 .await
             }
             BackupVerb::Restore => {
-                self.parsed(arguments, async |args: RestoreArgs| {
-                    self.restore_backup(&args).await
-                })
+                self.change(
+                    arguments,
+                    async |client: &Client, args: &RestoreArgs| {
+                        backup::restore(client, &self.cache, args).await
+                    },
+                    |this, restored| this.state.alias_text(&format!("{restored}\n")),
+                )
                 .await
             }
         }
@@ -86,16 +87,6 @@ impl McpServer {
                 .await
             }
         }
-    }
-
-    async fn restore_backup(&self, args: &RestoreArgs) -> CallToolResult {
-        let call = async |client: HandedClient| {
-            let restored = backup::restore(&client, args).await?;
-            said(restored.outcome.refusal(), || {
-                self.state.alias_text(&format!("{restored}\n"))
-            })
-        };
-        self.by_mode(args.dry_run, call).await
     }
 }
 

@@ -10,7 +10,8 @@ use crate::{
         board::show::{Loading, board_id, through_cache},
         board_load::{self, CacheUse, RemoteBoard},
         board_write::{BoardWrite, Guard, change_board, refuse_withheld},
-        object::{EditArgs, EditItem, RemoveArgs},
+        change::{ChangeReport as Outcome, gate},
+        object::{EditArgs, EditItem, MarkChoice, RemoveArgs},
         table::{Confirmation, not_value},
     },
     domain::{
@@ -41,7 +42,6 @@ use crate::{
             NEVER,
             UNLESS_FRAME_CONTENT,
             frame_content_unconfirmed,
-            unless_confirmed,
         },
         settings::CacheSettings,
     },
@@ -67,12 +67,8 @@ const MIN_OPACITY: f64 = 0.1;
 pub struct Removed {
     #[serde(flatten)]
     pub report: ChangeReport,
-    /// The risk of a removal held back for want of its confirmation.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub held: Option<String>,
-    /// The refusal of that removal, to word for a surface.
-    #[serde(skip)]
-    pub refusal: Option<Unconfirmed>,
+    /// Whether the removal went out, was a dry run, or is held.
+    pub outcome: Outcome<()>,
 }
 
 /// The objects a call names: the one its board link names, then each
@@ -175,14 +171,14 @@ fn read_edits(args: &EditArgs, share: &str) -> Result<Vec<ObjectEdit>> {
                 size: args.size.clone(),
                 color: args.color.clone(),
                 shape: args.shape,
-                stroke: args.stroke.clone(),
+                stroke_color: args.stroke_color.clone(),
                 stroke_width: args.stroke_width,
                 stroke_style: args.stroke_style,
                 radius: args.radius,
                 opacity: args.opacity,
                 mark: args.mark.clone(),
                 text_color: args.text_color.clone(),
-                text_bg: args.text_bg.clone(),
+                text_background: args.text_background.clone(),
                 line: args.line,
                 heads: args.heads.clone(),
                 bend: args.bend.clone(),
@@ -244,14 +240,14 @@ fn refuse_with_items(args: &EditArgs) -> Result<()> {
         ("size", args.size.is_some()),
         ("color", args.color.is_some()),
         ("shape", args.shape.is_some()),
-        ("stroke", args.stroke.is_some()),
+        ("stroke_color", args.stroke_color.is_some()),
         ("stroke_width", args.stroke_width.is_some()),
         ("stroke_style", args.stroke_style.is_some()),
         ("radius", args.radius.is_some()),
         ("opacity", args.opacity.is_some()),
-        ("mark", args.mark.is_some()),
+        ("mark", !args.mark.is_empty()),
         ("text_color", args.text_color.is_some()),
-        ("text_bg", args.text_bg.is_some()),
+        ("text_background", args.text_background.is_some()),
         ("line", args.line.is_some()),
         ("heads", args.heads.is_some()),
         ("bend", args.bend.is_some()),
@@ -347,7 +343,7 @@ fn patch_of(item: &EditItem, format: TextFormat, address: &str) -> Result<Object
         tick: tick_of(item)?,
         shape: ShapeEdit {
             kind: item.shape,
-            stroke: item.stroke.as_deref().map(str::parse).transpose()?,
+            stroke: item.stroke_color.as_deref().map(str::parse).transpose()?,
             stroke_width,
             stroke_style: item.stroke_style,
             radius: item.radius,
@@ -492,10 +488,10 @@ fn with_scheme(address: &str) -> String {
 /// The marks and colors of the whole text the flags ask for.
 fn look_of(item: &EditItem) -> Result<TextLook> {
     Ok(TextLook {
-        marks: item.mark.as_deref().map(marks_of).transpose()?,
+        marks: marks_of(&item.mark),
         color: item.text_color.as_deref().map(str::parse).transpose()?,
         background: item
-            .text_bg
+            .text_background
             .as_deref()
             .map(|raw| match raw.trim() {
                 "none" => Ok(Backdrop::Clear),
@@ -505,21 +501,21 @@ fn look_of(item: &EditItem) -> Result<TextLook> {
     })
 }
 
-/// The marks of a comma-apart list; `none` is no marks.
-fn marks_of(raw: &str) -> Result<Vec<Mark>> {
-    raw.split(',')
-        .map(str::trim)
-        .filter(|name| !matches!(*name, "" | "none"))
-        .map(|name| {
-            Mark::of(name).ok_or_else(|| {
-                not_value(
-                    EDIT,
-                    "mark",
-                    "bold, italic, underline, strikethrough, code or none",
-                )
+/// The marks chosen; `none` is no marks, nothing chosen leaves them unchanged.
+fn marks_of(choices: &[MarkChoice]) -> Option<Vec<Mark>> {
+    (!choices.is_empty()).then(|| {
+        choices
+            .iter()
+            .filter_map(|choice| match choice {
+                MarkChoice::Bold => Some(Mark::Bold),
+                MarkChoice::Italic => Some(Mark::Italic),
+                MarkChoice::Underline => Some(Mark::Underline),
+                MarkChoice::Strikethrough => Some(Mark::Strikethrough),
+                MarkChoice::Code => Some(Mark::Code),
+                MarkChoice::None => None,
             })
-        })
-        .collect()
+            .collect()
+    })
 }
 
 /// The tags asked for by title; a blank one asks for none.
@@ -591,13 +587,10 @@ async fn removed(
         (false, Delivery::Accepted) => None,
         (false, Delivery::Built) => frame_content_unconfirmed(&report.objects),
     };
-    let refusal = unless_confirmed(unconfirmed, confirmed, args.dry_run).err();
-    let held = refusal.as_ref().map(Unconfirmed::needs);
-    Ok(Removed {
-        report,
-        held,
-        refusal,
-    })
+    let outcome = gate(unconfirmed, (args.dry_run, args.confirm), || ())
+        .err()
+        .unwrap_or(Outcome::Sent);
+    Ok(Removed { report, outcome })
 }
 
 #[cfg(test)]
@@ -761,7 +754,7 @@ mod tests {
 
     async fn remove(
         given: serde_json::Value,
-    ) -> Result<(Vec<String>, Delivery, Option<String>)> {
+    ) -> Result<(Vec<String>, Delivery, serde_json::Value)> {
         let (_, client) = signed_in([])?;
         let args: RemoveArgs = arguments(given)?;
         let socket = board_of(&objects());
@@ -773,7 +766,7 @@ mod tests {
                 .map(|object| object.id)
                 .collect(),
             done.report.receipt.delivery,
-            done.held,
+            serde_json::to_value(&done.outcome)?,
         ))
     }
 
@@ -785,7 +778,7 @@ mod tests {
             (
                 vec![STICKER.to_owned(), ARROW.to_owned()],
                 Delivery::Accepted,
-                None
+                json!({"status": "sent"})
             )
         );
         Ok(())
@@ -799,7 +792,7 @@ mod tests {
             (
                 vec![STICKER.to_owned(), ARROW.to_owned(), TEXT.to_owned()],
                 Delivery::Built,
-                Some("removing 2 objects cannot be undone".to_owned())
+                json!({"status": "held", "needs": "removing 2 objects cannot be undone"})
             )
         );
         Ok(())
@@ -809,7 +802,7 @@ mod tests {
     async fn several_confirmed_objects_go() -> Result<()> {
         let done = remove(json!({"object": [STICKER, TEXT], "confirm": true})).await?;
         assert_eq!(done.1, Delivery::Accepted);
-        assert_eq!(done.2, None);
+        assert_eq!(done.2, json!({"status": "sent"}));
         Ok(())
     }
 
@@ -821,10 +814,10 @@ mod tests {
             (
                 vec![FRAME.to_owned(), ARROW.to_owned(), STICKER.to_owned()],
                 Delivery::Built,
-                Some(
-                    "removing the frame and 2 objects with it cannot be undone"
-                        .to_owned()
-                )
+                json!({
+                    "status": "held",
+                    "needs": "removing the frame and 2 objects with it cannot be undone"
+                })
             )
         );
         Ok(())
@@ -833,7 +826,10 @@ mod tests {
     #[tokio::test]
     async fn a_dry_run_asks_for_no_confirmation() -> Result<()> {
         let done = remove(json!({"object": [STICKER, TEXT], "dry_run": true})).await?;
-        assert_eq!((done.1, done.2), (Delivery::Built, None));
+        assert_eq!(
+            (done.1, done.2),
+            (Delivery::Built, json!({"status": "dry_run"}))
+        );
         Ok(())
     }
 }

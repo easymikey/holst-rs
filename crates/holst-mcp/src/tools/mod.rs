@@ -64,13 +64,23 @@ impl McpServer {
         text: impl FnOnce(&Self, &R) -> String,
     ) -> CallToolResult {
         self.parsed(arguments, async |args: A| {
-            let call = async |client: HandedClient| {
-                let done = make(&client, &args).await?;
-                said(done.refusal(), || text(self, &done))
-            };
-            self.by_mode(args.mode(), call).await
+            self.changed(&args, make, text).await
         })
         .await
+    }
+
+    /// `change` for arguments already parsed.
+    pub(super) async fn changed<A: Changes, R: Outcome>(
+        &self,
+        args: &A,
+        make: impl AsyncFnOnce(&Client, &A) -> holst_core::Result<R>,
+        text: impl FnOnce(&Self, &R) -> String,
+    ) -> CallToolResult {
+        let call = async |client: HandedClient| {
+            let done = make(&client, args).await?;
+            said(done.refusal(), || text(self, &done))
+        };
+        self.by_mode(args.mode(), call).await
     }
 
     pub(super) async fn parsed<A: CommandArgs>(

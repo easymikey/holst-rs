@@ -680,7 +680,7 @@ async fn an_image_is_placed_at_a_corner_and_size(
     let call = ObjectCall::add("image")
         .path(&holst.work_place("cat.png"))
         .with("at", "10,10")
-        .with("size", "200x100");
+        .with("size", "200,100");
     then(&holst.on(surface).object("Plans", call).await?).succeeded();
     let observation = holst.on(surface).objects("Plans").await?;
     then(&observation).lists_object_at("", (10, 10));

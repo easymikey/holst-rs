@@ -147,6 +147,12 @@ pub enum BoardChangeError {
     HideWithheld { needs: String, holds: &'static str },
 
     #[error(
+        "removing objects on this board is held to {needs} and above: your right here is \
+         {holds}; a restore removes what the backup lacks, so nothing was changed"
+    )]
+    DeleteWithheld { needs: String, holds: &'static str },
+
+    #[error(
         "the target board already has {objects} objects: import only into an empty board, or \
          merge with --merge; nothing was changed"
     )]
@@ -197,7 +203,7 @@ pub enum BoardChangeError {
     #[error("{what} is off the board: coordinates and sizes go up to 1e12")]
     OffBoard { what: OffBoardValue },
 
-    #[error("\"{raw}\" is not a size: expected WIDTHxHEIGHT, e.g. 192x192")]
+    #[error("\"{raw}\" is not a size: expected WIDTH,HEIGHT, e.g. 192,192")]
     NotSize { raw: String },
 
     #[error(
@@ -299,7 +305,8 @@ impl BoardChangeError {
             BoardChangeError::ReadOnly
             | BoardChangeError::CopyWithheld { .. }
             | BoardChangeError::LockWithheld { .. }
-            | BoardChangeError::HideWithheld { .. } => Some(Hint::AskOwner),
+            | BoardChangeError::HideWithheld { .. }
+            | BoardChangeError::DeleteWithheld { .. } => Some(Hint::AskOwner),
             BoardChangeError::NoObject { .. }
             | BoardChangeError::NotFrame { .. }
             | BoardChangeError::NotGroup { .. }
@@ -357,6 +364,7 @@ impl BoardChangeError {
             | BoardChangeError::CopyWithheld { .. }
             | BoardChangeError::LockWithheld { .. }
             | BoardChangeError::HideWithheld { .. }
+            | BoardChangeError::DeleteWithheld { .. }
             | BoardChangeError::NotChangeable { .. }
             | BoardChangeError::NotMovable { .. }
             | BoardChangeError::PlacedByContainer { .. }
@@ -513,6 +521,13 @@ pub(super) mod tests {
             ),
             (
                 BoardChangeError::HideWithheld {
+                    needs: text(),
+                    holds: "editor",
+                },
+                Some(Hint::AskOwner),
+            ),
+            (
+                BoardChangeError::DeleteWithheld {
                     needs: text(),
                     holds: "editor",
                 },

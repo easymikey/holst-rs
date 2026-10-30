@@ -12,7 +12,12 @@ use std::{
 use arc_swap::ArcSwapOption;
 use futures_util::future::OptionFuture;
 use holst_core::{
-    command::{lookup, lookup::IndexedNodes, table::CommandName},
+    command::{
+        board::show::account_cache,
+        board_load::CacheUse,
+        lookup::{self, IndexedNodes},
+        table::CommandName,
+    },
     domain::{
         account::Workspace,
         lookup::choice::TreeReads,
@@ -25,7 +30,7 @@ use holst_core::{
         settings::{CacheSettings, Settings},
     },
     error::{hint::Surface, input::InputError},
-    storage::{cache::Cache, session_store::SessionStoreKind},
+    storage::session_store::SessionStoreKind,
 };
 use rmcp::{
     ErrorData,
@@ -218,21 +223,22 @@ impl McpServer {
         &self,
         client: &HandedClient,
     ) -> Option<Arc<dyn CachePort>> {
-        self.cache.root.as_ref()?;
-        let known = self.account.load();
-        let known = known
-            .as_ref()
+        self.account
+            .load()
+            .iter()
             .filter(|known| known.epoch == client.epoch)
-            .map(|known| known.account_id.clone());
-        let user = match known {
-            Some(user) => user,
-            None => holst_core::command::account::known_account_id(client).await?,
-        };
-        self.account.store(Some(Arc::new(KnownAccount {
-            epoch: client.epoch,
-            account_id: user.clone(),
-        })));
-        Cache::from_settings(&self.cache, &user, client.clock()).map(Cache::into_shared)
+            .for_each(|known| client.learn_account_id(&known.account_id));
+        let cache = account_cache(client, &self.cache, CacheUse::Use)
+            .await
+            .ok()
+            .flatten()?;
+        client.account_id().into_iter().for_each(|account_id| {
+            self.account.store(Some(Arc::new(KnownAccount {
+                epoch: client.epoch,
+                account_id,
+            })));
+        });
+        Some(cache.into_shared())
     }
 
     fn table_tool(&self, name: &str) -> Option<&TableTool> {

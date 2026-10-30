@@ -29,3 +29,4 @@ Thumbs.db
 *.holst
 __pycache__/
 *.profraw
+*.pending-snap

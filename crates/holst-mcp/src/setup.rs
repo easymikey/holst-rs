@@ -149,7 +149,7 @@ pub(crate) async fn run<T: Terminal>(
         Saved::Keep => Ok(()),
         Saved::Replace(old) => {
             let (email, awaiting) = begin(backend, form).await?;
-            let client = ask_until_accepted(&awaiting, form, None, ATTEMPTS).await?;
+            let client = ask_until_accepted(&awaiting, form).await?;
             keep(backend, client, old, &email, form).await
         }
     }
@@ -245,38 +245,26 @@ fn parse_secret(text: &str) -> Result<SecretString, Reason> {
         .ok_or(EMPTY)
 }
 
-/// Asks for the code or password; `refused` is why the last one was not taken.
+/// Asks for the code or password until Holst takes it, `ATTEMPTS` times at
+/// most.
 async fn ask_until_accepted<T: Terminal>(
     awaiting: &Awaiting,
     form: &Form<T>,
-    refused: Option<Reason>,
-    left: u8,
 ) -> Result<Client, SetupError> {
     let secret = secret_of(awaiting);
-    let typed = refused.map_or_else(
-        || {
-            let Question { label, kind } = secret.question();
-            form.ask(label, kind, &parse_secret)
-        },
-        |reason| form.ask_again(secret.question(), &parse_secret, reason),
-    )?;
     let logged_in = form
-        .wait("Signing in", async { awaiting.log_in(&typed).await })
+        .ask_until(
+            secret.question(),
+            &parse_secret,
+            async |typed: &SecretString| awaiting.log_in(typed).await,
+            |err| err.is_wrong_secret().then_some(secret.wrong()),
+            ATTEMPTS,
+        )
         .await?;
-    match logged_in {
-        Ok(client) => Ok(client),
-        Err(err) if err.is_wrong_secret() && left > 1 => {
-            Box::pin(ask_until_accepted(
-                awaiting,
-                form,
-                Some(secret.wrong()),
-                left - 1,
-            ))
-            .await
-        }
-        Err(err) if err.is_wrong_secret() => Err(SetupError::Refused(secret)),
-        Err(err) => Err(err.into()),
-    }
+    logged_in.map_err(|err| match (err.is_wrong_secret(), err) {
+        (true, _) => SetupError::Refused(secret),
+        (false, err) => err.into(),
+    })
 }
 
 /// Checks the login works, saves it for the server and ends the replaced one.

@@ -2,14 +2,13 @@
 
 use holst_core::{
     command::workspace::{
-        CreateArgs,
         EventLog,
         ListArgs,
         LogArgs,
         PartRead,
-        RenameArgs,
         ShowArgs,
         WorkspaceBrief,
+        WorkspaceChange,
         WorkspaceRow,
         WorkspaceVerb,
         create,
@@ -23,7 +22,7 @@ use holst_core::{
 use rmcp::model::CallToolResult;
 use serde_json::{Map, Value, json};
 
-use crate::{error::Result, login::HandedClient, server::McpServer, tools::said};
+use crate::{error::Result, server::McpServer};
 
 impl McpServer {
     pub(super) async fn workspace_command(
@@ -62,16 +61,12 @@ impl McpServer {
                 .await
             }
             WorkspaceVerb::Create => {
-                self.parsed(arguments, async |args: CreateArgs| {
-                    self.create_workspace(&args).await
-                })
-                .await
+                self.change(arguments, create, Self::workspace_changed_text)
+                    .await
             }
             WorkspaceVerb::Rename => {
-                self.parsed(arguments, async |args: RenameArgs| {
-                    self.rename_workspace(&args).await
-                })
-                .await
+                self.change(arguments, rename, Self::workspace_changed_text)
+                    .await
             }
             WorkspaceVerb::Log => {
                 self.parsed(arguments, async |args: LogArgs| {
@@ -124,22 +119,8 @@ impl McpServer {
             .collect()
     }
 
-    async fn create_workspace(&self, args: &CreateArgs) -> CallToolResult {
-        let call = async |client: HandedClient| {
-            let change = create(&client, args).await?;
-            Ok(change.phrase(|id| format!(" {}", self.state.alias(id))) + "\n")
-        };
-        self.by_mode(args.dry_run, call).await
-    }
-
-    async fn rename_workspace(&self, args: &RenameArgs) -> CallToolResult {
-        let call = async |client: HandedClient| {
-            let change = rename(&client, args).await?;
-            said(change.report.refusal(), || {
-                change.phrase(|id| format!(" {}", self.state.alias(id))) + "\n"
-            })
-        };
-        self.by_mode(args.dry_run, call).await
+    fn workspace_changed_text(&self, change: &WorkspaceChange) -> String {
+        change.phrase(|id| format!(" {}", self.state.alias(id))) + "\n"
     }
 
     fn listing_text(&self, rows: &[WorkspaceRow]) -> String {

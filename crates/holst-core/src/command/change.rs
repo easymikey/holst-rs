@@ -7,7 +7,10 @@ use serde_json::Value;
 
 use crate::{
     command::{
+        api::ApiReply,
+        backup::Restored,
         board::{
+            file::Imported,
             rights::{Settled, Shared},
             settings::Edited,
             tree_change,
@@ -16,6 +19,7 @@ use crate::{
         object::change::Removed,
         table::Confirmation,
         template,
+        workspace::WorkspaceChange,
     },
     effect::{
         board_write::WriteMode,
@@ -116,9 +120,33 @@ impl Outcome for Shared {
     }
 }
 
+impl Outcome for WorkspaceChange {
+    fn refusal(&self) -> Option<&Unconfirmed> {
+        self.report.refusal()
+    }
+}
+
+impl Outcome for Restored {
+    fn refusal(&self) -> Option<&Unconfirmed> {
+        self.outcome.refusal()
+    }
+}
+
+impl Outcome for Imported {
+    fn refusal(&self) -> Option<&Unconfirmed> {
+        self.outcome.refusal()
+    }
+}
+
+impl Outcome for ApiReply {
+    fn refusal(&self) -> Option<&Unconfirmed> {
+        self.report.refusal()
+    }
+}
+
 impl Outcome for Removed {
     fn refusal(&self) -> Option<&Unconfirmed> {
-        self.refusal.as_ref()
+        self.outcome.refusal()
     }
 }
 

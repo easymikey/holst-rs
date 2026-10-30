@@ -171,7 +171,7 @@ impl EnumArgument for ArrowType {}
     example = "holst o add frame \"Roadmap\" \"Q4\" --items q4.json",
     example = "holst o add arrow \"Roadmap\" --from a1b2c3d4 --to e5f6a7b8",
     example = "holst o add link \"Roadmap\" https://example.com",
-    example = "holst o add image \"Roadmap\" mock.png --size 400x300"
+    example = "holst o add image \"Roadmap\" mock.png --size 400,300"
 )]
 pub struct AddArgs {
     #[argument(
@@ -234,9 +234,9 @@ pub struct AddArgs {
     )]
     pub at: Option<String>,
     #[argument(
-        value_name = "wxh",
-        help = "The size as width x height, e.g. 260x160; the kind's own size by default; an image's own size, at most 1000 on the long side, by default",
-        tool_doc = "WxH.",
+        value_name = "w,h",
+        help = "The size as width,height, e.g. 260,160; the kind's own size by default; an image's own size, at most 1000 on the long side, by default",
+        tool_doc = "W,H.",
         kinds = [sticker, shape, frame, image]
     )]
     pub size: Option<String>,
@@ -253,7 +253,7 @@ pub struct AddArgs {
         tool_doc = "Plain card.",
         kinds = [link]
     )]
-    pub no_embed: bool,
+    pub no_preview: bool,
     #[argument(
         value_name = "frame",
         help = "Put it inside this frame: id, link, title or part of a title; --at counts from its corner"
@@ -360,7 +360,7 @@ pub struct AddItem {
     pub label: Vec<String>,
     pub url: Option<String>,
     pub path: Option<String>,
-    pub no_embed: Option<bool>,
+    pub no_preview: Option<bool>,
     pub ratio: Option<FrameRatio>,
     pub background: Option<FrameBackground>,
     pub hide_content: Option<bool>,
@@ -418,9 +418,9 @@ pub struct EditArgs {
     )]
     pub at: Option<String>,
     #[argument(
-        value_name = "wxh",
-        help = "The new size as width x height, e.g. 260x160; unchanged by default",
-        tool_doc = "WxH."
+        value_name = "w,h",
+        help = "The new size as width,height, e.g. 260,160; unchanged by default",
+        tool_doc = "W,H."
     )]
     pub size: Option<String>,
     #[argument(
@@ -441,7 +441,7 @@ pub struct EditArgs {
         help = "A shape's outline color: a palette token, e.g. gray12; unchanged by default",
         tool_doc = "Outline color."
     )]
-    pub stroke: Option<String>,
+    pub stroke_color: Option<String>,
     #[argument(
         value_name = "n",
         help = "A shape's outline width, 0 to 10, or an arrow's line width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17; unchanged by default",
@@ -471,7 +471,7 @@ pub struct EditArgs {
         help = "The marks of the whole text of a sticker, text or shape, and no others: any of bold, italic, underline, strikethrough, code, comma apart, or none; unchanged by default",
         tool_doc = "Whole text: bold,italic,underline,strikethrough,code or none."
     )]
-    pub mark: Option<String>,
+    pub mark: Vec<MarkChoice>,
     #[argument(
         value_name = "color",
         help = "The color of the whole text of a sticker, text or shape: a palette token, e.g. red6; unchanged by default",
@@ -483,7 +483,7 @@ pub struct EditArgs {
         help = "The background of the whole text of a sticker, text or shape: a palette token, e.g. yellow4, or none; unchanged by default",
         tool_doc = "Whole text, e.g. yellow4 or none."
     )]
-    pub text_bg: Option<String>,
+    pub text_background: Option<String>,
     #[argument(
         value_name = "line",
         help = "An arrow's line: straight, elbow or curved; unchanged by default",
@@ -555,7 +555,7 @@ pub struct EditArgs {
     )]
     pub rotate: Option<f64>,
     #[argument(
-        value_name = "s",
+        value_name = "factor",
         help = "Scale a link, drawing, code, file, kanban, flipcard, dice, wheel or task to this factor above 0, or a sticker, text or sticker stack text to it; the corner stays; not with --size; unchanged by default",
         tool_doc = "Factor; not with size."
     )]
@@ -605,6 +605,21 @@ pub struct EditArgs {
     pub dry_run: WriteMode,
 }
 
+/// A mark of the whole text, or `none` for no marks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, strum::VariantNames)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum MarkChoice {
+    Bold,
+    Italic,
+    Underline,
+    Strikethrough,
+    Code,
+    None,
+}
+
+impl EnumArgument for MarkChoice {}
+
 /// One object of `--items` of `object edit`: the arguments of one call.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -615,14 +630,15 @@ pub struct EditItem {
     pub size: Option<String>,
     pub color: Option<String>,
     pub shape: Option<ShapeType>,
-    pub stroke: Option<String>,
+    pub stroke_color: Option<String>,
     pub stroke_width: Option<f64>,
     pub stroke_style: Option<StrokeStyle>,
     pub radius: Option<u32>,
     pub opacity: Option<f64>,
-    pub mark: Option<String>,
+    #[serde(default)]
+    pub mark: Vec<MarkChoice>,
     pub text_color: Option<String>,
-    pub text_bg: Option<String>,
+    pub text_background: Option<String>,
     pub line: Option<ArrowType>,
     pub heads: Option<String>,
     pub bend: Option<String>,
@@ -653,11 +669,11 @@ pub struct EditItem {
     risk = Write,
     block = Commands,
     about = "Copy objects on their board or onto another board",
-    help = "Copy objects on their board, or with --to onto another board; the copies get new ids and keep their content.\n\
+    help = "Copy objects on their board, or with --into onto another board; the copies get new ids and keep their content.\n\
             They go to a free corner unless --at gives the corner of the copied group. Images and files are uploaded again for another board. It prints one line per copy with @N and its link.",
     example = "holst o cp \"Roadmap\" --object a1b2c3d4 --object e5f6a7b8",
     example = "holst o cp \"Roadmap\" --object a1b2c3d4 --at 800,0",
-    example = "holst o cp \"Roadmap\" --object a1b2c3d4 --to \"Retro\""
+    example = "holst o cp \"Roadmap\" --object a1b2c3d4 --into \"Retro\""
 )]
 pub struct CopyArgs {
     #[argument(positional, help = "The board: id, link or part of its name")]
@@ -669,10 +685,9 @@ pub struct CopyArgs {
     pub object: Vec<String>,
     #[argument(
         value_name = "board",
-        help = "Copy onto this board: id, link or part of its name; the same board by default",
-        tool_doc = "Arrow end; cp: the target board. On edit object:side or x,y."
+        help = "Copy onto this board: id, link or part of its name; the same board by default"
     )]
-    pub to: Option<String>,
+    pub into: Option<String>,
     #[argument(
         letter = 'w',
         value_name = "ws",
@@ -822,7 +837,7 @@ pub struct UnlockArgs {
     about = "Align objects to a side or spread them evenly",
     help = "Align objects to one side of the box they cover together, or spread them so that the gaps between are equal and the outer two stay. The objects are the linked object and every --object: at least two to align, three to spread.\n\
             Each moves with what it holds. A locked object, a table cell, a mind-map node or a card in a kanban column refuses the whole call; an arrow stuck to an object follows it. It prints one line per changed object with @N and its link.",
-    example = "holst o align \"Roadmap\" --object a1b2c3d4 --object e5f6a7b8 --to left",
+    example = "holst o align \"Roadmap\" --object a1b2c3d4 --object e5f6a7b8 --side left",
     example = "holst o align \"Roadmap\" --object a1b2c3d4 --object e5f6a7b8 --object 9f8e7d6c --distribute horizontal -n"
 )]
 pub struct AlignArgs {
@@ -835,10 +850,9 @@ pub struct AlignArgs {
     pub object: Vec<String>,
     #[argument(
         value_name = "side",
-        help = "Line the objects up against this side of the box they cover together: left, center, right, top, middle or bottom; center is between left and right, middle between top and bottom",
-        tool_doc = "Arrow end; cp: the target board. On edit object:side or x,y."
+        help = "Line the objects up against this side of the box they cover together: left, center, right, top, middle or bottom; center is between left and right, middle between top and bottom"
     )]
-    pub to: Option<String>,
+    pub side: Option<String>,
     #[argument(
         value_name = "axis",
         help = "Spread the objects so that the gaps between them are equal: horizontal or vertical; use instead of --to",
@@ -990,7 +1004,7 @@ mod tests {
                     ),
                     ("size", &["sticker", "shape", "frame", "image"][..]),
                     ("color", &["sticker", "text", "shape", "frame", "arrow"][..]),
-                    ("no_embed", &["link"][..]),
+                    ("no_preview", &["link"][..]),
                     ("from", &["arrow"][..]),
                     ("to", &["arrow"][..]),
                     ("line", &["arrow"][..]),
@@ -1025,7 +1039,7 @@ mod tests {
             "label",
             "url",
             "path",
-            "no_embed",
+            "no_preview",
             "ratio",
             "background",
             "hide_content",
@@ -1037,14 +1051,14 @@ mod tests {
             "size",
             "color",
             "shape",
-            "stroke",
+            "stroke_color",
             "stroke_width",
             "stroke_style",
             "radius",
             "opacity",
             "mark",
             "text_color",
-            "text_bg",
+            "text_background",
             "line",
             "heads",
             "bend",

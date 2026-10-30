@@ -141,7 +141,7 @@ impl On<'_> {
             .collect();
         let line: Vec<&str> = ["workspace", "log"]
             .into_iter()
-            .chain(pairs.iter().flat_map(|pair| ["-q", pair.as_str()]))
+            .chain(pairs.iter().flat_map(|pair| ["-p", pair.as_str()]))
             .collect();
         let query: serde_json::Map<String, Value> = queries
             .iter()
@@ -150,7 +150,7 @@ impl On<'_> {
         self.reading(
             &line,
             "workspace",
-            json!({ "action": "log", "query": query }),
+            json!({ "action": "log", "param": query }),
         )
         .await
     }

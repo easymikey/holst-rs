@@ -10,7 +10,7 @@ use holst_core::{
         WorkspaceChange,
         WorkspaceRow,
     },
-    domain::text::{EMPTY, joined},
+    domain::text::{EMPTY, counted, joined},
 };
 use serde_json::Value;
 
@@ -47,7 +47,7 @@ fn row_line(row: &WorkspaceRow) -> String {
     let details: Vec<String> = [
         row.organization.clone(),
         row.role.clone(),
-        row.members.map(|count| format!("{count} members")),
+        row.members.map(|count| counted(count, "member")),
     ]
     .into_iter()
     .flatten()
@@ -61,8 +61,8 @@ fn row_line(row: &WorkspaceRow) -> String {
 
 fn shown_text(shown: &WorkspaceBrief) -> String {
     let counts: Vec<String> = [
-        shown.member_count.map(|count| format!("{count} members")),
-        shown.guest_count.map(|count| format!("{count} guests")),
+        shown.member_count.map(|count| counted(count, "member")),
+        shown.guest_count.map(|count| counted(count, "guest")),
     ]
     .into_iter()
     .flatten()
@@ -127,7 +127,7 @@ fn log_text(log: &EventLog) -> String {
     let more = log
         .cursor
         .as_deref()
-        .map(|cursor| format!("more: -q cursor={cursor}"));
+        .map(|cursor| format!("more: -p cursor={cursor}"));
     let lines: Vec<String> = log
         .events
         .iter()

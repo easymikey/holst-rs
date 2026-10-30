@@ -5,20 +5,12 @@ use holst_core::{
         board::picture::Delivery,
         object::{get::Downloaded, list::Listing},
     },
-    domain::text::counted,
+    domain::{id::short_id, text::counted},
 };
 
 use crate::output::view::size_text;
 
 const TEXT_MAX_CHARS: usize = 60;
-/// How many characters of an id name an object.
-const SHORT_ID: usize = 8;
-
-/// Returns the first characters of an id, as `@` names an object.
-fn short(id: &str) -> &str {
-    id.get(..SHORT_ID).unwrap_or(id)
-}
-
 pub(super) fn listing_text(listing: &Listing) -> String {
     let rectangle = listing.rectangle.map(|rect| format!("rectangle {rect}"));
     let head = format!(
@@ -27,7 +19,7 @@ pub(super) fn listing_text(listing: &Listing) -> String {
         listing.edit_right.as_str()
     );
     let lines = listing.objects.iter().map(|listed| {
-        let name = |id: &str| format!("@{}", short(id));
+        let name = |id: &str| format!("@{}", short_id(id));
         format!("{}  {}", listed.line(name, TEXT_MAX_CHARS), listed.link)
     });
     let more = listing.next.map(|next| {
@@ -61,7 +53,7 @@ pub(super) fn downloaded_text(downloaded: &Downloaded) -> String {
             };
             format!(
                 "downloaded @{} to {place} · {}  {}",
-                short(&object.object),
+                short_id(&object.object),
                 size_text(u64::try_from(bytes).unwrap_or(u64::MAX)),
                 object.link
             )

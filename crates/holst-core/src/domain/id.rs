@@ -360,6 +360,22 @@ pub fn uuid_spans(text: &str) -> impl Iterator<Item = (usize, usize)> + '_ {
         })
 }
 
+/// How many characters of an id name an object.
+const SHORT_ID_LEN: usize = 8;
+
+/// Returns the first characters of an id, as `@` names an object.
+///
+/// ```
+/// use holst_core::domain::id::short_id;
+///
+/// assert_eq!(short_id("f1abcdef-0000"), "f1abcdef");
+/// assert_eq!(short_id("s1"), "s1");
+/// ```
+#[must_use]
+pub fn short_id(id: &str) -> &str {
+    id.get(..SHORT_ID_LEN).unwrap_or(id)
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

@@ -216,11 +216,13 @@ fn an_off_board_corner_is_shown_short() -> Result<()> {
 }
 
 #[rstest]
-#[case("192x192", Some((192.0, 192.0)))]
-#[case("400×200", Some((400.0, 200.0)))]
-#[case("0x10", None)]
-#[case("-5x10", None)]
-#[case("infx10", None)]
+#[case("192,192", Some((192.0, 192.0)))]
+#[case(" 400 , 200 ", Some((400.0, 200.0)))]
+#[case("192x192", None)]
+#[case("400×200", None)]
+#[case("0,10", None)]
+#[case("-5,10", None)]
+#[case("inf,10", None)]
 #[case("10", None)]
 fn sizes_parse(#[case] raw: &str, #[case] size: Option<(f64, f64)>) {
     assert_eq!(
@@ -460,14 +462,14 @@ fn edit_verdict(
 }
 
 #[rstest]
-#[case::square_sticker("sticker", "192x192", Verdict::Allowed)]
-#[case::wide_sticker("sticker", "384x192", Verdict::Allowed)]
-#[case::three_to_one_sticker("sticker", "300x100", Verdict::WrongStickerShape)]
-#[case::any_shape_size("shape", "300x100", Verdict::Allowed)]
-#[case::any_frame_size("frame", "300x100", Verdict::Allowed)]
-#[case::text_grows_by_scale("simple-text", "192x192", Verdict::Allowed)]
-#[case::stack_grows_by_scale("sticker-stack", "192x192", Verdict::Allowed)]
-#[case::arrow_has_no_size("arrow", "192x192", Verdict::NoSuchField("size"))]
+#[case::square_sticker("sticker", "192,192", Verdict::Allowed)]
+#[case::wide_sticker("sticker", "384,192", Verdict::Allowed)]
+#[case::three_to_one_sticker("sticker", "300,100", Verdict::WrongStickerShape)]
+#[case::any_shape_size("shape", "300,100", Verdict::Allowed)]
+#[case::any_frame_size("frame", "300,100", Verdict::Allowed)]
+#[case::text_grows_by_scale("simple-text", "192,192", Verdict::Allowed)]
+#[case::stack_grows_by_scale("sticker-stack", "192,192", Verdict::Allowed)]
+#[case::arrow_has_no_size("arrow", "192,192", Verdict::NoSuchField("size"))]
 fn an_edit_resizes_only_what_has_a_size(
     #[case] kind: &str,
     #[case] size: &str,

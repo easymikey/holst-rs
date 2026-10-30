@@ -4,7 +4,7 @@ use std::fmt;
 
 use serde::{Serialize, Serializer, ser::SerializeStruct as _};
 
-use crate::domain::change::value::ChangedObject;
+use crate::domain::{change::value::ChangedObject, id::short_id};
 
 /// Whether an update was only built or also accepted by the server.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -81,10 +81,10 @@ impl fmt::Display for ChangeReport {
         self.objects.iter().try_for_each(|object| {
             write!(
                 f,
-                "{} {} {}{}",
+                "{} {} @{}{}",
                 object.change.verb(self.receipt.delivery),
                 object.kind.short_name(),
-                object.id,
+                short_id(&object.id),
                 object.fields_note()
             )?;
             object
@@ -150,15 +150,15 @@ mod tests {
     #[test]
     fn the_text_has_a_line_per_object_then_the_fate() {
         insta::assert_snapshot!(outcome(Delivery::Accepted).to_string(), @r"
-        created text s1  L/s1
-        changed frame f1: text, position  L/f1
-        removed arrow a1
+        created text @s1  L/s1
+        changed frame @f1: text, position  L/f1
+        removed arrow @a1
         update 42 of 527 bytes accepted by the server
         ");
         insta::assert_snapshot!(outcome(Delivery::Built).to_string(), @r"
-        would create text s1  L/s1
-        would change frame f1: text, position  L/f1
-        would remove arrow a1
+        would create text @s1  L/s1
+        would change frame @f1: text, position  L/f1
+        would remove arrow @a1
         dry run, nothing sent: update of 527 bytes built
         ");
     }

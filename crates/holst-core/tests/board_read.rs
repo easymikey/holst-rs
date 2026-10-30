@@ -1,18 +1,15 @@
 //! Reading boards and searching their text against the fake Holst server.
 
 use holst_core::{
-    command::{board_text, login::connect, lookup},
-    domain::{
-        board::ObjectKind,
-        board_text::{BoardTextQuery, search::ObjectFilter},
-        limit::Limit,
-        session::Session,
-    },
+    command::{login::connect, search, table},
+    domain::session::Session,
+    effect::settings::CacheSettings,
     fake::{ACCEPTED_COOKIES, ACCEPTED_TOKEN, Fake, Fixture, FixtureObject},
     remote::client::Client,
     system::{clock::SystemClock, id::RandomIds},
 };
 use secrecy::SecretString;
+use serde_json::json;
 
 async fn started() -> holst_core::Result<(Fake, Client)> {
     let seed = Fixture::default()
@@ -50,28 +47,13 @@ async fn started() -> holst_core::Result<(Fake, Client)> {
 
 async fn found_of_kind(kind: &str) -> holst_core::Result<usize> {
     let (_fake, client) = started().await?;
-    let groceries = lookup::board_id(&client, "Groceries", None).await?;
-    let search = BoardTextQuery {
-        query: "idea",
-        filter: ObjectFilter {
-            board: None,
-            kind: ObjectKind::typed(kind),
-        },
-        limit: Limit::All,
-    };
-    let found = board_text::search_text(
-        vec![(groceries, "Groceries".to_owned())],
-        |board| {
-            let client = client.clone();
-            async move {
-                board_text::load_index(&client, &board, None)
-                    .await
-                    .map(std::sync::Arc::new)
-            }
-        },
-        &search,
-    )
-    .await?;
+    let args = table::parse(
+        json!({ "query": "idea", "mode": "board_text", "board": "Groceries", "kind": kind, "limit": 0 })
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+    )?;
+    let found = search::search(&client, &CacheSettings::default(), &args).await?;
     Ok(found.total)
 }
 

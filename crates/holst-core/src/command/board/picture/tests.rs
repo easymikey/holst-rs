@@ -88,7 +88,7 @@ fn written_name(snapped: &Snapped) -> Option<String> {
 #[tokio::test]
 async fn the_default_place_is_a_numbered_name_in_the_directory() -> Result<()> {
     let dir = directory()?;
-    let given = json!({ "board": BOARD, "format": "svg" });
+    let given = json!({ "board": BOARD, "picture_format": "svg" });
     let names = [
         written_name(&snap(&given, Some(&dir)).await?),
         written_name(&snap(&given, Some(&dir)).await?),
@@ -105,7 +105,7 @@ async fn the_default_place_is_a_numbered_name_in_the_directory() -> Result<()> {
 async fn a_file_that_is_neither_svg_nor_png_is_refused() {
     let gif = snap(&json!({ "board": BOARD, "file": "x.gif" }), None).await;
     let mismatch = snap(
-        &json!({ "board": BOARD, "file": "x.svg", "format": "png" }),
+        &json!({ "board": BOARD, "file": "x.svg", "picture_format": "png" }),
         None,
     )
     .await;
@@ -117,7 +117,7 @@ async fn a_file_that_is_neither_svg_nor_png_is_refused() {
                     .to_owned()
             ),
             Some(
-                "format of `board snap` must be svg, as the file's name says"
+                "picture-format of `board snap` must be svg, as the file's name says"
                     .to_owned()
             )
         )
@@ -126,9 +126,9 @@ async fn a_file_that_is_neither_svg_nor_png_is_refused() {
 
 #[tokio::test]
 async fn the_longest_side_is_limited() -> Result<()> {
-    let wide = snap(&json!({ "board": BOARD, "format": "svg" }), None).await?;
+    let wide = snap(&json!({ "board": BOARD, "picture_format": "svg" }), None).await?;
     let narrow = snap(
-        &json!({ "board": BOARD, "format": "svg", "max_side": 50 }),
+        &json!({ "board": BOARD, "picture_format": "svg", "max_side": 50 }),
         None,
     )
     .await?;

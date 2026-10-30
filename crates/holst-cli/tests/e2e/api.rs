@@ -41,7 +41,7 @@ fn mistakes_in_api_arguments_are_explained() -> TestResult {
             &["FETCH", "[possible values: GET, POST, PATCH, DELETE]"],
         ),
         (
-            &["api", "GET", "/gapi/current_user", "-q", "novalue"],
+            &["api", "GET", "/gapi/current_user", "-p", "novalue"],
             64,
             &["expected key=value, got \"novalue\""],
         ),

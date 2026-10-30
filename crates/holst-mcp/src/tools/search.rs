@@ -64,7 +64,7 @@ impl Reads for Kept<'_> {
         }
     }
 
-    fn board(&self, board: String) -> BoardRead {
+    fn board(&self, board: String) -> BoardRead<'_> {
         let (holst, client) = (self.holst.clone(), self.client.clone());
         Box::pin(async move { holst.kept_index(&client, &board).await })
     }
@@ -94,7 +94,7 @@ impl McpServer {
     /// One line per match, best first, each with its `@N`.
     pub(crate) fn found_text(&self, found: &Found) -> String {
         if found.hits.is_empty() {
-            format!("no matches for \"{}\"\n{}", found.query, unread(found))
+            format!("no matches\n{}", unread(found))
         } else {
             self.listed(found)
         }
@@ -163,7 +163,7 @@ impl McpServer {
         } else {
             format!(" · {place}")
         };
-        let trash = if found.in_trash { " (trash)" } else { "" };
+        let trash = if found.in_trash { " [in trash]" } else { "" };
         format!(
             "{} {}{slash}{place}{trash}\n",
             self.state.alias(&found.id),
@@ -258,7 +258,7 @@ mod tests {
             [holst.found_text(&one), holst.found_text(&many)],
             [
                 "\"plan\": 1 of 1\n@1 Plan · Q4\n",
-                "\"plan\": 2 of 5\n@1 Plan · easy\n@2 Plans/ · team/Q4 (trash)\n"
+                "\"plan\": 2 of 5\n@1 Plan · easy\n@2 Plans/ · team/Q4 [in trash]\n"
             ]
         );
     }
@@ -332,10 +332,7 @@ mod tests {
     #[test]
     fn no_hits_say_so() {
         let holst = McpServer::offline();
-        assert_eq!(
-            holst.found_text(&found(Vec::new(), 0)),
-            "no matches for \"plan\"\n"
-        );
+        assert_eq!(holst.found_text(&found(Vec::new(), 0)), "no matches\n");
     }
 
     #[test]
