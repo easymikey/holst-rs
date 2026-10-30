@@ -21,8 +21,7 @@ use crate::{
 impl Keychain {
     fn entry() -> Result<keyring::Entry> {
         keyring::Entry::new(SERVICE, ACCOUNT).map_err(|err| {
-            // The store is opened once; `Entry::new` then only says there is
-            // none.
+            // The store opens once; `Entry::new` then only says there is none.
             match keyring::Entry::store_status() {
                 Err(init) if matches!(err, keyring::Error::NoDefaultStore) => {
                     init_error(init)

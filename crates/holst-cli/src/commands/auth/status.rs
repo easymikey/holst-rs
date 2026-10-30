@@ -140,8 +140,7 @@ enum CheckStatus {
     Unknown,
 }
 
-/// The JSON of `auth status -o json`; `sessions` and `tokens` are there only
-/// when asked for.
+/// The JSON of `auth status -o json`; `sessions` and `tokens` only on request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct SavedLogin {
     logged_in: bool,

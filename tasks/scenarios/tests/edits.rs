@@ -58,8 +58,7 @@ async fn an_at_before_an_id_start_names_an_object(
 ) -> Result<(), ScenarioError> {
     let holst = two_notes().start().await?;
     let sticker = holst.fixture_object("Plans", 1)?;
-    // Fixture ids share their first 8 characters; the core test has the short
-    // form.
+    // Fixture ids share their first 8 characters; the core test is short.
     let listed = format!("@{sticker}");
     holst
         .on(surface)

@@ -38,8 +38,7 @@ pub(crate) fn render_json(reply: &impl serde::Serialize) -> Result<String, Error
 fn compact(mut value: Value, alias: &impl Fn(&str) -> String) -> String {
     prune(&mut value);
     alias_ids(&mut value, alias);
-    // An empty list must not be an empty reply: the model reads it as a
-    // failure.
+    // An empty list must not be an empty reply: the model reads a failure.
     if is_empty(&value) {
         format!("{EMPTY}\n")
     } else {

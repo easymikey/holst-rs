@@ -259,8 +259,7 @@ pub fn workspace_in(link: &str) -> Option<WorkspaceId> {
 }
 
 fn in_path(path: &str) -> Option<&str> {
-    // Slash by slash: a name has none, and a `memmem` finder costs more to
-    // build.
+    // Slash by slash: a name has none, and a `memmem` finder costs more.
     BOARD_SEGMENTS.iter().find_map(|segment| {
         memchr::memchr_iter(b'/', path.as_bytes())
             .filter_map(|at| path.get(at..)?.strip_prefix(segment))

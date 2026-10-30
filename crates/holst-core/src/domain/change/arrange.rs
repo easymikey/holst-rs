@@ -202,12 +202,10 @@ mod tests {
     #[test]
     fn a_spread_makes_the_gaps_equal_and_keeps_the_outer_two() {
         let spread = distributed(&boxes(), Axis::Horizontal);
-        // 400 wide, 220 of boxes: two gaps of 90, so the middle one starts at
-        // 190
+        // 400 wide, 220 of boxes: two gaps of 90, so the middle starts at 190.
         assert_eq!(spread, Some(vec![(0.0, 0.0), (40.0, 0.0), (0.0, 0.0)]));
         let down = distributed(&boxes(), Axis::Vertical);
-        // 200 tall, 170 of boxes: two gaps of 15, so the middle one starts at
-        // 65
+        // 200 tall, 170 of boxes: two gaps of 15, so the middle starts at 65.
         assert_eq!(down, Some(vec![(0.0, 0.0), (0.0, 25.0), (0.0, 0.0)]));
     }
 

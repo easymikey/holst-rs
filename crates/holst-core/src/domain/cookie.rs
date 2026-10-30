@@ -170,8 +170,7 @@ fn http_date_seconds(text: &str) -> Option<i64> {
             };
             let time =
                 clock(hour, 24)? * 3600 + clock(minute, 60)? * 60 + clock(second, 61)?;
-            // Days from the civil date, as in Howard Hinnant's
-            // `days_from_civil`.
+            // Days from the civil date, as in Hinnant's `days_from_civil`.
             let shifted_year = year_number - i64::from(month <= 2);
             let day_of_year = (153 * ((month + 9) % 12) + 2) / 5 + day - 1;
             let year_of_era = shifted_year.rem_euclid(400);

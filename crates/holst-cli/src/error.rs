@@ -68,8 +68,7 @@ pub(crate) enum Error {
     #[error("login cancelled")]
     Cancelled,
 
-    // The form showed the inner error under its `└`; only its exit code is
-    // left.
+    // The form showed the inner error under its `└`; its exit code is left.
     #[error("{0}; already shown")]
     Shown(Box<Error>),
 

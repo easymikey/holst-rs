@@ -182,8 +182,7 @@ mod imp {
             .into_iter()
             .map(|number| {
                 let step = u64::from(number == libc::SIGINT);
-                // SAFETY: the action only touches atomics, which is
-                // async-signal-safe.
+                // SAFETY: the action only touches atomics, signal-safe.
                 unsafe {
                     signal_hook_registry::register(number, move || {
                         arrived.store(true, Ordering::SeqCst);

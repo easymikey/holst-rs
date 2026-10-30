@@ -119,8 +119,7 @@ impl HttpError {
     pub fn hint(&self) -> Option<Hint> {
         match self {
             HttpError::Status { status: 401, .. } => Some(Hint::LoginAgain),
-            // A refusal as an HTML page: a wrong address or a filter, not the
-            // API.
+            // An HTML refusal is a wrong address or a filter, not the API.
             HttpError::Status {
                 status: 400 | 403 | 404 | 405,
                 detail: body,
@@ -131,8 +130,7 @@ impl HttpError {
             HttpError::Status {
                 status: 400 | 422, ..
             } => Some(Hint::CheckRequest),
-            // Only overload and gateway failures pass; a 500 repeats on a
-            // retry.
+            // Only overload and gateway failures pass; a 500 repeats.
             HttpError::Status {
                 status: 429 | 502..=504,
                 ..

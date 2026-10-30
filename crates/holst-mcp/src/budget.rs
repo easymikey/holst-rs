@@ -340,8 +340,7 @@ fn measured_replies(
         Vec::new(),
     ))];
     let names = [(BOARD.to_owned(), "Roadmap of documents".to_owned())];
-    // Its own server: aliases handed out here leave the other replies as they
-    // were.
+    // Its own server: aliases handed out here leave other replies as they were.
     let search = BoardTextQuery {
         query: "заказ",
         filter: ObjectFilter::default(),

@@ -167,8 +167,7 @@ impl<'a> Look<'a> {
             .chain(self.offline.then(|| "--offline".to_owned()))
             .chain(self.embed.then(|| "--embed".to_owned()))
             .collect();
-        // the tool takes lists and numbers, and spells the side with an
-        // underscore
+        // The tool takes lists and numbers and an underscored side.
         tool.remove("max-side");
         tool.extend(
             [

@@ -177,8 +177,7 @@ impl<'a> Search<'a> {
             ..Words::default()
         };
         let (line, mut tool) = arguments(&words, SendMode::Send);
-        // the tool spells the mode with underscores and takes the limit as a
-        // number
+        // The tool spells the mode with underscores and takes a numeric limit.
         tool.extend(self.mode.map(|mode| ("mode".to_owned(), Value::from(mode))));
         tool.extend(
             self.limit
