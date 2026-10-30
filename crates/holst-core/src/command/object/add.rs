@@ -106,7 +106,6 @@ pub async fn add(
     cache: &CacheSettings,
     args: &AddArgs,
 ) -> Result<ChangeReport> {
-    // The arguments are read before the first request.
     let items = read_items(args, &|| client.new_id())?;
     through_cache(client, cache, CacheUse::Use, async |loading| {
         added(client, loading, args, &items).await
@@ -1697,7 +1696,6 @@ fn entries(
     linked: Option<&Object>,
 ) -> Result<Vec<NewEntry>> {
     let mut placed: Vec<Rectangle> = Vec::new();
-    // The board rectangle of each item that is a frame, by slot.
     let mut frames: Vec<Option<Rectangle>> = Vec::new();
     // The mind-map nodes made so far, which `#N` parents hang from.
     let mut nodes: Vec<Object> = Vec::new();
@@ -1857,8 +1855,7 @@ fn entry_in(
     (named, linked): (Option<&Object>, Option<&Object>),
 ) -> NewEntry {
     let fresh = item.frame.as_deref().filter(|name| name.starts_with('#'));
-    // An arrow or a stuck stamp is put in a frame by where it falls, if not
-    // asked.
+    // An arrow or a stuck stamp goes in the frame it falls in, if unasked.
     let frame = named.or(linked
         .filter(|_| !matches!(item.what, What::Arrow { .. } | What::Stuck { .. })));
     NewEntry {
@@ -2541,9 +2538,8 @@ mod tests {
     fn board_with_statuses(stored: &[(&str, &str)]) -> Doc {
         let document = Doc::new();
         let store = document.get_or_insert_map("task-card-statusesStore");
-        // imperative: yrs inserts through one `&mut` transaction
         let mut transaction = document.transact_mut();
-        let written = stored
+        stored
             .iter()
             .map(|(id, title)| {
                 store.insert(
@@ -2552,8 +2548,7 @@ mod tests {
                     MapPrelim::from_iter([("title", Any::from(*title))]),
                 )
             })
-            .count();
-        assert_eq!(written, stored.len());
+            .for_each(drop);
         drop(transaction);
         document
     }
@@ -2652,7 +2647,6 @@ mod tests {
         let columns = document.get_or_insert_map("kanban-columnsStore");
         let lanes = document.get_or_insert_map("kanban-swimlanesStore");
         {
-            // imperative: yrs inserts through one `&mut` transaction
             let mut transaction = document.transact_mut();
             let info = infos.insert(
                 &mut transaction,
@@ -3469,14 +3463,16 @@ mod tests {
         let doc = Doc::with_client_id(4);
         let store = doc.get_or_insert_map("objects");
         {
-            // imperative: yrs inserts through one `&mut` transaction
             let mut txn = doc.transact_mut();
-            // imperative: yrs inserts through one `&mut` transaction
-            for fields in fields_of {
-                let id = fields.get("id").and_then(Value::as_str).unwrap_or_default();
-                let any = Any::from_json(&fields.to_string()).unwrap_or(Any::Null);
-                store.insert(&mut txn, id, any);
-            }
+            fields_of
+                .into_iter()
+                .map(|fields| {
+                    let id =
+                        fields.get("id").and_then(Value::as_str).unwrap_or_default();
+                    let any = Any::from_json(&fields.to_string()).unwrap_or(Any::Null);
+                    store.insert(&mut txn, id, any)
+                })
+                .for_each(drop);
         }
         let state = doc
             .transact()

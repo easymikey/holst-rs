@@ -185,30 +185,33 @@ fn frames_with(objects: &[Value], tags: &[(&str, &str)]) -> Vec<SocketFrame> {
     let defined = doc.get_or_insert_map(TAGS_STORE);
     {
         let mut transaction = doc.transact_mut();
-        // imperative: yrs inserts through one `&mut` transaction
-        for (id, title) in tags {
-            defined.insert(
-                &mut transaction,
-                *id,
-                MapPrelim::from_iter([("title", *title), ("color", "indigo5")]),
-            );
-        }
-        // imperative: yrs inserts through one `&mut` transaction
-        for fields in objects {
-            let id = fields.get("id").and_then(Value::as_str).unwrap_or_default();
-            let pairs: Vec<(String, Any)> = fields
-                .as_object()
-                .into_iter()
-                .flatten()
-                .map(|(name, value)| {
-                    (
-                        name.clone(),
-                        Any::from_json(&value.to_string()).unwrap_or(Any::Null),
-                    )
-                })
-                .collect();
-            store.insert(&mut transaction, id, MapPrelim::from_iter(pairs));
-        }
+        tags.iter()
+            .map(|(id, title)| {
+                defined.insert(
+                    &mut transaction,
+                    *id,
+                    MapPrelim::from_iter([("title", *title), ("color", "indigo5")]),
+                )
+            })
+            .for_each(drop);
+        objects
+            .iter()
+            .map(|fields| {
+                let id = fields.get("id").and_then(Value::as_str).unwrap_or_default();
+                let pairs: Vec<(String, Any)> = fields
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .map(|(name, value)| {
+                        (
+                            name.clone(),
+                            Any::from_json(&value.to_string()).unwrap_or(Any::Null),
+                        )
+                    })
+                    .collect();
+                store.insert(&mut transaction, id, MapPrelim::from_iter(pairs))
+            })
+            .for_each(drop);
     }
     let state = doc
         .transact()

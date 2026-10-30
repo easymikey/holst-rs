@@ -206,7 +206,6 @@ async fn edit_fields(
     cache: &CacheSettings,
     args: &EditArgs,
 ) -> Result<Removed> {
-    // The picture is read before the first request.
     let picture = picture_of(args)?;
     through_cache(client, cache, CacheUse::Use, async |loading| {
         edited(client, loading, args, picture.as_ref()).await
@@ -295,8 +294,7 @@ async fn edited(
                     Err(Error::BoardChange(BoardChangeError::ReadOnly))
                 }
             }?;
-            // Before any upload: the edit is built, to see the object takes a
-            // picture.
+            // Before any upload: built to see the object takes a picture.
             let built = write(
                 taking(&file.upload(file.name.clone())),
                 WriteMode::DryRun,
@@ -2062,8 +2060,7 @@ mod tests {
             "titleDocumentId": "t1", "taskCardInfoId": "i1", "statusId": "to-do",
         });
         let socket = board_of(&[task]);
-        // The fixture board holds no info entry: the card is refused after the
-        // reads.
+        // The fixture board holds no info entry: refused after the reads.
         let done = edited(&client, over(&socket), &args, None).await;
         let sent: Vec<_> = fake
             .requests()

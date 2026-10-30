@@ -478,22 +478,26 @@ mod tests {
             doc.get_or_insert_map("reactionsStore"),
         );
         {
-            // imperative: yrs inserts through one `&mut` transaction
             let mut txn = doc.transact_mut();
             let any =
                 |value: &Value| Any::from_json(&value.to_string()).unwrap_or(Any::Null);
-            // imperative: yrs inserts through one `&mut` transaction
-            for fields in objects() {
-                let id = fields.get("id").and_then(Value::as_str).unwrap_or_default();
-                store.insert(&mut txn, id, any(&fields));
-            }
+            objects()
+                .iter()
+                .map(|fields| {
+                    let id =
+                        fields.get("id").and_then(Value::as_str).unwrap_or_default();
+                    store.insert(&mut txn, id, any(fields))
+                })
+                .for_each(drop);
             tags.insert(&mut txn, "t1", any(&json!({"id": "t1", "title": "Urgent"})));
-            // imperative: yrs inserts through one `&mut` transaction
-            for (entry, reaction) in [("r1", "like"), ("r2", "like"), ("r3", "fire")] {
-                let fields =
-                    json!({"id": entry, "targetId": "s2", "reactionId": reaction});
-                reactions.insert(&mut txn, entry, any(&fields));
-            }
+            [("r1", "like"), ("r2", "like"), ("r3", "fire")]
+                .into_iter()
+                .map(|(entry, reaction)| {
+                    let fields =
+                        json!({"id": entry, "targetId": "s2", "reactionId": reaction});
+                    reactions.insert(&mut txn, entry, any(&fields))
+                })
+                .for_each(drop);
         }
         let state = doc
             .transact()
