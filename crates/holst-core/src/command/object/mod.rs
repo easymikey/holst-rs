@@ -109,14 +109,12 @@ pub struct LsArgs {
     pub kind: Option<String>,
     #[argument(
         value_name = "text",
-        help = "Only objects whose text holds this, ignoring case and ё",
-        tool_doc = "Text holds this."
+        help = "Only objects whose text holds this, ignoring case and ё"
     )]
     pub contains: Option<String>,
     #[argument(
         value_name = "format",
-        help = "How the text is shown: plain, or markdown for headings, lists, checkboxes, links, mentions and marks; plain by default",
-        tool_doc = "plain or markdown."
+        help = "How the text is shown: plain, or markdown for headings, lists, checkboxes, links, mentions and marks; plain by default"
     )]
     pub text_format: Option<TextFormat>,
     #[argument(
@@ -203,7 +201,7 @@ pub struct CopyArgs {
     #[argument(
         value_name = "x,y",
         help = "The top-left corner of the copied group in board units; a free corner by default",
-        tool_doc = "x,y; add, cp: a free corner by default; edit: unchanged."
+        tool_doc = "x,y; add, cp: a free corner by default."
     )]
     pub at: Option<String>,
     #[argument(letter = 'n', help = "Show what would change; change nothing")]
@@ -362,7 +360,7 @@ pub struct AlignArgs {
     #[argument(
         value_name = "axis",
         help = "Spread the objects so that the gaps between them are equal: horizontal or vertical; use instead of --to",
-        tool_doc = "Spread evenly: horizontal or vertical. Align instead with to: left, center, right, top, middle or bottom."
+        tool_doc = "Spread evenly; align instead with to: left, center, right, top, middle, bottom."
     )]
     pub distribute: Option<Axis>,
     #[argument(

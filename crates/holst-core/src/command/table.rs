@@ -12,7 +12,6 @@ use strum::{IntoEnumIterator as _, VariantNames};
 
 use crate::{
     command::{
-        api::ApiArgs,
         auth::AuthVerb,
         backup::BackupVerb,
         board::BoardVerb,
@@ -32,7 +31,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Command {
     pub group: CommandGroup,
-    /// `None` when the group is the command itself (`search`, `api`).
+    /// `None` when the group is the command itself (`search`).
     pub verb: Option<&'static str>,
     pub about: &'static str,
     pub help: &'static str,
@@ -263,7 +262,6 @@ pub enum CommandGroup {
     Backup,
     Storage,
     Search,
-    Api,
 }
 
 impl CommandGroup {
@@ -281,7 +279,6 @@ impl CommandGroup {
             CommandGroup::Backup => &BACKUP,
             CommandGroup::Storage => &STORAGE,
             CommandGroup::Search => &SEARCH,
-            CommandGroup::Api => &API,
         }
     }
 }
@@ -307,7 +304,6 @@ pub enum RootSection {
     Core,
     More,
     Local,
-    Advanced,
 }
 
 /// The MCP tools of a group, by their descriptions.
@@ -399,7 +395,7 @@ const OBJECT: GroupHelp = GroupHelp {
     section: RootSection::Core,
     tools: GroupTools::ReadAndWrite {
         read: "Objects on a board or a part of it: kind, place, size, color, text.",
-        write: "Objects on a board: add or edit many in one call, copy, group, lock, align, remove, download.",
+        write: "Objects on a board; add and edit take many in one call.",
     },
     flags: &[GroupFlag {
         name: WORKSPACE_FLAG,
@@ -442,7 +438,7 @@ const COMMENT: GroupHelp = GroupHelp {
     about: "Read and write comment threads",
     section: RootSection::More,
     tools: GroupTools::One {
-        description: "Comment threads of a board: list, start, reply, resolve, delete, mark read.",
+        description: "Comment threads of a board.",
     },
     flags: &[],
     arguments: None,
@@ -458,7 +454,7 @@ const BACKUP: GroupHelp = GroupHelp {
     about: "List, download and restore board backups",
     section: RootSection::More,
     tools: GroupTools::One {
-        description: "A board's automatic backups: list, download, restore.",
+        description: "A board's automatic backups.",
     },
     flags: &[],
     arguments: None,
@@ -492,19 +488,6 @@ const SEARCH: GroupHelp = GroupHelp {
     examples: &[],
 };
 
-const API: GroupHelp = GroupHelp {
-    name: "api",
-    alias: None,
-    about: "Send a request the Holst API catalogue knows",
-    section: RootSection::Advanced,
-    tools: GroupTools::One {
-        description: "Known Holst API calls; only GET unless a human set HOLST_MCP_RAW_WRITE=1.",
-    },
-    flags: &[],
-    arguments: None,
-    examples: &["holst api GET /gapi/current_user"],
-};
-
 /// Every command of the table, by group and verb.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandName {
@@ -518,7 +501,6 @@ pub enum CommandName {
     Object(ObjectVerb),
     /// A group that is the command itself.
     Search,
-    Api,
 }
 
 impl CommandName {
@@ -533,7 +515,7 @@ impl CommandName {
             .chain(BackupVerb::iter().map(Self::Backup))
             .chain(StorageVerb::iter().map(Self::Storage))
             .chain(ObjectVerb::iter().map(Self::Object))
-            .chain([Self::Search, Self::Api])
+            .chain([Self::Search])
     }
 
     #[must_use]
@@ -548,7 +530,6 @@ impl CommandName {
             Self::Storage(verb) => verb.command(),
             Self::Object(verb) => verb.command(),
             Self::Search => &SearchArgs::COMMAND,
-            Self::Api => &ApiArgs::COMMAND,
         }
     }
 

@@ -6,9 +6,7 @@
     reason = "tests use real temp files and the real environment"
 )]
 
-mod api;
 mod board;
-mod board_edit;
 #[path = "../support/mod.rs"] mod fake;
 mod login;
 mod session;

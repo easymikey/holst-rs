@@ -97,5 +97,12 @@ jobs:
       - name: clippy
         run: cargo +"$NIGHTLY" clippy --workspace --all-targets --all-features --locked -- -D warnings
 
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.128
+
       - name: test
-        run: cargo test --workspace --all-features --locked --no-fail-fast
+        run: cargo-nextest nextest run --workspace --all-features --locked --profile ci
+
+      - name: doctests
+        run: cargo test --workspace --all-features --locked --doc

@@ -754,7 +754,14 @@ pub(crate) fn text_of<T: ReadTxn>(
 ) -> String {
     document_root(txn, documents, document)
         .map(|root| plain(txn, &root))
+        .or_else(|| code_text(txn, document))
         .unwrap_or_default()
+}
+
+/// The root text of the code block `document`, which the `documents` map lacks.
+fn code_text<T: ReadTxn>(txn: &T, document: &str) -> Option<String> {
+    txn.get_text(format!("code-mirror-{document}").as_str())
+        .map(|text| yrs::GetString::get_string(&text, txn))
 }
 
 /// Whether an element sits inside a line of text: a link or a mention.

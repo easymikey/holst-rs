@@ -34,17 +34,18 @@ jobs:
           - target: x86_64-apple-darwin
             os: macos-latest
             archive: tar.gz
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-22.04
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
             archive: tar.gz
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-22.04-arm
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
             archive: tar.gz
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             archive: zip
     env:
-      ARCHIVE: holst-${{ matrix.target }}.${{ matrix.archive }}
+      TARGET: ${{ matrix.target }}
+      ARCHIVE_SUFFIX: ${{ matrix.target }}.${{ matrix.archive }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -60,7 +61,7 @@ jobs:
       - name: toolchain
         run: |
           rustup toolchain install
-          rustup target add "${{ matrix.target }}"
+          rustup target add "$TARGET"
 
       - name: check the tag against the Cargo version
         run: |
@@ -75,32 +76,78 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - name: build
-        run: cargo build --release --locked -p holst-cli -p holst-mcp --target "${{ matrix.target }}"
+      - name: install Zig
+        if: runner.os == 'Linux'
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0
 
+      - name: install cargo-zigbuild
+        if: runner.os == 'Linux'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild@0.24.0
+
+      - name: build
+        if: runner.os != 'Linux'
+        run: cargo build --release --locked -p holst-cli -p holst-mcp --target "$TARGET"
+
+      - name: build (static musl)
+        if: runner.os == 'Linux'
+        run: cargo zigbuild --release --locked -p holst-cli -p holst-mcp --target "$TARGET"
+
+      # one stage directory and one archive per program
       - name: stage
         run: |
-          mkdir -p stage
           ext=""
           if [ "${{ runner.os }}" = Windows ]; then ext=".exe"; fi
+          stage() {
+            mkdir -p "stage/$1"
+            cp "target/$TARGET/release/$2$ext" "stage/$1/$2$ext"
+            cp LICENSE-MIT LICENSE-APACHE readme.md "stage/$1/"
+          }
+          stage holst-cli holst
+          stage holst-mcp holst-mcp
+
+      - name: check the Linux binaries are static
+        if: runner.os == 'Linux'
+        run: |
           for bin in holst holst-mcp; do
-            cp "target/${{ matrix.target }}/release/$bin$ext" "stage/$bin$ext"
+            info=$(file "target/$TARGET/release/$bin")
+            echo "$info"
+            case "$info" in
+              *"statically linked"* | *"static-pie linked"*) ;;
+              *) echo "::error::$bin is not statically linked"; exit 1 ;;
+            esac
           done
-          cp LICENSE-MIT LICENSE-APACHE readme.md stage/
+
+      - name: run the binaries
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          ./stage/holst-cli/holst --version
+          ./stage/holst-mcp/holst-mcp --version
 
       - name: pack
         if: runner.os != 'Windows'
-        run: tar -czf "$ARCHIVE" -C stage holst holst-mcp LICENSE-MIT LICENSE-APACHE readme.md
+        run: |
+          pack() { tar -czf "$1-$ARCHIVE_SUFFIX" -C "stage/$1" "$2" LICENSE-MIT LICENSE-APACHE readme.md; }
+          pack holst-cli holst
+          pack holst-mcp holst-mcp
 
       - name: pack
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path stage/* -DestinationPath $env:ARCHIVE
+        run: |
+          foreach ($package in 'holst-cli', 'holst-mcp') {
+            Compress-Archive -Path "stage/$package/*" -DestinationPath "$package-$env:ARCHIVE_SUFFIX"
+          }
 
       - uses: actions/upload-artifact@v7
         with:
-          name: holst-${{ matrix.target }}
-          path: ${{ env.ARCHIVE }}
+          name: dist-${{ matrix.target }}
+          path: |
+            holst-cli-${{ env.ARCHIVE_SUFFIX }}
+            holst-mcp-${{ env.ARCHIVE_SUFFIX }}
           if-no-files-found: error
 
   release:
@@ -121,7 +168,7 @@ jobs:
 
       - name: checksums
         working-directory: dist
-        run: sha256sum holst-*.tar.gz holst-*.zip > checksums.txt
+        run: sha256sum holst-cli-*.tar.gz holst-cli-*.zip holst-mcp-*.tar.gz holst-mcp-*.zip > checksums.txt
 
       - name: release notes
         env:
@@ -164,7 +211,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release create "$TAG" dist/holst-*.tar.gz dist/holst-*.zip dist/checksums.txt \
+          gh release create "$TAG" dist/holst-cli-*.tar.gz dist/holst-cli-*.zip \
+            dist/holst-mcp-*.tar.gz dist/holst-mcp-*.zip dist/checksums.txt \
             --verify-tag --title "$TAG" --notes-file release-notes.md --latest
 
   crates:
@@ -223,11 +271,7 @@ jobs:
         run: |
           version="${TAG#v}"
           base="https://github.com/easymikey/holst-rs/releases/download/$TAG"
-          sha() { sha256sum "dist/holst-$1.tar.gz" | awk '{ print $1 }'; }
-          arm_mac_sha=$(sha aarch64-apple-darwin)
-          intel_mac_sha=$(sha x86_64-apple-darwin)
-          arm_linux_sha=$(sha aarch64-unknown-linux-gnu)
-          intel_linux_sha=$(sha x86_64-unknown-linux-gnu)
+          sha() { sha256sum "dist/$1-$2.tar.gz" | awk '{ print $1 }'; }
 
           mkdir -p ~/.ssh
           ssh-keyscan github.com >> ~/.ssh/known_hosts
@@ -237,7 +281,12 @@ jobs:
           git clone git@github.com:easymikey/homebrew-holst.git tap
           mkdir -p tap/Formula
 
+          # formula CLASS DESC PACKAGE BINARY: the archives are holst-cli-<target> and holst-mcp-<target>
           formula() {
+            arm_mac_sha=$(sha "$3" aarch64-apple-darwin)
+            intel_mac_sha=$(sha "$3" x86_64-apple-darwin)
+            arm_linux_sha=$(sha "$3" aarch64-unknown-linux-musl)
+            intel_linux_sha=$(sha "$3" x86_64-unknown-linux-musl)
             cat <<EOF
           class $1 < Formula
             desc "$2"
@@ -247,41 +296,41 @@ jobs:
 
             on_macos do
               on_arm do
-                url "$base/holst-aarch64-apple-darwin.tar.gz"
+                url "$base/$3-aarch64-apple-darwin.tar.gz"
                 sha256 "$arm_mac_sha"
               end
 
               on_intel do
-                url "$base/holst-x86_64-apple-darwin.tar.gz"
+                url "$base/$3-x86_64-apple-darwin.tar.gz"
                 sha256 "$intel_mac_sha"
               end
             end
 
             on_linux do
               on_arm do
-                url "$base/holst-aarch64-unknown-linux-gnu.tar.gz"
+                url "$base/$3-aarch64-unknown-linux-musl.tar.gz"
                 sha256 "$arm_linux_sha"
               end
 
               on_intel do
-                url "$base/holst-x86_64-unknown-linux-gnu.tar.gz"
+                url "$base/$3-x86_64-unknown-linux-musl.tar.gz"
                 sha256 "$intel_linux_sha"
               end
             end
 
             def install
-              bin.install "$3"
+              bin.install "$4"
             end
 
             test do
-              assert_match version.to_s, shell_output("#{bin}/$3 --version")
+              assert_match version.to_s, shell_output("#{bin}/$4 --version")
             end
           end
           EOF
           }
 
-          formula HolstCli "Command line for Holst whiteboards" holst > tap/Formula/holst-cli.rb
-          formula HolstMcp "MCP server for Holst whiteboards" holst-mcp > tap/Formula/holst-mcp.rb
+          formula HolstCli "Command line for Holst whiteboards" holst-cli holst > tap/Formula/holst-cli.rb
+          formula HolstMcp "MCP server for Holst whiteboards" holst-mcp holst-mcp > tap/Formula/holst-mcp.rb
 
           cd tap
           git config user.name "github-actions[bot]"

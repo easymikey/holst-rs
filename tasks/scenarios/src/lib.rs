@@ -11,6 +11,7 @@ mod comments;
 mod directory;
 mod edit;
 mod error;
+pub mod eval;
 mod export;
 mod files;
 mod given;

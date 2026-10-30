@@ -54,8 +54,7 @@ pub struct EditArgs {
     pub workspace: Option<String>,
     #[argument(
         value_name = "format",
-        help = "How the new text is read: plain, or markdown for headings, lists, checkboxes, links and bold, italic, strike marks; plain by default",
-        tool_doc = "plain or markdown."
+        help = "How the new text is read: plain, or markdown for headings, lists, checkboxes, links and bold, italic, strike marks; plain by default"
     )]
     pub text_format: Option<TextFormat>,
     #[argument(
@@ -106,7 +105,7 @@ pub struct EditFields {
     #[argument(
         value_name = "x,y",
         help = "The new top-left corner in board units; unchanged by default",
-        tool_doc = "x,y; add, cp: a free corner by default; edit: unchanged."
+        tool_doc = "x,y; add, cp: a free corner by default."
     )]
     pub at: Option<String>,
     #[argument(
@@ -124,14 +123,12 @@ pub struct EditFields {
     pub color: Option<String>,
     #[argument(
         value_name = "shape",
-        help = "Change a shape's kind, e.g. ellipse, flowchart-decision or bpmn-gateway; unchanged by default",
-        tool_doc = "Shape kind."
+        help = "Change a shape's kind, e.g. ellipse, flowchart-decision or bpmn-gateway; unchanged by default"
     )]
     pub shape: Option<ShapeType>,
     #[argument(
         value_name = "color",
-        help = "A shape's or an image's outline color: a palette token, e.g. gray12; unchanged by default",
-        tool_doc = "Outline color."
+        help = "A shape's or an image's outline color: a palette token, e.g. gray12; unchanged by default"
     )]
     pub stroke_color: Option<String>,
     #[argument(
@@ -142,14 +139,12 @@ pub struct EditFields {
     pub stroke_width: Option<f64>,
     #[argument(
         value_name = "style",
-        help = "A shape's or an image's outline, or an arrow's line: solid, dashed or dotted; unchanged by default",
-        tool_doc = "Outline style."
+        help = "A shape's or an image's outline, or an arrow's line: solid, dashed or dotted; unchanged by default"
     )]
     pub stroke_style: Option<StrokeStyle>,
     #[argument(
         value_name = "n",
-        help = "A shape's or an image's corner radius, at most as its size allows; unchanged by default",
-        tool_doc = "Corner radius."
+        help = "A shape's or an image's corner radius, at most as its size allows; unchanged by default"
     )]
     pub radius: Option<u32>,
     #[argument(
@@ -161,7 +156,7 @@ pub struct EditFields {
     #[argument(
         value_name = "marks",
         help = "The marks of the whole text of a sticker, text or shape, and no others: any of bold, italic, underline, strikethrough, code, comma apart, or none; unchanged by default",
-        tool_doc = "Whole text: bold,italic,underline,strikethrough,code or none."
+        tool_doc = "Whole text; none clears."
     )]
     pub mark: Vec<MarkChoice>,
     #[argument(
@@ -182,10 +177,7 @@ pub struct EditFields {
         tool_doc = "Sticker: auto or 4..64."
     )]
     pub text_size: Option<String>,
-    #[argument(
-        help = "Show the author on a sticker",
-        tool_doc = "Show sticker author."
-    )]
+    #[argument(help = "Show the author on a sticker")]
     pub show_author: bool,
     #[argument(
         help = "Hide the author on a sticker",
@@ -199,8 +191,7 @@ pub struct EditFields {
     )]
     pub reaction: Vec<String>,
     #[argument(
-        help = "Roll the dice and spin the wheels named, as the web client does; at most 50 objects",
-        tool_doc = "Roll dice, spin wheels."
+        help = "Roll the dice and spin the wheels named, as the web client does; at most 50 objects"
     )]
     pub roll: bool,
     #[argument(
@@ -214,26 +205,20 @@ pub struct EditFields {
         tool_doc = "Hide node children."
     )]
     pub hide_children: bool,
-    #[argument(
-        help = "Show the children of a mind-map node",
-        tool_doc = "Show node children."
-    )]
+    #[argument(help = "Show the children of a mind-map node")]
     pub show_children: bool,
     #[argument(
-        help = "Turn a flip card over: the other side up, its width and height swapped about its centre",
-        tool_doc = "Turn flip card over."
+        help = "Turn a flip card over: the other side up, its width and height swapped about its centre"
     )]
     pub flip: bool,
     #[argument(
         value_name = "text",
-        help = "A flip card's new back, written in the --text-format; unchanged by default",
-        tool_doc = "Flip card back."
+        help = "A flip card's new back, written in the --text-format; unchanged by default"
     )]
     pub back: Option<String>,
     #[argument(
         value_name = "line",
-        help = "An arrow's line: straight, elbow or curved; unchanged by default",
-        tool_doc = "Arrow line."
+        help = "An arrow's line: straight, elbow or curved; unchanged by default"
     )]
     pub line: Option<ArrowType>,
     #[argument(
@@ -268,14 +253,13 @@ pub struct EditFields {
     pub label: Vec<String>,
     #[argument(
         value_name = "ratio",
-        help = "A frame's ratio: 16:9, 4:3, 1:1, a4 or a4-landscape; the area is kept; unchanged by default",
-        tool_doc = "Frame ratio 16:9, 4:3, 1:1, a4, a4_landscape."
+        help = "A frame's ratio: 16:9, 4:3, 1:1, a4 or a4-landscape; the area is kept; unchanged by default"
     )]
     pub ratio: Option<FrameRatio>,
     #[argument(
         value_name = "style",
         help = "A frame's background: fill, border or outline; unchanged by default",
-        tool_doc = "Frame background fill, border, outline."
+        tool_doc = "Frame background."
     )]
     pub background: Option<FrameBackground>,
     #[argument(
@@ -283,10 +267,7 @@ pub struct EditFields {
         tool_doc = "Hide frame content."
     )]
     pub hide_content: bool,
-    #[argument(
-        help = "Show the content of a frame again",
-        tool_doc = "Show frame content."
-    )]
+    #[argument(help = "Show the content of a frame again")]
     pub show_content: bool,
     #[argument(
         value_name = "frame|none",
@@ -326,7 +307,7 @@ pub struct EditFields {
     #[argument(
         value_name = "n",
         help = "Untick the n-th checklist item of a sticker, text or shape, counting from 1 in reading order; unchanged by default",
-        tool_doc = "Untick checklist item n."
+        tool_doc = "Untick item n."
     )]
     pub uncheck: Option<u32>,
     #[argument(
@@ -341,14 +322,12 @@ pub struct EditFields {
     pub tag: Vec<String>,
     #[argument(
         value_name = "name",
-        help = "A code block's language for its highlighting; unchanged by default",
-        tool_doc = "Code language."
+        help = "A code block's language for its highlighting; unchanged by default"
     )]
     pub language: Option<Language>,
     #[argument(
         value_name = "theme",
-        help = "A code block's theme: light or dark; unchanged by default",
-        tool_doc = "Code theme."
+        help = "A code block's theme: light or dark; unchanged by default"
     )]
     pub theme: Option<Theme>,
     #[argument(
@@ -371,26 +350,22 @@ pub struct EditFields {
     pub insert_column: Option<u32>,
     #[argument(
         value_name = "n",
-        help = "Delete a table's n-th row with its cells, counting from 1; refused across a merged block; text in it needs -y; unchanged by default",
-        tool_doc = "Table: delete n-th row."
+        help = "Delete a table's n-th row with its cells, counting from 1; refused across a merged block; text in it needs -y; unchanged by default"
     )]
     pub delete_row: Option<u32>,
     #[argument(
         value_name = "n",
-        help = "Delete a table's n-th column with its cells, counting from 1; refused across a merged block; text in it needs -y; unchanged by default",
-        tool_doc = "Table: delete n-th column."
+        help = "Delete a table's n-th column with its cells, counting from 1; refused across a merged block; text in it needs -y; unchanged by default"
     )]
     pub delete_column: Option<u32>,
     #[argument(
         value_name = "mask",
-        help = "An image's mask: circle, square, portrait, landscape or wide cuts the largest such box out of its box, none gives back the whole picture; it sets the corner and size, so not with --at, --size or --rotate; unchanged by default",
-        tool_doc = "circle, square, portrait, landscape, wide, none."
+        help = "An image's mask: circle, square, portrait, landscape or wide cuts the largest such box out of its box, none gives back the whole picture; it sets the corner and size, so not with --at, --size or --rotate; unchanged by default"
     )]
     pub crop: Option<CropMask>,
     #[argument(
         value_name = "axes",
-        help = "An image's mirroring, set and not toggled: none, horizontal, vertical or both; unchanged by default",
-        tool_doc = "none, horizontal, vertical, both."
+        help = "An image's mirroring, set and not toggled: none, horizontal, vertical or both; unchanged by default"
     )]
     pub flip_image: Option<FlipState>,
     #[argument(
@@ -419,8 +394,7 @@ pub struct EditFields {
     pub description: Option<String>,
     #[argument(
         value_name = "status",
-        help = "A task's status: backlog, to-do, in-progress, done, canceled, or the title of a status of the board; none takes it away; unchanged by default",
-        tool_doc = "Task status."
+        help = "A task's status: backlog, to-do, in-progress, done, canceled, or the title of a status of the board; none takes it away; unchanged by default"
     )]
     pub status: Option<String>,
     #[argument(
@@ -438,7 +412,7 @@ pub struct EditFields {
     #[argument(
         value_name = "view",
         help = "A file's view: stamp is the icon card, content shows the pages, the player or the video, which needs the file's page count, duration or video info; unchanged by default",
-        tool_doc = "File: stamp or content."
+        tool_doc = "File."
     )]
     pub display: Option<FileDisplay>,
     #[argument(
@@ -452,10 +426,7 @@ pub struct EditFields {
         tool_doc = "Hide video details."
     )]
     pub hide_details: bool,
-    #[argument(
-        help = "Show the details of a video file shown as content",
-        tool_doc = "Show video details."
-    )]
+    #[argument(help = "Show the details of a video file shown as content")]
     pub show_details: bool,
     #[argument(
         value_name = "pages",
@@ -466,25 +437,24 @@ pub struct EditFields {
     #[argument(
         value_name = "user",
         help = "The people a task is assigned to, repeat for several: members of the board's workspace by email, name or id, any part, any case; they replace the assignees, none clears; needs a member of the workspace, not a guest; unchanged by default",
-        tool_doc = "Assignees; none clears."
+        tool_doc = "none clears."
     )]
     pub assignee: Vec<String>,
     #[argument(
         value_name = "object|none",
-        help = "Move a task card into this kanban, as a card in its cell: id, link, @N or the first 8 characters of its id; --column and --swimlane pick the cell, alone they move it within its own kanban; none takes it out onto the board where it is drawn; unchanged by default",
-        tool_doc = "Kanban of a task."
+        help = "Move a task card into this kanban, as a card in its cell: id, link, @N or the first 8 characters of its id; --column and --swimlane pick the cell, alone they move it within its own kanban; none takes it out onto the board where it is drawn; unchanged by default"
     )]
     pub kanban: Option<String>,
     #[argument(
         value_name = "text",
         help = "The title of the column a task card moves to, in --kanban or the kanban it is in; the first by default for another kanban",
-        tool_doc = "Kanban column titles."
+        tool_doc = "Kanban columns."
     )]
     pub column: Vec<String>,
     #[argument(
         value_name = "text",
         help = "The title of the swimlane a task card moves to, in --kanban or the kanban it is in; the first by default for another kanban",
-        tool_doc = "Kanban swimlane titles."
+        tool_doc = "Kanban swimlanes."
     )]
     pub swimlane: Vec<String>,
 }

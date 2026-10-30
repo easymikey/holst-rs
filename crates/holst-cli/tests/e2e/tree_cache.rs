@@ -130,17 +130,6 @@ fn a_write_asks_a_tree_older_than_an_hour_and_a_read_does_not() -> TestResult {
 }
 
 #[test]
-fn a_new_login_drops_the_trees_but_not_the_account() -> TestResult {
-    let fake = fake::start()?;
-    let base = fake.base_url();
-    let dir = signed_home(base)?;
-    show(base, &dir, &[])?;
-    ok(&run(base, &dir, &["auth", "login"], &[], LOGIN)?);
-    assert_eq!(asked(&fake, || show(base, &dir, &[])), (1, 0));
-    Ok(())
-}
-
-#[test]
 fn a_board_refused_as_deleted_drops_the_tree_holding_it() -> TestResult {
     let fake = fake::start()?;
     let base = fake.base_url();

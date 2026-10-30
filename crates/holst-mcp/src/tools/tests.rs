@@ -17,7 +17,7 @@ use rmcp::model::CallToolResult;
 use crate::{
     login::fake::CannedResponse,
     server::McpServer,
-    tools::{admin::RawWrite, files::SecretPaths},
+    tools::files::SecretPaths,
 };
 
 const WS: &str = "00000002-0000-4000-8000-000000000001";
@@ -169,137 +169,6 @@ async fn an_original_is_never_sent_to_standard_output() {
             .is_some_and(|text| text.contains("no standard output")),
         "{shown:?}"
     );
-}
-
-async fn api_call(holst: &McpServer, arguments: serde_json::Value) -> Shown {
-    let arguments = arguments.as_object().cloned().unwrap_or_default();
-    text(&holst.command(CommandName::Api, arguments).await)
-}
-
-#[tokio::test]
-async fn api_get_of_the_token_list_hides_the_values() {
-    let tokens = r#"[{"name":"ci","token":"holst_pat_planted_secret"}]"#;
-    let (holst, _) = McpServer::scripted([CannedResponse::ok(tokens)]);
-    let shown = api_call(
-        &holst,
-        serde_json::json!({
-            "method": "GET",
-            "path": "/gapi/personal_access_token/list",
-            "param": { "statuses": "active" },
-        }),
-    )
-    .await;
-    assert_eq!(
-        shown,
-        Shown::Reply("[{\"name\":\"ci\",\"token\":\"***\"}]\n".into())
-    );
-}
-
-#[tokio::test]
-async fn api_get_keeps_what_the_server_remembers() {
-    let (holst, _) =
-        McpServer::scripted([CannedResponse::ok("{}"), CannedResponse::ok("{}")]);
-    // The first call logs in, which drops the memory; keep the board after it.
-    api_call(
-        &holst,
-        serde_json::json!({ "method": "GET", "path": "/gapi/current_user" }),
-    )
-    .await;
-    let index = std::sync::Arc::new(
-        holst_core::domain::board_text::index::BoardIndex::from_objects(
-            &[],
-            BOARD,
-            Vec::new(),
-        ),
-    );
-    holst
-        .state
-        .store_index(BOARD, index, holst.state.generation());
-    api_call(
-        &holst,
-        serde_json::json!({ "method": "GET", "path": "/gapi/current_user" }),
-    )
-    .await;
-    assert!(
-        holst.state.board(BOARD).is_some(),
-        "a GET dropped the board"
-    );
-}
-
-#[tokio::test]
-async fn api_expands_aliases_in_path_query_and_body() {
-    let (holst, network) =
-        McpServer::scripted([CannedResponse::ok("{}"), CannedResponse::ok("{}")]);
-    let holst = holst.with_raw_write(RawWrite::Allowed);
-    let board = holst.state.alias(BOARD);
-    let got = api_call(
-        &holst,
-        serde_json::json!({
-            "method": "GET",
-            "path": "/gapi/channel_user/users",
-            "param": { "channel_id": board },
-        }),
-    )
-    .await;
-    let posted = api_call(
-        &holst,
-        serde_json::json!({
-            "method": "POST",
-            "path": format!("/gapi/channel/{board}/move"),
-            "body": format!(r#"{{"newIndex":1.0,"newParentId":"{board}"}}"#),
-            "confirm": true,
-        }),
-    )
-    .await;
-    assert_eq!(
-        (got.failure(), posted.failure(), network.seen()),
-        (
-            None,
-            None,
-            [
-                format!("GET /gapi/channel_user/users?channel_id={BOARD}"),
-                format!(
-                    r#"POST /gapi/channel/{BOARD}/move {{"newIndex":1.0,"newParentId":"{BOARD}"}}"#
-                ),
-            ]
-            .to_vec()
-        )
-    );
-}
-
-#[rstest::rstest]
-#[case::unconfirmed(RawWrite::Allowed, None, "confirm: true")]
-#[case::refused_by_the_server(RawWrite::Denied, Some(true), "HOLST_MCP_RAW_WRITE")]
-#[tokio::test]
-async fn api_post_goes_out_only_confirmed_and_enabled(
-    #[case] raw_write: RawWrite,
-    #[case] confirm: Option<bool>,
-    #[case] reason: &str,
-) {
-    let (holst, network) = McpServer::scripted([]);
-    let holst = holst.with_raw_write(raw_write);
-    let shown = api_call(
-        &holst,
-        serde_json::json!({ "method": "POST", "path": "/gapi/channel/create", "confirm": confirm }),
-    )
-    .await;
-    assert!(
-        shown.failure().is_some_and(|text| text.contains(reason)),
-        "{shown:?}"
-    );
-    assert!(network.seen().is_empty(), "{:?}", network.seen());
-}
-
-#[tokio::test]
-async fn api_dry_run_sends_nothing() {
-    let (holst, network) = McpServer::scripted([]);
-    let shown = api_call(
-        &holst,
-        serde_json::json!({ "method": "POST", "path": "/gapi/channel/create", "dry_run": true }),
-    )
-    .await;
-    assert_eq!(shown.failure(), None);
-    assert!(network.seen().is_empty(), "{:?}", network.seen());
 }
 
 async fn board_call(

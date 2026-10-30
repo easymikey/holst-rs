@@ -34,8 +34,8 @@ pub mod user;
 /// Workspaces: their trees, trash, members and settings.
 pub mod workspace;
 
-/// Every module's `ENDPOINTS`; a call missing there is unused code.
-pub(crate) const CATALOGUE: &[&[Endpoint]] = &[
+/// Every module's `ENDPOINTS`; public, so a call missing here is unused code.
+pub const CATALOGUE: &[&[Endpoint]] = &[
     recent::ENDPOINTS,
     favorite::ENDPOINTS,
     comment::ENDPOINTS,

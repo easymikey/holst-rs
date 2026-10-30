@@ -35,7 +35,7 @@ pub(crate) const DISPLAY_OPTIONS: &str = "displayOptions";
 pub(crate) const ASSIGNEE_IDS: &str = "assigneeIds";
 pub(crate) const STATUS_STORE: &str = "task-card-statusesStore";
 
-/// What the web client places a card as, in board units (main 207756).
+/// A free card is this wide in the web client (main 207756).
 const WIDE: f64 = 300.0;
 const HIGH: f64 = 120.0;
 /// The `index` of a first card, `zH(null, null)` without its random part.
@@ -204,9 +204,10 @@ pub fn in_cell(made: Made, cell: &Cell) -> Made {
         fields: made
             .fields
             .into_iter()
-            .filter(|(name, _)| *name != INDEX)
+            .filter(|(name, _)| ![INDEX, WIDTH].contains(name))
             .chain([
                 (INDEX, json!(cell.index())),
+                (WIDTH, json!(kanban::CARD_WIDTH)),
                 (SWIMLANE_ID, json!(cell.swimlane)),
                 (COLUMN_ID, json!(cell.column)),
             ])
@@ -555,9 +556,10 @@ mod tests {
                 field(card, "columnId"),
                 field(card, "swimlaneId"),
                 field(card, "index"),
+                field(card, "width"),
                 card.fields
                     .iter()
-                    .filter(|(name, _)| *name == "index")
+                    .filter(|(name, _)| ["index", "width"].contains(name))
                     .count(),
             )),
             [
@@ -567,7 +569,8 @@ mod tests {
                     Some(json!("c1")),
                     Some(json!("l1")),
                     Some(json!(1_099_511_627_776.0)),
-                    1
+                    Some(json!(338.0)),
+                    2
                 ),
                 (
                     Some("k1".to_owned()),
@@ -575,7 +578,8 @@ mod tests {
                     Some(json!("c1")),
                     Some(json!("l1")),
                     Some(json!(2_199_023_255_552.0)),
-                    1
+                    Some(json!(338.0)),
+                    2
                 ),
             ]
         );

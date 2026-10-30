@@ -30,15 +30,18 @@ use crate::{
     },
     effect::{clock::FixedClock, http::HttpMethod, request::ApiRequest},
     remote::{
-        api::channel::{
-            CreateChannel,
-            Duplicate,
-            Rename,
-            ResetCover,
-            SetCover,
-            SetPreview,
+        api::{
+            CATALOGUE,
+            channel::{
+                CreateChannel,
+                Duplicate,
+                Rename,
+                ResetCover,
+                SetCover,
+                SetPreview,
+            },
         },
-        catalogue::{Body, find},
+        catalogue::Body,
         client::fake::{Fake, on_fake, reply},
     },
 };
@@ -574,9 +577,13 @@ fn duplicate_body_names_parent_and_copy() -> Result<()> {
 
 /// How many `PATCH channel/{id}` entries read `text` as their body.
 fn patch_entries_reading(text: &str) -> usize {
-    find(HttpMethod::Patch, "/gapi/channel/b")
-        .into_iter()
-        .flatten()
+    CATALOGUE
+        .iter()
+        .flat_map(|list| list.iter())
+        .filter(|entry| {
+            entry.method == HttpMethod::Patch
+                && entry.template == "/gapi/channel/{channel_id}"
+        })
         .filter(|entry| matches!(entry.body, Body::Typed(read) if read(text).is_ok()))
         .count()
 }

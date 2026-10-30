@@ -10,28 +10,28 @@ USAGE
   holst object add <kind> [flags]
 
 KINDS
-  sticker:     Add stickers
-  text:        Add texts
-  shape:       Add shapes
-  frame:       Add frames
-  arrow:       Add arrows
-  link:        Add links
-  image:       Add images
-  file:        Add files
-  dice:        Add dices
-  wheel:       Add wheels
-  sticker-stack:Add sticker-stacks
-  flipcard:    Add flipcards
-  mind-map:    Add mind-maps
-  document:    Add documents
-  stamp:       Add stamps
-  code:        Add codes
-  table:       Add tables
-  reaction-stamp:Add reaction-stamps
-  icon:        Add icons
-  task:        Add tasks
-  kanban:      Add kanbans
-  drawing:     Add drawings
+  sticker:         Add stickers
+  text:            Add texts
+  shape:           Add shapes
+  frame:           Add frames
+  arrow:           Add arrows
+  link:            Add links
+  image:           Add images
+  file:            Add files
+  dice:            Add dice
+  wheel:           Add spinner wheels
+  sticker-stack:   Add sticker stacks
+  flipcard:        Add flip cards
+  mind-map:        Add mind-map nodes
+  document:        Add documents
+  stamp:           Add text stamps
+  code:            Add code blocks
+  table:           Add tables
+  reaction-stamp:  Add reaction stamps
+  icon:            Add icons
+  task:            Add task cards
+  kanban:          Add kanbans
+  drawing:         Add freehand strokes
 
 INHERITED FLAGS
   --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`

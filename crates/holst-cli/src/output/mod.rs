@@ -128,7 +128,7 @@ pub(crate) fn stdout_coloring() -> Coloring {
 }
 
 pub(crate) fn value(format: OutputFormat, value: &Value) -> Result<()> {
-    reply(format, ReplyKind::Read, value)
+    line(rendered(format, value)?)
 }
 
 /// Prints `text` as text, or the reply as JSON.
@@ -198,31 +198,14 @@ pub(crate) fn stdout_kind() -> StreamKind {
     StreamKind::terminal_if(io::stdout().is_terminal())
 }
 
-pub(crate) fn reply(
-    format: OutputFormat,
-    kind: ReplyKind,
-    value: &Value,
-) -> Result<()> {
-    line(rendered(format, kind, value)?)
-}
-
-const DONE: &str = "done";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ReplyKind {
-    Read,
-    Change,
-}
-
-fn rendered(format: OutputFormat, kind: ReplyKind, value: &Value) -> Result<String> {
-    match (format, kind, is_blank(value)) {
-        (OutputFormat::Text, ReplyKind::Read, true) => Ok(EMPTY.to_owned()),
-        (OutputFormat::Text, ReplyKind::Change, true) => Ok(DONE.to_owned()),
+fn rendered(format: OutputFormat, value: &Value) -> Result<String> {
+    match (format, is_blank(value)) {
+        (OutputFormat::Text, true) => Ok(EMPTY.to_owned()),
         // JSON escapes C0 controls only; C1 and bidi overrides from names stay.
-        (OutputFormat::Text, _, _) => serde_json::to_string_pretty(value)
+        (OutputFormat::Text, false) => serde_json::to_string_pretty(value)
             .map(|text| printable(&text).into_owned()),
-        (OutputFormat::Pretty, _, _) => serde_json::to_string_pretty(value),
-        (OutputFormat::Json, _, _) => serde_json::to_string(value),
+        (OutputFormat::Pretty, _) => serde_json::to_string_pretty(value),
+        (OutputFormat::Json, _) => serde_json::to_string(value),
     }
     .map_err(Error::Render)
 }
@@ -238,7 +221,6 @@ mod tests {
         output::{
             OutputFormat,
             OutputTarget,
-            ReplyKind,
             coloring::Coloring,
             rendered,
             stdout_error,
@@ -258,40 +240,19 @@ mod tests {
         #[case] value: Value,
         #[case] expected: &str,
     ) {
-        assert_eq!(
-            rendered(format, ReplyKind::Read, &value).ok().as_deref(),
-            Some(expected)
-        );
+        assert_eq!(rendered(format, &value).ok().as_deref(), Some(expected));
     }
 
     #[test]
     fn text_replies_are_printable_json_ones_exact() {
         let value = json!({ "name": "a\u{202e}b\u{9b}c" });
-        let text = rendered(OutputFormat::Text, ReplyKind::Read, &value).ok();
+        let text = rendered(OutputFormat::Text, &value).ok();
         assert_eq!(
             text.as_deref(),
             Some("{\n  \"name\": \"a\u{fffd}b\u{fffd}c\"\n}")
         );
-        let json = rendered(OutputFormat::Json, ReplyKind::Read, &value).ok();
+        let json = rendered(OutputFormat::Json, &value).ok();
         assert_eq!(json.as_deref(), Some("{\"name\":\"a\u{202e}b\u{9b}c\"}"));
-    }
-
-    #[rstest::rstest]
-    #[case::null(OutputFormat::Text, Value::Null, "done")]
-    #[case::object(OutputFormat::Text, json!({}), "done")]
-    #[case::list(OutputFormat::Text, json!([]), "done")]
-    #[case::reply(OutputFormat::Text, json!({ "id": "b1" }), "{\n  \"id\": \"b1\"\n}")]
-    #[case::json(OutputFormat::Json, Value::Null, "null")]
-    #[case::pretty(OutputFormat::Pretty, json!({}), "{}")]
-    fn empty_replies_to_changes_say_done(
-        #[case] format: OutputFormat,
-        #[case] value: Value,
-        #[case] expected: &str,
-    ) {
-        assert_eq!(
-            rendered(format, ReplyKind::Change, &value).ok().as_deref(),
-            Some(expected)
-        );
     }
 
     #[test]

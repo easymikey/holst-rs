@@ -141,7 +141,6 @@ expression: "*holst.tools"
           "type": "integer"
         },
         "note_format": {
-          "description": "plain or markdown.",
           "enum": [
             "plain",
             "markdown"
@@ -275,7 +274,7 @@ expression: "*holst.tools"
           "type": "boolean"
         },
         "file": {
-          "description": "export: a new file; import: a board file.",
+          "description": "Export: a new file.",
           "type": "string"
         },
         "folder": {
@@ -316,11 +315,9 @@ expression: "*holst.tools"
           "type": "boolean"
         },
         "note": {
-          "description": "The new note.",
           "type": "string"
         },
         "note_format": {
-          "description": "plain or markdown.",
           "enum": [
             "plain",
             "markdown"
@@ -328,7 +325,6 @@ expression: "*holst.tools"
           "type": "string"
         },
         "note_template": {
-          "description": "todo, agenda, summary, workshop or annotation.",
           "enum": [
             "todo",
             "agenda",
@@ -354,7 +350,7 @@ expression: "*holst.tools"
           "type": "number"
         },
         "path": {
-          "description": "export: a new file; import: a board file.",
+          "description": "Import: a board file.",
           "type": "string"
         },
         "permanently": {
@@ -411,7 +407,7 @@ expression: "*holst.tools"
   },
   {
     "name": "comment",
-    "description": "Comment threads of a board: list, start, reply, resolve, delete, mark read.",
+    "description": "Comment threads of a board.",
     "inputSchema": {
       "properties": {
         "action": {
@@ -433,7 +429,6 @@ expression: "*holst.tools"
           "type": "string"
         },
         "color": {
-          "description": "Thread colour, or none.",
           "enum": [
             "white1",
             "red10",
@@ -585,7 +580,7 @@ expression: "*holst.tools"
   },
   {
     "name": "backup",
-    "description": "A board's automatic backups: list, download, restore.",
+    "description": "A board's automatic backups.",
     "inputSchema": {
       "properties": {
         "action": {
@@ -641,7 +636,6 @@ expression: "*holst.tools"
           "type": "string"
         },
         "contains": {
-          "description": "Text holds this.",
           "type": "string"
         },
         "frame": {
@@ -685,7 +679,6 @@ expression: "*holst.tools"
           "type": "string"
         },
         "text_format": {
-          "description": "plain or markdown.",
           "enum": [
             "plain",
             "markdown"
@@ -708,7 +701,7 @@ expression: "*holst.tools"
   },
   {
     "name": "object_write",
-    "description": "Objects on a board: add or edit many in one call, copy, group, lock, align, remove, download.",
+    "description": "Objects on a board; add and edit take many in one call.",
     "inputSchema": {
       "properties": {
         "action": {
@@ -730,22 +723,21 @@ expression: "*holst.tools"
           "type": "boolean"
         },
         "assignee": {
-          "description": "Assignees; none clears.",
+          "description": "none clears.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "at": {
-          "description": "x,y; add, cp: a free corner by default; edit: unchanged.",
+          "description": "x,y; add, cp: a free corner by default.",
           "type": "string"
         },
         "back": {
-          "description": "Flip card back.",
           "type": "string"
         },
         "background": {
-          "description": "Frame background fill, border, outline.",
+          "description": "Frame background.",
           "enum": [
             "fill",
             "border",
@@ -784,21 +776,19 @@ expression: "*holst.tools"
           "type": "string"
         },
         "column": {
-          "description": "Kanban column titles.",
+          "description": "Kanban columns.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "columns": {
-          "description": "Table columns.",
           "type": "integer"
         },
         "confirm": {
           "type": "boolean"
         },
         "crop": {
-          "description": "circle, square, portrait, landscape, wide, none.",
           "enum": [
             "circle",
             "square",
@@ -810,11 +800,9 @@ expression: "*holst.tools"
           "type": "string"
         },
         "delete_column": {
-          "description": "Table: delete n-th column.",
           "type": "integer"
         },
         "delete_row": {
-          "description": "Table: delete n-th row.",
           "type": "integer"
         },
         "description": {
@@ -825,7 +813,6 @@ expression: "*holst.tools"
           "type": "string"
         },
         "direction": {
-          "description": "Side of the parent.",
           "enum": [
             "left",
             "right",
@@ -835,7 +822,7 @@ expression: "*holst.tools"
           "type": "string"
         },
         "display": {
-          "description": "File: stamp or content.",
+          "description": "File.",
           "enum": [
             "stamp",
             "content"
@@ -843,7 +830,7 @@ expression: "*holst.tools"
           "type": "string"
         },
         "distribute": {
-          "description": "Spread evenly: horizontal or vertical. Align instead with to: left, center, right, top, middle or bottom.",
+          "description": "Spread evenly; align instead with to: left, center, right, top, middle, bottom.",
           "enum": [
             "horizontal",
             "vertical"
@@ -870,11 +857,9 @@ expression: "*holst.tools"
           "type": "string"
         },
         "flip": {
-          "description": "Turn flip card over.",
           "type": "boolean"
         },
         "flip_image": {
-          "description": "none, horizontal, vertical, both.",
           "enum": [
             "none",
             "horizontal",
@@ -911,7 +896,6 @@ expression: "*holst.tools"
           "type": "boolean"
         },
         "highlighter": {
-          "description": "Highlighter stroke.",
           "type": "boolean"
         },
         "insert_column": {
@@ -933,7 +917,6 @@ expression: "*holst.tools"
           "type": "array"
         },
         "kanban": {
-          "description": "Kanban of a task.",
           "type": "string"
         },
         "kind": {
@@ -972,7 +955,6 @@ expression: "*holst.tools"
           "type": "array"
         },
         "language": {
-          "description": "Code language.",
           "enum": [
             "typescript",
             "javascript",
@@ -995,7 +977,6 @@ expression: "*holst.tools"
           "type": "string"
         },
         "line": {
-          "description": "Arrow line.",
           "enum": [
             "straight",
             "elbow",
@@ -1008,7 +989,7 @@ expression: "*holst.tools"
           "type": "string"
         },
         "mark": {
-          "description": "Whole text: bold,italic,underline,strikethrough,code or none.",
+          "description": "Whole text; none clears.",
           "items": {
             "enum": [
               "bold",
@@ -1083,11 +1064,9 @@ expression: "*holst.tools"
           "description": "Stroke points x,y, 2 to 10000; its stroke_width is 1..30."
         },
         "radius": {
-          "description": "Corner radius.",
           "type": "integer"
         },
         "ratio": {
-          "description": "Frame ratio 16:9, 4:3, 1:1, a4, a4_landscape.",
           "enum": [
             "16:9",
             "4:3",
@@ -1108,7 +1087,6 @@ expression: "*holst.tools"
           "type": "boolean"
         },
         "roll": {
-          "description": "Roll dice, spin wheels.",
           "type": "boolean"
         },
         "rotate": {
@@ -1116,7 +1094,6 @@ expression: "*holst.tools"
           "type": "number"
         },
         "rows": {
-          "description": "Table rows.",
           "type": "integer"
         },
         "scale": {
@@ -1124,7 +1101,6 @@ expression: "*holst.tools"
           "type": "number"
         },
         "shape": {
-          "description": "Shape kind.",
           "enum": [
             "square",
             "rounded_rectangle",
@@ -1192,19 +1168,15 @@ expression: "*holst.tools"
           "type": "string"
         },
         "show_author": {
-          "description": "Show sticker author.",
           "type": "boolean"
         },
         "show_children": {
-          "description": "Show node children.",
           "type": "boolean"
         },
         "show_content": {
-          "description": "Show frame content.",
           "type": "boolean"
         },
         "show_details": {
-          "description": "Show video details.",
           "type": "boolean"
         },
         "side": {
@@ -1223,15 +1195,12 @@ expression: "*holst.tools"
           "type": "integer"
         },
         "status": {
-          "description": "Task status.",
           "type": "string"
         },
         "stroke_color": {
-          "description": "Outline color.",
           "type": "string"
         },
         "stroke_style": {
-          "description": "Outline style.",
           "enum": [
             "solid",
             "dashed",
@@ -1244,7 +1213,7 @@ expression: "*holst.tools"
           "type": "number"
         },
         "swimlane": {
-          "description": "Kanban swimlane titles.",
+          "description": "Kanban swimlanes.",
           "items": {
             "type": "string"
           },
@@ -1269,7 +1238,6 @@ expression: "*holst.tools"
           "type": "string"
         },
         "text_format": {
-          "description": "plain or markdown.",
           "enum": [
             "plain",
             "markdown"
@@ -1281,7 +1249,6 @@ expression: "*holst.tools"
           "type": "string"
         },
         "theme": {
-          "description": "Code theme.",
           "enum": [
             "light",
             "dark"
@@ -1293,7 +1260,7 @@ expression: "*holst.tools"
           "type": "string"
         },
         "uncheck": {
-          "description": "Untick checklist item n.",
+          "description": "Untick item n.",
           "type": "integer"
         },
         "unmerge": {
@@ -1301,7 +1268,6 @@ expression: "*holst.tools"
           "type": "string"
         },
         "url": {
-          "description": "Page address.",
           "type": "string"
         },
         "weight": {
@@ -1372,53 +1338,6 @@ expression: "*holst.tools"
       },
       "required": [
         "query"
-      ],
-      "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "openWorldHint": false
-    }
-  },
-  {
-    "name": "api",
-    "description": "Known Holst API calls; only GET unless a human set HOLST_MCP_RAW_WRITE=1.",
-    "inputSchema": {
-      "properties": {
-        "body": {
-          "type": "string"
-        },
-        "confirm": {
-          "type": "boolean"
-        },
-        "dry_run": {
-          "type": "boolean"
-        },
-        "method": {
-          "enum": [
-            "GET",
-            "POST",
-            "PATCH",
-            "DELETE"
-          ],
-          "type": "string"
-        },
-        "param": {
-          "additionalProperties": {
-            "type": [
-              "string",
-              "number"
-            ]
-          },
-          "type": "object"
-        },
-        "path": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "method",
-        "path"
       ],
       "type": "object"
     },

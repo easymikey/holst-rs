@@ -3,7 +3,6 @@
 use crate::error::{
     Error,
     hint::{Hint, Surface},
-    http::HttpMethod,
     lookup::Candidates,
 };
 
@@ -167,27 +166,6 @@ pub enum InputError {
     #[error("{} problems:{}", .errors.len(), listed(.errors))]
     Several { errors: Vec<Error> },
 
-    #[error(transparent)]
-    Refused(Refusal),
-
-    #[error("holst api does not send login calls: {method} {path}")]
-    LoginCall { method: HttpMethod, path: String },
-
-    #[error("{method} {template} needs the query {key}")]
-    MissingQuery {
-        method: HttpMethod,
-        template: &'static str,
-        key: &'static str,
-    },
-
-    #[error(
-        "{method} {template} changes access or workspace settings, which MCP does not send through `api`"
-    )]
-    AdminWrite {
-        method: HttpMethod,
-        template: &'static str,
-    },
-
     #[error("no workspaces found")]
     NoWorkspaces,
 
@@ -255,10 +233,6 @@ impl InputError {
             | InputError::ReplyNotFound { .. }
             | InputError::NotCommandArguments(_)
             | InputError::ImportBoardLeft { .. }
-            | InputError::Refused(_)
-            | InputError::LoginCall { .. }
-            | InputError::MissingQuery { .. }
-            | InputError::AdminWrite { .. }
             | InputError::NoWorkspaces => None,
         }
     }
@@ -268,7 +242,6 @@ impl InputError {
     pub const fn hint(&self) -> Option<Hint> {
         match self {
             InputError::WorkspaceNotChosen { .. } => Some(Hint::NarrowDown),
-            InputError::LoginCall { .. } => Some(Hint::LoginAgain),
             InputError::BaseNotOrigin { .. }
             | InputError::BaseNotUrl { .. }
             | InputError::BaseNotHttps { .. }
@@ -310,10 +283,6 @@ impl InputError {
             | InputError::ReplyNotFound { .. }
             | InputError::NotCommandArguments(_)
             | InputError::ImportBoardLeft { .. }
-            // The message names what the call takes or where to send it.
-            | InputError::Refused(_)
-            | InputError::MissingQuery { .. }
-            | InputError::AdminWrite { .. }
             // Each problem's own words say what to change.
             | InputError::Several { .. } => None,
         }
@@ -335,48 +304,6 @@ fn taken_list(taken: &[&str]) -> String {
     }
 }
 
-/// Why a request is not a catalogue call; nothing was sent.
-#[derive(Debug, thiserror::Error)]
-pub enum Refusal {
-    #[error(
-        "holst api sends only the calls holst knows; {method} {path} is not one of them"
-    )]
-    Unknown { method: HttpMethod, path: String },
-
-    #[error(
-        "holst api sends only the calls holst knows; {template} takes {allowed}, not {method}"
-    )]
-    Method {
-        template: &'static str,
-        allowed: String,
-        method: HttpMethod,
-    },
-
-    #[error("\"{raw}\" is not an id segment in {template}")]
-    Segment { raw: String, template: &'static str },
-
-    #[error("{method} {template} takes {allowed}; not {key}")]
-    Query {
-        method: HttpMethod,
-        template: &'static str,
-        allowed: String,
-        key: String,
-    },
-
-    #[error("{method} {template} takes no body")]
-    NoBody {
-        method: HttpMethod,
-        template: &'static str,
-    },
-
-    #[error("the body does not fit {method} {template}: {error}")]
-    Body {
-        method: HttpMethod,
-        template: &'static str,
-        error: serde_json::Error,
-    },
-}
-
 fn listed(problems: &[Error]) -> String {
     problems
         .iter()
@@ -389,8 +316,7 @@ pub(super) mod tests {
     use crate::error::{
         Error,
         hint::{Hint, decided::assert_every_variant},
-        http::HttpMethod,
-        input::{InputError, InputErrorDiscriminants, Refusal},
+        input::{InputError, InputErrorDiscriminants},
         lookup::Candidates,
     };
 
@@ -513,35 +439,6 @@ pub(super) mod tests {
                     workspaces: Candidates::default(),
                 },
                 Some(Hint::NarrowDown),
-            ),
-            (
-                InputError::Refused(Refusal::NoBody {
-                    method: HttpMethod::Post,
-                    template: "x",
-                }),
-                None,
-            ),
-            (
-                InputError::LoginCall {
-                    method: HttpMethod::Post,
-                    path: text(),
-                },
-                Some(Hint::LoginAgain),
-            ),
-            (
-                InputError::MissingQuery {
-                    method: HttpMethod::Get,
-                    template: "x",
-                    key: "k",
-                },
-                None,
-            ),
-            (
-                InputError::AdminWrite {
-                    method: HttpMethod::Patch,
-                    template: "x",
-                },
-                None,
             ),
         ]
     }

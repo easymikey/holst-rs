@@ -11,6 +11,10 @@ use crate::{
     observation::{ErrorExit, Observation},
 };
 
+/// Binaries alive at once over a run; a burst of connects times out.
+pub(crate) static RUNNING: tokio::sync::Semaphore =
+    tokio::sync::Semaphore::const_new(4);
+
 /// Runs `holst -o json` with `arguments`; a success is read by `observe`, a
 /// failure is read here, the same for every command.
 pub(crate) async fn run(
@@ -35,6 +39,7 @@ pub(crate) async fn output(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    let _running = RUNNING.acquire().await;
     let mut child = command.spawn()?;
     child
         .stdin

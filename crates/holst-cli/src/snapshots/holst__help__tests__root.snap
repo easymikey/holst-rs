@@ -22,9 +22,6 @@ MORE COMMANDS
 LOCAL COMMANDS
   storage:     See and clean what holst keeps on this machine
 
-ADVANCED COMMANDS
-  api:         Send a request the Holst API catalogue knows
-
 FLAGS
   -o, --output format   Output format: text, json or pretty; text by default
   -v, --verbose         Print request logs on stderr

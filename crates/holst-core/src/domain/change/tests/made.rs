@@ -173,8 +173,8 @@ fn a_made_object_is_written_with_texts_parts_code_and_entries() -> Result<()> {
             .sorted_by_key(|(_, text)| text.clone())
             .collect::<Vec<_>>(),
         [
-            (ObjectKind::Code, String::new()),
-            (ObjectKind::Sticker, "inner".into())
+            (ObjectKind::Sticker, "inner".into()),
+            (ObjectKind::Code, "let x = 1;".into())
         ]
     );
     Ok(())

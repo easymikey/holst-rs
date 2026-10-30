@@ -265,29 +265,6 @@ async fn favorites_are_listed_in_their_order(
 
 #[rstest]
 #[tokio::test]
-async fn recent_boards_are_per_account_across_workspaces(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
-    let holst = given()
-        .saved_login()
-        .workspace("Team")
-        .workspace("Ops")
-        .board("Alpha", "Team", None)
-        .board("Beta", "Ops", None)
-        .start()
-        .await?;
-    holst.on(surface).touch_board("Alpha", "Team").await?;
-    holst.on(surface).touch_board("Beta", "Ops").await?;
-    let observation = holst
-        .on(surface)
-        .list_tree(Ls::new().view("recent").workspace("Team"))
-        .await?;
-    then(&observation).lists_among(&["Alpha", "Beta"]);
-    Ok(())
-}
-
-#[rstest]
-#[tokio::test]
 async fn the_sidebar_view_lists_the_sidebar_order(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {

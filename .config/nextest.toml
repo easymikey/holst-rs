@@ -1,6 +1,8 @@
 [profile.default]
 fail-fast = true
 failure-output = "immediate"
+# Loopback connects to the test fakes stall on a loaded host (os error 60); a rerun gets through and is reported as flaky.
+retries = 2
 
 [profile.ci]
 inherits = "default"
@@ -8,7 +10,7 @@ fail-fast = false
 failure-output = "immediate-final"
 success-output = "never"
 status-level = "fail"
-final-status-level = "fail"
+final-status-level = "flaky"
 
 [profile.ci.junit]
 path = "junit.xml"

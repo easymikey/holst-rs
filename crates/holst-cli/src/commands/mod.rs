@@ -1,6 +1,5 @@
 //! The commands, the signed-in client and the arguments they share.
 
-pub(crate) mod api;
 mod ask;
 pub(crate) mod auth;
 pub(crate) mod backup;
@@ -129,7 +128,6 @@ async fn group(
         CommandName::Storage(verb) => storage::run(verb, arguments, run, format).await,
         CommandName::Object(verb) => object::run(verb, arguments, run, format).await,
         CommandName::Search => search::run(arguments, run, format).await,
-        CommandName::Api => api::run(arguments, run, format).await,
     }
 }
 

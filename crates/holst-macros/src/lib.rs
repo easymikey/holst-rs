@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 
 use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as Tokens};
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, quote_spanned};
 use syn::{
     Attribute,
     Expr,
@@ -484,7 +484,7 @@ fn catalogue_item(
         .listing
         .and_then(EndpointListing::class)
         .map(|word| format_ident!("{word}"));
-    let name = format_ident!("{}", function.to_string().to_uppercase());
+    let name = Ident::new(&function.to_string().to_uppercase(), function.span());
     let method = format_ident!("{method}");
     let template = format!("/gapi/{}", endpoint.path.value());
     let query = catalogue_query(&endpoint.query);
@@ -498,7 +498,9 @@ fn catalogue_item(
         },
     };
     class.map_or_else(Tokens::new, |class| {
-        quote! {
+        // At the function's own span, so `dead_code` names an endpoint no list holds.
+        quote_spanned! {function.span()=>
+            #[allow(unused_qualifications, reason = "the paths are written out for any module")]
             pub(crate) const #name: crate::remote::catalogue::Endpoint =
                 crate::remote::catalogue::Endpoint {
                     method: crate::effect::http::HttpMethod::#method,

@@ -240,11 +240,14 @@ fn listing(reply: &mcp::Reply) -> Observation {
 /// stale one is never tested.
 fn binary_path(name: &str) -> Result<PathBuf, ScenarioError> {
     static BUILT: OnceLock<Result<(), BuildError>> = OnceLock::new();
-    let profile = std::env::current_exe()?
-        .parent()
-        .and_then(Path::parent)
-        .map(Path::to_path_buf)
-        .unwrap_or_default();
+    // a test runs from `<profile>/deps`, a binary of this package from `<profile>`
+    let exe = std::env::current_exe()?;
+    let profile = exe.parent().map_or_else(PathBuf::new, |folder| {
+        match folder.file_name().and_then(|leaf| leaf.to_str()) {
+            Some("deps") => folder.parent().unwrap_or(folder).to_path_buf(),
+            _ => folder.to_path_buf(),
+        }
+    });
     BUILT.get_or_init(|| build(&profile)).clone()?;
     let path = profile.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
     if path.is_file() {

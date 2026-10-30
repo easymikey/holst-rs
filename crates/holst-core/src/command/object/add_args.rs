@@ -109,7 +109,6 @@ pub struct AddArgs {
     #[argument(
         value_name = "format",
         help = "How the text is read: plain, or markdown for headings, lists, checkboxes, links and bold, italic, strike marks; plain by default",
-        tool_doc = "plain or markdown.",
         kinds = [sticker, text, shape, mind_map, document]
     )]
     pub text_format: Option<TextFormat>,
@@ -152,7 +151,6 @@ pub struct AddFields {
     #[argument(
         positional,
         help = "The page to link to, e.g. https://example.com",
-        tool_doc = "Page address.",
         kinds = [link]
     )]
     pub url: Option<String>,
@@ -167,14 +165,13 @@ pub struct AddFields {
     #[argument(
         value_name = "shape",
         help = "The kind of shape, e.g. ellipse, flowchart-decision or bpmn-gateway; square by default",
-        tool_doc = "Shape kind.",
         kinds = [shape]
     )]
     pub shape: Option<ShapeType>,
     #[argument(
         value_name = "x,y",
         help = "The top-left corner in board units, from the frame's corner with --frame; a free corner by default",
-        tool_doc = "x,y; add, cp: a free corner by default; edit: unchanged.",
+        tool_doc = "x,y; add, cp: a free corner by default.",
         kinds = [sticker, text, shape, frame, link, image, file, dice, wheel, sticker_stack, flipcard, mind_map, document, stamp, code, table, reaction_stamp, icon, task, kanban]
     )]
     pub at: Option<String>,
@@ -210,7 +207,6 @@ pub struct AddFields {
     #[argument(
         value_name = "text",
         help = "A flip card's back; the text is its front",
-        tool_doc = "Flip card back.",
         kinds = [flipcard]
     )]
     pub back: Option<String>,
@@ -224,7 +220,6 @@ pub struct AddFields {
     #[argument(
         value_name = "side",
         help = "The side of its parent a new node goes: left, right, up or down; right by default",
-        tool_doc = "Side of the parent.",
         kinds = [mind_map]
     )]
     pub direction: Option<Direction>,
@@ -251,7 +246,6 @@ pub struct AddFields {
     #[argument(
         value_name = "line",
         help = "An arrow's line: straight, elbow or curved; elbow by default",
-        tool_doc = "Arrow line.",
         kinds = [arrow]
     )]
     pub line: Option<ArrowType>,
@@ -265,7 +259,6 @@ pub struct AddFields {
     #[argument(
         value_name = "style",
         help = "An arrow's line: solid, dashed or dotted; solid by default",
-        tool_doc = "Outline style.",
         kinds = [arrow]
     )]
     pub stroke_style: Option<StrokeStyle>,
@@ -286,14 +279,13 @@ pub struct AddFields {
     #[argument(
         value_name = "ratio",
         help = "A frame's ratio: 16:9, 4:3, 1:1, a4 or a4-landscape; with --size the area is kept; 16:9 at 1920x1080 and the like by default",
-        tool_doc = "Frame ratio 16:9, 4:3, 1:1, a4, a4_landscape.",
         kinds = [frame]
     )]
     pub ratio: Option<FrameRatio>,
     #[argument(
         value_name = "style",
         help = "A frame's background: fill, border or outline; border by default",
-        tool_doc = "Frame background fill, border, outline.",
+        tool_doc = "Frame background.",
         kinds = [frame]
     )]
     pub background: Option<FrameBackground>,
@@ -306,28 +298,24 @@ pub struct AddFields {
     #[argument(
         value_name = "name",
         help = "A code block's language for its highlighting; none marked by default",
-        tool_doc = "Code language.",
         kinds = [code]
     )]
     pub language: Option<Language>,
     #[argument(
         value_name = "theme",
         help = "A code block's theme: light or dark; light by default",
-        tool_doc = "Code theme.",
         kinds = [code]
     )]
     pub theme: Option<Theme>,
     #[argument(
         value_name = "n",
         help = "A table's rows; 2 by default, with the columns at most 2500 cells",
-        tool_doc = "Table rows.",
         kinds = [table]
     )]
     pub rows: Option<u32>,
     #[argument(
         value_name = "n",
         help = "A table's columns; 3 by default, with the rows at most 2500 cells",
-        tool_doc = "Table columns.",
         kinds = [table]
     )]
     pub columns: Option<u32>,
@@ -362,7 +350,6 @@ pub struct AddFields {
     #[argument(
         value_name = "status",
         help = "A task's status: backlog, to-do, in-progress, done, canceled, or the title of a status of the board; none by default",
-        tool_doc = "Task status.",
         kinds = [task]
     )]
     pub status: Option<String>,
@@ -383,21 +370,20 @@ pub struct AddFields {
     #[argument(
         value_name = "text",
         help = "A kanban's column, repeat for each, in order; To do, In progress and Done by default; a task's: the title of its column in --kanban, the first by default",
-        tool_doc = "Kanban column titles.",
+        tool_doc = "Kanban columns.",
         kinds = [kanban, task]
     )]
     pub column: Vec<String>,
     #[argument(
         value_name = "text",
         help = "A kanban's swimlane, repeat for each, in order; one, Untitled, by default; a task's: the title of its swimlane in --kanban, the first by default",
-        tool_doc = "Kanban swimlane titles.",
+        tool_doc = "Kanban swimlanes.",
         kinds = [kanban, task]
     )]
     pub swimlane: Vec<String>,
     #[argument(
         value_name = "object",
         help = "The kanban a task goes into, as a card in its cell: id, link, @N or the first 8 characters of its id; --column and --swimlane pick the cell; left out with --at and --frame",
-        tool_doc = "Kanban of a task.",
         kinds = [task]
     )]
     pub kanban: Option<String>,
@@ -410,7 +396,6 @@ pub struct AddFields {
     pub point: Option<OneOrMany<String>>,
     #[argument(
         help = "Draw a highlighter stroke: half transparent, 22 wide, yellow by default",
-        tool_doc = "Highlighter stroke.",
         kinds = [drawing]
     )]
     pub highlighter: bool,

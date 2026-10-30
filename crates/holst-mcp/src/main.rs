@@ -159,7 +159,7 @@ fn usage(arg: &str) -> Result<String, StartError> {
              \x20 or host.lima.internal (Colima); a non-loopback address needs an existing token\n\
              Log in for HTTP: holst-mcp setup in a Mac terminal when holst-mcp runs on the Mac;\n\
              \x20 docker exec -it <container> holst-mcp setup when it runs in a container (HOLST_HOME on a volume)\n\
-             Environment: HOLST_HOME, HOLST_BASE_URL, HOLST_LOG, HOLST_MCP_RAW_WRITE=1"
+             Environment: HOLST_HOME, HOLST_BASE_URL, HOLST_LOG"
         )),
         other => Err(StartError::UnknownArg {
             arg: other.to_owned(),
@@ -243,14 +243,11 @@ fn start_server(
     init_tracing(&settings.log);
     // A bad cache variable leaves the board cache off; the server still starts.
     refused.into_iter().for_each(warn_cache_off);
-    let raw_write = tools::admin::RawWrite::from_setting(
-        std::env::var("HOLST_MCP_RAW_WRITE").ok().as_deref(),
-    );
     let secrets = tools::files::SecretPaths::new(
         settings.location.file().as_deref(),
         std::env::home_dir().as_deref(),
     );
-    let mut holst = server::McpServer::new(settings, raw_write, secrets);
+    let mut holst = server::McpServer::new(settings, secrets);
     holst.downloads = std::env::home_dir().map(|home| home.join("Downloads"));
     holst
 }
@@ -376,7 +373,6 @@ mod tests {
     #[test]
     fn usage_knows_version_and_help_and_rejects_the_rest() {
         assert_eq!(usage("-V").ok(), Some(format!("holst-mcp {VERSION}")));
-        assert!(usage("--help").is_ok_and(|text| text.contains("HOLST_MCP_RAW_WRITE")));
         assert!(usage("--help").is_ok_and(|text| text.contains("holst-mcp setup")));
         assert_eq!(
             usage("--port").err().map(|err| err.to_string()).as_deref(),

@@ -274,10 +274,7 @@ pub struct EditArgs {
         help = "Where names are looked up and new things go: a workspace id or part of its name; all of yours by default"
     )]
     pub workspace: Option<String>,
-    #[argument(
-        help = "The color of the thread, or none to clear it",
-        tool_doc = "Thread colour, or none."
-    )]
+    #[argument(help = "The color of the thread, or none to clear it")]
     pub color: Option<ThreadColor>,
     #[argument(
         value_name = "x,y",

@@ -13,7 +13,7 @@ holst-core = { path = "../../crates/holst-core", features = ["fake"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["rt", "macros", "process"] }
+tokio = { workspace = true, features = ["rt", "macros", "process", "sync", "signal"] }
 rmcp = { version = "3.6", default-features = false, features = ["client", "transport-child-process"] }
 
 [dev-dependencies]

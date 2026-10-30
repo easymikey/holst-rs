@@ -58,7 +58,7 @@ use crate::{
     memory::{McpMemory, board_memory::DownloadTrust, invalidation::FullInvalidation},
     reply::{self},
     server::table::TableTool,
-    tools::{admin::RawWrite, files::SecretPaths},
+    tools::files::SecretPaths,
 };
 
 tokio::task_local! {
@@ -76,11 +76,6 @@ board units. Rights: none, viewer, commentator, editor, full. confirm: true \
 only after the user agreed; a risky action without it replies with what it \
 would do. dry_run: true sends nothing. output: json (board, object only) gives \
 full JSON. No login: run `holst-mcp setup`.";
-
-/// The tools as `tools/list` shows them.
-fn listed(table: &[TableTool], raw_write: RawWrite) -> Arc<[Tool]> {
-    table.iter().map(|tool| tool.tool(raw_write)).collect()
-}
 
 /// Refuses an argument the command does not take on MCP, such as `offline` or
 /// the file a picture is written to.
@@ -113,7 +108,6 @@ pub(crate) struct McpServer {
     tools: Arc<[Tool]>,
     login: Arc<SharedLogin>,
     pub(crate) state: Arc<McpMemory>,
-    pub(crate) raw_write: RawWrite,
     pub(crate) secrets: SecretPaths,
     /// Where `object get` puts a file when the call names no place.
     pub(crate) downloads: Option<PathBuf>,
@@ -142,11 +136,7 @@ impl Clock for MonotonicClock {
 }
 
 impl McpServer {
-    pub(crate) fn new(
-        settings: Settings,
-        raw_write: RawWrite,
-        secrets: SecretPaths,
-    ) -> Self {
+    pub(crate) fn new(settings: Settings, secrets: SecretPaths) -> Self {
         let trust = DownloadTrust(Duration::from_millis(settings.cache.trust_millis));
         let cache = Arc::new(settings.cache.clone());
         let backend = Arc::new(SystemBackend::new(settings));
@@ -154,7 +144,6 @@ impl McpServer {
             secrets,
             cache,
             ..Self::with(backend, Arc::new(MonotonicClock::start()))
-                .with_raw_write(raw_write)
                 .with_download_trust(trust)
         }
     }
@@ -162,15 +151,6 @@ impl McpServer {
     fn with_download_trust(self, trust: DownloadTrust) -> Self {
         Self {
             state: Arc::new(McpMemory::with_download_trust(trust)),
-            ..self
-        }
-    }
-
-    /// Sets the raw-write switch; the `api` tool's hints follow it.
-    pub(crate) fn with_raw_write(self, raw_write: RawWrite) -> Self {
-        Self {
-            tools: listed(&self.table, raw_write),
-            raw_write,
             ..self
         }
     }
@@ -186,13 +166,12 @@ impl McpServer {
 
     pub(crate) fn with(backend: Arc<dyn Backend>, clock: Arc<dyn Clock>) -> Self {
         let table: Arc<[TableTool]> = table::tools().into();
-        let tools = listed(&table, RawWrite::Denied);
+        let tools = table.iter().map(TableTool::tool).collect();
         Self {
             table,
             tools,
             login: Arc::new(SharedLogin::new(backend, clock)),
             state: Arc::new(McpMemory::default()),
-            raw_write: RawWrite::Denied,
             secrets: SecretPaths::default(),
             downloads: None,
             cache: Arc::new(CacheSettings::default()),

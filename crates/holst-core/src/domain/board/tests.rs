@@ -16,6 +16,7 @@ use yrs::{
 
 use crate::{
     domain::{
+        area::scene::Scene,
         board::{
             ArrowEnds,
             BoardContent,
@@ -444,6 +445,38 @@ pub(crate) fn sticker_under(root: &str, id: &str) -> Result<Doc> {
             .map(|(name, value)| (name.clone(), value.clone())),
     )?;
     Ok(document)
+}
+
+#[test]
+fn a_code_block_is_drawn_as_high_as_its_lines() -> Result<()> {
+    let document = Doc::new();
+    let objects_map = document.get_or_insert_map("objects");
+    let fields = json!({
+        "id": "c", "type": "code", "documentId": "d1",
+        "position": { "x": 0, "y": 0 }, "width": 500,
+    });
+    insert_map(
+        &mut document.transact_mut(),
+        &objects_map,
+        "c",
+        fields
+            .as_object()
+            .into_iter()
+            .flatten()
+            .map(|(name, value)| (name.clone(), value.clone())),
+    )?;
+    document.get_or_insert_text("code-mirror-d1").insert(
+        &mut document.transact_mut(),
+        0,
+        "a\nb\nc",
+    );
+    let listed = objects(&document);
+    let height = listed
+        .first()
+        .and_then(|code| Scene::new(&listed).rectangle_of(code))
+        .map(|rectangle| rectangle.height);
+    assert_eq!(height, Some(87.0));
+    Ok(())
 }
 
 #[test]

@@ -238,8 +238,7 @@ pub struct ShowArgs {
     pub with: Vec<ShowPart>,
     #[argument(
         value_name = "format",
-        help = "How the note of --with note is shown: plain, or markdown; plain by default",
-        tool_doc = "plain or markdown."
+        help = "How the note of --with note is shown: plain, or markdown; plain by default"
     )]
     pub note_format: Option<TextFormat>,
     #[serde(flatten)]
@@ -430,7 +429,7 @@ pub struct ExportArgs {
         positional,
         value_name = "file",
         help = "A new file, never overwritten and named as given, - for stdout; ~/Downloads/<name>-<id>.ydoc.gz by default",
-        tool_doc = "export: a new file; import: a board file."
+        tool_doc = "Export: a new file."
     )]
     pub file: Option<String>,
     #[argument(
@@ -464,7 +463,7 @@ pub struct ImportArgs {
         positional,
         value_name = "path",
         help = "A board file from `holst b export` or `holst backup get`",
-        tool_doc = "export: a new file; import: a board file."
+        tool_doc = "Import: a board file."
     )]
     pub path: String,
     #[argument(
@@ -532,20 +531,17 @@ pub struct EditArgs {
     pub cover: Option<String>,
     #[argument(
         value_name = "text",
-        help = "The new note, replacing the old: text, @file to read a file, - for stdin",
-        tool_doc = "The new note."
+        help = "The new note, replacing the old: text, @file to read a file, - for stdin"
     )]
     pub note: Option<TextOrFile>,
     #[argument(
         value_name = "format",
-        help = "How the note is written: plain, or markdown; plain by default",
-        tool_doc = "plain or markdown."
+        help = "How the note is written: plain, or markdown; plain by default"
     )]
     pub note_format: Option<TextFormat>,
     #[argument(
         value_name = "name",
-        help = "Start the note from a built-in one: todo, agenda, summary, workshop, annotation",
-        tool_doc = "todo, agenda, summary, workshop or annotation."
+        help = "Start the note from a built-in one: todo, agenda, summary, workshop, annotation"
     )]
     pub note_template: Option<NoteTemplate>,
     #[argument(letter = 'n', help = "Show what would change; change nothing")]

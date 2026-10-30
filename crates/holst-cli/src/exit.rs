@@ -260,10 +260,6 @@ fn input_code(error: &InputError) -> u8 {
         | InputError::NotArgumentValue { .. }
         | InputError::ReplyNotFound { .. }
         | InputError::NotCommandArguments(_)
-        | InputError::Refused(_)
-        | InputError::LoginCall { .. }
-        | InputError::MissingQuery { .. }
-        | InputError::AdminWrite { .. }
         | InputError::ImportBoardLeft { .. } => EX_USAGE,
     }
 }

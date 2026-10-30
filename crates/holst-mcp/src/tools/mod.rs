@@ -1,6 +1,5 @@
 //! The tools: the table's commands.
 
-pub(crate) mod admin;
 mod auth;
 mod backup;
 mod board;
@@ -122,7 +121,6 @@ impl McpServer {
             CommandName::Storage(verb) => self.fail(&Error::CliOnly {
                 command: verb.command().path(),
             }),
-            CommandName::Api => self.api_command(arguments).await,
             CommandName::Object(verb) => {
                 Box::pin(self.object_command(verb, arguments)).await
             }

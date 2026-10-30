@@ -190,6 +190,7 @@ impl TextCorpus<'_> {
     ///     rotation: 0.0,
     ///     link_to: None,
     ///     file: None,
+    ///     media: None,
     ///     fields: serde_json::Value::Null,
     /// };
     /// let boards = [BoardIndex::from_objects(

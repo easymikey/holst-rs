@@ -7,7 +7,6 @@ use serde_json::Value;
 
 use crate::{
     command::{
-        api::ApiReply,
         backup::Restored,
         board::{
             file::Imported,
@@ -135,12 +134,6 @@ impl Outcome for Restored {
 impl Outcome for Imported {
     fn refusal(&self) -> Option<&Unconfirmed> {
         self.outcome.refusal()
-    }
-}
-
-impl Outcome for ApiReply {
-    fn refusal(&self) -> Option<&Unconfirmed> {
-        self.report.refusal()
     }
 }
 

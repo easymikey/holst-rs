@@ -16,12 +16,18 @@ mod workspace;
 
 use std::{
     io,
+    net::SocketAddr,
     sync::{Arc, Mutex, PoisonError, mpsc},
     thread,
+    time::Duration,
 };
 
 use serde_json::Value;
-use tokio::{net::TcpListener, runtime};
+use tokio::{
+    net::{TcpListener, TcpStream},
+    runtime,
+    time::timeout,
+};
 
 use crate::fake::{
     access::Access,
@@ -65,6 +71,25 @@ struct State {
 
 type Shared = Arc<Mutex<State>>;
 
+/// How long one probe waits for the listener, and how many probes it makes.
+const PROBE: Duration = Duration::from_millis(250);
+const PROBES: usize = 120;
+
+/// Returns once a probe connects to the listener, trying anew when one hangs.
+///
+/// A loaded host sometimes holds back every new loopback connect for several
+/// seconds and the client's connect then runs into its own timeout; the
+/// probes take that wait, so a client of the fake connects at once.
+async fn reachable(address: SocketAddr) {
+    // imperative: each probe waits for the socket
+    for _ in 0..PROBES {
+        let connected = timeout(PROBE, TcpStream::connect(address)).await;
+        if connected.is_ok_and(|stream| stream.is_ok()) {
+            return;
+        }
+    }
+}
+
 /// A running fake server; it stops with the runtime that started it.
 #[derive(Debug)]
 pub struct Fake {
@@ -80,9 +105,11 @@ impl Fake {
     /// fixture names a workspace, folder or board it does not hold.
     pub async fn start(fixture: Fixture) -> io::Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
-        let base_url = format!("http://{}", listener.local_addr()?);
+        let address = listener.local_addr()?;
+        let base_url = format!("http://{address}");
         let state = Shared::new(Mutex::new(State::fixture(fixture)?));
         tokio::spawn(accept(listener, Arc::clone(&state)));
+        reachable(address).await;
         Ok(Self { base_url, state })
     }
 

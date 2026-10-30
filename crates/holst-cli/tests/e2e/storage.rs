@@ -13,7 +13,7 @@ fn a_test_command_sees_only_its_own_holst_variables() -> TestResult {
     let dir = home(None)?;
     let exported = [
         ("PATH".into(), std::env::var_os("PATH").unwrap_or_default()),
-        ("HOLST_MCP_RAW_WRITE".into(), "1".into()),
+        ("HOLST_LOG".into(), "1".into()),
         ("HOLST_CACHE_MAX".into(), "1".into()),
     ];
     let out = fake::isolated_from("env", &dir, exported).output()?;

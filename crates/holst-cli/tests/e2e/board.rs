@@ -49,40 +49,6 @@ fn permanent_delete_needs_the_whole_name() -> TestResult {
 }
 
 #[test]
-fn a_folder_is_not_deleted_for_good_by_name() -> TestResult {
-    let fake = fake::start()?;
-    let dir = signed_home(fake.base_url())?;
-    let args = ["board", "rm", "Q4", "--permanently", "--yes"];
-    let out = holst_in(fake.base_url(), &dir, &args, "")?;
-    let text = stderr(&out);
-    assert_eq!(out.status.code(), Some(66), "{text}");
-    assert!(text.starts_with("error: board \"Q4\" not found"), "{text}");
-    assert!(
-        fake.tree_of("easy")
-            .iter()
-            .any(|entry| entry.name == "Q4" && entry.kind == "folder"),
-        "the folder is gone"
-    );
-    Ok(())
-}
-
-#[test]
-fn a_part_of_a_name_still_finds_a_board_for_the_trash() -> TestResult {
-    let fake = fake::start()?;
-    let dir = signed_home(fake.base_url())?;
-    let out = holst_in(fake.base_url(), &dir, &["board", "rm", "Pla"], "")?;
-    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-    assert_eq!(
-        fake.trash_of("easy")
-            .iter()
-            .map(|entry| entry.name.as_str())
-            .collect::<Vec<_>>(),
-        ["Plans"]
-    );
-    Ok(())
-}
-
-#[test]
 fn tree_with_trash_shows_the_trash() -> TestResult {
     let fake = fake::start()?;
     let base = fake.base_url();

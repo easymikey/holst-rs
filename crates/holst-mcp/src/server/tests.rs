@@ -427,19 +427,6 @@ fn tools_list_snapshot() {
     insta::assert_json_snapshot!("tools_list", *holst.tools);
 }
 
-#[test]
-fn the_api_tool_may_write_when_a_human_allows_raw_writes() {
-    let holst =
-        McpServer::offline().with_raw_write(crate::tools::admin::RawWrite::Allowed);
-    let hints = holst
-        .tools
-        .iter()
-        .find(|tool| tool.name == "api")
-        .and_then(|tool| tool.annotations.as_ref())
-        .map(|hints| (hints.read_only_hint, hints.destructive_hint));
-    assert_eq!(hints, Some((Some(false), Some(true))));
-}
-
 #[tokio::test]
 async fn locked_store_is_reported_and_retried() {
     let (holst, memory, _) =
@@ -1324,4 +1311,272 @@ fn the_system_backends_clients_keep_the_account_list_on_disk() -> holst_core::Re
     std::fs::remove_dir_all(&home).unwrap_or_default();
     assert_eq!(kept.map(|list| list.len()), Some(1));
     Ok(())
+}
+
+const TEAM: &str = "00000000-0000-4000-8000-000000000001";
+const OTHER: &str = "00000000-0000-4000-8000-000000000002";
+
+/// The requests one tool call sent, by kind; `other` holds the rest, sorted.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct Sent {
+    current_user: usize,
+    tree: usize,
+    trash: usize,
+    channel: usize,
+    socket: usize,
+    document: usize,
+    update: usize,
+    storage: usize,
+    other: Vec<String>,
+}
+
+fn tallied(requests: &[String], named: impl Fn(&str) -> String) -> Sent {
+    requests.iter().fold(Sent::default(), |sent, request| {
+        let counted = |count: usize| count + 1;
+        match request.as_str() {
+            "GET /gapi/current_user" => Sent {
+                current_user: counted(sent.current_user),
+                ..sent
+            },
+            "WS open" => Sent {
+                socket: counted(sent.socket),
+                ..sent
+            },
+            _ if request.starts_with("WS RequestDocument") => Sent {
+                document: counted(sent.document),
+                ..sent
+            },
+            _ if request.starts_with("WS Update") => Sent {
+                update: counted(sent.update),
+                ..sent
+            },
+            _ if request.starts_with("GET /storage/") => Sent {
+                storage: counted(sent.storage),
+                ..sent
+            },
+            _ if request.ends_with("/tree") => Sent {
+                tree: counted(sent.tree),
+                ..sent
+            },
+            _ if request.ends_with("/trash") => Sent {
+                trash: counted(sent.trash),
+                ..sent
+            },
+            _ if request
+                .strip_prefix("GET /gapi/channel/")
+                .is_some_and(|rest| !rest.contains('/')) =>
+            {
+                Sent {
+                    channel: counted(sent.channel),
+                    ..sent
+                }
+            }
+            _ => Sent {
+                other: sent
+                    .other
+                    .into_iter()
+                    .chain([named(request)])
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
+                ..sent
+            },
+        }
+    })
+}
+
+/// Two workspaces, a folder, the boards `Plans` (with a comment thread) and
+/// `Ideas`.
+async fn tool_world() -> holst_core::Result<holst_core::fake::Fake> {
+    use holst_core::fake::{Fixture, FixtureObject, FixtureThread};
+
+    let objects = vec![
+        FixtureObject::Sticker("Roadmap".into()),
+        FixtureObject::Sticker("Second".into()),
+    ];
+    let seed = Fixture::default()
+        .workspace("Team")
+        .workspace("Other")
+        .folder("Archive", "Team")
+        .board_with_objects("Plans", "Team", objects)
+        .board("Ideas", "Other", None)
+        .thread("Plans", FixtureThread::new("t1", 1, "Is this final?"));
+    Ok(holst_core::fake::Fake::start(seed).await?)
+}
+
+/// A server on `fake` as after `login::finish`: the account and the workspaces
+/// are known, no tree is kept.
+async fn finished(fake: &holst_core::fake::Fake) -> holst_core::Result<McpServer> {
+    use holst_core::command::login::{Stopped, finish};
+
+    let (holst, login, _) = served(fake)?;
+    let stored = Arc::clone(&login);
+    finish(login.connect(fake_session())?, None, async |session| {
+        stored.log_in(session);
+        Ok::<(), std::convert::Infallible>(())
+    })
+    .await
+    .map_err(|stopped| match stopped {
+        Stopped::Check(error) => error,
+        Stopped::Save(never) => match never {},
+    })?;
+    Ok(holst)
+}
+
+/// The call with `<Plans.1>` as the id of that object and `<@Plans>` as the
+/// `@N` the server gave the board.
+fn tool_call(
+    fake: &holst_core::fake::Fake,
+    holst: &McpServer,
+    arguments: &serde_json::Value,
+) -> serde_json::Value {
+    let board = holst.state.alias(&fake.id_of("Plans").unwrap_or_default());
+    let text = arguments
+        .to_string()
+        .replace("<@Plans>", &board)
+        .replace("<Plans.1>", &fake.object_id("Plans", 1).unwrap_or_default());
+    serde_json::from_str(&text).unwrap_or_default()
+}
+
+/// What `call` sent to the fake.
+async fn tool_sent(
+    fake: &holst_core::fake::Fake,
+    holst: &McpServer,
+    tool: &str,
+    arguments: &serde_json::Value,
+) -> Sent {
+    let before = fake.requests().len();
+    let call = tool_call(fake, holst, arguments);
+    let (failed, text) = table_call(holst, tool, call).await;
+    assert!(!failed, "{text}");
+    let names = [
+        ("<Plans>", fake.id_of("Plans").unwrap_or_default()),
+        ("<Ideas>", fake.id_of("Ideas").unwrap_or_default()),
+        ("<Team>", TEAM.to_owned()),
+        ("<Other>", OTHER.to_owned()),
+    ];
+    let sent = fake.requests().split_off(before);
+    tallied(&sent, |request| {
+        names.iter().fold(request.to_owned(), |named, (name, id)| {
+            named.replace(id, name)
+        })
+    })
+}
+
+/// What fills the cache before the warm call.
+#[derive(Debug, Clone, Copy)]
+enum WarmUp {
+    /// The call itself, once; it can be repeated.
+    Again,
+    /// A `board ls`; the call changes what a second one would find.
+    Listed,
+}
+
+/// Pins the requests of a tool call cold, then warm on another server.
+async fn tool_pins(
+    tool: &str,
+    arguments: serde_json::Value,
+    warm_up: WarmUp,
+    cold: Sent,
+    warm: Sent,
+) -> holst_core::Result<()> {
+    let cold_fake = tool_world().await?;
+    let cold_holst = finished(&cold_fake).await?;
+    let found_cold = tool_sent(&cold_fake, &cold_holst, tool, &arguments).await;
+    let fake = tool_world().await?;
+    let holst = finished(&fake).await?;
+    let (first_tool, first) = match warm_up {
+        WarmUp::Again => (tool, arguments.clone()),
+        WarmUp::Listed => ("board", serde_json::json!({ "action": "ls" })),
+    };
+    tool_sent(&fake, &holst, first_tool, &first).await;
+    let found_warm = tool_sent(&fake, &holst, tool, &arguments).await;
+    assert_eq!(found_cold, cold, "cold");
+    assert_eq!(found_warm, warm, "warm");
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case::show_by_name(serde_json::json!({ "action": "show", "board": "Plans" }), WarmUp::Again, Sent { tree: 2, channel: 1, socket: 1, document: 1, ..Sent::default() }, Sent { channel: 1, socket: 1, document: 1, ..Sent::default() })]
+#[case::show_by_alias(serde_json::json!({ "action": "show", "board": "<@Plans>" }), WarmUp::Again, Sent { channel: 1, socket: 1, document: 1, ..Sent::default() }, Sent { channel: 1, socket: 1, document: 1, ..Sent::default() })]
+#[case::ls(serde_json::json!({ "action": "ls" }), WarmUp::Again, Sent { tree: 2, ..Sent::default() }, Sent { tree: 2, ..Sent::default() })]
+#[case::snap(serde_json::json!({ "action": "snap", "board": "Plans", "picture_format": "svg" }), WarmUp::Again, Sent { tree: 2, channel: 1, socket: 1, document: 1, ..Sent::default() }, Sent { channel: 1, socket: 1, document: 1, ..Sent::default() })]
+#[tokio::test]
+async fn the_board_tool_sends(
+    #[case] arguments: serde_json::Value,
+    #[case] warm_up: WarmUp,
+    #[case] cold: Sent,
+    #[case] warm: Sent,
+) -> holst_core::Result<()> {
+    tool_pins("board", arguments, warm_up, cold, warm).await
+}
+
+#[rstest::rstest]
+#[case::by_name(serde_json::json!({ "board": "Plans" }), WarmUp::Again, Sent { tree: 2, channel: 1, socket: 1, document: 1, ..Sent::default() }, Sent { channel: 1, socket: 1, document: 1, ..Sent::default() })]
+#[case::by_alias(serde_json::json!({ "board": "<@Plans>" }), WarmUp::Again, Sent { channel: 1, socket: 1, document: 1, ..Sent::default() }, Sent { channel: 1, socket: 1, document: 1, ..Sent::default() })]
+#[tokio::test]
+async fn the_object_tool_sends(
+    #[case] arguments: serde_json::Value,
+    #[case] warm_up: WarmUp,
+    #[case] cold: Sent,
+    #[case] warm: Sent,
+) -> holst_core::Result<()> {
+    tool_pins("object", arguments, warm_up, cold, warm).await
+}
+
+#[rstest::rstest]
+#[case::add_by_name(serde_json::json!({ "action": "add", "board": "Plans", "text": "note" }), WarmUp::Again, Sent { tree: 2, channel: 1, socket: 2, document: 2, update: 1, ..Sent::default() }, Sent { channel: 1, socket: 2, document: 2, update: 1, ..Sent::default() })]
+#[case::add_by_alias(serde_json::json!({ "action": "add", "board": "<@Plans>", "text": "note" }), WarmUp::Again, Sent { channel: 1, socket: 2, document: 2, update: 1, ..Sent::default() }, Sent { channel: 1, socket: 2, document: 2, update: 1, ..Sent::default() })]
+#[case::edit(serde_json::json!({ "action": "edit", "board": "Plans", "object": ["<Plans.1>"], "text": "changed", "confirm": true }), WarmUp::Listed, Sent { tree: 2, channel: 1, socket: 1, document: 1, update: 1, ..Sent::default() }, Sent { channel: 1, socket: 1, document: 1, update: 1, ..Sent::default() })]
+#[case::rm(serde_json::json!({ "action": "rm", "board": "Plans", "object": ["<Plans.1>"], "confirm": true }), WarmUp::Listed, Sent { tree: 2, channel: 1, socket: 1, document: 1, update: 1, ..Sent::default() }, Sent { channel: 1, socket: 1, document: 1, update: 1, ..Sent::default() })]
+#[case::lock(serde_json::json!({ "action": "lock", "board": "Plans", "object": ["<Plans.1>"] }), WarmUp::Listed, Sent { tree: 2, channel: 1, socket: 1, document: 1, update: 1, ..Sent::default() }, Sent { channel: 1, socket: 1, document: 1, update: 1, ..Sent::default() })]
+#[tokio::test]
+async fn the_object_write_tool_sends(
+    #[case] arguments: serde_json::Value,
+    #[case] warm_up: WarmUp,
+    #[case] cold: Sent,
+    #[case] warm: Sent,
+) -> holst_core::Result<()> {
+    tool_pins("object_write", arguments, warm_up, cold, warm).await
+}
+
+#[rstest::rstest]
+#[case::ls(serde_json::json!({ "action": "ls", "board": "Plans" }), WarmUp::Again, Sent { tree: 2, socket: 1, document: 1, other: vec!["GET /gapi/comment/thread_list/<Plans>".into()], ..Sent::default() }, Sent { socket: 1, document: 1, other: vec!["GET /gapi/comment/thread_list/<Plans>".into()], ..Sent::default() })]
+#[case::add(serde_json::json!({ "action": "add", "board": "Plans", "text": "Yes" }), WarmUp::Again, Sent { tree: 2, socket: 1, document: 1, update: 1, ..Sent::default() }, Sent { socket: 1, document: 1, update: 1, ..Sent::default() })]
+#[case::reply(serde_json::json!({ "action": "reply", "board": "Plans", "thread": "t1", "text": "Yes" }), WarmUp::Again, Sent { tree: 2, socket: 1, document: 1, update: 1, ..Sent::default() }, Sent { socket: 1, document: 1, update: 1, ..Sent::default() })]
+#[tokio::test]
+async fn the_comment_tool_sends(
+    #[case] arguments: serde_json::Value,
+    #[case] warm_up: WarmUp,
+    #[case] cold: Sent,
+    #[case] warm: Sent,
+) -> holst_core::Result<()> {
+    tool_pins("comment", arguments, warm_up, cold, warm).await
+}
+
+#[rstest::rstest]
+#[case::names(serde_json::json!({ "query": "plans", "mode": "names" }), WarmUp::Again, Sent { tree: 2, ..Sent::default() }, Sent::default())]
+#[case::board_text(serde_json::json!({ "query": "roadmap", "mode": "board_text" }), WarmUp::Again, Sent { tree: 2, channel: 2, socket: 2, document: 2, ..Sent::default() }, Sent::default())]
+#[tokio::test]
+async fn the_search_tool_sends(
+    #[case] arguments: serde_json::Value,
+    #[case] warm_up: WarmUp,
+    #[case] cold: Sent,
+    #[case] warm: Sent,
+) -> holst_core::Result<()> {
+    tool_pins("search", arguments, warm_up, cold, warm).await
+}
+
+#[rstest::rstest]
+#[case::ls(serde_json::json!({ "action": "ls" }), WarmUp::Again, Sent { current_user: 1, ..Sent::default() }, Sent { current_user: 1, ..Sent::default() })]
+#[case::show(serde_json::json!({ "action": "show", "workspace": "Team" }), WarmUp::Again, Sent { other: vec!["GET /gapi/workspace/<Team>".into()], ..Sent::default() }, Sent { other: vec!["GET /gapi/workspace/<Team>".into()], ..Sent::default() })]
+#[case::rename(serde_json::json!({ "action": "rename", "workspace": "Other", "name": "Crew", "confirm": true }), WarmUp::Listed, Sent { other: vec!["PATCH /gapi/workspace/<Other>".into()], ..Sent::default() }, Sent { other: vec!["PATCH /gapi/workspace/<Other>".into()], ..Sent::default() })]
+#[tokio::test]
+async fn the_workspace_tool_sends(
+    #[case] arguments: serde_json::Value,
+    #[case] warm_up: WarmUp,
+    #[case] cold: Sent,
+    #[case] warm: Sent,
+) -> holst_core::Result<()> {
+    tool_pins("workspace", arguments, warm_up, cold, warm).await
 }

@@ -14,7 +14,7 @@ use holst_core::{
 use rmcp::model::{Tool, ToolAnnotations};
 use serde_json::{Map, Value, json};
 
-use crate::tools::{admin::RawWrite, output::Output};
+use crate::tools::output::Output;
 
 /// Why a call to a table tool names no command, in words for the model.
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
@@ -130,16 +130,12 @@ impl TableTool {
     }
 
     /// The tool as `tools/list` shows it: compact JSON.
-    /// The `api` tool is read-only until a human allows raw writes.
-    pub(crate) fn tool(&self, raw_write: RawWrite) -> Tool {
+    pub(crate) fn tool(&self) -> Tool {
         let commands: Vec<&Command> =
             self.commands.iter().map(|name| name.command()).collect();
-        let raw_denied = raw_write == RawWrite::Denied
-            && matches!(self.commands.as_slice(), [CommandName::Api]);
-        let read_only = raw_denied
-            || commands
-                .iter()
-                .all(|command| command.risk == CommandRisk::Read);
+        let read_only = commands
+            .iter()
+            .all(|command| command.risk == CommandRisk::Read);
         // Every tool is about Holst and local files, never the open web.
         let hints = ToolAnnotations::new()
             .read_only(read_only)

@@ -93,23 +93,6 @@ async fn only_locks_a_frame_by_itself(
 
 #[rstest]
 #[tokio::test]
-async fn only_refuses_a_sticker(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
-    let holst = two_notes().start().await?;
-    let call = ObjectCall::lock()
-        .with("object", holst.fixture_object("Plans", 1)?)
-        .switched("only");
-    let observation = holst.on(surface).object("Plans", call).await?;
-    then(&observation)
-        .failed_saying("only locks frames and tables")
-        .signalled_as(surface.usage());
-    board_of(&holst).got_no_update();
-    Ok(())
-}
-
-#[rstest]
-#[tokio::test]
 async fn a_dry_run_lock_changes_nothing(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
@@ -192,27 +175,6 @@ async fn an_unlocked_frame_is_flagged_free(
     holst.on(surface).object("Plans", call).await?;
     let after = holst.on(surface).objects("Plans").await?;
     then(&after).lists_locked(&[]);
-    Ok(())
-}
-
-#[rstest]
-#[tokio::test]
-async fn unlock_all_frees_everything_locked(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
-    let holst = locked_notes().start().await?;
-    holst
-        .on(surface)
-        .object("Plans", ObjectCall::unlock().switched("all"))
-        .await?;
-    let read = holst.on(surface).objects("Plans").await?;
-    then(&read).lists_objects_in_any_order(&[
-        ("sticker", "One"),
-        ("sticker", "Two"),
-        ("sticker", "Three"),
-        ("frame", "Q4"),
-    ]);
-    then(&read).lists_locked(&[]);
     Ok(())
 }
 

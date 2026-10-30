@@ -2,12 +2,9 @@
 
 use std::path::PathBuf;
 
-use holst_core::{
-    effect::http::HttpMethod,
-    error::{
-        confirmation::Unconfirmed,
-        hint::{Hint, Surface},
-    },
+use holst_core::error::{
+    confirmation::Unconfirmed,
+    hint::{Hint, Surface},
 };
 
 use crate::memory::alias::UnknownAlias;
@@ -43,12 +40,6 @@ pub(crate) enum Error {
 
     #[error("{}", .0.on(Surface::Mcp))]
     Unconfirmed(Unconfirmed),
-
-    #[error(
-        "{method} through api is disabled because it bypasses confirmations; only \
-         a human can enable it with HOLST_MCP_RAW_WRITE=1 in the server settings"
-    )]
-    RawWriteDisabled { method: HttpMethod },
 
     #[error("the file cannot be read")]
     Unreadable {
@@ -94,7 +85,6 @@ impl Error {
             | Error::TooManyItems { .. }
             | Error::NoStdout
             | Error::CliOnly { .. }
-            | Error::RawWriteDisabled { .. }
             | Error::Unreadable { .. }
             | Error::NotAFile
             | Error::Secret { .. }

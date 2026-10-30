@@ -34,7 +34,6 @@ fn message(err: &Error) -> String {
         | Error::NoStdout
         | Error::CliOnly { .. }
         | Error::Unconfirmed(_)
-        | Error::RawWriteDisabled { .. }
         | Error::Unreadable { .. }
         | Error::NotAFile
         | Error::Secret { .. }
@@ -53,7 +52,6 @@ pub(crate) fn chained(err: &(dyn std::error::Error + 'static)) -> String {
 #[cfg(test)]
 mod tests {
     use holst_core::{
-        effect::http::HttpMethod,
         error::{
             hint::{Hint, Surface},
             lookup::{
@@ -253,9 +251,6 @@ mod tests {
             Error::NoArgument { what: "board" },
             Error::CliOnly {
                 command: "storage ls".into(),
-            },
-            Error::RawWriteDisabled {
-                method: HttpMethod::Post,
             },
             Error::NotAFile,
             Error::StoreAborted,

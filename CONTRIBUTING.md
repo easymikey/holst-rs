@@ -2,9 +2,9 @@
 
 ## Releasing without GitHub runners
 
-The release pipeline (`.github/workflows/release.yml`) is the main path. When the runners are down, `scripts/release.zig` builds the same five archives and `checksums.txt` on one Mac into `dist/`. Linux targets use `cargo-zigbuild` with `glibc` 2.35 (the ubuntu-22.04 floor), Windows uses `cargo-xwin`.
+The release pipeline (`.github/workflows/release.yml`) is the main path. When the runners are down, `scripts/release.zig` builds the same ten archives and `checksums.txt` on one Mac into `dist/`: `holst-cli-<target>` and `holst-mcp-<target>` for each of the five targets. The Linux targets are static musl builds made with `cargo-zigbuild` (they run on any distribution, no glibc requirement; the script checks that `file` reports both binaries as statically linked), Windows uses `cargo-xwin`.
 
-Needs Zig 0.17.0 exactly (the script stops on any other version), `cargo install --locked cargo-zigbuild cargo-xwin`, `llvm` (for `clang-cl`) on `PATH`, and the five `rustup` targets. The script prints what is missing and installs nothing.
+Needs Zig 0.17.0 and cargo-zigbuild 0.24.0 exactly (the script stops on any other version), `cargo install --locked cargo-zigbuild --version 0.24.0`, `cargo install --locked cargo-xwin`, `llvm` (for `clang-cl`) on `PATH`, and the five `rustup` targets. The script prints what is missing and installs nothing.
 
 ```sh
 git tag v0.3.0              # local tag; the Cargo version must match

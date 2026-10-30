@@ -78,31 +78,6 @@ fn expand_unknown(state: McpMemory, #[case] reference: &str, #[case] alias: &str
 }
 
 #[rstest::rstest]
-#[case::segment_not_query("/gapi/channel/@1/users?x=@1", &format!("/gapi/channel/{ID}/users?x=@1"))]
-#[case::inside_segment("/a/b@1c/x", "/a/b@1c/x")]
-#[case::spaces_kept("/a/ b /@1", &format!("/a/ b /{ID}"))]
-#[case::empty("", "")]
-#[case::root("/", "/")]
-#[case::alias_only("@1", ID)]
-#[case::empty_segments("//@2//", "//x//")]
-#[case::trailing_slash("@1/@2/", &format!("{ID}/x/"))]
-#[case::empty_query("/a?", "/a?")]
-#[case::query_untouched("?q=@1", "?q=@1")]
-#[case::second_question_mark("/@2?a=1?b=2", "/x?a=1?b=2")]
-fn expand_path(state: McpMemory, #[case] path: &str, #[case] expanded: &str) {
-    assert_eq!(
-        crate::memory::alias::expand_path(path, |s| state.expand(s)).as_deref(),
-        Ok(expanded)
-    );
-}
-
-#[rstest::rstest]
-fn first_unknown_alias_in_path_is_an_error(state: McpMemory) {
-    let unknown = crate::memory::alias::expand_path("/a/@1/@7/b", |s| state.expand(s));
-    assert_eq!(unknown, Err(UnknownAlias { alias: "@7".into() }));
-}
-
-#[rstest::rstest]
 #[expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
 fn only_whole_alias_strings_are_expanded_in_json(
     state: McpMemory,

@@ -11,7 +11,7 @@ use crate::{
         change::value::{Made, StoreEntry},
         geometry::{Point, Size},
     },
-    protocol::document::{INDEX, TITLE},
+    protocol::document::{INDEX, TITLE, WIDTH},
 };
 
 pub(crate) const STORED: &str = "kanban";
@@ -26,7 +26,7 @@ const SWIMLANES: &str = "swimlanes";
 const STEP: usize = 10_000;
 /// The room a column and a kanban take in the free-corner search.
 pub(crate) const COLUMN_WIDTH: f64 = 340.0;
-/// The width of a card in a cell, as the web client stores it.
+/// A card in a cell is as wide as the column; a free card is `task::WIDE`.
 pub(crate) const CARD_WIDTH: f64 = 338.0;
 const HEIGHT: f64 = 400.0;
 
@@ -82,7 +82,9 @@ pub fn made(
                 fields: card
                     .fields
                     .into_iter()
+                    .filter(|(name, _)| *name != WIDTH)
                     .chain([
+                        (WIDTH, json!(CARD_WIDTH)),
                         (task::SWIMLANE_ID, json!(swimlane)),
                         (task::COLUMN_ID, json!(column)),
                     ])
@@ -339,7 +341,7 @@ mod tests {
                 Some(json!("k1")),
                 Some(json!("k3")),
                 Some(json!(0x100_0000_0000_u64)),
-                Some(json!(300.0)),
+                Some(json!(338.0)),
                 Some(6),
             )
         );

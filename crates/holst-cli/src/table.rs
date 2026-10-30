@@ -410,7 +410,6 @@ fn item(kind: ValueKind, text: &str) -> Value {
 mod tests {
     use holst_core::{
         command::{
-            api::ApiArgs,
             auth::{AuthVerb, LoginArgs, LogoutArgs, StatusArgs},
             backup::{self, BackupVerb},
             board::{self, BoardVerb},
@@ -636,7 +635,6 @@ mod tests {
             }
             CommandName::Object(verb) => reads_object(verb, call.arguments),
             CommandName::Search => parse::<SearchArgs>(call.arguments).map(drop),
-            CommandName::Api => parse::<ApiArgs>(call.arguments).map(drop),
         }
     }
 

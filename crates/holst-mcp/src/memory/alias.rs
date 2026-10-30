@@ -91,30 +91,6 @@ pub(crate) struct UnknownAlias {
     pub(crate) alias: String,
 }
 
-pub(crate) fn expand_path<E>(
-    path: &str,
-    expand: impl Fn(&str) -> Result<String, E>,
-) -> Result<String, E> {
-    let (path, query) = path
-        .split_once('?')
-        .map_or((path, None), |(path, query)| (path, Some(query)));
-    // One buffer for the whole path: segments are appended in place.
-    path.split('/')
-        .enumerate()
-        .try_fold(
-            String::with_capacity(path.len()),
-            |mut out, (i, segment)| {
-                out.extend((i > 0).then_some('/'));
-                out.push_str(&expand(segment)?);
-                Ok(out)
-            },
-        )
-        .map(|mut out| {
-            out.extend(query.into_iter().flat_map(|query| ["?", query]));
-            out
-        })
-}
-
 pub(crate) fn expand_json<E>(
     value: &mut Value,
     expand: &impl Fn(&str) -> Result<String, E>,

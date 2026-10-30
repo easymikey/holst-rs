@@ -59,34 +59,29 @@ pub(crate) fn first_seen<T: PartialEq + Copy>(
 /// they belong to, the flags every command has, examples.
 #[must_use]
 pub(crate) fn root(groups: &[CommandGroup], root: &clap::Command) -> String {
-    let sections = [
-        RootSection::Core,
-        RootSection::More,
-        RootSection::Local,
-        RootSection::Advanced,
-    ]
-    .into_iter()
-    .filter_map(|wanted| {
-        let mut helps: Vec<_> = groups
-            .iter()
-            .map(|group| group.help())
-            .filter(|help| help.section == wanted)
-            .collect();
-        helps.sort_by_key(|help| help.name);
-        (!helps.is_empty()).then(|| {
-            section(
-                root_heading(wanted),
-                helps.iter().map(|help| {
-                    let name = format!("{}:", help.name);
-                    let alias = help
-                        .alias
-                        .map(|alias| format!(" (alias: {alias})"))
-                        .unwrap_or_default();
-                    format!("{name:<NAME_COLUMN$}{}{alias}", help.about)
-                }),
-            )
-        })
-    });
+    let sections = [RootSection::Core, RootSection::More, RootSection::Local]
+        .into_iter()
+        .filter_map(|wanted| {
+            let mut helps: Vec<_> = groups
+                .iter()
+                .map(|group| group.help())
+                .filter(|help| help.section == wanted)
+                .collect();
+            helps.sort_by_key(|help| help.name);
+            (!helps.is_empty()).then(|| {
+                section(
+                    root_heading(wanted),
+                    helps.iter().map(|help| {
+                        let name = format!("{}:", help.name);
+                        let alias = help
+                            .alias
+                            .map(|alias| format!(" (alias: {alias})"))
+                            .unwrap_or_default();
+                        format!("{name:<NAME_COLUMN$}{}{alias}", help.about)
+                    }),
+                )
+            })
+        });
     let globals: Vec<_> = root
         .get_arguments()
         .filter(|argument| argument.is_global_set())
@@ -149,7 +144,6 @@ fn root_heading(section: RootSection) -> &'static str {
         RootSection::Core => "CORE COMMANDS",
         RootSection::More => "MORE COMMANDS",
         RootSection::Local => "LOCAL COMMANDS",
-        RootSection::Advanced => "ADVANCED COMMANDS",
     }
 }
 
@@ -206,7 +200,20 @@ pub(crate) fn arguments(
 #[must_use]
 pub(crate) fn kind_about(command: &Command, kind: &str) -> String {
     let action = command.about.split_whitespace().next().unwrap_or_default();
-    format!("{action} {}s", kebab(kind))
+    let objects = match kind {
+        "sticker-stack" => "sticker stacks".to_owned(),
+        "flipcard" => "flip cards".to_owned(),
+        "mind-map" => "mind-map nodes".to_owned(),
+        "stamp" => "text stamps".to_owned(),
+        "code" => "code blocks".to_owned(),
+        "dice" => "dice".to_owned(),
+        "reaction-stamp" => "reaction stamps".to_owned(),
+        "task" => "task cards".to_owned(),
+        "drawing" => "freehand strokes".to_owned(),
+        "wheel" => "spinner wheels".to_owned(),
+        other => format!("{}s", kebab(other)),
+    };
+    format!("{action} {objects}")
 }
 
 /// Returns the help of `holst <group> <verb>`, or of its `kind`; `inherited`
@@ -249,9 +256,15 @@ fn is_of_kind(example: &str, kind: &str) -> bool {
 #[must_use]
 pub(crate) fn kinds(command: &Command, kinds: &[&str], inherited: &[String]) -> String {
     let inherited_line = format!("{}   as in `holst -h`", inherited.join(", "));
+    let column = kinds
+        .iter()
+        .map(|kind| kebab(kind).len() + 3)
+        .max()
+        .unwrap_or(NAME_COLUMN)
+        .max(NAME_COLUMN);
     let rows = kinds.iter().map(|kind| {
         let name = format!("{}:", kebab(kind));
-        format!("{name:<NAME_COLUMN$}{}", kind_about(command, kind))
+        format!("{name:<column$}{}", kind_about(command, kind))
     });
     let sections = [command.help.to_owned()]
         .into_iter()
@@ -381,8 +394,7 @@ fn learn_more(command: &Command) -> Vec<String> {
         | CommandGroup::Backup
         | CommandGroup::Auth
         | CommandGroup::Storage
-        | CommandGroup::Search
-        | CommandGroup::Api => None,
+        | CommandGroup::Search => None,
     };
     own.into_iter().chain([String::from(EXIT_CODES)]).collect()
 }

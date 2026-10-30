@@ -43,6 +43,7 @@ pub(crate) async fn call_then(
     next: impl FnOnce(&Reply) -> Option<(&'static str, Map<String, Value>)>,
     observe: impl FnOnce(&Reply) -> Observation,
 ) -> Result<Observation, ScenarioError> {
+    let _running = crate::cli::RUNNING.acquire().await;
     let client = ()
         .serve(TokioChildProcess::new(tokio::process::Command::from(
             command,

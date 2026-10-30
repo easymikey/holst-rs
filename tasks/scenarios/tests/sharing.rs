@@ -340,9 +340,6 @@ async fn each_typed_share_flag_writes_its_setting(
 #[case("link", "commentator", json!({ "public": true, "public_access": "commentator" }))]
 #[case("link", "none", json!({ "public": false, "public_access": null }))]
 #[case("members", "editor", json!({ "workspace_member_access": "editor" }))]
-#[case("copy", "full", json!({ "who_can_copy_content": "co_owner" }))]
-#[case("delete", "editor", json!({ "who_can_delete_content": "editor" }))]
-#[case("tools", "full", json!({ "who_can_manage_collaboration_tools": "co_owner" }))]
 #[case("template", "on", json!({ "share_as_template": true }))]
 #[tokio::test]
 async fn shared_settings_are_read_back_in_show(

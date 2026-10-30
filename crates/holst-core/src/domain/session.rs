@@ -455,18 +455,6 @@ impl SessionState {
             other @ (Self::Missing { .. } | Self::Revoked { .. }) => other,
         }
     }
-
-    /// The active login's account became known; a new one marks it for saving.
-    #[must_use]
-    pub fn learn_account_id(self, user: &str) -> Self {
-        match self {
-            Self::Active { session, rotated } => Self::Active {
-                rotated: rotated || session.account_id() != Some(user),
-                session: session.with_account_id(user),
-            },
-            other @ (Self::Missing { .. } | Self::Revoked { .. }) => other,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -519,7 +507,7 @@ mod tests {
     }
 
     #[test]
-    fn the_account_round_trips_and_marks_the_session_for_saving() {
+    fn the_account_id_round_trips() {
         let named = session("abc", "").with_account_id("u1");
         let stored = named.to_saved_login();
         assert_eq!(
@@ -529,13 +517,6 @@ mod tests {
         let back = stored.expose_secret().parse::<Session>().ok();
         assert_eq!(back.as_ref().and_then(Session::account_id), Some("u1"));
         assert_eq!(session("abc", "").account_id(), None);
-        let loaded = SessionState::from(Some(session("tok", "sid=1")));
-        let (learned, rotated) = saved(loaded.learn_account_id("u1"));
-        assert_eq!(rotated.as_ref().and_then(Session::account_id), Some("u1"));
-        let (again, none) = saved(learned.learn_account_id("u1"));
-        assert!(none.is_none(), "a known account is saved again");
-        let (_, kept) = saved(again.absorb(vec![sid("2")]));
-        assert_eq!(kept.as_ref().and_then(Session::account_id), Some("u1"));
     }
 
     fn account(id: &str, name: &str) -> Account {

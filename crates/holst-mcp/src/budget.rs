@@ -40,8 +40,8 @@ use crate::{reply::change, server::McpServer};
 
 const INSTRUCTIONS_MAX: usize = 660;
 
-/// shortcut: 13 523 before wave 3 (measured + a tenth); trim back before 0.3.0.
-const TOOLS_MAX: usize = 20_000;
+// The size BUDGET_TABLE=1 shows, rounded up to the next fifty bytes.
+const TOOLS_MAX: usize = 15_000;
 
 const PAGE_MAX: usize = 13_000;
 

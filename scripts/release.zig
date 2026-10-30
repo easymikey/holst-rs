@@ -10,7 +10,11 @@
 //! $DIST (default `dist`), Cargo builds into $CARGO_TARGET_DIR (default `target`).
 //!
 //! Needs, all checked first (it prints what is missing and installs nothing): rustup with the five
-//! targets, zig, cargo-zigbuild, cargo-xwin, `clang-cl` on PATH, tar, zip, shasum, and gh for --publish.
+//! targets, zig, cargo-zigbuild 0.24.0 exactly, cargo-xwin, `clang-cl` on PATH, tar, zip, shasum, file,
+//! and gh for --publish.
+//!
+//! One archive per program and target: `holst-cli-<target>` and `holst-mcp-<target>`, ten in all.
+//! The Linux targets are static musl builds, so the archives run on any distribution.
 //!
 //! `--publish` is the only step that touches GitHub: the local tag must point at HEAD and exist on
 //! the remote; it writes the release notes and runs `gh release create --verify-tag`.
@@ -24,8 +28,7 @@ const Allocator = std.mem.Allocator;
 
 const pinned_zig: std.SemanticVersion = .{ .major = 0, .minor = 17, .patch = 0 };
 
-/// glibc floor of the ubuntu-22.04 runners the workflow builds on.
-const glibc = "2.35";
+const pinned_zigbuild = "0.24.0";
 
 const Os = enum { macos, linux, windows };
 
@@ -37,21 +40,28 @@ const Target = struct {
         return if (t.os == .windows) ".exe" else "";
     }
 
-    fn archiveName(t: Target, arena: Allocator) ![]u8 {
+    fn archiveName(t: Target, program: Program, arena: Allocator) ![]u8 {
         const ext = if (t.os == .windows) "zip" else "tar.gz";
-        return std.fmt.allocPrint(arena, "holst-{s}.{s}", .{ t.triple, ext });
+        return std.fmt.allocPrint(arena, "{s}-{s}.{s}", .{ program.package, t.triple, ext });
     }
+};
+
+/// A Cargo package and the binary it builds; each gets its own archive.
+const Program = struct { package: []const u8, binary: []const u8 };
+
+const programs = [_]Program{
+    .{ .package = "holst-cli", .binary = "holst" },
+    .{ .package = "holst-mcp", .binary = "holst-mcp" },
 };
 
 const targets = [_]Target{
     .{ .triple = "aarch64-apple-darwin", .os = .macos },
     .{ .triple = "x86_64-apple-darwin", .os = .macos },
-    .{ .triple = "x86_64-unknown-linux-gnu", .os = .linux },
-    .{ .triple = "aarch64-unknown-linux-gnu", .os = .linux },
+    .{ .triple = "x86_64-unknown-linux-musl", .os = .linux },
+    .{ .triple = "aarch64-unknown-linux-musl", .os = .linux },
     .{ .triple = "x86_64-pc-windows-msvc", .os = .windows },
 };
 
-const binaries = [_][]const u8{ "holst", "holst-mcp" };
 const extra_files = [_][]const u8{ "LICENSE-MIT", "LICENSE-APACHE", "readme.md" };
 
 const Tool = struct { name: []const u8, install: []const u8 };
@@ -60,12 +70,13 @@ const required_tools = [_]Tool{
     .{ .name = "rustup", .install = "https://rustup.rs" },
     .{ .name = "cargo", .install = "https://rustup.rs" },
     .{ .name = "zig", .install = "brew install zig" },
-    .{ .name = "cargo-zigbuild", .install = "cargo install --locked cargo-zigbuild" },
+    .{ .name = "cargo-zigbuild", .install = "cargo install --locked cargo-zigbuild --version " ++ pinned_zigbuild },
     .{ .name = "cargo-xwin", .install = "cargo install --locked cargo-xwin" },
     .{ .name = "clang-cl", .install = "brew install llvm, then put $(brew --prefix llvm)/bin on PATH (cargo-xwin compiles C with it)" },
     .{ .name = "tar", .install = "ships with macOS" },
     .{ .name = "zip", .install = "ships with macOS" },
     .{ .name = "shasum", .install = "ships with macOS" },
+    .{ .name = "file", .install = "ships with macOS" },
     .{ .name = "git", .install = "ships with the Xcode command line tools" },
 };
 
@@ -143,10 +154,17 @@ fn checkTools(r: *Release) !void {
         }
     }
 
-    if (missing.items.len == 0) return;
-    std.debug.print("missing tools, install them and rerun:\n", .{});
-    for (missing.items) |line| std.debug.print("  {s}\n", .{line});
-    std.process.exit(1);
+    if (missing.items.len != 0) {
+        std.debug.print("missing tools, install them and rerun:\n", .{});
+        for (missing.items) |line| std.debug.print("  {s}\n", .{line});
+        std.process.exit(1);
+    }
+
+    // `cargo-zigbuild 0.24.0`: the version the Linux builds were checked with
+    const zigbuild = try capture(r, &.{ "cargo-zigbuild", "--version" });
+    if (!std.mem.endsWith(u8, zigbuild, " " ++ pinned_zigbuild)) {
+        fail("this script is written for cargo-zigbuild {s}, found `{s}`; run `cargo install --locked cargo-zigbuild --version {s}`, or update scripts/release.zig on purpose", .{ pinned_zigbuild, zigbuild, pinned_zigbuild });
+    }
 }
 
 /// Step 2: work from the repository root, so `dist/` and the Cargo paths do not depend on where the script was started.
@@ -173,56 +191,64 @@ fn checkTag(r: *Release) !void {
     if (!std.mem.eql(u8, tag_commit, head)) fail("the local tag {s} must exist and point at HEAD", .{r.tag});
 }
 
-/// Step 4: release build of both binaries for one target; macOS native, Linux with zigbuild, Windows with xwin.
+/// Step 4: release build of both binaries for one target; macOS native, Linux (static musl) with zigbuild, Windows with xwin.
 fn build(r: *Release, target: Target) !void {
     const command: []const []const u8 = switch (target.os) {
         .macos => &.{ "cargo", "build" },
         .linux => &.{ "cargo", "zigbuild" },
         .windows => &.{ "cargo", "xwin", "build" },
     };
-    const triple = switch (target.os) {
-        .linux => try std.fmt.allocPrint(r.arena, "{s}.{s}", .{ target.triple, glibc }),
-        else => target.triple,
-    };
-    const flags: []const []const u8 = &.{ "--release", "--locked", "-p", "holst-cli", "-p", "holst-mcp", "--target", triple };
+    const flags: []const []const u8 = &.{ "--release", "--locked", "-p", "holst-cli", "-p", "holst-mcp", "--target", target.triple };
     try runVisible(r, try std.mem.concat(r.arena, []const u8, &.{ command, flags }), .inherit);
+    if (target.os == .linux) try checkStatic(r, target);
 }
 
-/// Step 5: stage the two binaries with the license files and readme, then archive them flat, as the workflow does.
-fn pack(r: *Release, target: Target) !void {
-    const cwd = Io.Dir.cwd();
-    const stage = try std.fmt.allocPrint(r.arena, "{s}/stage-{s}", .{ r.dist, target.triple });
-    try cwd.createDirPath(r.io, stage);
-
-    var names: std.ArrayList([]const u8) = .empty;
-    for (binaries) |binary| try names.append(r.arena, try std.fmt.allocPrint(r.arena, "{s}{s}", .{ binary, target.exeSuffix() }));
-    const built_count = names.items.len;
-    for (extra_files) |file| try names.append(r.arena, file);
-
-    for (names.items, 0..) |name, index| {
-        const from = if (index < built_count)
-            try std.fmt.allocPrint(r.arena, "{s}/{s}/release/{s}", .{ r.cargo_target_dir, target.triple, name })
-        else
-            name;
-        const to = try std.fmt.allocPrint(r.arena, "{s}/{s}", .{ stage, name });
-        try cwd.copyFile(from, cwd, to, r.io, .{});
+/// A Linux archive must run on any distribution: `file` has to call both binaries statically linked.
+fn checkStatic(r: *Release, target: Target) !void {
+    for (programs) |program| {
+        const path = try std.fmt.allocPrint(r.arena, "{s}/{s}/release/{s}", .{ r.cargo_target_dir, target.triple, program.binary });
+        const info = try capture(r, &.{ "file", path });
+        say("{s}", .{info});
+        if (std.mem.indexOf(u8, info, "statically linked") == null and std.mem.indexOf(u8, info, "static-pie linked") == null) {
+            fail("{s} is not statically linked", .{path});
+        }
     }
+}
 
-    const archive = try target.archiveName(r.arena);
-    switch (target.os) {
-        .windows => {
-            // zip runs inside the stage dir so the archive is flat; the std library cannot write zip
-            const out = try std.fmt.allocPrint(r.arena, "../{s}", .{archive});
-            const argv = try std.mem.concat(r.arena, []const u8, &.{ &.{ "zip", "-q", "-X", out }, names.items });
-            _ = try captureIn(r, argv, .{ .path = stage });
-        },
-        .macos, .linux => {
-            // COPYFILE_DISABLE stops macOS tar from adding `._` files
-            try r.env.put("COPYFILE_DISABLE", "1");
-            const out = try std.fmt.allocPrint(r.arena, "{s}/{s}", .{ r.dist, archive });
-            const argv = try std.mem.concat(r.arena, []const u8, &.{ &.{ "tar", "-czf", out, "-C", stage }, names.items });
-            _ = try captureIn(r, argv, .inherit);
-        },
+/// Step 5: one archive per program, flat, as the workflow does: the binary with the license files and readme.
+fn pack(r: *Release, target: Target) !void {
+    for (programs) |program| {
+        const cwd = Io.Dir.cwd();
+        const stage = try std.fmt.allocPrint(r.arena, "{s}/stage-{s}-{s}", .{ r.dist, program.package, target.triple });
+        try cwd.createDirPath(r.io, stage);
+
+        const binary = try std.fmt.allocPrint(r.arena, "{s}{s}", .{ program.binary, target.exeSuffix() });
+        var names: std.ArrayList([]const u8) = .empty;
+        try names.append(r.arena, binary);
+        try names.appendSlice(r.arena, &extra_files);
+
+        const built = try std.fmt.allocPrint(r.arena, "{s}/{s}/release/{s}", .{ r.cargo_target_dir, target.triple, binary });
+        try cwd.copyFile(built, cwd, try std.fmt.allocPrint(r.arena, "{s}/{s}", .{ stage, binary }), r.io, .{});
+        for (extra_files) |file| {
+            try cwd.copyFile(file, cwd, try std.fmt.allocPrint(r.arena, "{s}/{s}", .{ stage, file }), r.io, .{});
+        }
+
+        const archive = try target.archiveName(program, r.arena);
+        switch (target.os) {
+            .windows => {
+                // zip runs inside the stage dir so the archive is flat; the std library cannot write zip
+                const out = try std.fmt.allocPrint(r.arena, "../{s}", .{archive});
+                const argv = try std.mem.concat(r.arena, []const u8, &.{ &.{ "zip", "-q", "-X", out }, names.items });
+                _ = try captureIn(r, argv, .{ .path = stage });
+            },
+            .macos, .linux => {
+                // COPYFILE_DISABLE stops macOS tar from adding `._` files
+                try r.env.put("COPYFILE_DISABLE", "1");
+                const out = try std.fmt.allocPrint(r.arena, "{s}/{s}", .{ r.dist, archive });
+                const argv = try std.mem.concat(r.arena, []const u8, &.{ &.{ "tar", "-czf", out, "-C", stage }, names.items });
+                _ = try captureIn(r, argv, .inherit);
+            },
+        }
     }
 }
 
@@ -230,7 +256,9 @@ fn pack(r: *Release, target: Target) !void {
 fn checksums(r: *Release) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     try argv.appendSlice(r.arena, &.{ "shasum", "-a", "256" });
-    for (targets) |target| try argv.append(r.arena, try target.archiveName(r.arena));
+    for (programs) |program| {
+        for (targets) |target| try argv.append(r.arena, try target.archiveName(program, r.arena));
+    }
 
     const sums = try captureIn(r, argv.items, .{ .path = r.dist });
     const path = try std.fmt.allocPrint(r.arena, "{s}/checksums.txt", .{r.dist});
@@ -274,7 +302,9 @@ fn publish(r: *Release) !void {
 
     var argv: std.ArrayList([]const u8) = .empty;
     try argv.appendSlice(r.arena, &.{ "gh", "release", "create", r.tag });
-    for (targets) |target| try argv.append(r.arena, try std.fmt.allocPrint(r.arena, "{s}/{s}", .{ r.dist, try target.archiveName(r.arena) }));
+    for (programs) |program| {
+        for (targets) |target| try argv.append(r.arena, try std.fmt.allocPrint(r.arena, "{s}/{s}", .{ r.dist, try target.archiveName(program, r.arena) }));
+    }
     try argv.append(r.arena, sums_path);
     try argv.appendSlice(r.arena, &.{ "--verify-tag", "--title", r.tag, "--notes-file", notes_path, "--latest" });
     try r.env.put("GH_REPO", repo);
@@ -305,15 +335,17 @@ fn authorLogin(r: *Release, repo: []const u8, hash: []const u8) []const u8 {
 /// Last step: list the assets and print what the workflow's crates.io and Homebrew jobs would still do.
 fn finish(r: *Release) !void {
     say("\nassets in {s}:", .{r.dist});
-    for (targets) |target| say("  {s}/{s}", .{ r.dist, try target.archiveName(r.arena) });
+    for (programs) |program| {
+        for (targets) |target| say("  {s}/{s}", .{ r.dist, try target.archiveName(program, r.arena) });
+    }
     say("  {s}/checksums.txt", .{r.dist});
     say(
         \\
         \\Not done by this script (the workflow's crates and homebrew jobs):
         \\  crates.io: for name in holst-macros holst-core holst-cli holst-mcp, cargo publish -p $name --locked
         \\  homebrew:  in easymikey/homebrew-holst set Formula/holst-cli.rb and Formula/holst-mcp.rb to version {s},
-        \\             url https://github.com/easymikey/holst-rs/releases/download/{s}/holst-<target>.tar.gz
-        \\             and the sha256 of each of the four macOS and Linux archives from {s}/checksums.txt
+        \\             url https://github.com/easymikey/holst-rs/releases/download/{s}/<package>-<target>.tar.gz
+        \\             and the sha256 of each program's four macOS and Linux archives from {s}/checksums.txt
     , .{ r.tag[1..], r.tag, r.dist });
 }
 

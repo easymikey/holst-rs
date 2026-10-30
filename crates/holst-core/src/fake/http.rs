@@ -13,6 +13,8 @@ pub(crate) struct Request {
     pub(crate) path: String,
     pub(crate) cookie: String,
     pub(crate) body: String,
+    /// The client asked for the connection to end after this reply.
+    pub(crate) closes: bool,
     /// The body as it came, byte for byte.
     pub(crate) bytes: Vec<u8>,
 }
@@ -28,6 +30,11 @@ pub(crate) struct Response {
 pub(crate) async fn read_request(stream: &mut TcpStream) -> io::Result<Request> {
     let mut reader = BufReader::new(stream);
     let first = head_line(&mut reader).await?;
+    // A hang-up between two requests of a kept-alive connection reads as an
+    // empty line.
+    if first.is_empty() {
+        return Err(io::ErrorKind::UnexpectedEof.into());
+    }
     // imperative: the head is read line by line up to the blank line
     let mut head = Vec::new();
     // imperative: each line waits for the socket
@@ -51,6 +58,7 @@ pub(crate) async fn read_request(stream: &mut TcpStream) -> io::Result<Request> 
         method: word(0).to_owned(),
         path: word(1).to_owned(),
         cookie: header("cookie"),
+        closes: header("connection").eq_ignore_ascii_case("close"),
         body: String::from_utf8_lossy(&body).into_owned(),
         bytes: body,
     })
@@ -88,7 +96,7 @@ pub(crate) async fn write_body(
     body: &[u8],
 ) -> io::Result<()> {
     let head = format!(
-        "HTTP/1.1 {status} X\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\n{cookie}connection: close\r\n\r\n",
+        "HTTP/1.1 {status} X\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\n{cookie}\r\n",
         body.len()
     );
     stream.write_all(head.as_bytes()).await?;
