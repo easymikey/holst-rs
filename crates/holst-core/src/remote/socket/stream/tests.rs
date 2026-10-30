@@ -17,7 +17,6 @@ async fn real_socket_sends_login_headers_and_skips_control_frames() -> Result<()
     let (cookie_tx, cookie_rx) = std::sync::mpsc::channel();
     let server = tokio::spawn(async move {
         let (tcp, _) = listener.accept().await?;
-        // imperative: sending and reading take the socket by `&mut`
         let mut ws = tokio_tungstenite::accept_hdr_async(tcp, KeepCookie(cookie_tx))
             .await
             .map_err(Box::new)
@@ -49,7 +48,6 @@ async fn real_socket_sends_login_headers_and_skips_control_frames() -> Result<()
         cookies: "s=1".into(),
         user_agent: "test".into(),
     };
-    // imperative: sending and receiving take the socket by `&mut`
     let mut socket = TungsteniteConnector.open(&login).await?;
     socket.send(vec![1, 2, 3]).await?;
     assert_eq!(socket.receive().await?, Some(vec![7, 8]));

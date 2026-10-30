@@ -22,6 +22,7 @@ use std::{
     time::Duration,
 };
 
+use futures_util::{StreamExt as _, stream};
 use serde_json::Value;
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -75,18 +76,15 @@ type Shared = Arc<Mutex<State>>;
 const PROBE: Duration = Duration::from_millis(250);
 const PROBES: usize = 120;
 
-/// Returns once a probe connects, retrying hung ones; a loaded host stalls
-/// loopback connects for seconds, so the probes absorb that wait.
+/// Returns once a probe connects; a loaded host stalls loopback connects.
 async fn reachable(address: SocketAddr) {
-    let mut left = PROBES;
-    // imperative: each probe waits for the socket
-    while left > 0
-        && !timeout(PROBE, TcpStream::connect(address))
-            .await
-            .is_ok_and(|stream| stream.is_ok())
-    {
-        left -= 1;
-    }
+    stream::iter(0..PROBES)
+        .any(|_| async move {
+            timeout(PROBE, TcpStream::connect(address))
+                .await
+                .is_ok_and(|connected| connected.is_ok())
+        })
+        .await;
 }
 
 /// A running fake server; it stops with the runtime that started it.
@@ -117,8 +115,7 @@ impl Fake {
         &self.base_url
     }
 
-    /// Starts the server on a thread of its own for a caller that has no
-    /// runtime; the thread lives until the process ends.
+    /// Starts the server on its own thread, alive until the process ends.
     ///
     /// # Errors
     /// The I/O error of building the runtime or binding the port.
@@ -146,8 +143,7 @@ impl Fake {
         receiver.recv().map_err(io::Error::other)?
     }
 
-    /// Returns the folders and boards of the workspace named `workspace`, in
-    /// the order they came.
+    /// The folders and boards of `workspace`, in the order they came.
     #[must_use]
     pub fn tree_of(&self, workspace: &str) -> Vec<ListedNode> {
         self.workspace_id(workspace)
@@ -155,8 +151,7 @@ impl Fake {
             .unwrap_or_default()
     }
 
-    /// Returns the folders and boards in the trash of the workspace named
-    /// `workspace`.
+    /// The folders and boards in the trash of `workspace`.
     #[must_use]
     pub fn trash_of(&self, workspace: &str) -> Vec<ListedNode> {
         self.workspace_id(workspace)
@@ -178,8 +173,7 @@ impl Fake {
         self.locked().tree.id_of(name)
     }
 
-    /// Returns the id of the `number`th object filled on the board named
-    /// `board`, counting from 1.
+    /// The id of the `number`th object (from 1) filled on `board`.
     #[must_use]
     pub fn object_id(&self, board: &str, number: u32) -> Option<String> {
         self.id_of(board).map(|id| board::object_id(&id, number))
@@ -197,8 +191,7 @@ impl Fake {
         self.locked().catalog.personal_names()
     }
 
-    /// Returns the names of the templates shared with the workspace named
-    /// `workspace`.
+    /// The names of the templates shared with `workspace`.
     #[must_use]
     pub fn workspace_templates(&self, workspace: &str) -> Vec<String> {
         self.workspace_id(workspace)
@@ -229,9 +222,7 @@ impl Fake {
             .unwrap_or_default()
     }
 
-    /// Keeps the board setting `setting` (such as `who_can_copy_content`) on
-    /// the board called `board` to the role `needs` and up, and gives the user
-    /// the role `role` there.
+    /// Limits `setting` of `board` to `needs` and up; the user holds `role`.
     pub fn withhold(&self, board: &str, setting: &str, needs: &str, role: &str) {
         let mut state = self.locked();
         if let Some(id) = state.tree.id_of(board) {
@@ -259,8 +250,7 @@ impl Fake {
             .and_then(|id| state.tree.owner_of(&id))
     }
 
-    /// Returns the comment threads of the board called `board`, in the order
-    /// they came.
+    /// The comment threads of `board`, in the order they came.
     #[must_use]
     pub fn threads_of(&self, board: &str) -> Vec<FixtureThread> {
         let state = self.locked();
@@ -271,8 +261,7 @@ impl Fake {
             .unwrap_or_default()
     }
 
-    /// Returns when the signed-in user last read the thread `thread` of the
-    /// board called `board`, as the server holds the time.
+    /// When the user last read `thread` of `board`, as the server holds it.
     #[must_use]
     pub fn thread_read_at(&self, board: &str, thread: &str) -> Option<String> {
         let state = self.locked();
@@ -288,15 +277,13 @@ impl Fake {
         self.locked().files.uploads()
     }
 
-    /// Returns the page runs converted, in order: file name, first and last
-    /// page.
+    /// The page runs converted, in order: file name, first and last page.
     #[must_use]
     pub fn page_runs(&self) -> Vec<(String, u32, u32)> {
         self.locked().files.page_runs()
     }
 
-    /// Returns the pictures uploaded outside any board, such as the thumbnail
-    /// of a template.
+    /// The pictures uploaded outside any board, such as a template thumbnail.
     #[must_use]
     pub fn thumbnails(&self) -> Vec<Upload> {
         self.uploads()
@@ -313,8 +300,7 @@ impl Fake {
         self.locked().workspaces.id_of(name)
     }
 
-    /// Makes the API path `path` (as `current_user`) answer with `status` from
-    /// now on.
+    /// Makes the API path (as `current_user`) answer `status` from now on.
     pub fn fail(&self, path: &str, status: u16) {
         let failed = format!("/gapi/{path}");
         let mut state = self.locked();

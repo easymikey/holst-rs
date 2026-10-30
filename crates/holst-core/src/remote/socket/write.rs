@@ -281,9 +281,8 @@ impl SentUpdate {
 }
 
 async fn ack(socket: &mut dyn BoardSocket, board: &str, id: u64) -> Result<()> {
-    // imperative: frames come until the server acks our update
     let mut accepted = Accepted::Waiting;
-    // imperative: same loop
+    // imperative: a frame per await until the server acks our update
     while accepted == Accepted::Waiting {
         let message = socket
             .receive()

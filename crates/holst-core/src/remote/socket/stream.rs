@@ -35,7 +35,6 @@ impl SocketConnector for TungsteniteConnector {
         login: &'a SocketSession,
     ) -> BoxFuture<'a, Result<Box<dyn BoardSocket>>> {
         Box::pin(async move {
-            // imperative: the headers are added through `&mut`
             let mut request = login
                 .url
                 .as_str()
@@ -98,8 +97,7 @@ impl BoardSocket for TungsteniteSocket {
 
     fn receive(&mut self) -> BoxFuture<'_, Result<Option<Vec<u8>>>> {
         Box::pin(async move {
-            // Ping, pong and text are skipped up to a binary message or the
-            // close.
+            // Ping, pong and text are skipped up to a binary message or close.
             (&mut self.0)
                 .filter_map(|message| future::ready(binary_of(message)))
                 .next()

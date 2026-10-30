@@ -25,7 +25,7 @@ use crate::fake::{
 };
 
 pub(crate) async fn accept(listener: TcpListener, state: Shared) {
-    // imperative: accepts for the life of the test
+    // imperative: an accept per await for the life of the test
     while let Ok((stream, _)) = listener.accept().await {
         tokio::spawn(respond(stream, Arc::clone(&state)));
     }
@@ -42,11 +42,10 @@ async fn respond(mut stream: TcpStream, state: Shared) {
     }
 }
 
-/// Answers requests on one connection until hang-up, so pooling clients open
-/// few.
+/// Serves one connection until hang-up, so pooling clients open few.
 async fn serve(stream: &mut TcpStream, state: &Shared) -> io::Result<()> {
     let mut open = true;
-    // imperative: a keep-alive connection ends with an error at the hang-up
+    // imperative: a request per await until the client closes
     while open {
         let request = read_request(stream).await?;
         match answer(state, &request) {
@@ -97,8 +96,7 @@ fn route(state: &mut State, request: &Request) -> Response {
     }
 }
 
-/// Answers the API, then rotates the session cookie when the fixture asks for
-/// it.
+/// Answers the API, then rotates the session cookie if the fixture asks.
 fn api(state: &mut State, request: &Request) -> Response {
     let reply = failing(state, request).unwrap_or_else(|| respond_api(state, request));
     // A logout ends the session; there is nothing to rotate.
@@ -145,8 +143,7 @@ fn respond_api(state: &mut State, request: &Request) -> Response {
         ("GET", "/gapi/current_user") if signed_in => {
             found(&state.workspaces.current_user())
         }
-        // The socket handshake without the session cookie never reaches the
-        // socket.
+        // The handshake without the session cookie never reaches the socket.
         ("GET", "/gapi/current_user" | "/hud/ws") => unauthorized(),
         (_, _) if !signed_in => unauthorized(),
         (method, path) => {

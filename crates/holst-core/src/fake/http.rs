@@ -33,9 +33,8 @@ pub(crate) async fn read_request(stream: &mut TcpStream) -> io::Result<Request> 
     let first = Some(head_line(&mut reader).await?)
         .filter(|line| !line.is_empty())
         .ok_or(io::ErrorKind::UnexpectedEof)?;
-    // imperative: the head is read line by line up to the blank line
     let mut head = Vec::new();
-    // imperative: each line waits for the socket
+    // imperative: a line per await up to the blank line
     while let Some(line) =
         Some(head_line(&mut reader).await?).filter(|line| !line.is_empty())
     {

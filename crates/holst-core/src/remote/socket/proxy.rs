@@ -107,7 +107,6 @@ pub async fn tunnel(
             error: source,
         })
     };
-    // imperative: writing takes the stream by `&mut`
     let mut stream = TcpStream::connect(proxy).await.map_err(failed)?;
     stream
         .write_all(connect_request(target, authorization).as_bytes())
@@ -118,9 +117,8 @@ pub async fn tunnel(
 }
 
 async fn read_head(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
-    // imperative: a byte per await to the blank line; a buffer reads past it
     let mut head = Vec::with_capacity(128);
-    // imperative: see above
+    // imperative: a byte per await to the blank line; a buffer reads past it
     while !head.ends_with(b"\r\n\r\n") && head.len() < MAX_HEAD {
         head.push(stream.read_u8().await?);
     }
@@ -311,9 +309,8 @@ mod tests {
         let address = listener.local_addr()?.to_string();
         tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await?;
-            // imperative: a test proxy reads the request head byte by byte
             let mut seen = Vec::new();
-            // imperative: see above
+            // imperative: a byte per await to the blank line
             while !seen.ends_with(b"\r\n\r\n") {
                 seen.push(stream.read_u8().await?);
             }
@@ -334,9 +331,7 @@ mod tests {
                     error,
                 })
             })?;
-        // imperative: reading takes the stream by `&mut`
         let mut stream = tunnel(&proxy, "app.holst.so:443", None).await?;
-        // imperative: `read_exact` fills the buffer in place
         let mut first = [0u8; 3];
         stream.read_exact(&mut first).await.map_err(|error| {
             Error::BoardSocket(BoardSocketError::Proxy {

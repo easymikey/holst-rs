@@ -135,13 +135,10 @@ async fn announce(
     login: &SocketSession,
     board: &str,
 ) -> Result<(EditRight, Option<StateVector>)> {
-    // imperative: reading takes the socket by `&mut`
     let mut socket = requested(connector, login, board).await?;
-    // imperative: the load state follows the frames
     let mut progress = LoadProgress::default();
-    // imperative: set by any update that has no state vector
     let mut blind = false;
-    // imperative: frames come until a board update says none follow
+    // imperative: a frame per await until a board update says none follow
     while !progress.last {
         let message = received(&mut *socket).await?;
         progress = hud::frames(&message)?
@@ -163,7 +160,6 @@ async fn requested(
     login: &SocketSession,
     board: &str,
 ) -> Result<Box<dyn BoardSocket>> {
-    // imperative: sending takes the socket by `&mut`
     let mut socket = idle(connector.open(login)).await?;
     idle(socket.send(hud::request_document(board, login.token.expose_secret())))
         .await?;
@@ -223,17 +219,12 @@ async fn load_frames(
         document: doc,
         seed,
     } = *request;
-    // imperative: the socket is read by `&mut` until the load is whole
     let mut socket = requested(connector, login, board).await?;
-    // imperative: the state of the load follows the frames as they arrive
     let mut progress = LoadProgress::default();
-    // imperative: the state the applied blocks reach grows with each frame
     let mut reached = StateVector::default();
-    // imperative: the source of the bytes follows each download
     let mut source = LoadSource::Skipped;
-    // imperative: set by any update that has no state vector
     let mut blind = false;
-    // imperative: frames come until the document holds the whole initial load
+    // imperative: a frame per await until the document holds the whole load
     while !(progress.last && covers(doc, &progress.announced)) {
         let message = received(&mut *socket).await?;
         progress = hud::frames(&message)?
@@ -280,7 +271,6 @@ fn advance(
         }
         hud::SocketMessage::Update(update) => {
             let announced = decoded(&update.state_vector)?;
-            // imperative: merging takes the vector by `&mut`
             let mut server = progress.announced;
             server.merge(announced.clone());
             Ok(LoadProgress {
