@@ -37,7 +37,6 @@ impl Aliases {
     }
 
     pub(crate) fn intern(&self, id: &str) -> usize {
-        // imperative: the guard is mutated in several steps.
         let mut table = lock(&self.table);
         let known = table.by_id.get(id).copied();
         known.unwrap_or_else(|| {

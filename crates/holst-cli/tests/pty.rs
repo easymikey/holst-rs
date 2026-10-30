@@ -58,14 +58,12 @@ struct ShellLogin<'a> {
     after: &'a str,
 }
 
-/// Builds a command with the test environment around a fake server and home.
 fn test_command(
     program: &str,
     arguments: &[&str],
     base: &str,
     home: &std::path::Path,
 ) -> Command {
-    // imperative: `Command` is a `&mut` builder.
     let mut command = support::isolated(program, home);
     command
         .args(arguments)

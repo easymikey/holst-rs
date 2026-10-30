@@ -485,7 +485,6 @@ async fn an_original_is_not_saved_into_the_keys_folder() -> Result<(), ScenarioE
 
 const PAGE: &str = "https://example.com/spec";
 
-/// The call that adds a `kind` of media from what `with_media` holds.
 fn media_call(holst: &Holst, kind: &str) -> ObjectCall {
     match kind {
         "link" => ObjectCall::add("link").url(PAGE),
@@ -494,7 +493,6 @@ fn media_call(holst: &Holst, kind: &str) -> ObjectCall {
     }
 }
 
-/// The path `pointer` in the first object of `kind` on the board "Plans".
 fn in_first(holst: &Holst, kind: &str, pointer: &str) -> Result<Value, ScenarioError> {
     Ok(holst
         .first_of_kind("Plans", kind)?

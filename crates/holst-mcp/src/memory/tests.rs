@@ -82,7 +82,6 @@ fn expand_unknown(state: McpMemory, #[case] reference: &str, #[case] alias: &str
 fn only_whole_alias_strings_are_expanded_in_json(
     state: McpMemory,
 ) -> Result<(), UnknownAlias> {
-    // imperative: `expand_json` rewrites the value in place.
     let mut body = serde_json::json!({
         "ids": ["@1"], "mail": "ivan@example.org", "file": "logo@2x.png", "handle": "@team",
         "spaced": "@team ", "id": "@2", "text": "@ 1",

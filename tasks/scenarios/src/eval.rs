@@ -23,7 +23,6 @@ use crate::{
     mcp::text_of,
 };
 
-/// How many tasks there are.
 pub const TASKS: usize = 20;
 static TAKEN: AtomicU32 = AtomicU32::new(0);
 const WORKSPACE: &str = "Eval";
@@ -46,14 +45,12 @@ const SPEC: u32 = 8;
 const FIXTURE_OBJECTS: u32 = 8;
 const STAMPS: [&str; 3] = ["created", "updated", "listed"];
 
-/// One call of a tool, as an agent makes it.
 #[derive(Debug, Clone)]
 pub struct Call {
     pub tool: &'static str,
     pub arguments: Value,
 }
 
-/// What a tool answered.
 #[derive(Debug, Clone)]
 pub struct Outcome {
     pub text: String,
@@ -71,7 +68,6 @@ pub struct Snapshot {
     exports: BTreeMap<String, Vec<u8>>,
 }
 
-/// The fake before a run and after it.
 #[derive(Debug)]
 pub struct Seen<'a> {
     before: &'a Snapshot,
@@ -96,14 +92,12 @@ pub struct Task {
     check: Check,
 }
 
-/// How the check judged one run.
 #[derive(Debug, Clone)]
 pub struct Verdict {
     pub correct: bool,
     pub reason: String,
 }
 
-/// What the oracle found for one task.
 #[derive(Debug)]
 pub struct OracleLine {
     pub number: usize,
@@ -279,7 +273,6 @@ impl Snapshot {
     }
 }
 
-/// The objects of an `object ls` reply in JSON.
 fn listed_in(reply: &str) -> Vec<Value> {
     let parsed: Value = serde_json::from_str(reply).unwrap_or_default();
     match &parsed {
@@ -1291,7 +1284,6 @@ pub async fn oracle() -> Result<Vec<OracleLine>, ScenarioError> {
     Ok(lines)
 }
 
-/// Where the config of an MCP client for `holst` is written, and its text.
 fn client_config(holst: &Holst) -> Result<String, ScenarioError> {
     let command = holst.command("holst-mcp")?;
     let env: Map<String, Value> = command

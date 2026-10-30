@@ -314,7 +314,6 @@ mod tests {
     #[test]
     fn the_least_recently_read_goes_over_the_limit() {
         let now = Instant::now();
-        // imperative: the memory is changed through `&mut self` methods.
         let mut boards = BoardMemory::default();
         boards.insert("a", read(kept(40), 0, Some(now)), 100);
         boards.insert("b", read(kept(40), 0, Some(now)), 100);
@@ -343,7 +342,6 @@ mod tests {
     #[test]
     fn trust_expires_into_a_check() {
         let at = Instant::now();
-        // imperative: the memory is changed through `&mut self` methods.
         let mut boards = BoardMemory::default();
         boards.insert("a", read(kept(1), 0, Some(at)), 100);
         assert_eq!(use_at(&mut boards, at), Some("served"));
@@ -356,7 +354,6 @@ mod tests {
     fn a_stale_board_is_reloaded() {
         let at = Instant::now();
         let later = at + VERIFIED_TRUST;
-        // imperative: the memory is changed through `&mut self` methods.
         let mut boards = BoardMemory::default();
         boards.insert("a", read(kept(1), 0, Some(at)), 100);
         let seed = boards
@@ -372,7 +369,6 @@ mod tests {
     #[test]
     fn an_index_alone_is_no_board() {
         let at = Instant::now();
-        // imperative: the memory is changed through `&mut self` methods.
         let mut boards = BoardMemory::default();
         let alone = KeptBoard {
             document: None,
@@ -387,7 +383,6 @@ mod tests {
     fn an_old_download_expires_the_seed() {
         let at = Instant::now();
         let trust = Duration::from_mins(1);
-        // imperative: the memory is changed through `&mut self` methods.
         let mut boards = BoardMemory::with_download_trust(DownloadTrust(trust));
         let old = KeptBoard {
             downloaded_at: at,
@@ -407,7 +402,6 @@ mod tests {
     #[test]
     fn a_read_older_than_a_write_is_dropped() {
         let now = Instant::now();
-        // imperative: the memory is changed through `&mut self` methods.
         let mut boards = BoardMemory::default();
         boards.forget("a", 5);
         boards.insert("a", read(kept(1), 4, Some(now)), 100);

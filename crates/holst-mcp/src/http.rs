@@ -42,7 +42,6 @@ use crate::{server::McpServer, setup::SERVER};
 /// The variable that hands the token to the server instead of the file.
 pub(crate) const TOKEN_VAR: &str = "HOLST_MCP_TOKEN";
 
-/// The token file's name, beside the login file in the holst home.
 pub(crate) const TOKEN_FILE: &str = "mcp-token";
 
 /// Names a container uses for the loopback of its host; Colima knows both.
@@ -164,7 +163,6 @@ impl Token {
             })
     }
 
-    /// The token text, for the snippets that `--print-config` prints.
     fn expose(&self) -> &str {
         self.0.expose_secret()
     }
@@ -231,7 +229,6 @@ fn make_token(path: &Path) -> Result<Token, HttpError> {
     Ok(token)
 }
 
-/// Binds the address; a non-loopback one is announced to the log.
 pub(crate) async fn bind(addr: SocketAddr) -> Result<TcpListener, HttpError> {
     let listener = TcpListener::bind(addr)
         .await
@@ -279,7 +276,7 @@ pub(crate) async fn serve(
         config,
     );
     let token = Arc::new(token);
-    // imperative: the accept loop of a server
+    // imperative: every accept awaits the next connection
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
@@ -340,7 +337,6 @@ fn unauthorized() -> Reply {
     reply
 }
 
-/// The commands that connect a client in a container to the server at `addr`.
 pub(crate) fn config_snippets(addr: SocketAddr, token: &Token) -> String {
     let [docker, lima] = HOST_NAMES;
     let port = addr.port();

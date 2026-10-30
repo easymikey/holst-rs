@@ -458,7 +458,6 @@ fn channel_reads(requests: &[String], board: Option<&str>) -> usize {
     requests.iter().filter(|each| **each == wanted).count()
 }
 
-/// A board file of Roadmap in a scratch folder, and the folder.
 async fn roadmap_file(client: &Client) -> holst_core::Result<(Arc<Scratch>, String)> {
     let scratch = Scratch::new()?;
     fs::create_dir_all(&scratch.dir)?;
@@ -677,7 +676,6 @@ async fn a_recent_board_no_kept_tree_holds_asks_the_trees_once()
     assert_eq!(names, ["Nova"]);
     Ok(())
 }
-/// A client on a cache that a `board ls` filled, running changes.
 async fn listed(fixture: Fixture) -> holst_core::Result<(Fake, Client)> {
     let (fake, client) = started(fixture).await?;
     run(&client, Run::BoardLs).await?;
@@ -1128,7 +1126,6 @@ impl Sent {
         }
     }
 
-    /// The same requests and `count` more trees.
     fn more_trees(self, count: usize) -> Self {
         Self {
             tree: self.tree + count,
@@ -1301,7 +1298,6 @@ impl World {
         })
     }
 
-    /// The same login on a new client whose clock stands at `now`, same cache.
     fn later(self, now: u64) -> holst_core::Result<Self> {
         Ok(Self {
             client: at_clock(&self.fake, &self.cache, now)?,
@@ -1332,7 +1328,6 @@ impl World {
         Ok(serde_json::from_str(&text)?)
     }
 
-    /// The request with the ids it holds replaced by the names of the fixture.
     fn named(&self, request: &str) -> String {
         self.ids
             .iter()
@@ -1376,7 +1371,6 @@ impl World {
         Ok(self)
     }
 
-    /// Runs the command; the requests it sent.
     async fn measured(
         &self,
         name: CommandName,
@@ -1411,7 +1405,6 @@ impl World {
     }
 }
 
-/// A board file of `Roadmap` and a cover picture in `dir`.
 async fn make_files(dir: &std::path::Path) -> holst_core::Result<()> {
     let (_fake, client) = started(whole_boards()).await?;
     let (scratch, path) = roadmap_file(&client).await?;
@@ -1669,14 +1662,12 @@ async fn pins(
     Ok(())
 }
 
-/// The requests as they are, without names for the ids.
 fn tallied(requests: &[String]) -> Sent {
     requests.iter().fold(sent(), |sent, request| {
         sent.counting(request, request.clone())
     })
 }
 
-/// The whole email login of the command line, to a client on `cache`.
 async fn log_in(
     fake: &Fake,
     cache: &Arc<Scratch>,

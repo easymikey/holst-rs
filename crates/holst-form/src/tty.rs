@@ -85,7 +85,6 @@ pub(crate) fn warn(warning: Option<&str>) {
     reason = "a drop or a signal has no caller to return the text to: stderr is the only place left"
 )]
 pub(crate) fn stderr_line(text: &str) {
-    // A stderr that cannot be written has nowhere to report to.
     writeln!(io::stderr().lock(), "{text}").unwrap_or_default();
 }
 
@@ -98,13 +97,11 @@ mod imp {
     static ORIGINAL: OnceLock<TerminalSettings> = OnceLock::new();
 
     fn current() -> io::Result<TerminalSettings> {
-        // imperative: `tcgetattr` fills the value through a pointer.
         let mut out = MaybeUninit::<TerminalSettings>::zeroed();
-        // SAFETY: `tcgetattr` only writes a `termios` into a sized, aligned
-        // local.
+        // SAFETY: `tcgetattr` only writes a `termios` into a local.
         let status = unsafe { libc::tcgetattr(libc::STDIN_FILENO, out.as_mut_ptr()) };
         (status == 0)
-            // SAFETY: the call succeeded, so the (zeroed before) value is initialised.
+            // SAFETY: the call succeeded, so the value is initialised.
             .then(|| unsafe { out.assume_init() })
             .ok_or_else(io::Error::last_os_error)
     }
@@ -132,8 +129,7 @@ mod imp {
     }
 
     pub(super) fn flush_output() {
-        // SAFETY: `tcdrain` takes a descriptor; not a terminal is an ignored
-        // error.
+        // SAFETY: `tcdrain` takes a descriptor; failure is ignored.
         unsafe { libc::tcdrain(libc::STDERR_FILENO) };
     }
 
@@ -163,8 +159,7 @@ mod imp {
     }
 
     pub(super) fn discard_typeahead() {
-        // SAFETY: `tcflush` takes a descriptor and a constant; failure is
-        // ignored.
+        // SAFETY: `tcflush` takes a descriptor; failure is ignored.
         unsafe { libc::tcflush(libc::STDIN_FILENO, libc::TCIFLUSH) };
     }
 }

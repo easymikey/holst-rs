@@ -15,7 +15,6 @@ use crate::{
 };
 
 const SPIN_STEP: Duration = Duration::from_millis(80);
-/// How many options of a select or multi-select show at once.
 const CHOICE_ROWS: usize = 8;
 
 enum KeyReadEnd {
@@ -380,8 +379,7 @@ impl<T: Terminal> Form<T> {
     async fn turn(&self, label: &str) -> Infallible {
         let origin = tokio::time::Instant::now();
         let frames = std::cell::Cell::new(1_u32);
-        // imperative: the frames repeat until the request ends and `select!`
-        // drops this
+        // imperative: frames repeat until `select!` drops this future
         loop {
             let frame = frames.get();
             tokio::time::sleep_until(origin + SPIN_STEP.saturating_mul(frame)).await;
@@ -427,7 +425,6 @@ impl<T: Terminal> Form<T> {
         kind: QuestionKind,
         footer: QuestionFooter,
     ) -> Result<Zeroizing<String>> {
-        // Show the question only once the echo is off.
         let ask = || {
             let first = draw::draw_input(
                 self.coloring,

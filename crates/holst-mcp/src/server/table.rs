@@ -122,7 +122,6 @@ impl TableTool {
         }
     }
 
-    /// The other tool of this tool's group that has the verb.
     fn sibling_with(&self, verb: &str) -> Option<String> {
         let group = self.commands.first()?.command().group;
         tools()
@@ -144,7 +143,6 @@ impl TableTool {
             .collect()
     }
 
-    /// The tool as `tools/list` shows it: compact JSON.
     pub(crate) fn tool(&self) -> Tool {
         let commands: Vec<&Command> =
             self.commands.iter().map(|name| name.command()).collect();
@@ -325,14 +323,12 @@ fn placement(command: &Command) -> Option<(String, &'static str)> {
     placed.filter(|_| for_mcp)
 }
 
-/// Every tool of the table, in the order of its commands.
 pub(crate) fn tools() -> Vec<TableTool> {
     CommandName::iter()
         .filter_map(|name| {
             placement(name.command())
                 .map(|(tool, description)| (tool, description, name))
         })
-        // imperative: a command joins the tool its name already opened.
         .fold(
             Vec::new(),
             |mut tools: Vec<TableTool>, (tool, description, name)| {

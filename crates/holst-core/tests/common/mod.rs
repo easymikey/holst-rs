@@ -161,7 +161,6 @@ impl Head {
 async fn read_head(
     read: &mut BufReader<OwnedReadHalf>,
 ) -> io::Result<Option<Vec<String>>> {
-    // imperative: lines come off the socket until an empty one.
     let mut lines = Vec::new();
     // imperative: lines come off the socket until an empty one.
     Ok(loop {
@@ -181,7 +180,6 @@ async fn answer(
     handler: &impl Fn(ReceivedRequest) -> CannedResponse,
 ) -> io::Result<()> {
     let (read, mut write) = stream.into_split();
-    // imperative: reading from the socket needs `&mut`.
     let mut read = BufReader::new(read);
     // imperative: a keep-alive connection serves every request sent.
     while let Some(lines) = read_head(&mut read).await? {
@@ -196,7 +194,6 @@ async fn answer(
             .iter()
             .skip(1)
             .try_fold(Head::default(), |head, line| head.with(line))?;
-        // imperative: `read_exact` fills a buffer in place.
         let mut request_body = vec![0; head.length];
         read.read_exact(&mut request_body).await?;
         let n = counter.fetch_add(1, Ordering::SeqCst);

@@ -25,8 +25,6 @@ pub(crate) struct TableCall {
     pub(crate) arguments: Map<String, Value>,
 }
 
-/// Returns the clap commands of the table's groups, to add to `root`.
-///
 /// A group that is the command itself (`search`) comes as that command.
 #[must_use]
 pub(crate) fn groups(root: &ClapCommand) -> Vec<ClapCommand> {
@@ -37,8 +35,6 @@ pub(crate) fn groups(root: &ClapCommand) -> Vec<ClapCommand> {
         .collect()
 }
 
-/// Returns the table's groups that have a command on the command line, each
-/// once.
 #[must_use]
 pub(crate) fn cli_groups() -> Vec<CommandGroup> {
     help::first_seen(cli_commands().map(|command| command.group))
@@ -81,7 +77,6 @@ pub(crate) fn call(matches: &ArgMatches) -> Option<Result<TableCall>> {
     )
 }
 
-/// Returns the argument whose values are subcommands of the command.
 fn subcommand_argument(command: &Command) -> Option<&'static Argument> {
     command
         .arguments
@@ -89,7 +84,6 @@ fn subcommand_argument(command: &Command) -> Option<&'static Argument> {
         .find(|argument| argument.subcommand)
 }
 
-/// Returns the values of a subcommand argument.
 fn kinds_of(argument: &Argument) -> &'static [&'static str] {
     match argument.kind {
         ValueKind::Choice(values) => values,
@@ -133,7 +127,6 @@ fn group_command(group: CommandGroup, inherited: &[String]) -> ClapCommand {
     }
 }
 
-/// The clap command of a group with a verb for each command.
 fn verbs_command(
     group: CommandGroup,
     commands: &[&Command],
@@ -161,8 +154,7 @@ fn verb_command(command: &Command, inherited: &[String]) -> Option<ClapCommand> 
         .map(|verb| command_of(command, verb, inherited))
 }
 
-/// The clap command of `command`, called `name`: its verb, or its group. One
-/// with a subcommand argument has a command for each of its values.
+/// A command with a subcommand argument has a command for each of its values.
 fn command_of(
     command: &Command,
     name: &'static str,
@@ -190,8 +182,6 @@ fn command_of(
     )
 }
 
-/// The clap command that takes the arguments of `command`, or of one `kind` of
-/// it.
 fn leaf_command(
     command: &Command,
     name: String,
@@ -263,7 +253,6 @@ fn value_parser(kind: ValueKind) -> ValueParser {
     }
 }
 
-/// Checks that `text` is `KEY=VALUE` with a key.
 fn key_value(text: &str) -> Result<String> {
     match text.split_once('=') {
         Some((key, _)) if !key.is_empty() => Ok(text.to_owned()),
@@ -455,7 +444,6 @@ mod tests {
         },
     };
 
-    /// The words of `line`, a double-quoted one kept together.
     fn words(line: &str) -> Vec<String> {
         line.split('"')
             .enumerate()
@@ -638,7 +626,6 @@ mod tests {
         }
     }
 
-    /// The comment arms of [`reads`], apart to keep each function short.
     fn comment_reads(
         verb: CommentVerb,
         arguments: serde_json::Map<String, serde_json::Value>,
@@ -718,7 +705,6 @@ mod tests {
         );
     }
 
-    /// The alias that `call` refuses, if it does.
     fn refused(line: &str) -> Option<String> {
         match call(&matches(line).ok()?)? {
             Err(Error::McpAlias { reference }) => Some(reference),
@@ -1101,7 +1087,6 @@ mod tests {
         assert_eq!(probed("probe --boards Plans --on-mcp x"), None);
     }
 
-    // The gh rules over the built command line.
     mod rules {
         use std::collections::BTreeSet;
 
@@ -1158,8 +1143,6 @@ mod tests {
             );
         }
 
-        /// Every command of the tree below `parent` with its path, groups
-        /// first.
         fn nodes<'a>(
             parent: &'a clap::Command,
             path: &str,
@@ -1180,7 +1163,6 @@ mod tests {
         }
 
         fn built() -> clap::Command {
-            // imperative: `build` needs `&mut` to hand the global flags down.
             let mut root = cli::command();
             root.build();
             root
@@ -1192,7 +1174,6 @@ mod tests {
                 .all(|child| child.get_name() == "help")
         }
 
-        /// The table command a path of the tree names, and the kind of it.
         fn table_command(
             path: &str,
         ) -> Option<(&'static Command, Option<&'static str>)> {
@@ -1217,7 +1198,6 @@ mod tests {
             Some((command, chosen))
         }
 
-        /// The paths of the leaves the table gives the command line.
         fn table_leaves() -> BTreeSet<String> {
             CommandName::iter()
                 .map(CommandName::command)

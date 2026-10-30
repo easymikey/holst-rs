@@ -29,7 +29,6 @@ pub(crate) fn isolated_from(
     holst_home: &Path,
     parent: impl IntoIterator<Item = (OsString, OsString)>,
 ) -> Command {
-    // imperative: `Command` is a `&mut` builder.
     let mut command = Command::new(program);
     command
         .env_clear()
@@ -55,7 +54,6 @@ pub(crate) fn easy() -> Fixture {
         .board("Old roadmap", "easy", Some("Q4"))
 }
 
-/// Starts a fake server on a thread of its own; it ends with the test process.
 pub(crate) fn start() -> std::io::Result<Fake> {
     Fake::start_blocking(easy())
 }

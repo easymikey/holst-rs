@@ -61,7 +61,6 @@ impl Holst {
         &self.fake
     }
 
-    /// Returns the path of a file in the folder the binaries run from.
     pub(crate) fn work_file(&self, name: &str) -> PathBuf {
         self.directory.join("home").join(name)
     }
@@ -131,7 +130,6 @@ impl Holst {
     }
 
     pub(crate) fn command(&self, binary: &str) -> Result<Command, ScenarioError> {
-        // imperative: Command is a builder that takes its settings by &mut
         let mut command = Command::new(binary_path(binary)?);
         command
             .env_clear()
@@ -241,8 +239,7 @@ fn listing(reply: &mcp::Reply) -> Observation {
 /// stale one is never tested.
 fn binary_path(name: &str) -> Result<PathBuf, ScenarioError> {
     static BUILT: OnceLock<Result<(), BuildError>> = OnceLock::new();
-    // a test runs from `<profile>/deps`, a binary of this package from
-    // `<profile>`
+    // a test runs from `<profile>/deps`, a binary from `<profile>`
     let exe = std::env::current_exe()?;
     let profile = exe.parent().map_or_else(PathBuf::new, |folder| {
         match folder.file_name().and_then(|leaf| leaf.to_str()) {

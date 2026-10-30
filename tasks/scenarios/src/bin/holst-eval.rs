@@ -59,21 +59,24 @@ async fn main() -> ExitCode {
 
 async fn prove() -> Result<(), EvalError> {
     let lines = oracle().await.map_err(EvalError::Scenario)?;
-    // imperative: prints line by line
-    for line in &lines {
-        let right = line
-            .right_answer
-            .as_ref()
-            .map_or_else(|why| format!("FAILS: {why}"), |()| "passes".to_owned());
-        let untouched = line
-            .untouched_fixture
-            .as_ref()
-            .map_or("fails", |()| "PASSES");
-        println!(
-            "task {:2}: calls {} (ideal {}); right answer {right}; untouched fixture {untouched}",
-            line.number, line.calls, line.ideal
-        );
-    }
+    let report: Vec<String> = lines
+        .iter()
+        .map(|line| {
+            let right = line
+                .right_answer
+                .as_ref()
+                .map_or_else(|why| format!("FAILS: {why}"), |()| "passes".to_owned());
+            let untouched = line
+                .untouched_fixture
+                .as_ref()
+                .map_or("fails", |()| "PASSES");
+            format!(
+                "task {:2}: calls {} (ideal {}); right answer {right}; untouched fixture {untouched}",
+                line.number, line.calls, line.ideal
+            )
+        })
+        .collect();
+    println!("{}", report.join("\n"));
     println!("skipped: none");
     let broken = lines.iter().filter(|line| !line.proven()).count();
     (broken == 0)
