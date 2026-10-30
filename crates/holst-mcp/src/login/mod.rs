@@ -29,6 +29,16 @@ pub(crate) type LoginStep<'a> = machine::LoginStep<'a, Client>;
 
 pub(crate) type ReadyLogin = machine::ReadyLogin<Client>;
 
+impl LoginState {
+    /// The successes the ready login's client has had.
+    pub(crate) fn answered(&self) -> u64 {
+        match self {
+            Self::Ready(ready) => ready.client.answered(),
+            Self::Missing | Self::Revoked(_) => 0,
+        }
+    }
+}
+
 impl LoginClient for Client {
     type Store = SessionStoreKind;
 

@@ -3,41 +3,25 @@
 use serde_json::Value;
 use yrs::Doc;
 
-use super::{ME, edit, fields_of};
+use super::{built, built_with_ids, edit, fields_of};
 use crate::{
     domain::{
-        change::{
-            build::build,
-            value::{
-                BoardChange,
-                ChangeSources,
-                NewEntry,
-                NewObject,
-                ObjectPatch,
-                TextWidth,
-            },
-        },
+        change::value::{BoardChange, NewEntry, NewObject, ObjectPatch, TextWidth},
         geometry::{Point, Size},
         id_source::SequentialIds,
         rich_text::TextFormat,
-        time::Timestamp,
     },
     error::{Error, Result, board_change::BoardChangeError},
 };
 
 fn board_with(new: NewObject) -> Result<Doc> {
     let document = Doc::new();
-    let ids = SequentialIds::new("w");
-    let context = ChangeSources {
-        built_at: Timestamp::from_millis(1),
-        ids: &ids,
-    };
     let add = BoardChange::AddAll(vec![NewEntry {
         new,
         frame: None,
         format: TextFormat::Plain,
     }]);
-    build(&document, &add, ME, &context)?;
+    built_with_ids(&document, &SequentialIds::new("w"), &add)?;
     Ok(document)
 }
 
@@ -49,12 +33,7 @@ fn a_text() -> Result<Doc> {
 }
 
 fn apply(document: &Doc, patch: ObjectPatch) -> Result<()> {
-    let ids = SequentialIds::new("e");
-    let context = ChangeSources {
-        built_at: Timestamp::from_millis(2),
-        ids: &ids,
-    };
-    build(document, &edit("w-1".into(), patch), ME, &context).map(drop)
+    built(document, &edit("w-1".into(), patch)).map(drop)
 }
 
 fn width(width: TextWidth) -> ObjectPatch {

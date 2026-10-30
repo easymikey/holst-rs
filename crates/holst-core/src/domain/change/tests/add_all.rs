@@ -6,13 +6,10 @@ use yrs::Doc;
 use crate::{
     domain::{
         change::{
-            build::build,
-            tests::{ME, fields_of},
-            value::{ArrowLook, BoardChange, ChangeSources, NewEntry, NewObject},
+            tests::{built, fields_of},
+            value::{ArrowLook, BoardChange, NewEntry, NewObject},
         },
         geometry::Point,
-        id_source::SequentialIds,
-        time::Timestamp,
     },
     error::{Error, Result, board_change::BoardChangeError},
 };
@@ -44,16 +41,7 @@ fn arrow(from: &str, to: &str) -> NewEntry {
 }
 
 fn build_all(document: &Doc, entries: Vec<NewEntry>) -> Result<Vec<String>> {
-    let ids = SequentialIds::new("n");
-    let built = build(
-        document,
-        &BoardChange::AddAll(entries),
-        ME,
-        &ChangeSources {
-            built_at: Timestamp::from_millis(5),
-            ids: &ids,
-        },
-    )?;
+    let built = built(document, &BoardChange::AddAll(entries))?;
     Ok(built.objects.into_iter().map(|object| object.id).collect())
 }
 

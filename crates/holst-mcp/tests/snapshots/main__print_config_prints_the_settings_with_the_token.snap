@@ -6,15 +6,15 @@ expression: "String::from_utf8_lossy(&output.stdout)"
 # Agents on the Mac itself: use 127.0.0.1 instead.
 
 # Claude Code
-claude mcp add --transport http holst-rs http://host.docker.internal:8808/mcp --header "Authorization: Bearer test-token"
+claude mcp add --transport http holst-rs http://host.docker.internal:8808/mcp --header "Authorization: Bearer test-token-test-token-test-token"
 
 # Codex, ~/.codex/config.toml
 [mcp_servers.holst-rs]
 url = "http://host.docker.internal:8808/mcp"
-http_headers = { Authorization = "Bearer test-token" }
+http_headers = { Authorization = "Bearer test-token-test-token-test-token" }
 
 # Any other client
-{"mcpServers": {"holst-rs": {"type": "http", "url": "http://host.docker.internal:8808/mcp", "headers": {"Authorization": "Bearer test-token"}}}}
+{"mcpServers": {"holst-rs": {"type": "http", "url": "http://host.docker.internal:8808/mcp", "headers": {"Authorization": "Bearer test-token-test-token-test-token"}}}}
 
 # Log in once, never through the chat:
 #   holst-mcp running on the Mac: holst-mcp setup, in a Mac terminal

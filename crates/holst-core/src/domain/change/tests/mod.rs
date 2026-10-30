@@ -51,6 +51,7 @@ use crate::{
                 ArrowLook,
                 BoardChange,
                 ChangeSources,
+                ChangeUpdate,
                 ChangedObject,
                 NewEntry,
                 NewObject,
@@ -97,6 +98,43 @@ fn remove(object: String) -> BoardChange {
 }
 
 const ME: &str = "00000000-0000-4000-8000-0000000000a1";
+
+/// A square sticker at `x`, `y` on layer `z`, free or inside `parent`.
+pub(super) fn sticker_at(
+    id: &str,
+    parent: Option<&str>,
+    x: u32,
+    y: u32,
+    z: u32,
+) -> Value {
+    json!({
+        "id": id, "type": "sticker", "parentId": parent,
+        "position": { "x": x, "y": y }, "width": 100, "height": 100, "zIndex": z,
+    })
+}
+
+/// Builds `change` as `ME` at 2 ms with ids `g-1`, `g-2`, ...
+pub(super) fn built(document: &Doc, change: &BoardChange) -> Result<ChangeUpdate> {
+    built_with_ids(document, &SequentialIds::new("g"), change)
+}
+
+/// Builds `change` as `ME` at 2 ms drawing from `ids`, for tests that read the
+/// ids back.
+pub(super) fn built_with_ids(
+    document: &Doc,
+    ids: &SequentialIds,
+    change: &BoardChange,
+) -> Result<ChangeUpdate> {
+    build(
+        document,
+        change,
+        ME,
+        &ChangeSources {
+            built_at: Timestamp::from_millis(2),
+            ids,
+        },
+    )
+}
 
 fn board() -> Result<Doc> {
     let document = Doc::new();

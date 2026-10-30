@@ -129,6 +129,28 @@ impl<C: LoginClient> LoginState<C> {
     }
 
     #[must_use]
+    pub(crate) fn epoch(&self) -> Option<u64> {
+        match self {
+            LoginState::Ready(ready) => Some(ready.epoch),
+            LoginState::Missing | LoginState::Revoked(_) => None,
+        }
+    }
+
+    /// A store that cannot be read does not end a working login.
+    #[must_use]
+    pub(crate) fn kept_unread(
+        &self,
+        checked_at: Milliseconds,
+    ) -> Option<ReadyLogin<C>> {
+        match self {
+            LoginState::Ready(ready) if ready.is_active() => {
+                Some(ready.rechecked(checked_at, ready.store))
+            }
+            LoginState::Missing | LoginState::Ready(_) | LoginState::Revoked(_) => None,
+        }
+    }
+
+    #[must_use]
     pub(crate) fn plan(
         &self,
         loaded: Option<(Session, C::Store)>,

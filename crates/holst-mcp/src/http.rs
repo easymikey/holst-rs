@@ -23,7 +23,7 @@ use hyper::{
     Response,
     StatusCode,
     body::{Bytes, Incoming},
-    header::{AUTHORIZATION, HeaderValue, WWW_AUTHENTICATE},
+    header::{AUTHORIZATION, HeaderValue, ORIGIN, WWW_AUTHENTICATE},
     server::conn::http1,
     service::service_fn,
 };
@@ -37,7 +37,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 use tokio::net::TcpListener;
 
-use crate::server::McpServer;
+use crate::{server::McpServer, setup::SERVER};
 
 /// The variable that hands the token to the server instead of the file.
 pub(crate) const TOKEN_VAR: &str = "HOLST_MCP_TOKEN";
@@ -49,6 +49,9 @@ pub(crate) const TOKEN_FILE: &str = "mcp-token";
 const HOST_NAMES: [&str; 2] = ["host.docker.internal", "host.lima.internal"];
 
 const PATH: &str = "/mcp";
+
+/// The shortest token the variable may hold; the generated one has 43.
+const MIN_TOKEN_CHARS: usize = 32;
 
 /// The pause after a failed accept, such as a process out of file handles.
 const ACCEPT_PAUSE: Duration = Duration::from_millis(100);
@@ -74,6 +77,12 @@ pub(crate) enum HttpError {
          once to create {TOKEN_FILE}"
     )]
     NoToken { addr: SocketAddr },
+
+    #[error(
+        "{TOKEN_VAR} is shorter than {MIN_TOKEN_CHARS} characters: set a longer \
+         secret, or unset it to use the token file"
+    )]
+    ShortToken,
 
     #[error("there is no place for the token file: set HOLST_HOME")]
     NoTokenPlace,
@@ -173,7 +182,11 @@ pub(crate) fn load_token(
         .filter(|text| !text.is_empty())
         .map_or_else(
             || token_from_file(file, create),
-            |text| Ok(Some(Token::new(text))),
+            |text| {
+                (text.chars().count() >= MIN_TOKEN_CHARS)
+                    .then(|| Some(Token::new(text)))
+                    .ok_or(HttpError::ShortToken)
+            },
         )
 }
 
@@ -207,7 +220,7 @@ fn read_token(path: &Path) -> Result<Option<Token>, HttpError> {
 fn make_token(path: &Path) -> Result<Token, HttpError> {
     let token = Token::generate()?;
     path.parent()
-        .map_or(Ok(()), holst_core::storage::file::create_dir_all)
+        .map_or(Ok(()), holst_core::storage::file::create_private_dir)
         .and_then(|()| {
             holst_core::storage::file::replace_private(
                 path,
@@ -299,10 +312,16 @@ async fn answer(mcp: &Mcp, token: &Token, request: Request<Incoming>) -> Reply {
         .headers()
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok());
-    match (token.admits(sent), request.uri().path() == PATH) {
-        (false, _) => unauthorized(),
-        (true, false) => refusal(StatusCode::NOT_FOUND, "the MCP endpoint is /mcp"),
-        (true, true) => mcp.handle(request).await,
+    let browser = request.headers().contains_key(ORIGIN);
+    match (token.admits(sent), browser, request.uri().path() == PATH) {
+        (false, ..) => unauthorized(),
+        (true, true, _) => {
+            refusal(StatusCode::FORBIDDEN, "a request with an Origin is refused")
+        }
+        (true, false, false) => {
+            refusal(StatusCode::NOT_FOUND, "the MCP endpoint is /mcp")
+        }
+        (true, false, true) => mcp.handle(request).await,
     }
 }
 
@@ -332,15 +351,15 @@ pub(crate) fn config_snippets(addr: SocketAddr, token: &Token) -> String {
          # Agents on the Mac itself: use 127.0.0.1 instead.\n\
          \n\
          # Claude Code\n\
-         claude mcp add --transport http holst-rs {url} --header \"Authorization: Bearer {token}\"\n\
+         claude mcp add --transport http {SERVER} {url} --header \"Authorization: Bearer {token}\"\n\
          \n\
          # Codex, ~/.codex/config.toml\n\
-         [mcp_servers.holst-rs]\n\
+         [mcp_servers.{SERVER}]\n\
          url = \"{url}\"\n\
          http_headers = {{ Authorization = \"Bearer {token}\" }}\n\
          \n\
          # Any other client\n\
-         {{\"mcpServers\": {{\"holst-rs\": {{\"type\": \"http\", \"url\": \"{url}\", \
+         {{\"mcpServers\": {{\"{SERVER}\": {{\"type\": \"http\", \"url\": \"{url}\", \
          \"headers\": {{\"Authorization\": \"Bearer {token}\"}}}}}}}}\n\
          \n\
          # Log in once, never through the chat:\n\

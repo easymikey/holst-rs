@@ -2,14 +2,12 @@
 
 use holst_core::{
     command::{
-        backup::{self, BackupVerb, Fetched, GetArgs, LsArgs, RestoreArgs, Restored},
-        board::picture::Delivery,
-        change::ChangeReport,
+        backup::{self, BackupVerb, GetArgs, LsArgs, RestoreArgs},
         table::NewFile,
     },
     domain::{
         backup::Backups,
-        text::{EMPTY, joined, printable},
+        text::{EMPTY, printable},
     },
 };
 use rmcp::model::CallToolResult;
@@ -83,7 +81,7 @@ impl McpServer {
                 self.run(async |client| {
                     let fetched =
                         backup::get(&client, self.downloads.as_deref(), &args).await?;
-                    Ok(fetched_text(&fetched))
+                    Ok(format!("{fetched}\n"))
                 })
                 .await
             }
@@ -94,7 +92,7 @@ impl McpServer {
         let call = async |client: HandedClient| {
             let restored = backup::restore(&client, args).await?;
             said(restored.outcome.refusal(), || {
-                self.state.alias_text(&restored_text(&restored))
+                self.state.alias_text(&format!("{restored}\n"))
             })
         };
         self.by_mode(args.dry_run, call).await
@@ -114,29 +112,4 @@ fn listing_text(backups: &Backups) -> String {
             lines.chain(more).collect()
         }
     }
-}
-
-fn fetched_text(fetched: &Fetched) -> String {
-    match &fetched.delivery {
-        Delivery::Written { file, bytes } => {
-            let before = if fetched.uncompressed_bytes == *bytes {
-                String::new()
-            } else {
-                format!(" ({} before gzip)", fetched.uncompressed_bytes)
-            };
-            format!("saved {bytes} bytes{before} to {}\n", file.display())
-        }
-        Delivery::Inline { bytes } => format!("{} bytes\n", bytes.len()),
-    }
-}
-
-fn restored_text(restored: &Restored) -> String {
-    let written = matches!(restored.outcome, ChangeReport::Sent);
-    let receipt = restored
-        .receipt
-        .filter(|_| written)
-        .map(|each| each.to_string());
-    let link = written.then(|| restored.link.clone());
-    let lines = [restored.phrase()].into_iter().chain(receipt).chain(link);
-    format!("{}\n", joined(lines, "\n"))
 }

@@ -125,8 +125,13 @@ async fn the_host_check_stops_a_stranger_and_admits_the_docker_name()
 
 #[test]
 fn the_token_comes_from_the_variable_before_the_file() -> Result<(), HttpError> {
-    let token = load_token(Some(" from-env \n"), None, false)?;
-    assert!(token.is_some_and(|token| token.expose() == "from-env"));
+    let token =
+        load_token(Some(" from-env-from-env-from-env-from-env \n"), None, false)?;
+    assert!(
+        token.is_some_and(
+            |token| token.expose() == "from-env-from-env-from-env-from-env"
+        )
+    );
     Ok(())
 }
 
@@ -185,4 +190,28 @@ fn the_options_are_an_address_and_a_flag() {
     assert!(matches!(none, Err(HttpError::MissingAddr)));
     assert!(matches!(bad, Err(HttpError::BadAddr { .. })));
     assert!(matches!(extra, Err(HttpError::UnknownArg { .. })));
+}
+
+#[tokio::test]
+async fn a_request_with_an_origin_gets_403_even_with_the_token() -> Result<(), TestError>
+{
+    let addr = running("sesame").await?;
+    let reply = reqwest::Client::new()
+        .post(format!("http://{addr}/mcp"))
+        .bearer_auth("sesame")
+        .header("Origin", "http://evil.example")
+        .send()
+        .await?;
+    assert_eq!(reply.status(), 403);
+    Ok(())
+}
+
+#[test]
+fn a_variable_token_shorter_than_32_characters_is_refused() {
+    let short = load_token(Some("x"), None, false);
+    let edge = load_token(Some(&"x".repeat(31)), None, false);
+    let enough = load_token(Some(&"x".repeat(32)), None, false);
+    assert!(matches!(short, Err(HttpError::ShortToken)));
+    assert!(matches!(edge, Err(HttpError::ShortToken)));
+    assert!(enough.is_ok());
 }

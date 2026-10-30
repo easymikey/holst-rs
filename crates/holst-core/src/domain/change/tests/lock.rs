@@ -3,26 +3,14 @@
 use serde_json::{Value, json};
 use yrs::Doc;
 
-use super::{ME, fields_of, frame::seed};
+use super::{built, fields_of, frame::seed, sticker_at};
 use crate::{
     domain::{
         board::ObjectKind,
-        change::{
-            build::build,
-            value::{BoardChange, ChangeSources, ChangeUpdate, ObjectChangeKind},
-        },
-        id_source::SequentialIds,
-        time::Timestamp,
+        change::value::{BoardChange, ObjectChangeKind},
     },
     error::Result,
 };
-
-fn sticker(id: &str, parent: Option<&str>, x: u32, y: u32) -> Value {
-    json!({
-        "id": id, "type": "sticker", "parentId": parent,
-        "position": { "x": x, "y": y }, "width": 100, "height": 100, "zIndex": 1000,
-    })
-}
 
 /// A frame holding the sticker `a`, free stickers `b` and `c`, a table cell.
 fn board() -> Result<Doc> {
@@ -31,12 +19,11 @@ fn board() -> Result<Doc> {
         &document,
         &json!({
             "id": "F", "type": "frame", "position": { "x": 0, "y": 0 },
-            "width": 800, "height": 600, "zIndex": 1,
-        }),
+            "width": 800, "height": 600, "zIndex": 1}),
     )?;
-    seed(&document, &sticker("a", Some("F"), 10, 20))?;
-    seed(&document, &sticker("b", None, 1000, 0))?;
-    seed(&document, &sticker("c", None, 1200, 0))?;
+    seed(&document, &sticker_at("a", Some("F"), 10, 20, 1000))?;
+    seed(&document, &sticker_at("b", None, 1000, 0, 1000))?;
+    seed(&document, &sticker_at("c", None, 1200, 0, 1000))?;
     seed(&document, &json!({ "id": "tbl", "type": "table" }))?;
     seed(
         &document,
@@ -52,25 +39,13 @@ fn locked_board() -> Result<Doc> {
         &document,
         &json!({ "id": "G", "type": "group", "locked": true }),
     )?;
-    seed(&document, &sticker("m", Some("G"), 0, 0))?;
-    seed(&document, &sticker("n", Some("G"), 100, 0))?;
+    seed(&document, &sticker_at("m", Some("G"), 0, 0, 1000))?;
+    seed(&document, &sticker_at("n", Some("G"), 100, 0, 1000))?;
     seed(
         &document,
         &json!({ "id": "L", "type": "frame", "locked": true, "width": 10, "height": 10 }),
     )?;
     Ok(document)
-}
-
-fn built(document: &Doc, change: &BoardChange) -> Result<ChangeUpdate> {
-    build(
-        document,
-        change,
-        ME,
-        &ChangeSources {
-            built_at: Timestamp::from_millis(2),
-            ids: &SequentialIds::new("g"),
-        },
-    )
 }
 
 fn named(objects: &[&str]) -> Vec<String> {
@@ -113,6 +88,18 @@ fn a_frame_is_locked_with_what_it_holds() -> Result<()> {
     assert_eq!(field(&document, "F", "parentId"), Some(json!("g-1")));
     assert_eq!(field(&document, "b", "parentId"), Some(json!("g-1")));
     assert_eq!(field(&document, "a", "parentId"), Some(json!("F")));
+    Ok(())
+}
+
+#[test]
+fn a_group_around_a_frame_sits_at_the_corner_of_the_frame_without_its_title()
+-> Result<()> {
+    let document = board()?;
+    built(&document, &BoardChange::Lock(named(&["F", "a", "b"])))?;
+    assert_eq!(
+        field(&document, "g-1", "position"),
+        Some(json!({ "x": 0, "y": 0 }))
+    );
     Ok(())
 }
 
@@ -237,7 +224,7 @@ fn a_locked_group_unlocked_in_a_locked_group_leaves_its_members_in_the_outer_one
         &document,
         &json!({ "id": "G2", "type": "group", "locked": true, "parentId": "H" }),
     )?;
-    seed(&document, &sticker("p", Some("G2"), 0, 0))?;
+    seed(&document, &sticker_at("p", Some("G2"), 0, 0, 1000))?;
     built(&document, &BoardChange::Unlock(named(&["G2"])))?;
     assert_eq!(field(&document, "p", "parentId"), Some(json!("H")));
     assert_eq!(field(&document, "G2", "type"), None);

@@ -387,16 +387,29 @@ impl ShapeType {
 }
 
 /// How the line of a shape is drawn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, strum::VariantNames)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, strum::VariantNames,
+)]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum StrokeStyle {
+    #[default]
     Solid,
     Dashed,
     Dotted,
 }
 
 impl StrokeStyle {
+    /// The style of a stored `strokeStyle`; anything else is solid.
+    #[must_use]
+    pub fn of_stored(name: Option<&str>) -> Self {
+        match name {
+            Some("dashed") => StrokeStyle::Dashed,
+            Some("dotted") => StrokeStyle::Dotted,
+            Some(_) | None => StrokeStyle::Solid,
+        }
+    }
+
     /// The name the document stores in `strokeStyle`.
     #[must_use]
     pub const fn stored_name(self) -> &'static str {
@@ -619,6 +632,16 @@ mod tests {
     use strum::VariantNames as _;
 
     use super::*;
+
+    #[test]
+    fn a_stored_stroke_style_reads_back_and_anything_else_is_solid() {
+        let styles = [StrokeStyle::Solid, StrokeStyle::Dashed, StrokeStyle::Dotted];
+        assert!(styles.iter().all(|style| {
+            StrokeStyle::of_stored(Some(style.stored_name())) == *style
+        }));
+        assert_eq!(StrokeStyle::of_stored(Some("zigzag")), StrokeStyle::Solid);
+        assert_eq!(StrokeStyle::of_stored(None), StrokeStyle::Solid);
+    }
 
     #[test]
     fn every_kind_is_known_by_its_stored_name() {

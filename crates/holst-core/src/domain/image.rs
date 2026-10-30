@@ -1,5 +1,7 @@
 //! Image bytes told by their first bytes, and `data:` URLs of them; no I/O.
 
+use std::iter;
+
 use base64::Engine as _;
 
 /// An image format a picture can show.
@@ -116,7 +118,7 @@ fn after_prolog_item(bytes: &[u8]) -> Option<&[u8]> {
 /// Whether the root element of the document in `bytes` is `svg`.
 fn is_svg(bytes: &[u8]) -> bool {
     let document = bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(bytes);
-    std::iter::successors(Some(document), |rest| after_prolog_item(rest))
+    iter::successors(Some(document), |rest| after_prolog_item(rest))
         .last()
         .map(<[u8]>::trim_ascii_start)
         .and_then(|root| root.strip_prefix(b"<svg"))
@@ -201,19 +203,40 @@ fn gif_size(bytes: &[u8]) -> Option<(u32, u32)> {
     Some((le16(bytes, 6)?, le16(bytes, 8)?))
 }
 
+/// Where the walk over the marker segments of a JPEG goes next.
+enum JpegStep {
+    Next(usize),
+    Size((u32, u32)),
+}
+
 /// Walks the marker segments from `at` up to the first start-of-frame one.
 fn jpeg_size(bytes: &[u8], at: usize) -> Option<(u32, u32)> {
+    let last = iter::successors(Some(JpegStep::Next(at)), |step| match step {
+        JpegStep::Next(from) => jpeg_step(bytes, *from),
+        JpegStep::Size(_) => None,
+    })
+    .last();
+    match last {
+        Some(JpegStep::Size(size)) => Some(size),
+        Some(JpegStep::Next(_)) | None => None,
+    }
+}
+
+/// The marker segment at `at`; `None` when the walk cannot go on.
+fn jpeg_step(bytes: &[u8], at: usize) -> Option<JpegStep> {
     bytes.get(at).filter(|prefix| **prefix == 0xff)?;
     let marker = *bytes.get(at + 1)?;
     match marker {
-        0xff => jpeg_size(bytes, at + 1),
-        0x01 | 0xd0..=0xd8 => jpeg_size(bytes, at + 2),
+        0xff => Some(JpegStep::Next(at + 1)),
+        0x01 | 0xd0..=0xd8 => Some(JpegStep::Next(at + 2)),
         // End of image or start of scan before any frame header.
         0xd9 | 0xda => None,
         0xc0..=0xcf if !matches!(marker, 0xc4 | 0xc8 | 0xcc) => {
-            Some((be16(bytes, at + 7)?, be16(bytes, at + 5)?))
+            Some(JpegStep::Size((be16(bytes, at + 7)?, be16(bytes, at + 5)?)))
         }
-        _ => jpeg_size(bytes, at + 2 + usize::try_from(be16(bytes, at + 2)?).ok()?),
+        _ => Some(JpegStep::Next(
+            at + 2 + usize::try_from(be16(bytes, at + 2)?).ok()?,
+        )),
     }
 }
 
@@ -336,6 +359,7 @@ mod tests {
     #[case::gif_truncated(b"GIF89a\x10".to_vec(), None)]
     #[case::jpeg_truncated(cut(jpeg(0xc0), 22), None)]
     #[case::jpeg_no_frame(vec![0xff, 0xd8, 0xff, 0xda, 0, 2], None)]
+    #[case::jpeg_run_of_fill_bytes([vec![0xff, 0xd8], vec![0xff; 1_000_000]].concat(), None)]
     #[case::webp_truncated(cut(webp_lossless(), 24), None)]
     #[case::svg(b"<svg width=\"10\" height=\"10\"/>".to_vec(), None)]
     #[case::unknown(b"PK\x03\x04 zip".to_vec(), None)]

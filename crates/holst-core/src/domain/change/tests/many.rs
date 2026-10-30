@@ -6,17 +6,15 @@ use itertools::Itertools as _;
 use serde_json::{Value, json};
 use yrs::{Doc, Map as _, Transact as _, types::ToJson as _};
 
-use super::add;
+use super::{add, built_with_ids};
 use crate::{
     domain::{
         board::{self, Object, ObjectKind},
         change::{
-            build::build,
-            tests::{ME, board as seeded, fields_of},
+            tests::{board as seeded, fields_of},
             value::{
                 ArrowLook,
                 BoardChange,
-                ChangeSources,
                 ChangeUpdate,
                 LayerOrder,
                 NewObject,
@@ -27,7 +25,6 @@ use crate::{
         },
         geometry::Point,
         id_source::SequentialIds,
-        time::Timestamp,
     },
     error::{Error, Result, board_change::BoardChangeError},
 };
@@ -41,16 +38,7 @@ fn apply_as(
     document: &Doc,
     change: &BoardChange,
 ) -> Result<ChangeUpdate> {
-    let ids = SequentialIds::new(prefix);
-    build(
-        document,
-        change,
-        ME,
-        &ChangeSources {
-            built_at: Timestamp::from_millis(9),
-            ids: &ids,
-        },
-    )
+    built_with_ids(document, &SequentialIds::new(prefix), change)
 }
 
 fn edit_of(object: &str) -> ObjectEdit {

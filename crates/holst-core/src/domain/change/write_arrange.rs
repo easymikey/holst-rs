@@ -7,7 +7,7 @@ use yrs::TransactionMut;
 
 use crate::{
     domain::{
-        area::scene::{Scene, rotated, rotation},
+        area::scene::Scene,
         board::{Object, ObjectKind, object_with_text},
         change::{
             arrange::{aligned, distributed},
@@ -27,53 +27,6 @@ use crate::{
     error::{Error, Result, board_change::BoardChangeError},
     protocol::document::PARENT_ID,
 };
-
-/// How many groups inside groups a box follows.
-const GROUP_DEPTH: usize = 16;
-
-/// What an object covers as the web client counts it: its own box turned about
-/// its corner, an arrow's route, the box of a group's members.
-// BUNDLE: main.a33651a4.js 168787-168789 (`getRectBounds`).
-fn bounds(scene: &Scene<'_>, object: &Object, depth: usize) -> Option<Rectangle> {
-    let members = || {
-        scene
-            .objects()
-            .iter()
-            .filter(|member| member.parent.as_deref() == Some(object.id.as_str()))
-            .filter_map(|member| bounds(scene, member, depth + 1))
-    };
-    let own = || {
-        scene
-            .rectangle_of(object)
-            .map(|own| rotated(own, rotation(object)))
-            .and_then(Rectangle::sane)
-    };
-    match &object.kind {
-        ObjectKind::Group => (depth < GROUP_DEPTH)
-            .then(|| Rectangle::bounding(members()))
-            .flatten(),
-        ObjectKind::Arrow => scene.covered_by(object),
-        ObjectKind::Sticker
-        | ObjectKind::StickerStack
-        | ObjectKind::Text
-        | ObjectKind::Shape
-        | ObjectKind::Document
-        | ObjectKind::Frame
-        | ObjectKind::Image
-        | ObjectKind::File
-        | ObjectKind::Stamp
-        | ObjectKind::Table
-        | ObjectKind::TableCell
-        | ObjectKind::Code
-        | ObjectKind::Drawing
-        | ObjectKind::Dice
-        | ObjectKind::Wheel
-        | ObjectKind::Flipcard
-        | ObjectKind::Task
-        | ObjectKind::Link
-        | ObjectKind::Other(_) => own(),
-    }
-}
 
 /// Moves the objects against each other as the web client's align and
 /// distribute buttons do: each with what it holds, then into the frame it now
@@ -100,7 +53,7 @@ pub(super) fn arrange(
         .iter()
         .filter_map(|id| {
             let object = scene.get(id)?;
-            Some((id, bounds(&scene, object, 0)?))
+            Some((id, scene.bounds(object, 0)?))
         })
         .collect();
     let rectangles: Vec<Rectangle> = placed.iter().map(|(_, own)| *own).collect();

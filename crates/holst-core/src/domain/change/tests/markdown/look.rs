@@ -8,12 +8,10 @@ use crate::{
     domain::{
         board::{self, ObjectKind},
         change::{
-            build::build,
-            tests::{ME, edit, fields_of},
+            tests::{built, built_with_ids, edit, fields_of},
             value::{
                 Backdrop,
                 BoardChange,
-                ChangeSources,
                 NewEntry,
                 NewObject,
                 ObjectPatch,
@@ -24,7 +22,6 @@ use crate::{
         id_source::SequentialIds,
         palette::Color,
         rich_text::{Mark, TextFormat},
-        time::Timestamp,
     },
     error::{Error, Result, board_change::BoardChangeError},
 };
@@ -46,12 +43,7 @@ fn tinted(color: &str) -> Result<Backdrop> {
 }
 
 fn apply(document: &Doc, patch: ObjectPatch) -> Result<()> {
-    let ids = SequentialIds::new("e");
-    let context = ChangeSources {
-        built_at: Timestamp::from_millis(2),
-        ids: &ids,
-    };
-    build(document, &edit("w-1".into(), patch), ME, &context)?;
+    built(document, &edit("w-1".into(), patch))?;
     Ok(())
 }
 
@@ -160,13 +152,9 @@ fn a_new_text_and_its_marks_come_in_one_edit() -> Result<()> {
 #[test]
 fn a_frame_has_no_text_marks() -> Result<()> {
     let document = Doc::new();
-    let ids = SequentialIds::new("w");
-    let context = ChangeSources {
-        built_at: Timestamp::from_millis(1),
-        ids: &ids,
-    };
-    build(
+    built_with_ids(
         &document,
+        &SequentialIds::new("w"),
         &BoardChange::AddAll(vec![NewEntry {
             new: NewObject::Frame {
                 title: "Q4".into(),
@@ -178,8 +166,6 @@ fn a_frame_has_no_text_marks() -> Result<()> {
             frame: None,
             format: TextFormat::Plain,
         }]),
-        ME,
-        &context,
     )?;
     let refused = apply(&document, styled(look(Some(vec![Mark::Bold]), None, None)?));
     assert!(matches!(

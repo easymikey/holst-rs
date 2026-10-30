@@ -263,8 +263,41 @@ impl McpServer {
                     .map_err(|err| refused(&err))
             });
         match allowed {
-            Ok(command) => self.command(command, arguments).await,
+            Ok(command) => self.command_with_new_login(command, arguments).await,
             Err(reply) => reply,
+        }
+    }
+
+    /// A 401 on the first request applied nothing: if the store holds another
+    /// login by now, the call is run again with it.
+    async fn command_with_new_login(
+        &self,
+        command: CommandName,
+        arguments: Map<String, Value>,
+    ) -> CallToolResult {
+        let (before, answered) = {
+            let started = self.login.state.load();
+            (started.epoch(), started.answered())
+        };
+        let first = Box::pin(self.command(command, arguments.clone())).await;
+        let revoked = first
+            == self.fail(
+                &holst_core::Error::Login(
+                    holst_core::error::login::LoginError::SessionRevoked,
+                )
+                .into(),
+            );
+        let seen = self.login.state.load_full();
+        // A new client starts at zero; an old one must not have answered more.
+        let carried = (seen.epoch() == before).then_some(answered);
+        let nothing_done = seen.answered() == carried.unwrap_or_default();
+        let renewed = when((revoked && nothing_done).then(|| self.reload(&seen)))
+            .await
+            .and_then(Result::ok)
+            .filter(|fresh| Some(fresh.epoch) != before);
+        match renewed {
+            Some(_) => Box::pin(self.command(command, arguments)).await,
+            None => first,
         }
     }
 
@@ -315,15 +348,24 @@ impl McpServer {
         login: &LoginState,
     ) -> crate::error::Result<HandedClient> {
         let generation = self.state.generation();
-        let loaded = self.login.load().await?;
+        let loaded = self.login.load().await;
         let checked_at = self.login.now();
-        match login.plan(loaded, checked_at) {
-            LoginPlan::Keep(ready) => self.adopt(LoginState::Ready(ready), generation),
-            LoginPlan::Refuse(revoked) => {
-                self.adopt(LoginState::Revoked(revoked), generation)
-            }
-            LoginPlan::Forget => self.adopt(LoginState::Missing, generation),
-            LoginPlan::Install(new) => self.install(new.session, new.store, checked_at),
+        match loaded {
+            Ok(loaded) => match login.plan(loaded, checked_at) {
+                LoginPlan::Keep(ready) => {
+                    self.adopt(LoginState::Ready(ready), generation)
+                }
+                LoginPlan::Refuse(revoked) => {
+                    self.adopt(LoginState::Revoked(revoked), generation)
+                }
+                LoginPlan::Forget => self.adopt(LoginState::Missing, generation),
+                LoginPlan::Install(new) => {
+                    self.install(new.session, new.store, checked_at)
+                }
+            },
+            Err(err) => login.kept_unread(checked_at).map_or(Err(err), |ready| {
+                self.adopt(LoginState::Ready(ready), generation)
+            }),
         }
     }
 

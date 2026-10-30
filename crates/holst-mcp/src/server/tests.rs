@@ -422,6 +422,57 @@ async fn locked_store_is_reported_and_retried() {
 }
 
 #[tokio::test]
+async fn working_login_survives_a_keychain_that_locks_later() {
+    let (holst, memory, clock) = with_a([]);
+    assert!(reads(&holst).await, "the first call failed");
+    memory.lock_now();
+    clock.advance(RECHECK);
+    assert!(
+        reads(&holst).await,
+        "the recheck of a locked store failed a working login"
+    );
+}
+
+#[tokio::test]
+async fn new_login_in_the_store_is_used_when_the_old_one_is_refused() {
+    let replies = [
+        CannedResponse::ok(ME),
+        CannedResponse::unauthorized(),
+        CannedResponse::ok(ME),
+    ];
+    let (holst, memory, _) =
+        server(Memory::new(Some(cookie("a")), Script::new(replies)));
+    let list = serde_json::json!({ "action": "ls" });
+    let (first, opened) = table_call(&holst, "workspace", list.clone()).await;
+    assert!(!first, "{opened}");
+    memory.store(Some(cookie("b")));
+    let (second, text) = table_call(&holst, "workspace", list).await;
+    assert!(!second, "{text}");
+}
+
+#[tokio::test]
+async fn call_is_not_repeated_when_an_earlier_request_landed() -> Result<()> {
+    let replies = [
+        CannedResponse::ok(ME),
+        CannedResponse::unauthorized(),
+        CannedResponse::ok(ME),
+        CannedResponse::ok("{}"),
+    ];
+    let network = Script::new(replies);
+    let (holst, memory, _) =
+        server(Memory::new(Some(cookie("a")), Arc::clone(&network)));
+    install(&holst).await?;
+    memory.store(Some(cookie("b")));
+    let rename = serde_json::json!({
+        "action": "rename", "workspace": "easy", "name": "Crew", "confirm": true
+    });
+    let (failed, text) = table_call(&holst, "workspace", rename).await;
+    assert!(failed, "{text}");
+    assert_eq!(network.seen().len(), 2, "the call was done twice");
+    Ok(())
+}
+
+#[tokio::test]
 async fn store_is_rechecked_only_after_interval() -> Result<()> {
     let (holst, memory, clock) = with_a([]);
     let first = install(&holst).await?;

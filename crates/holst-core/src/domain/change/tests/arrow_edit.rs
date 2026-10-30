@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 use yrs::Doc;
 
-use super::{ME, add, board as seeded, edit, fields_of};
+use super::{add, board as seeded, built_with_ids, edit, fields_of};
 use crate::{
     domain::{
         board::{
@@ -11,35 +11,23 @@ use crate::{
             shape_type::StrokeStyle,
         },
         change::{
-            build::build,
             check::rectangle_of,
             value::{
                 ArrowEdit,
                 ArrowLook,
                 BoardChange,
-                ChangeSources,
                 NewObject,
                 ObjectPatch,
                 ShapeEdit,
             },
         },
         id_source::SequentialIds,
-        time::Timestamp,
     },
     error::{Error, Result, board_change::BoardChangeError},
 };
 
 fn apply(document: &Doc, change: &BoardChange) -> Result<Vec<String>> {
-    let ids = SequentialIds::new("e");
-    let built = build(
-        document,
-        change,
-        ME,
-        &ChangeSources {
-            built_at: Timestamp::from_millis(9),
-            ids: &ids,
-        },
-    )?;
+    let built = built_with_ids(document, &SequentialIds::new("e"), change)?;
     Ok(built.objects.into_iter().map(|object| object.id).collect())
 }
 

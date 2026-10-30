@@ -243,6 +243,19 @@ pub fn create_dir_all(path: &Path) -> Result<()> {
     fs::create_dir_all(path).map_err(|err| write_error(path, err))
 }
 
+/// Make `path` and its missing parents readable by the owner only (mode 0700
+/// on Unix); a `path` that exists loses its group and other bits.
+///
+/// # Errors
+/// [`crate::error::local_data::LocalDataError::FileWrite`].
+pub fn create_private_dir(path: &Path) -> Result<()> {
+    make_private(path).map_err(|err| write_error(path, err))
+}
+
+pub(crate) fn make_private(path: &Path) -> io::Result<()> {
+    private_dir(path).and_then(|()| tighten(path))
+}
+
 /// Make the folder `path` in an existing parent.
 ///
 /// # Errors
@@ -405,10 +418,12 @@ pub(crate) fn private_dir(path: &Path) -> io::Result<()> {
 pub(crate) fn tighten(dir: &Path) -> io::Result<()> {
     use std::os::unix::fs::PermissionsExt as _;
     let meta = fs::symlink_metadata(dir)?;
-    let loose = meta.is_dir() && meta.permissions().mode() & 0o777 != 0o700;
-    loose.then_some(dir).map_or(Ok(()), |dir| {
-        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
-    })
+    let mode = meta.permissions().mode() & 0o777;
+    (meta.is_dir() && mode & 0o077 != 0)
+        .then_some(dir)
+        .map_or(Ok(()), |dir| {
+            fs::set_permissions(dir, fs::Permissions::from_mode(mode & 0o700))
+        })
 }
 
 #[cfg(not(unix))]
@@ -692,6 +707,27 @@ mod tests {
             assert_eq!(fs::metadata(&path)?.permissions().mode() & 0o777, 0o600);
         }
         assert!(leftovers(&dir)?.is_empty());
+        fs::remove_dir_all(&dir)?;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_private_dir_is_made_private_and_a_loose_one_loses_group_and_other()
+    -> Result<()> {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = scratch("private-dir")?;
+        let loose = dir.join("loose");
+        fs::create_dir(&loose)?;
+        fs::set_permissions(&loose, fs::Permissions::from_mode(0o755))?;
+        let fresh = dir.join("a").join("b");
+        crate::storage::file::create_private_dir(&loose)?;
+        crate::storage::file::create_private_dir(&fresh)?;
+        let mode = |path: &Path| {
+            fs::metadata(path).map(|meta| meta.permissions().mode() & 0o777)
+        };
+        assert_eq!(mode(&loose)?, 0o700);
+        assert_eq!(mode(&fresh)?, 0o700);
         fs::remove_dir_all(&dir)?;
         Ok(())
     }

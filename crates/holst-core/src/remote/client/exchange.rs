@@ -1,6 +1,6 @@
 //! One request end to end: retries, redirects and the reply status.
 
-use std::time::Duration;
+use std::{sync::atomic::Ordering, time::Duration};
 
 use itertools::Itertools;
 use reqwest::{Url, header};
@@ -74,7 +74,9 @@ impl Client {
                 },
             )
             .await?;
-        self.settle(delivered, authorization)
+        let response = self.settle(delivered, authorization)?;
+        self.answered.fetch_add(1, Ordering::Relaxed);
+        Ok(response)
     }
 
     fn exchange(

@@ -1,11 +1,7 @@
 //! What the backup commands print.
 
 use holst_core::{
-    command::{
-        backup::{Fetched, Restored},
-        board::picture::Delivery,
-        change::ChangeReport,
-    },
+    command::backup::{Fetched, Restored},
     domain::{
         backup::Backups,
         text::{EMPTY, joined, printable},
@@ -28,12 +24,12 @@ pub(super) fn listing(format: OutputFormat, backups: &Backups) -> Result<()> {
 }
 
 pub(super) fn fetched(format: OutputFormat, fetched: &Fetched) -> Result<()> {
-    output::print(format, &fetched_text(fetched), fetched)
+    output::print(format, &fetched.to_string(), fetched)
 }
 
 /// Prints what a restore did, or would do.
 pub(super) fn restored(format: OutputFormat, restored: &Restored) -> Result<()> {
-    output::print(format, &restored_text(restored), restored)
+    output::print(format, &restored.to_string(), restored)
 }
 
 pub(super) fn listing_text(backups: &Backups) -> String {
@@ -45,32 +41,4 @@ pub(super) fn listing_text(backups: &Backups) -> String {
         )
         .to_string(),
     }
-}
-
-pub(super) fn fetched_text(fetched: &Fetched) -> String {
-    match &fetched.delivery {
-        Delivery::Written { file, bytes } => {
-            let before = if fetched.uncompressed_bytes == *bytes {
-                String::new()
-            } else {
-                format!(" ({} before gzip)", fetched.uncompressed_bytes)
-            };
-            format!("saved {bytes} bytes{before} to {}", file.display())
-        }
-        Delivery::Inline { bytes } => format!("{} bytes", bytes.len()),
-    }
-}
-
-pub(super) fn restored_text(restored: &Restored) -> String {
-    let written = matches!(restored.outcome, ChangeReport::Sent);
-    let receipt = restored
-        .receipt
-        .filter(|_| written)
-        .map(|each| each.to_string());
-    let link = written.then(|| restored.link.clone());
-    joined(
-        [restored.phrase()].into_iter().chain(receipt).chain(link),
-        "\n",
-    )
-    .to_string()
 }

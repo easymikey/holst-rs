@@ -1,6 +1,6 @@
 //! Signing in and the shape of a login.
 
-use crate::error::hint::Hint;
+use crate::error::{Error, hint::Hint};
 
 /// A login that is missing, refused or not a login at all.
 #[derive(Debug, thiserror::Error)]
@@ -48,6 +48,14 @@ impl LoginError {
     }
 }
 
+impl Error {
+    /// 400, 401 or 403 on a login: the code or password was not accepted.
+    #[must_use]
+    pub fn is_wrong_secret(&self) -> bool {
+        matches!(self.status(), Some(400 | 401 | 403))
+    }
+}
+
 #[cfg(test)]
 pub(super) mod tests {
     use crate::error::{
@@ -70,6 +78,21 @@ pub(super) mod tests {
                 Some(Hint::FullLogin),
             ),
         ]
+    }
+
+    #[rstest::rstest]
+    #[case::bad_request(400, true)]
+    #[case::unauthorized(401, true)]
+    #[case::forbidden(403, true)]
+    #[case::server_error(500, false)]
+    fn only_a_refusal_is_a_wrong_secret(#[case] status: u16, #[case] wrong: bool) {
+        let err = crate::Error::Http(crate::error::http::HttpError::Status {
+            method: "POST",
+            path: "/gapi/login/with_email".into(),
+            status,
+            detail: String::new(),
+        });
+        assert_eq!(err.is_wrong_secret(), wrong);
     }
 
     #[test]

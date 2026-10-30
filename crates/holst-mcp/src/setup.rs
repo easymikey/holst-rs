@@ -5,9 +5,13 @@ use std::io::{self, BufRead, Write};
 use holst_core::{
     command::{
         account::SessionCheck,
-        login::email::{CodeSent, EmailLogin, PasswordChosen},
+        login::{
+            self,
+            Stopped,
+            email::{Awaiting, EmailLogin},
+        },
     },
-    domain::login::Email,
+    domain::login::{Email, LoginRoute},
     error::hint::Surface,
     remote::client::Client,
 };
@@ -16,7 +20,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use crate::login::store::{Backend as _, SystemBackend};
 
 mod connect;
-pub(crate) use connect::{Program, System};
+pub(crate) use connect::{Program, SERVER, System};
 
 /// Tries for the address and for the code or password, as the CLI allows.
 const ATTEMPTS: u8 = 3;
@@ -125,25 +129,10 @@ impl<R: BufRead, W: Write> Talk<R, W> {
     }
 }
 
-/// The login steps; `Awaiting` holds the flow for what is asked next.
-enum Awaiting {
-    Code(EmailLogin<CodeSent>),
-    Password(EmailLogin<PasswordChosen>),
-}
-
-impl Awaiting {
-    const fn secret(&self) -> Secret {
-        match self {
-            Awaiting::Code(_) => Secret::Code,
-            Awaiting::Password(_) => Secret::Password,
-        }
-    }
-
-    async fn log_in(&self, typed: &SecretString) -> holst_core::Result<Client> {
-        match self {
-            Awaiting::Code(login) => login.log_in(typed).await,
-            Awaiting::Password(login) => login.log_in(typed).await,
-        }
+const fn secret_of(awaiting: &Awaiting) -> Secret {
+    match awaiting {
+        Awaiting::Code(_) => Secret::Code,
+        Awaiting::Password(_) => Secret::Password,
     }
 }
 
@@ -186,19 +175,27 @@ pub(crate) async fn run<R: BufRead, W: Write>(
     backend: &SystemBackend,
     talk: &mut Talk<R, W>,
 ) -> Result<(), SetupError> {
-    if wants_new_login(backend, talk).await? {
-        let (email, awaiting) = begin(backend, talk).await?;
-        let client = ask_until_accepted(&awaiting, talk, ATTEMPTS).await?;
-        keep(backend, &client, &email, talk).await
-    } else {
-        Ok(())
+    match saved_login(backend, talk).await? {
+        Saved::Keep => Ok(()),
+        Saved::Replace(old) => {
+            let (email, awaiting) = begin(backend, talk).await?;
+            let client = ask_until_accepted(&awaiting, talk, ATTEMPTS).await?;
+            keep(backend, client, old, &email, talk).await
+        }
     }
 }
 
-async fn wants_new_login<R: BufRead, W: Write>(
+/// What to do about the login saved already.
+enum Saved {
+    Keep,
+    /// Log in again, then end this login (none when it is unusable).
+    Replace(Option<Client>),
+}
+
+async fn saved_login<R: BufRead, W: Write>(
     backend: &SystemBackend,
     talk: &mut Talk<R, W>,
-) -> Result<bool, SetupError> {
+) -> Result<Saved, SetupError> {
     match backend.load() {
         Ok(Some((session, _))) => {
             let client = backend.connect(session)?;
@@ -208,26 +205,34 @@ async fn wants_new_login<R: BufRead, W: Write>(
                         || "Logged in already.".to_owned(),
                         |name| format!("Logged in as {name} already."),
                     );
-                    confirm(&known, talk)
+                    Ok(replace(confirm(&known, talk)?, client))
                 }
                 SessionCheck::Revoked(_) => {
                     talk.say("The saved login is not accepted any more.")?;
-                    Ok(true)
+                    Ok(Saved::Replace(None))
                 }
-                SessionCheck::Unknown(err) => confirm(
-                    &format!(
-                        "A login is saved already (Holst could not check it: {err})."
-                    ),
-                    talk,
-                ),
+                SessionCheck::Unknown(err) => Ok(replace(
+                    confirm(
+                        &format!(
+                            "A login is saved already (Holst could not check it: {err})."
+                        ),
+                        talk,
+                    )?,
+                    client,
+                )),
             }
         }
-        Ok(None) => Ok(true),
+        Ok(None) => Ok(Saved::Replace(None)),
         Err(err) => {
             talk.say(&format!("The saved login could not be read: {err}"))?;
-            Ok(true)
+            Ok(Saved::Replace(None))
         }
     }
+}
+
+fn replace(yes: bool, old: Client) -> Saved {
+    yes.then_some(old)
+        .map_or(Saved::Keep, |old| Saved::Replace(Some(old)))
 }
 
 fn confirm<R: BufRead, W: Write>(
@@ -245,15 +250,15 @@ async fn begin<R: BufRead, W: Write>(
     let email = ask_email(talk, ATTEMPTS)?;
     let start = EmailLogin::new(backend.anonymous()?, email.clone());
     let methods = start.methods().await?;
-    match (methods.has_account, methods.via_code, methods.via_password) {
-        (false, _, _) => Err(SetupError::NoAccount),
-        (true, true, _) => {
+    match methods.route() {
+        LoginRoute::NoAccount => Err(SetupError::NoAccount),
+        LoginRoute::Code => {
             let sent = start.send_code().await?;
             talk.say(&format!("A code was sent to {}.", email.as_str()))?;
-            Ok(Awaiting::Code(sent))
+            Ok(sent)
         }
-        (true, false, true) => Ok(Awaiting::Password(start.with_password())),
-        (true, false, false) => Err(SetupError::SsoOnly),
+        LoginRoute::Password => Ok(start.with_password()),
+        LoginRoute::SingleSignOn => Err(SetupError::SsoOnly),
     }
     .map(|awaiting| (email, awaiting))
 }
@@ -282,13 +287,13 @@ async fn try_secret(
     awaiting: &Awaiting,
     typed: &SecretString,
 ) -> Result<Tried, SetupError> {
-    let noun = awaiting.secret().noun();
+    let noun = secret_of(awaiting).noun();
     if typed.expose_secret().trim().is_empty() {
         Ok(Tried::Refused(format!("Enter the {noun}.")))
     } else {
         match awaiting.log_in(typed).await {
             Ok(client) => Ok(Tried::Accepted(client)),
-            Err(err) if matches!(err.status(), Some(400 | 401 | 403)) => {
+            Err(err) if err.is_wrong_secret() => {
                 Ok(Tried::Refused(format!("That {noun} was not accepted.")))
             }
             Err(err) => Err(err.into()),
@@ -301,7 +306,7 @@ async fn ask_until_accepted<R: BufRead, W: Write>(
     talk: &mut Talk<R, W>,
     left: u8,
 ) -> Result<Client, SetupError> {
-    let typed = talk.ask_secret(awaiting.secret())?;
+    let typed = talk.ask_secret(secret_of(awaiting))?;
     match try_secret(awaiting, &typed).await? {
         Tried::Accepted(client) => Ok(client),
         Tried::Refused(words) if left > 1 => {
@@ -310,25 +315,25 @@ async fn ask_until_accepted<R: BufRead, W: Write>(
         }
         Tried::Refused(words) => {
             talk.say(&words)?;
-            Err(SetupError::Refused(awaiting.secret()))
+            Err(SetupError::Refused(secret_of(awaiting)))
         }
     }
 }
 
-/// Checks the login works, then saves it for the server.
+/// Checks the login works, saves it for the server and ends the replaced one.
 async fn keep<R: BufRead, W: Write>(
     backend: &SystemBackend,
-    client: &Client,
+    client: Client,
+    old: Option<Client>,
     email: &Email,
     talk: &mut Talk<R, W>,
 ) -> Result<(), SetupError> {
-    let me = holst_core::command::account::account(client).await?;
-    // Saved with the login: the board cache of the account is found by it.
-    client.learn_account_id(&me.id);
-    let session = client.rotated().or_else(|| client.session()).ok_or(
-        holst_core::Error::Login(holst_core::error::login::LoginError::NoSavedLogin),
-    )?;
-    let saved = backend.save_new(&session)?;
+    let done = login::finish(client, old, async |session| backend.save_new(&session))
+        .await
+        .map_err(|stopped| match stopped {
+            Stopped::Check(err) | Stopped::Save(err) => err,
+        })?;
+    let saved = done.saved;
     talk.say(&format!(
         "Logged in as {}. The MCP server picks the login up on its next call.",
         email.as_str()
@@ -353,17 +358,19 @@ fn stale_warning(stale: &holst_core::Error) -> String {
 mod echo {
     use std::{io, mem::MaybeUninit};
 
-    /// Puts the terminal settings back when dropped, or on Ctrl-C.
+    use tokio::signal::unix::{SignalKind, signal};
+
+    /// Puts the terminal settings back when dropped or on a stop signal.
     // GUARD: the terminal must not stay silent after the question.
     pub(super) struct Quiet {
         original: libc::termios,
-        on_interrupt: tokio::task::JoinHandle<()>,
+        on_signal: tokio::task::JoinHandle<()>,
     }
 
     #[expect(
         clippy::exit,
         clippy::disallowed_methods,
-        reason = "the Ctrl-C handler ends the process once the terminal is back"
+        reason = "the signal handler ends the process once the terminal is back"
     )]
     pub(super) fn off() -> io::Result<Quiet> {
         let mut settings = MaybeUninit::<libc::termios>::zeroed();
@@ -374,29 +381,36 @@ mod echo {
             // SAFETY: the call succeeded, so the value is initialised.
             .then(|| unsafe { settings.assume_init() })
             .ok_or_else(io::Error::last_os_error)?;
+        // The listeners exist before the echo goes off: no signal slips by.
+        let (mut interrupt, mut terminate, mut hangup) = (
+            signal(SignalKind::interrupt())?,
+            signal(SignalKind::terminate())?,
+            signal(SignalKind::hangup())?,
+        );
         let mut quiet = original;
         quiet.c_lflag &= !libc::ECHO;
         set(&quiet)?;
-        // SIGINT would end the process with the terminal still silent.
-        let on_interrupt = tokio::spawn(async move {
-            match tokio::signal::ctrl_c().await {
-                Ok(()) => {
-                    drop(set(&original));
-                    std::process::exit(130);
-                }
-                Err(err) => tracing::debug!(%err, "no Ctrl-C handler"),
-            }
+        // A stop signal would end the process with the terminal silent.
+        let on_signal = tokio::spawn(async move {
+            let code = tokio::select! {
+                _ = interrupt.recv() => 130,
+                _ = terminate.recv() => 143,
+                _ = hangup.recv() => 129,
+            };
+            drop(set(&original));
+            std::process::exit(code);
         });
         Ok(Quiet {
             original,
-            on_interrupt,
+            on_signal,
         })
     }
 
+    /// `TCSANOW` as in the CLI: typed-ahead input stays.
     fn set(settings: &libc::termios) -> io::Result<()> {
         // SAFETY: `tcsetattr` only reads the `termios` behind the reference.
         let status =
-            unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSAFLUSH, settings) };
+            unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, settings) };
         if status == 0 {
             Ok(())
         } else {
@@ -406,7 +420,7 @@ mod echo {
 
     impl Drop for Quiet {
         fn drop(&mut self) {
-            self.on_interrupt.abort();
+            self.on_signal.abort();
             // Nothing to tell: the shell resets a terminal it finds silent.
             drop(set(&self.original));
         }

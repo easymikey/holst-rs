@@ -94,7 +94,7 @@ fn a_public_address_without_a_token_does_not_start() -> Result<(), WireError> {
 #[test]
 fn print_config_prints_the_settings_with_the_token() -> Result<(), WireError> {
     let output = isolated("config")
-        .env("HOLST_MCP_TOKEN", "test-token")
+        .env("HOLST_MCP_TOKEN", "test-token-test-token-test-token")
         .args(["--http", "127.0.0.1:8808", "--print-config"])
         .output()?;
     assert!(output.status.success());

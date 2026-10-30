@@ -5,7 +5,7 @@ use holst_core::{
 use rstest::rstest;
 use serde_json::json;
 
-use crate::commands::backup::render::{fetched_text, listing_text};
+use crate::commands::backup::render::listing_text;
 
 fn backups(listed: &serde_json::Value) -> Backups {
     serde_json::from_value(json!({ "result": listed }))
@@ -45,5 +45,5 @@ fn a_saved_backup_says_its_size(
             bytes,
         },
     };
-    assert_eq!(fetched_text(&fetched), expected);
+    assert_eq!(fetched.to_string(), expected);
 }

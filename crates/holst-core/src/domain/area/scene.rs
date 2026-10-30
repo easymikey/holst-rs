@@ -266,6 +266,52 @@ impl<'a> Scene<'a> {
         }
     }
 
+    /// What an object covers as the web client counts it: its own box turned
+    /// about its corner, an arrow's route, the box of a group's members.
+    // BUNDLE: main.a33651a4.js 168787-168789 (`getRectBounds`).
+    pub(in crate::domain) fn bounds(
+        &self,
+        object: &Object,
+        depth: usize,
+    ) -> Option<Rectangle> {
+        let members = || {
+            self.objects
+                .iter()
+                .filter(|member| member.parent.as_deref() == Some(object.id.as_str()))
+                .filter_map(|member| self.bounds(member, depth + 1))
+        };
+        let own = || {
+            self.rectangle_of(object)
+                .map(|own| rotated(own, rotation(object)))
+                .and_then(Rectangle::sane)
+        };
+        match &object.kind {
+            ObjectKind::Group => (depth < GROUP_DEPTH)
+                .then(|| Rectangle::bounding(members()))
+                .flatten(),
+            ObjectKind::Arrow => self.covered_by(object),
+            ObjectKind::Sticker
+            | ObjectKind::StickerStack
+            | ObjectKind::Text
+            | ObjectKind::Shape
+            | ObjectKind::Document
+            | ObjectKind::Frame
+            | ObjectKind::Image
+            | ObjectKind::File
+            | ObjectKind::Stamp
+            | ObjectKind::Table
+            | ObjectKind::TableCell
+            | ObjectKind::Code
+            | ObjectKind::Drawing
+            | ObjectKind::Dice
+            | ObjectKind::Wheel
+            | ObjectKind::Flipcard
+            | ObjectKind::Task
+            | ObjectKind::Link
+            | ObjectKind::Other(_) => own(),
+        }
+    }
+
     /// A frame by id or link, else title, 8+ hex id prefix, part of title.
     ///
     /// # Errors

@@ -317,6 +317,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_side_is_the_control_number_the_web_stores() {
+        let sides = [EndSide::Top, EndSide::Right, EndSide::Bottom, EndSide::Left];
+        let controls = sides.map(|side| u64::from(side.control()));
+        assert_eq!(controls, [1, 2, 3, 4]);
+        assert_eq!(controls.map(EndSide::of_control), sides.map(Some));
+        assert_eq!(EndSide::of_control(0), None);
+        assert_eq!(EndSide::of_control(5), None);
+    }
+
+    #[test]
     fn an_elbow_bends_on_one_axis_and_the_others_at_a_point() {
         let along = "120,".parse::<Bend>().ok();
         assert_eq!(along.map(|bend| bend.suits(ArrowType::Elbow)), Some(true));

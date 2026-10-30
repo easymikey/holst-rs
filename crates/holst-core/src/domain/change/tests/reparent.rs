@@ -4,24 +4,12 @@ use rstest::rstest;
 use serde_json::{Value, json};
 use yrs::Doc;
 
-use super::{ME, add, edit, fields_of, frame::nested_frames};
+use super::{add, built_with_ids, edit, fields_of, frame::nested_frames};
 use crate::{
     domain::{
-        change::{
-            build::build,
-            value::{
-                BoardChange,
-                ChangeSources,
-                ChangeUpdate,
-                FrameEdit,
-                NewObject,
-                ObjectPatch,
-                Reparent,
-            },
-        },
+        change::value::{BoardChange, FrameEdit, NewObject, ObjectPatch, Reparent},
         geometry::Point,
         id_source::SequentialIds,
-        time::Timestamp,
     },
     error::Result,
 };
@@ -30,27 +18,11 @@ const STICKER: &str = "r-3";
 const OUTER: &str = "r-1";
 const INNER: &str = "r-2";
 
-fn apply(
-    document: &Doc,
-    ids: &SequentialIds,
-    change: &BoardChange,
-) -> Result<ChangeUpdate> {
-    build(
-        document,
-        change,
-        ME,
-        &ChangeSources {
-            built_at: Timestamp::from_millis(2),
-            ids,
-        },
-    )
-}
-
 /// An outer frame at 0,0, an inner one at 100,100 inside it, a sticker at 50,20
 /// in the outer one.
 fn board_with_sticker() -> Result<(Doc, SequentialIds)> {
     let (document, ids) = nested_frames()?;
-    apply(
+    built_with_ids(
         &document,
         &ids,
         &add(NewObject::Sticker {
@@ -85,7 +57,7 @@ fn an_object_moved_into_a_frame_keeps_its_place_relative_to_it() -> Result<()> {
         fields_of(&document, STICKER).get("parentId"),
         Some(&json!(OUTER))
     );
-    let update = apply(
+    let update = built_with_ids(
         &document,
         &ids,
         &put(STICKER, Reparent::Frame(INNER.into())),
@@ -106,7 +78,7 @@ fn an_object_moved_into_a_frame_keeps_its_place_relative_to_it() -> Result<()> {
 fn an_object_that_would_lie_outside_the_frame_goes_to_a_free_spot_in_it() -> Result<()>
 {
     let (document, ids) = nested_frames()?;
-    apply(
+    built_with_ids(
         &document,
         &ids,
         &add(NewObject::Sticker {
@@ -116,7 +88,7 @@ fn an_object_that_would_lie_outside_the_frame_goes_to_a_free_spot_in_it() -> Res
             color: None,
         }),
     )?;
-    apply(
+    built_with_ids(
         &document,
         &ids,
         &put(STICKER, Reparent::Frame(INNER.into())),
@@ -133,12 +105,12 @@ fn an_object_that_would_lie_outside_the_frame_goes_to_a_free_spot_in_it() -> Res
 fn an_object_moved_out_of_its_frame_goes_to_the_board_in_the_same_place_relative_to_it()
 -> Result<()> {
     let (document, ids) = board_with_sticker()?;
-    apply(
+    built_with_ids(
         &document,
         &ids,
         &put(STICKER, Reparent::Frame(INNER.into())),
     )?;
-    apply(&document, &ids, &put(STICKER, Reparent::Board))?;
+    built_with_ids(&document, &ids, &put(STICKER, Reparent::Board))?;
     let fields = fields_of(&document, STICKER);
     assert_eq!(
         (fields.get("parentId"), corner(&fields)),
@@ -157,7 +129,7 @@ fn layer(document: &Doc, id: &str) -> f64 {
 #[test]
 fn an_object_put_into_a_frame_goes_past_the_ones_in_it() -> Result<()> {
     let (document, ids) = board_with_sticker()?;
-    let made = apply(
+    let made = built_with_ids(
         &document,
         &ids,
         &add(NewObject::Sticker {
@@ -172,12 +144,12 @@ fn an_object_put_into_a_frame_goes_past_the_ones_in_it() -> Result<()> {
         .first()
         .map(|touched| touched.id.clone())
         .unwrap_or_default();
-    apply(
+    built_with_ids(
         &document,
         &ids,
         &put(STICKER, Reparent::Frame(INNER.into())),
     )?;
-    apply(&document, &ids, &put(&other, Reparent::Frame(INNER.into())))?;
+    built_with_ids(&document, &ids, &put(&other, Reparent::Frame(INNER.into())))?;
     let (first, second) = (layer(&document, STICKER), layer(&document, &other));
     assert_eq!(
         (
@@ -192,7 +164,7 @@ fn an_object_put_into_a_frame_goes_past_the_ones_in_it() -> Result<()> {
 #[test]
 fn a_given_corner_is_the_one_kept() -> Result<()> {
     let (document, ids) = board_with_sticker()?;
-    apply(
+    built_with_ids(
         &document,
         &ids,
         &edit(
@@ -214,7 +186,7 @@ fn a_given_corner_is_the_one_kept() -> Result<()> {
 
 fn hidden_inner() -> Result<(Doc, SequentialIds)> {
     let (document, ids) = board_with_sticker()?;
-    apply(
+    built_with_ids(
         &document,
         &ids,
         &edit(
@@ -263,7 +235,8 @@ fn a_frame_that_cannot_take_the_object_is_refused(
     #[case] said: &str,
 ) -> Result<()> {
     let (document, ids) = board()?;
-    let refused = apply(&document, &ids, &put(object, Reparent::Frame(frame.into())));
+    let refused =
+        built_with_ids(&document, &ids, &put(object, Reparent::Frame(frame.into())));
     assert_eq!(
         refused.err().map(|error| error.to_string()),
         Some(said.to_owned())

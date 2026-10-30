@@ -149,6 +149,20 @@ async fn cookies_from_replies_ride_along() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn answered_counts_the_successes_of_every_clone() -> Result<()> {
+    let (_fake, client) = on_fake(
+        [reply(200, &[], "{}"), reply(401, &[], "")],
+        Some(stored("tok", "sid=1")),
+    )?;
+    let clone = client.clone();
+    let request = || raw(HttpMethod::Get, "/gapi/current_user", None);
+    client.send_json(request()).await?;
+    clone.send_json(request()).await.err();
+    assert_eq!(client.answered(), 1);
+    Ok(())
+}
+
 #[rstest]
 #[case::expired(stored("tok", "sid=1"), &[], Hint::LoginAgain)]
 #[case::cookie_cleared_in_reply(stored("tok", "sid=1"), &[("set-cookie", "sid=; Max-Age=0")], Hint::LoginAgain)]

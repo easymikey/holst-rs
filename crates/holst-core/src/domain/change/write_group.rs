@@ -12,7 +12,7 @@ use yrs::{Any, Map as _, MapPrelim, TransactionMut};
 use crate::{
     domain::{
         area::scene::Scene,
-        board::{Object, ObjectKind, any, object_of},
+        board::{Object, ObjectKind, any, object_with_text},
         change::{
             check::{Grouping, kind_of, parent_of, shows_content},
             journal,
@@ -59,7 +59,7 @@ pub(super) fn group(
         .filter_map(|member| states.get(member)?.get(Z_INDEX)?.as_f64())
         .reduce(f64::max)
         .unwrap_or_default();
-    let corner = corner_of(states, members);
+    let corner = corner_of(transaction, scope, members);
     let own = [
         (ID, json!(id)),
         (TYPE, json!(ObjectKind::Group.as_str())),
@@ -102,16 +102,26 @@ pub(super) fn group(
     .collect())
 }
 
-/// The corner of the box the members cover.
-fn corner_of(states: &HashMap<String, Value>, members: &[String]) -> (f64, f64) {
-    let objects: Vec<Object> = members
-        .iter()
-        .filter_map(|member| states.get(member))
-        .filter_map(|fields| object_of(fields.clone()))
+/// The corner of the box the members cover, as arranging measures it.
+fn corner_of(
+    transaction: &TransactionMut<'_>,
+    scope: &WriteTransaction<'_>,
+    members: &[String],
+) -> (f64, f64) {
+    let objects: Vec<Object> = scope
+        .states
+        .values()
+        .filter_map(|fields| {
+            object_with_text(fields.clone(), transaction, &scope.roots.documents)
+        })
         .collect();
     let scene = Scene::new(&objects);
-    Rectangle::bounding(objects.iter().filter_map(|object| scene.covered_by(object)))
-        .map_or((0.0, 0.0), |area| (area.x, area.y))
+    Rectangle::bounding(
+        members
+            .iter()
+            .filter_map(|member| scene.bounds(scene.get(member)?, 0)),
+    )
+    .map_or((0.0, 0.0), |area| (area.x, area.y))
 }
 
 /// What puts the group where its members stand: the frame or table they all

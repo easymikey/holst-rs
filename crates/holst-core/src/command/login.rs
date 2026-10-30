@@ -1,9 +1,10 @@
 //! Login by email: an emailed code or a permanent password.
 
 use crate::{
-    domain::{id_source::IdSource, session::Session, url::BaseUrl},
+    command::account::account,
+    domain::{account::Account, id_source::IdSource, session::Session, url::BaseUrl},
     effect::clock::Clock,
-    error::Result,
+    error::{Error, Result, login::LoginError},
     remote::{api::login::end_server_session, client::Client},
 };
 
@@ -24,8 +25,6 @@ pub fn connect(
 
 /// The `email` flow: an emailed code or a permanent password.
 pub mod email {
-    use std::marker::PhantomData;
-
     use secrecy::{ExposeSecret as _, SecretString};
 
     use crate::{
@@ -41,36 +40,6 @@ pub mod email {
     };
 
     /// The address is known, nothing is sent yet.
-    #[derive(Debug, Clone, Copy)]
-    pub enum LoginStart {}
-
-    /// A code went out by email.
-    #[derive(Debug, Clone, Copy)]
-    pub enum CodeSent {}
-
-    /// A permanent password instead of a code.
-    #[derive(Debug, Clone, Copy)]
-    pub enum PasswordChosen {}
-
-    /// A state where a secret can be entered (sealed by private fields).
-    pub trait ReadyForSecret {
-        /// Returns the secret as the server takes it: a code without the
-        /// spaces around it, a password as typed.
-        fn sent(secret: &SecretString) -> SecretString;
-    }
-    impl ReadyForSecret for CodeSent {
-        fn sent(secret: &SecretString) -> SecretString {
-            SecretString::from(secret.expose_secret().trim())
-        }
-    }
-    impl ReadyForSecret for PasswordChosen {
-        fn sent(secret: &SecretString) -> SecretString {
-            secret.clone()
-        }
-    }
-
-    /// The email login as typed states: a code cannot be entered before it was
-    /// sent.
     ///
     /// ```no_run
     /// # async fn demo() -> holst_core::Result<()> {
@@ -93,20 +62,35 @@ pub mod email {
     /// # }
     /// ```
     #[derive(Debug, Clone)]
-    pub struct EmailLogin<S> {
+    pub struct EmailLogin {
         client: Client,
         email: Email,
-        step: PhantomData<S>,
     }
 
-    impl EmailLogin<LoginStart> {
+    /// A flow that waits for a secret, made by `send_code` or `with_password`.
+    #[derive(Debug, Clone)]
+    pub struct Flow {
+        client: Client,
+        email: Email,
+    }
+
+    /// What a login waits for: a code cannot be entered before it was sent.
+    #[derive(Debug, Clone)]
+    pub enum Awaiting {
+        Code(Flow),
+        Password(Flow),
+    }
+
+    impl EmailLogin {
         #[must_use]
         pub fn new(client: Client, email: Email) -> Self {
-            Self {
-                client,
-                email,
-                step: PhantomData,
-            }
+            Self { client, email }
+        }
+
+        /// The address the flow logs in.
+        #[must_use]
+        pub fn email(&self) -> &Email {
+            &self.email
         }
 
         /// The ways to log in for the address. No login needed.
@@ -124,45 +108,41 @@ pub mod email {
         ///
         /// # Errors
         /// [`Client::send_json`] errors.
-        pub async fn send_code(self) -> Result<EmailLogin<CodeSent>> {
+        pub async fn send_code(self) -> Result<Awaiting> {
             send_temporary_password(&self.client, &self.email).await?;
-            Ok(self.step_to())
+            Ok(Awaiting::Code(self.into_flow()))
         }
 
         /// Log in with a permanent password instead of a code.
         #[must_use]
-        pub fn with_password(self) -> EmailLogin<PasswordChosen> {
-            self.step_to()
-        }
-    }
-
-    impl<S> EmailLogin<S> {
-        /// The address the flow logs in.
-        #[must_use]
-        pub fn email(&self) -> &Email {
-            &self.email
+        pub fn with_password(self) -> Awaiting {
+            Awaiting::Password(self.into_flow())
         }
 
-        fn step_to<T>(self) -> EmailLogin<T> {
-            EmailLogin {
+        fn into_flow(self) -> Flow {
+            Flow {
                 client: self.client,
                 email: self.email,
-                step: PhantomData,
             }
         }
     }
 
-    impl<S: ReadyForSecret> EmailLogin<S> {
+    impl Awaiting {
         /// Log in with the code or password; a refused secret keeps the flow.
         ///
         /// # Errors
         /// [`Client::send_json`] errors or
         /// [`crate::error::login::LoginError::Incomplete`].
         pub async fn log_in(&self, secret: &SecretString) -> Result<Client> {
-            let token = login::token(
-                &with_email(&self.client, &self.email, &S::sent(secret)).await?,
-            )?;
-            Ok(self.client.clone().with_token(token))
+            let (Awaiting::Code(flow) | Awaiting::Password(flow)) = self;
+            // The server takes a code without the spaces around it.
+            let sent = match self {
+                Awaiting::Code(_) => SecretString::from(secret.expose_secret().trim()),
+                Awaiting::Password(_) => secret.clone(),
+            };
+            let token =
+                login::token(&with_email(&flow.client, &flow.email, &sent).await?)?;
+            Ok(flow.client.clone().with_token(token))
         }
     }
 }
@@ -193,6 +173,79 @@ pub async fn logout(client: &Client) -> Result<ServerSessionEnd> {
         .inspect(|_| client.forget())
 }
 
+/// What became of the login a new one replaced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplacedLogin {
+    Nothing,
+    Terminated,
+    Kept,
+}
+
+impl ReplacedLogin {
+    /// The word for scripts; `None` when there was nothing to replace.
+    #[must_use]
+    pub const fn as_str(self) -> Option<&'static str> {
+        match self {
+            ReplacedLogin::Nothing => None,
+            ReplacedLogin::Terminated => Some("terminated"),
+            ReplacedLogin::Kept => Some("kept"),
+        }
+    }
+}
+
+/// Why a login stopped before it was done.
+#[derive(Debug)]
+pub enum Stopped<E> {
+    /// The server did not take the new login, or it holds no session.
+    Check(Error),
+    /// `save` failed; the previous session is untouched.
+    Save(E),
+}
+
+/// A login that works, saved by the caller, with the old one ended.
+#[derive(Debug)]
+pub struct LoggedIn<S> {
+    pub account: Account,
+    pub client: Client,
+    /// What `save` returned.
+    pub saved: S,
+    pub replaced: ReplacedLogin,
+}
+
+/// Check the new login, hand its session to `save`, then end the `previous`
+/// session on the server. A previous session that cannot be ended is only
+/// reported as [`ReplacedLogin::Kept`].
+///
+/// # Errors
+/// [`Stopped::Check`] when the account cannot be read; [`Stopped::Save`] when
+/// `save` fails.
+pub async fn finish<S, E>(
+    client: Client,
+    previous: Option<Client>,
+    save: impl AsyncFnOnce(Session) -> std::result::Result<S, E>,
+) -> std::result::Result<LoggedIn<S>, Stopped<E>> {
+    let account = account(&client).await.map_err(Stopped::Check)?;
+    // Saved with the login: `--offline` then knows whose board cache to read.
+    client.learn_account_id(&account.id);
+    let session = client
+        .rotated()
+        .or_else(|| client.session())
+        .ok_or(Stopped::Check(Error::Login(LoginError::NoSavedLogin)))?;
+    let saved = save(session).await.map_err(Stopped::Save)?;
+    let replaced = match previous {
+        None => ReplacedLogin::Nothing,
+        Some(old) => logout(&old)
+            .await
+            .map_or(ReplacedLogin::Kept, |_| ReplacedLogin::Terminated),
+    };
+    Ok(LoggedIn {
+        account,
+        client,
+        saved,
+        replaced,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     #![expect(
@@ -201,13 +254,20 @@ mod tests {
     )]
 
     use rstest::rstest;
-    use secrecy::SecretString;
+    use secrecy::{ExposeSecret as _, SecretString};
 
     use crate::{
-        command::login::{ServerSessionEnd, email, logout},
+        command::login::{
+            ReplacedLogin,
+            ServerSessionEnd,
+            Stopped,
+            email,
+            finish,
+            logout,
+        },
         domain::session::SessionStatus,
         effect::http::HttpResponse,
-        error::{Error, Result},
+        error::{Error, Result, login::LoginError},
         remote::{
             api::login::with_email_request,
             client::fake::{on_fake, reply, stored},
@@ -293,6 +353,57 @@ mod tests {
             .map_or(LogoutReport::NotEnded, LogoutReport::Ended);
         assert_eq!(outcome, expected);
         assert_eq!(client.status(), after);
+        Ok(())
+    }
+
+    const ME: &str = r#"{"id":"u1","name":"A"}"#;
+
+    #[tokio::test]
+    async fn finish_hands_over_the_new_session_then_ends_the_old_one() -> Result<()> {
+        let (_, fresh) = on_fake([reply(200, &[], ME)], Some(stored("new", "sid=2")))?;
+        let (old_server, old) =
+            on_fake([reply(200, &[], "")], Some(stored("old", "sid=1")))?;
+        let done = finish(fresh, Some(old), async |session| {
+            Ok::<_, Error>((
+                session.token().expose_secret().to_owned(),
+                session.account_id().map(str::to_owned),
+            ))
+        })
+        .await
+        .ok();
+        assert_eq!(
+            done.as_ref().map(|done| (&done.saved, done.replaced)),
+            Some((
+                &("new".to_owned(), Some("u1".to_owned())),
+                ReplacedLogin::Terminated
+            ))
+        );
+        assert_eq!(old_server.requests().len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn finish_keeps_the_old_session_when_saving_fails() -> Result<()> {
+        let (_, fresh) = on_fake([reply(200, &[], ME)], Some(stored("new", "sid=2")))?;
+        let (old_server, old) = on_fake([], Some(stored("old", "sid=1")))?;
+        let done = finish(fresh, Some(old), async |_| {
+            Err::<(), _>(Error::Login(LoginError::NoSavedLogin))
+        })
+        .await;
+        assert!(matches!(done, Err(Stopped::Save(_))), "{done:?}");
+        assert!(old_server.requests().is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn finish_reports_an_old_session_it_could_not_end() -> Result<()> {
+        let (_, fresh) = on_fake([reply(200, &[], ME)], Some(stored("new", "sid=2")))?;
+        let (_, old) = on_fake([reply(500, &[], "")], Some(stored("old", "sid=1")))?;
+        let done = finish(fresh, Some(old), async |_| Ok::<_, Error>(())).await;
+        assert_eq!(
+            done.ok().map(|done| done.replaced),
+            Some(ReplacedLogin::Kept)
+        );
         Ok(())
     }
 

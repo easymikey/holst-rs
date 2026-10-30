@@ -7,6 +7,7 @@ use serde_json::Value;
 use crate::{
     domain::{
         area,
+        board::shape_type::StrokeStyle,
         geometry::{MAX_COORDINATE, Rectangle},
         palette,
         text_layout,
@@ -91,27 +92,6 @@ pub(super) fn fill_attribute(paint: Option<&Paint>) -> String {
 pub(super) enum StrokeKind {
     Outline,
     Arrow,
-}
-
-/// How a stroke is broken into dashes, as the document names it.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum StrokeStyle {
-    #[default]
-    Solid,
-    Dashed,
-    Dotted,
-}
-
-impl StrokeStyle {
-    /// The style of a stored `strokeStyle`; anything else is solid.
-    pub(super) fn of(name: Option<&str>) -> Self {
-        // PROTOCOL: stroke style names.
-        match name {
-            Some("dashed") => StrokeStyle::Dashed,
-            Some("dotted") => StrokeStyle::Dotted,
-            Some(_) | None => StrokeStyle::Solid,
-        }
-    }
 }
 
 pub(super) fn dashes(style: StrokeStyle, width: f64, kind: StrokeKind) -> String {

@@ -9,9 +9,9 @@ fn exposed(secret: &SecretString) -> &str {
 }
 
 use holst_core::{
-    command::auth::SaveLogin,
+    command::{auth::SaveLogin, login::ReplacedLogin},
     domain::{
-        login::{Email, LoginMethods},
+        login::Email,
         session::{Session, SessionStatus},
         url::BaseUrl,
     },
@@ -24,16 +24,7 @@ use serde_json::{Value, json};
 
 use crate::{
     commands::{
-        auth::login::{
-            Done,
-            LoginMethod,
-            ReplacedLogin,
-            end_previous_session,
-            finish,
-            log_in_by_email,
-            parse_secret,
-            verify,
-        },
+        auth::login::{Done, conclude, finish, log_in_by_email, parse_secret},
         fake::FakeServer,
     },
     error::{Error, InvalidAnswer, Result, SecretKind},
@@ -86,15 +77,13 @@ async fn email_login_goes_through_every_step() -> Result<()> {
     let form =
         Form::intro(Script::new(TerminalKind::Live, strokes, []), "holst login")?;
     let granted = log_in_by_email(&form, client(&server)?, None).await?;
-    let done = verify(granted)
-        .await?
-        .keep(&form, SaveLogin::Skip, async |_| {
-            Ok(LoginSaveReport {
-                store: SessionStoreKind::File,
-                stale: None,
-            })
+    let (done, _) = conclude(granted, None, SaveLogin::Skip, async |_| {
+        Ok(LoginSaveReport {
+            store: SessionStoreKind::File,
+            stale: None,
         })
-        .await?;
+    })
+    .await?;
     assert_eq!(done.name, "Mock User");
     assert_eq!(
         done.lines(ReplacedLogin::Nothing, None),
@@ -190,7 +179,14 @@ async fn no_way_in_stops_before_any_code(
 async fn refused_session_reads_as_a_rejected_login() -> Result<()> {
     let server = FakeServer::responding(&[(ME, 401, json!({}))]);
     let granted = client(&server)?.with_token(SecretString::from("t"));
-    let err = verify(granted).await.err();
+    let err = conclude(granted, None, SaveLogin::Skip, async |_| {
+        Ok(LoginSaveReport {
+            store: SessionStoreKind::File,
+            stale: None,
+        })
+    })
+    .await
+    .err();
     assert!(matches!(err, Some(Error::SessionNotAccepted(_))), "{err:?}");
     Ok(())
 }
@@ -201,23 +197,19 @@ async fn saved_session_goes_to_the_store_with_its_account() -> Result<()> {
     let server = FakeServer::responding(&[(ME, 200, json!({ "id": id, "name": "A" }))]);
     let granted = client(&server)?.with_token(SecretString::from("tok"));
     let kept = Mutex::new(None);
-    let form =
-        Form::intro(Script::new(TerminalKind::Redirected, [], []), "holst login")?;
-    let done = verify(granted)
-        .await?
-        .keep(&form, SaveLogin::Keep, async |session| {
-            *kept
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((
-                exposed(session.token()).to_owned(),
-                session.account_id().map(str::to_owned),
-            ));
-            Ok(LoginSaveReport {
-                store: SessionStoreKind::Keychain,
-                stale: None,
-            })
+    let (done, _) = conclude(granted, None, SaveLogin::Keep, async |session| {
+        *kept
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((
+            exposed(session.token()).to_owned(),
+            session.account_id().map(str::to_owned),
+        ));
+        Ok(LoginSaveReport {
+            store: SessionStoreKind::Keychain,
+            stale: None,
         })
-        .await?;
+    })
+    .await?;
     assert_eq!(done.store, Some(SessionStoreKind::Keychain));
     assert_eq!(
         kept.lock().ok().and_then(|k| k.clone()),
@@ -271,35 +263,33 @@ async fn previous_session_is_terminated_with_its_own_cookie(
     #[case] status: u16,
     #[case] expected: ReplacedLogin,
 ) -> Result<()> {
-    let server = FakeServer::responding(&[("/gapi/logout", status, json!({}))]);
-    let form =
-        Form::intro(Script::new(TerminalKind::Redirected, [], []), "holst login")?;
-    let replaced = end_previous_session(&form, Some(old_client(&server))).await;
+    let server = FakeServer::responding(&[
+        (ME, 200, json!({ "id": "u1", "name": "A" })),
+        ("/gapi/logout", status, json!({})),
+    ]);
+    let granted = client(&server)?.with_token(SecretString::from("tok"));
+    let (_, replaced) = conclude(
+        granted,
+        Some(old_client(&server)?),
+        SaveLogin::Keep,
+        async |_| {
+            Ok(LoginSaveReport {
+                store: SessionStoreKind::File,
+                stale: None,
+            })
+        },
+    )
+    .await?;
     assert_eq!(replaced, expected);
-    assert_eq!(server.seen(), ["POST /gapi/logout"]);
+    assert_eq!(
+        server.seen(),
+        [format!("GET {ME}"), "POST /gapi/logout".to_owned()]
+    );
     assert!(
         server
             .cookies()
-            .iter()
-            .all(|c| c.contains("sessionToken=old"))
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn terminating_no_login_sends_nothing() -> Result<()> {
-    let form =
-        Form::intro(Script::new(TerminalKind::Redirected, [], []), "holst login")?;
-    assert_eq!(
-        end_previous_session(&form, None).await,
-        ReplacedLogin::Nothing
-    );
-    let broken = Err(Error::Holst(holst_core::Error::Login(
-        holst_core::error::login::LoginError::NoSavedLogin,
-    )));
-    assert_eq!(
-        end_previous_session(&form, Some(broken)).await,
-        ReplacedLogin::Kept
+            .last()
+            .is_some_and(|cookie| cookie.contains("sessionToken=old"))
     );
     Ok(())
 }
@@ -342,19 +332,6 @@ fn closing_lines_warn_about_an_older_login() {
         lines.get(2),
         Some(&(NoteTone::Warn, "an older login may be left".to_owned()))
     );
-}
-
-#[rstest]
-#[case::no_account(json!({}), LoginMethod::NoAccount)]
-#[case::code_preferred(
-        json!({ "hasAccount": true, "viaTemporaryPassword": true, "viaPassword": true }),
-        LoginMethod::Code
-    )]
-#[case::password(json!({ "hasAccount": true, "viaPassword": true }), LoginMethod::Password)]
-#[case::sso_only(json!({ "hasAccount": true }), LoginMethod::SsoOnly)]
-fn offer_follows_login_options(#[case] offered: Value, #[case] expected: LoginMethod) {
-    let methods: LoginMethods = serde_json::from_value(offered).unwrap_or_default();
-    assert_eq!(LoginMethod::from(&methods), expected);
 }
 
 #[test]

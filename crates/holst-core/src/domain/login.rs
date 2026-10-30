@@ -92,6 +92,27 @@ pub struct LoginMethods {
     pub via_code: bool,
 }
 
+/// Where the address leads: the code is preferred to the password.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoginRoute {
+    NoAccount,
+    Code,
+    Password,
+    SingleSignOn,
+}
+
+impl LoginMethods {
+    #[must_use]
+    pub const fn route(self) -> LoginRoute {
+        match (self.has_account, self.via_code, self.via_password) {
+            (false, _, _) => LoginRoute::NoAccount,
+            (true, true, _) => LoginRoute::Code,
+            (true, false, true) => LoginRoute::Password,
+            (true, false, false) => LoginRoute::SingleSignOn,
+        }
+    }
+}
+
 /// The token from a login reply; the reply never goes into the error.
 ///
 /// # Errors
@@ -120,9 +141,9 @@ pub fn token(value: &Value) -> Result<SecretString> {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
-    use crate::domain::login::{Email, LoginMethods, token};
+    use crate::domain::login::{Email, LoginMethods, LoginRoute, token};
 
     #[test]
     fn token_extraction_reports_missing_field_without_leaking_body() {
@@ -179,6 +200,22 @@ mod tests {
                     .to_owned()
             )
         );
+    }
+
+    #[rstest]
+    #[case::no_account(json!({}), LoginRoute::NoAccount)]
+    #[case::code_preferred(
+        json!({ "hasAccount": true, "viaTemporaryPassword": true, "viaPassword": true }),
+        LoginRoute::Code
+    )]
+    #[case::password(json!({ "hasAccount": true, "viaPassword": true }), LoginRoute::Password)]
+    #[case::sso_only(json!({ "hasAccount": true }), LoginRoute::SingleSignOn)]
+    fn the_route_follows_the_login_options(
+        #[case] offered: Value,
+        #[case] expected: LoginRoute,
+    ) {
+        let methods: LoginMethods = serde_json::from_value(offered).unwrap_or_default();
+        assert_eq!(methods.route(), expected);
     }
 
     #[test]

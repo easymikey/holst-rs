@@ -4,9 +4,9 @@ use serde_json::{Value, json};
 use yrs::{Doc, Map as _, ReadTxn as _, Transact as _};
 
 use super::{
-    ME,
     add,
     add_in,
+    built_with_ids,
     edit,
     fields_of,
     frame::{free, hidden_frame, move_to, nested_frames, seed},
@@ -14,40 +14,14 @@ use super::{
 };
 use crate::{
     domain::{
-        change::{
-            build::build,
-            value::{
-                ChangeSources,
-                ChangeUpdate,
-                NewObject,
-                ObjectChangeKind,
-                ObjectPatch,
-            },
-        },
+        change::value::{NewObject, ObjectChangeKind, ObjectPatch},
         geometry::{Point, Size},
         id_source::SequentialIds,
-        time::Timestamp,
     },
     error::{Error, Result, board_change::BoardChangeError},
 };
 
 const LONG: &str = "dbc79d73-0000-4000-8000-000000000001";
-
-fn built(
-    document: &Doc,
-    ids: &SequentialIds,
-    change: &crate::domain::change::value::BoardChange,
-) -> Result<ChangeUpdate> {
-    build(
-        document,
-        change,
-        ME,
-        &ChangeSources {
-            built_at: Timestamp::from_millis(2),
-            ids,
-        },
-    )
-}
 
 fn stamp_on(object: &str, x: u32, y: u32) -> Value {
     json!({
@@ -86,7 +60,7 @@ fn a_new_object_is_refused_in_a_frame_that_hides_its_content() -> Result<()> {
         size: None,
         color: None,
     };
-    let refused = built(&document, &ids, &add_in(new, "h".into()));
+    let refused = built_with_ids(&document, &ids, &add_in(new, "h".into()));
     assert!(matches!(
         &refused,
         Err(Error::BoardChange(BoardChangeError::ContentHidden { .. }))
@@ -135,7 +109,7 @@ fn removing_an_object_removes_the_stamps_stuck_to_it() -> Result<()> {
     let (document, ids) = nested_frames()?;
     seed(&document, &free("s", 900, 0))?;
     seed(&document, &stamp_on("s", 930, 10))?;
-    let update = built(&document, &ids, &remove("s".into()))?;
+    let update = built_with_ids(&document, &ids, &remove("s".into()))?;
     let gone: Vec<&str> = update
         .objects
         .iter()
@@ -151,7 +125,7 @@ fn resized(document: &Doc, ids: &SequentialIds, id: &str, size: Size) -> Result<
         size: Some(size),
         ..ObjectPatch::default()
     };
-    built(document, ids, &edit(id.into(), patch))?;
+    built_with_ids(document, ids, &edit(id.into(), patch))?;
     Ok(fields_of(document, id))
 }
 
@@ -202,7 +176,7 @@ fn a_text_grows_by_text_scale() -> Result<()> {
         text: "hello".into(),
         at: Point::new(900.0, 0.0)?,
     };
-    let made = built(&document, &ids, &add(text))?;
+    let made = built_with_ids(&document, &ids, &add(text))?;
     let id = made
         .objects
         .first()

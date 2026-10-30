@@ -184,7 +184,7 @@ pub(crate) struct Memory {
     slow: Duration,
     slow_save: Duration,
     pub(crate) saving: Notify,
-    locked: Lock,
+    locked: Mutex<Lock>,
     writable: Mutex<Lock>,
     network: Arc<Script>,
 }
@@ -206,7 +206,7 @@ impl Memory {
             slow: Duration::ZERO,
             slow_save: Duration::ZERO,
             saving: Notify::new(),
-            locked: Lock::Open,
+            locked: Mutex::new(Lock::Open),
             writable: Mutex::new(Lock::Open),
             network,
         }
@@ -232,7 +232,7 @@ impl Memory {
 
     pub(crate) fn locked(self) -> Self {
         Self {
-            locked: Lock::Locked,
+            locked: Mutex::new(Lock::Locked),
             ..self
         }
     }
@@ -242,6 +242,10 @@ impl Memory {
             slow: pause,
             ..self
         }
+    }
+
+    pub(crate) fn lock_now(&self) {
+        *self.locked.lock().unwrap_or_else(PoisonError::into_inner) = Lock::Locked;
     }
 
     pub(crate) fn store(&self, session: Option<Session>) {
@@ -278,7 +282,8 @@ impl Backend for Memory {
     fn load(&self) -> holst_core::Result<Option<(Session, SessionStoreKind)>> {
         self.loads.fetch_add(1, Ordering::SeqCst);
         std::thread::sleep(self.slow);
-        match self.locked {
+        let locked = *self.locked.lock().unwrap_or_else(PoisonError::into_inner);
+        match locked {
             Lock::Locked => Err(holst_core::Error::LocalData(
                 holst_core::error::local_data::LocalDataError::KeychainLocked,
             )),

@@ -6,14 +6,17 @@ use serde_json::Value;
 use crate::{
     domain::{
         area,
-        area::route::{ArrowRoute, ObjectSide},
-        board::{Object, arrow_look::ArrowType},
+        area::route::ArrowRoute,
+        board::{
+            Object,
+            arrow_look::{ArrowType, EndSide},
+            shape_type::StrokeStyle,
+        },
         geometry::{Direction, Rectangle, StoredPoint},
         palette,
         palette::TEXT_COLOR,
         picture::svg::{
             StrokeKind,
-            StrokeStyle,
             TextAlign,
             TextBlock,
             dashes,
@@ -179,7 +182,7 @@ fn route_path(route: &ArrowRoute, points: &[StoredPoint]) -> String {
             let handle =
                 |end: &area::route::ArrowEnd, at: StoredPoint, other: StoredPoint| {
                     let direction =
-                        end.side.map_or_else(|| unit(at, other), ObjectSide::normal);
+                        end.side.map_or_else(|| unit(at, other), EndSide::normal);
                     moved(at, direction, reach)
                 };
             let c1 = handle(&route.start, first, last);
@@ -285,7 +288,7 @@ fn end_directions(route: &ArrowRoute) -> EndDirections {
     } else {
         points.get(1).copied().unwrap_or(last)
     };
-    let inwards = |side: ObjectSide| side.normal().reversed();
+    let inwards = |side: EndSide| side.normal().reversed();
     let start = match (curved, route.start.side) {
         (true, Some(side)) => inwards(side),
         _ => unit(after_first, first),
@@ -406,7 +409,7 @@ pub(super) fn arrow(object: &Object, route: &ArrowRoute) -> String {
          stroke-linejoin=\"round\" stroke-linecap=\"round\"{}{masked}/>{}{}{text}",
         format_number(width),
         dashes(
-            StrokeStyle::of(field(document::STROKE_STYLE)),
+            StrokeStyle::of_stored(field(document::STROKE_STYLE)),
             width,
             StrokeKind::Arrow
         ),

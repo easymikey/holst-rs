@@ -19,7 +19,7 @@ use crate::{
     effect::settings::SessionLocation,
     error::{Error, Result, local_data::LocalDataError},
     storage::{
-        file::write_error,
+        file::{make_private, write_error},
         local_data::HOME_SESSION_FILE,
         lock::{LOCK_FILE, LOCK_WAIT_MILLIS, lock_waiting},
     },
@@ -78,7 +78,7 @@ impl SessionLocation {
             .map(|path| {
                 let failed = |source| write_error(&path, source);
                 path.parent()
-                    .map(fs::create_dir_all)
+                    .map(make_private)
                     .transpose()
                     .map_err(failed)?;
                 let held = lock_waiting(&path, LOCK_WAIT_MILLIS).map_err(failed)?;
@@ -249,7 +249,7 @@ impl SessionStore for SessionFile {
             .as_ref()
             .ok_or(Error::LocalData(LocalDataError::NoHome))?;
         path.parent()
-            .map(fs::create_dir_all)
+            .map(make_private)
             .transpose()
             .map_err(|source| {
                 Error::LocalData(LocalDataError::FileWrite {

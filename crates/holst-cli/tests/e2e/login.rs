@@ -115,3 +115,22 @@ fn bare_token_says_log_in() -> TestResult {
     assert_no_noise(&text);
     Ok(())
 }
+
+#[cfg(unix)]
+#[test]
+fn a_new_holst_home_is_private() -> TestResult {
+    use std::os::unix::fs::PermissionsExt as _;
+    let base = fake::start()?.base_url().to_owned();
+    let parent = home(None)?;
+    let dir = parent.join("fresh").join("holst");
+    let out = holst_in(
+        &base,
+        &dir,
+        &["auth", "login"],
+        "mock@example.com\n123456\n",
+    )?;
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let mode = std::fs::metadata(&dir)?.permissions().mode() & 0o777;
+    assert_eq!(mode, 0o700, "the folder of the login is open to others");
+    Ok(())
+}

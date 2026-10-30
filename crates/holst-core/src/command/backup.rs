@@ -1,6 +1,6 @@
 //! The `backup` group: a board's snapshots, listed, downloaded and restored.
 
-use std::path::Path;
+use std::{fmt, path::Path};
 
 use holst_macros::CommandArgs;
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,7 @@ use crate::{
             document,
         },
         change::receipt::UpdateReceipt,
+        text::joined,
     },
     effect::{
         board_write::WriteMode,
@@ -163,6 +164,21 @@ pub struct Fetched {
     pub delivery: Delivery,
 }
 
+impl fmt::Display for Fetched {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.delivery {
+            Delivery::Written { file, bytes } => {
+                let before = match self.uncompressed_bytes {
+                    size if size == *bytes => String::new(),
+                    size => format!(" ({size} before gzip)"),
+                };
+                write!(f, "saved {bytes} bytes{before} to {}", file.display())
+            }
+            Delivery::Inline { bytes } => write!(f, "{} bytes", bytes.len()),
+        }
+    }
+}
+
 /// Downloads a backup and packs it: gzip unless `uncompressed`. A given file
 /// is named as `compression::file_name` says; with none, the file is
 /// `backup-<key>.ydoc[.gz]` in `downloads`, and with no `downloads` either the
@@ -249,6 +265,19 @@ pub struct Restored {
     pub receipt: Option<UpdateReceipt>,
     #[serde(flatten)]
     pub outcome: ImportReport,
+}
+
+impl fmt::Display for Restored {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let written = matches!(self.outcome, ChangeReport::Sent);
+        let receipt = self
+            .receipt
+            .filter(|_| written)
+            .map(|each| each.to_string());
+        let link = written.then(|| self.link.clone());
+        let lines = [self.phrase()].into_iter().chain(receipt).chain(link);
+        write!(f, "{}", joined(lines, "\n"))
+    }
 }
 
 impl Restored {

@@ -9,6 +9,7 @@
 use std::{ffi::OsString, io, path::PathBuf};
 
 use holst_core::{
+    command::account::SessionCheck,
     domain::session::Session,
     effect::settings::Settings,
     fake::{Fake, Fixture},
@@ -240,4 +241,22 @@ fn a_stale_copy_is_warned_about_with_its_hint() {
         warning.contains("run `holst-mcp setup` in a terminal again"),
         "{warning}"
     );
+}
+
+#[tokio::test]
+async fn a_second_setup_ends_the_first_server_session() -> Result<(), Trouble> {
+    let rig = rig("relogin").await?;
+    rig.setup("ada@example.com\n123456\n").await.0?;
+    let old = rig
+        .saved()?
+        .ok_or(holst_core::error::login::LoginError::NoSavedLogin)
+        .map_err(holst_core::Error::from)?;
+    rig.setup("y\nada@example.com\n123456\n").await.0?;
+    let client = rig.backend.connect(old)?;
+    let check = holst_core::command::account::check(&client).await;
+    assert!(
+        matches!(check, SessionCheck::Revoked(_)),
+        "the replaced login is still alive on the server: {check:?}"
+    );
+    Ok(())
 }

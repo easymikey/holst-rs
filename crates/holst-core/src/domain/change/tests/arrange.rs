@@ -3,32 +3,11 @@
 use serde_json::{Value, json};
 use yrs::Doc;
 
-use super::{ME, fields_of, frame::seed};
+use super::{built, fields_of, frame::seed, sticker_at};
 use crate::{
-    domain::{
-        change::{
-            build::build,
-            value::{
-                Alignment,
-                Arrangement,
-                Axis,
-                BoardChange,
-                ChangeSources,
-                ChangeUpdate,
-            },
-        },
-        id_source::SequentialIds,
-        time::Timestamp,
-    },
+    domain::change::value::{Alignment, Arrangement, Axis, BoardChange, ChangeUpdate},
     error::Result,
 };
-
-fn sticker(id: &str, parent: Option<&str>, x: u32, y: u32) -> Value {
-    json!({
-        "id": id, "type": "sticker", "parentId": parent,
-        "position": { "x": x, "y": y }, "width": 100, "height": 100, "zIndex": 1000,
-    })
-}
 
 /// Free stickers `one`, `two` and `three` at three corners, an empty frame.
 fn board() -> Result<Doc> {
@@ -40,22 +19,10 @@ fn board() -> Result<Doc> {
             "width": 800, "height": 600, "zIndex": 1,
         }),
     )?;
-    seed(&document, &sticker("one", None, 0, 0))?;
-    seed(&document, &sticker("two", None, 200, 50))?;
-    seed(&document, &sticker("three", None, 500, 300))?;
+    seed(&document, &sticker_at("one", None, 0, 0, 1000))?;
+    seed(&document, &sticker_at("two", None, 200, 50, 1000))?;
+    seed(&document, &sticker_at("three", None, 500, 300, 1000))?;
     Ok(document)
-}
-
-fn built(document: &Doc, change: &BoardChange) -> Result<ChangeUpdate> {
-    build(
-        document,
-        change,
-        ME,
-        &ChangeSources {
-            built_at: Timestamp::from_millis(2),
-            ids: &SequentialIds::new("g"),
-        },
-    )
 }
 
 fn arrange(objects: &[&str], how: Arrangement) -> BoardChange {
@@ -159,8 +126,8 @@ fn a_group_moves_with_its_members() -> Result<()> {
         &document,
         &json!({ "id": "G", "type": "group", "position": { "x": 0, "y": 600 } }),
     )?;
-    seed(&document, &sticker("m", Some("G"), 0, 600))?;
-    seed(&document, &sticker("n", Some("G"), 100, 600))?;
+    seed(&document, &sticker_at("m", Some("G"), 0, 600, 1000))?;
+    seed(&document, &sticker_at("n", Some("G"), 100, 600, 1000))?;
     built(&document, &align(&["G", "three"], Alignment::Right))?;
     assert_eq!(at(&document, "G"), (Some(400.0), Some(600.0)));
     assert_eq!(at(&document, "m"), (Some(400.0), Some(600.0)));
@@ -172,7 +139,7 @@ fn a_group_moves_with_its_members() -> Result<()> {
 #[test]
 fn a_frame_moves_with_its_content() -> Result<()> {
     let document = board()?;
-    seed(&document, &sticker("inner", Some("F"), 2010, 20))?;
+    seed(&document, &sticker_at("inner", Some("F"), 2010, 20, 1000))?;
     built(&document, &align(&["F", "one"], Alignment::Left))?;
     assert_eq!(at(&document, "one"), (Some(0.0), Some(0.0)));
     assert_eq!(at(&document, "F"), (Some(0.0), Some(0.0)));
@@ -183,7 +150,7 @@ fn a_frame_moves_with_its_content() -> Result<()> {
 #[test]
 fn an_object_moved_into_a_frame_goes_into_it() -> Result<()> {
     let document = board()?;
-    seed(&document, &sticker("inner", Some("F"), 2010, 20))?;
+    seed(&document, &sticker_at("inner", Some("F"), 2010, 20, 1000))?;
     built(&document, &align(&["inner", "one"], Alignment::Right))?;
     assert_eq!(at(&document, "one"), (Some(2010.0), Some(0.0)));
     assert_eq!(

@@ -5,27 +5,14 @@ use rstest::rstest;
 use serde_json::{Value, json};
 use yrs::Doc;
 
-use super::{ME, edit, fields_of, frame::seed};
+use super::{built, edit, fields_of, frame::seed};
 use crate::{
-    domain::{
-        change::{
-            build::build,
-            value::{ChangeSources, ObjectPatch},
-        },
-        geometry::Size,
-        id_source::SequentialIds,
-        time::Timestamp,
-    },
+    domain::{change::value::ObjectPatch, geometry::Size},
     error::Result,
 };
 
 fn apply(document: &Doc, patch: ObjectPatch) -> Result<()> {
-    let ids = SequentialIds::new("e");
-    let context = ChangeSources {
-        built_at: Timestamp::from_millis(2),
-        ids: &ids,
-    };
-    build(document, &edit("o".into(), patch), ME, &context).map(drop)
+    built(document, &edit("o".into(), patch)).map(drop)
 }
 
 fn resized(object: &Value, size: (f64, f64)) -> Result<Doc> {

@@ -6,14 +6,13 @@ use serde_json::Value;
 use crate::{
     domain::{
         area,
-        board::{Object, shape::ShapeKind},
+        board::{Object, shape::ShapeKind, shape_type::StrokeStyle},
         geometry::{Rectangle, Size, StoredPoint},
         palette,
         palette::TEXT_COLOR,
         picture::svg::{
             Paint,
             StrokeKind,
-            StrokeStyle,
             TextAlign,
             TextBlock,
             dashes,
@@ -469,7 +468,7 @@ fn stroke_attributes(object: &Object, stroke_width: f64) -> String {
                 " stroke=\"{color}\" stroke-width=\"{}\"{alpha}{} stroke-linejoin=\"round\"",
                 format_number(stroke_width),
                 dashes(
-                    StrokeStyle::of(
+                    StrokeStyle::of_stored(
                         fields.get(document::STROKE_STYLE).and_then(Value::as_str)
                     ),
                     stroke_width,

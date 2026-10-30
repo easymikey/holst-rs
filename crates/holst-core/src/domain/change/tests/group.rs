@@ -4,26 +4,14 @@ use rstest::rstest;
 use serde_json::{Value, json};
 use yrs::Doc;
 
-use super::{ME, fields_of, frame::seed, remove};
+use super::{built, fields_of, frame::seed, remove, sticker_at};
 use crate::{
     domain::{
         board::ObjectKind,
-        change::{
-            build::build,
-            value::{BoardChange, ChangeSources, ChangeUpdate, ObjectChangeKind},
-        },
-        id_source::SequentialIds,
-        time::Timestamp,
+        change::value::{BoardChange, ObjectChangeKind},
     },
     error::Result,
 };
-
-fn sticker(id: &str, parent: Option<&str>, x: u32, y: u32, z: u32) -> Value {
-    json!({
-        "id": id, "type": "sticker", "parentId": parent,
-        "position": { "x": x, "y": y }, "width": 100, "height": 100, "zIndex": z,
-    })
-}
 
 /// A frame holding stickers `a` and `b`, and a free sticker `c`.
 fn board() -> Result<Doc> {
@@ -32,25 +20,12 @@ fn board() -> Result<Doc> {
         &document,
         &json!({
             "id": "F", "type": "frame", "position": { "x": 0, "y": 0 },
-            "width": 800, "height": 600, "zIndex": 1,
-        }),
+            "width": 800, "height": 600, "zIndex": 1}),
     )?;
-    seed(&document, &sticker("a", Some("F"), 10, 20, 1000))?;
-    seed(&document, &sticker("b", Some("F"), 300, 50, 1010))?;
-    seed(&document, &sticker("c", None, 1000, 0, 1020))?;
+    seed(&document, &sticker_at("a", Some("F"), 10, 20, 1000))?;
+    seed(&document, &sticker_at("b", Some("F"), 300, 50, 1010))?;
+    seed(&document, &sticker_at("c", None, 1000, 0, 1020))?;
     Ok(document)
-}
-
-fn built(document: &Doc, change: &BoardChange) -> Result<ChangeUpdate> {
-    build(
-        document,
-        change,
-        ME,
-        &ChangeSources {
-            built_at: Timestamp::from_millis(2),
-            ids: &SequentialIds::new("g"),
-        },
-    )
 }
 
 fn group_of(objects: &[&str]) -> BoardChange {
@@ -116,6 +91,31 @@ fn members_of_different_parents_make_a_group_on_the_board() -> Result<()> {
 }
 
 #[test]
+fn a_group_around_a_group_and_a_sticker_sits_at_the_corner_of_their_box() -> Result<()>
+{
+    let document = board()?;
+    seed(&document, &json!({ "id": "G", "type": "group" }))?;
+    seed(&document, &sticker_at("s", Some("G"), 50, 60, 5))?;
+    built(&document, &group_of(&["G", "c"]))?;
+    let group = fields_of(&document, "g-1");
+    assert_eq!(group.get("position"), Some(&json!({ "x": 50, "y": 0 })));
+    Ok(())
+}
+
+#[test]
+fn a_group_around_two_groups_sits_at_the_corner_of_their_box() -> Result<()> {
+    let document = board()?;
+    seed(&document, &json!({ "id": "G1", "type": "group" }))?;
+    seed(&document, &sticker_at("s1", Some("G1"), 50, 60, 5))?;
+    seed(&document, &json!({ "id": "G2", "type": "group" }))?;
+    seed(&document, &sticker_at("s2", Some("G2"), 300, 10, 6))?;
+    built(&document, &group_of(&["G1", "G2"]))?;
+    let group = fields_of(&document, "g-1");
+    assert_eq!(group.get("position"), Some(&json!({ "x": 50, "y": 10 })));
+    Ok(())
+}
+
+#[test]
 fn a_group_in_a_table_takes_the_cell_of_its_first_member() -> Result<()> {
     let document = board()?;
     seed(&document, &json!({ "id": "T", "type": "table" }))?;
@@ -125,10 +125,9 @@ fn a_group_in_a_table_takes_the_cell_of_its_first_member() -> Result<()> {
         &json!({
             "id": "x", "type": "sticker", "parentId": "T", "zIndex": 1,
             "additionalPositionInfo": cell, "position": { "x": 5, "y": 5 },
-            "width": 10, "height": 10,
-        }),
+            "width": 10, "height": 10}),
     )?;
-    seed(&document, &sticker("y", Some("T"), 50, 5, 2))?;
+    seed(&document, &sticker_at("y", Some("T"), 50, 5, 2))?;
     built(&document, &group_of(&["x", "y"]))?;
     let group = fields_of(&document, "g-1");
     assert_eq!(group.get("parentId"), Some(&json!("T")));
@@ -140,7 +139,7 @@ fn a_group_in_a_table_takes_the_cell_of_its_first_member() -> Result<()> {
 fn what_lies_in_another_named_group_member_goes_with_it() -> Result<()> {
     let document = board()?;
     seed(&document, &json!({ "id": "G", "type": "group" }))?;
-    seed(&document, &sticker("s", Some("G"), 0, 0, 5))?;
+    seed(&document, &sticker_at("s", Some("G"), 0, 0, 5))?;
     let update = built(&document, &group_of(&["G", "s", "c"]))?;
     assert_eq!(parent(&document, "G"), Some(json!("g-1")));
     assert_eq!(parent(&document, "c"), Some(json!("g-1")));
@@ -154,7 +153,7 @@ fn what_lies_in_another_named_group_member_goes_with_it() -> Result<()> {
 #[case::table_cell(json!({ "id": "x", "type": "table-cell", "parentId": "T" }), "\"x\" cannot be grouped: a table cell stays in its table")]
 #[case::mind_map_node(json!({ "id": "x", "type": "mind-map-node" }), "\"x\" cannot be grouped: a mind-map node stays in its map")]
 #[case::in_a_group(
-    sticker("x", Some("G"), 0, 0, 1),
+    sticker_at("x", Some("G"), 0, 0, 1),
     "\"x\" cannot be grouped: it is in a group already; ungroup that one first"
 )]
 #[case::in_a_column(json!({ "id": "x", "type": "task-card", "parentId": "K", "columnId": "c1" }), "\"x\" cannot be grouped: a card in a kanban column stays in it")]
@@ -197,8 +196,8 @@ fn an_ungroup_leaves_the_members_in_the_parent_of_the_group() -> Result<()> {
         &document,
         &json!({ "id": "G", "type": "group", "parentId": "F", "ignoreZIndex": true }),
     )?;
-    seed(&document, &sticker("s", Some("G"), 1, 1, 5))?;
-    seed(&document, &sticker("t", Some("G"), 2, 2, 6))?;
+    seed(&document, &sticker_at("s", Some("G"), 1, 1, 5))?;
+    seed(&document, &sticker_at("t", Some("G"), 2, 2, 6))?;
     let update = built(&document, &ungroup_of(&["G"]))?;
     assert_eq!(parent(&document, "s"), Some(json!("F")));
     assert_eq!(parent(&document, "t"), Some(json!("F")));
@@ -222,7 +221,7 @@ fn an_ungroup_leaves_the_members_in_the_parent_of_the_group() -> Result<()> {
 fn an_ungroup_on_the_board_leaves_members_without_a_parent() -> Result<()> {
     let document = board()?;
     seed(&document, &json!({ "id": "G", "type": "group" }))?;
-    seed(&document, &sticker("s", Some("G"), 1, 1, 5))?;
+    seed(&document, &sticker_at("s", Some("G"), 1, 1, 5))?;
     built(&document, &ungroup_of(&["G"]))?;
     assert_eq!(parent(&document, "s"), Some(Value::Null));
     Ok(())
@@ -239,7 +238,7 @@ fn nested_groups_ungrouped_together_land_in_the_outer_parent() -> Result<()> {
         &document,
         &json!({ "id": "G2", "type": "group", "parentId": "G1" }),
     )?;
-    seed(&document, &sticker("s", Some("G2"), 1, 1, 5))?;
+    seed(&document, &sticker_at("s", Some("G2"), 1, 1, 5))?;
     built(&document, &ungroup_of(&["G2", "G1"]))?;
     assert_eq!(parent(&document, "s"), Some(json!("F")));
     assert_eq!(fields_of(&document, "G1"), Value::Null);
@@ -273,7 +272,7 @@ fn group_with(document: &Doc, members: &[&str]) -> Result<()> {
     members
         .iter()
         .zip(5..)
-        .try_for_each(|(&id, z)| seed(document, &sticker(id, Some("G"), 1, 1, z)))
+        .try_for_each(|(&id, z)| seed(document, &sticker_at(id, Some("G"), 1, 1, z)))
 }
 
 #[rstest]
@@ -319,8 +318,8 @@ fn a_group_dissolved_by_a_removal_may_leave_its_own_group_short() -> Result<()> 
         &document,
         &json!({ "id": "G2", "type": "group", "parentId": "G1" }),
     )?;
-    seed(&document, &sticker("s", Some("G2"), 1, 1, 5))?;
-    seed(&document, &sticker("t", Some("G2"), 2, 2, 6))?;
+    seed(&document, &sticker_at("s", Some("G2"), 1, 1, 5))?;
+    seed(&document, &sticker_at("t", Some("G2"), 2, 2, 6))?;
     built(&document, &remove("s".into()))?;
     assert_eq!(parent(&document, "t"), Some(json!("F")));
     assert_eq!(fields_of(&document, "G1"), Value::Null);

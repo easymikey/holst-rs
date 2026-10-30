@@ -8,7 +8,13 @@ pub mod sign;
 
 use std::{
     fmt,
-    sync::{Arc, PoisonError, RwLock, RwLockReadGuard},
+    sync::{
+        Arc,
+        PoisonError,
+        RwLock,
+        RwLockReadGuard,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
@@ -66,6 +72,7 @@ pub struct Client {
     ids: Arc<dyn IdSource>,
     base: BaseUrl,
     state: Arc<RwLock<SessionState>>,
+    answered: Arc<AtomicU64>,
 }
 
 impl fmt::Debug for Client {
@@ -97,7 +104,14 @@ impl Client {
             ids: Arc::new(ids),
             base,
             state: Arc::new(RwLock::new(SessionState::from(session))),
+            answered: Arc::default(),
         })
+    }
+
+    /// How many requests of this client (and its clones) got a success reply.
+    #[must_use]
+    pub fn answered(&self) -> u64 {
+        self.answered.load(Ordering::Relaxed)
     }
 
     /// The same client on another transport.

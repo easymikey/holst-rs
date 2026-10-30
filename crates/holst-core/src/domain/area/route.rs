@@ -5,7 +5,12 @@ use serde_json::Value;
 use crate::{
     domain::{
         area::scene::{Scene, number},
-        board::{DrawnArrowEnds, Object, ObjectKind, arrow_look::ArrowType},
+        board::{
+            DrawnArrowEnds,
+            Object,
+            ObjectKind,
+            arrow_look::{ArrowType, EndSide},
+        },
         geometry::{Direction, Point, Rectangle, StoredPoint},
     },
     protocol::document,
@@ -13,73 +18,50 @@ use crate::{
 
 const ELBOW_STUB: f64 = 32.0;
 
-/// A side of a box, as arrows attach to it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ObjectSide {
-    Top,
-    Right,
-    Bottom,
-    Left,
-}
-
-impl ObjectSide {
+impl EndSide {
     /// The unit vector pointing away from the box.
     #[must_use]
     pub const fn normal(self) -> Direction {
         match self {
-            ObjectSide::Top => Direction { dx: 0.0, dy: -1.0 },
-            ObjectSide::Right => Direction { dx: 1.0, dy: 0.0 },
-            ObjectSide::Bottom => Direction { dx: 0.0, dy: 1.0 },
-            ObjectSide::Left => Direction { dx: -1.0, dy: 0.0 },
-        }
-    }
-
-    fn of_control(control: u64) -> Option<ObjectSide> {
-        match control {
-            1 => Some(ObjectSide::Top),
-            2 => Some(ObjectSide::Right),
-            3 => Some(ObjectSide::Bottom),
-            4 => Some(ObjectSide::Left),
-            _ => None,
+            EndSide::Top => Direction { dx: 0.0, dy: -1.0 },
+            EndSide::Right => Direction { dx: 1.0, dy: 0.0 },
+            EndSide::Bottom => Direction { dx: 0.0, dy: 1.0 },
+            EndSide::Left => Direction { dx: -1.0, dy: 0.0 },
         }
     }
 
     fn middle(self, rectangle: &Rectangle) -> StoredPoint {
         let centre = rectangle.centre();
         match self {
-            ObjectSide::Top => StoredPoint::new(centre.x, rectangle.y),
-            ObjectSide::Right => StoredPoint::new(rectangle.right(), centre.y),
-            ObjectSide::Bottom => StoredPoint::new(centre.x, rectangle.bottom()),
-            ObjectSide::Left => StoredPoint::new(rectangle.x, centre.y),
+            EndSide::Top => StoredPoint::new(centre.x, rectangle.y),
+            EndSide::Right => StoredPoint::new(rectangle.right(), centre.y),
+            EndSide::Bottom => StoredPoint::new(centre.x, rectangle.bottom()),
+            EndSide::Left => StoredPoint::new(rectangle.x, centre.y),
         }
     }
 
-    fn nearest(rectangle: &Rectangle, at: StoredPoint) -> ObjectSide {
+    fn nearest(rectangle: &Rectangle, at: StoredPoint) -> EndSide {
         let distances = [
-            (ObjectSide::Top, (at.y - rectangle.y).abs()),
-            (ObjectSide::Right, (rectangle.right() - at.x).abs()),
-            (ObjectSide::Bottom, (rectangle.bottom() - at.y).abs()),
-            (ObjectSide::Left, (at.x - rectangle.x).abs()),
+            (EndSide::Top, (at.y - rectangle.y).abs()),
+            (EndSide::Right, (rectangle.right() - at.x).abs()),
+            (EndSide::Bottom, (rectangle.bottom() - at.y).abs()),
+            (EndSide::Left, (at.x - rectangle.x).abs()),
         ];
         distances
             .into_iter()
             .min_by(|a, b| a.1.total_cmp(&b.1))
-            .map_or(ObjectSide::Right, |(side, _)| side)
+            .map_or(EndSide::Right, |(side, _)| side)
     }
 
-    const ALL: [ObjectSide; 4] = [
-        ObjectSide::Top,
-        ObjectSide::Right,
-        ObjectSide::Bottom,
-        ObjectSide::Left,
-    ];
+    const ALL: [EndSide; 4] =
+        [EndSide::Top, EndSide::Right, EndSide::Bottom, EndSide::Left];
 }
 
 /// One end of an arrow: where it touches and which way it leaves.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ArrowEnd {
     pub at: StoredPoint,
-    pub side: Option<ObjectSide>,
+    pub side: Option<EndSide>,
 }
 
 /// An arrow's path: its ends and the points between.
@@ -201,7 +183,7 @@ fn routed_ends(
         let side = stored
             .get(document::CONTROL)
             .and_then(Value::as_u64)
-            .and_then(ObjectSide::of_control);
+            .and_then(EndSide::of_control);
         let relative = stored.get(document::RELATIVE_POINT).map(|point| {
             let at = |axis, from: f64, size: f64| {
                 from + number(point, axis).unwrap_or(0.5) * size
@@ -218,7 +200,7 @@ fn routed_ends(
             }),
             (None, Some(at)) => Some(ArrowEnd {
                 at,
-                side: Some(ObjectSide::nearest(&rectangle, at)),
+                side: Some(EndSide::nearest(&rectangle, at)),
             }),
             (None, None) => None,
         }
@@ -252,7 +234,7 @@ fn routed_ends(
 }
 
 fn closest_side(rectangle: &Rectangle, towards: StoredPoint) -> ArrowEnd {
-    ObjectSide::ALL
+    EndSide::ALL
         .into_iter()
         .map(|side| (side, side.middle(rectangle)))
         .min_by(|a, b| {
@@ -275,22 +257,22 @@ fn elbow(start: ArrowEnd, end: ArrowEnd) -> Vec<StoredPoint> {
     let towards = |from: StoredPoint, to: StoredPoint| {
         let horizontal = (to.x - from.x).abs() >= (to.y - from.y).abs();
         match (horizontal, to.x >= from.x, to.y >= from.y) {
-            (true, true, _) => ObjectSide::Right,
-            (true, false, _) => ObjectSide::Left,
-            (false, _, true) => ObjectSide::Bottom,
-            (false, _, false) => ObjectSide::Top,
+            (true, true, _) => EndSide::Right,
+            (true, false, _) => EndSide::Left,
+            (false, _, true) => EndSide::Bottom,
+            (false, _, false) => EndSide::Top,
         }
     };
     let start_out = start.side.unwrap_or_else(|| towards(start.at, end.at));
     let end_out = end.side.unwrap_or_else(|| towards(end.at, start.at));
-    let stub = |arrow_end: ArrowEnd, side: ObjectSide| {
+    let stub = |arrow_end: ArrowEnd, side: EndSide| {
         let Direction { dx, dy } = side.normal();
         let length = arrow_end.side.map_or(0.0, |_| ELBOW_STUB);
         StoredPoint::new(arrow_end.at.x + dx * length, arrow_end.at.y + dy * length)
     };
     let a = stub(start, start_out);
     let b = stub(end, end_out);
-    let flat = |side: ObjectSide| matches!(side, ObjectSide::Left | ObjectSide::Right);
+    let flat = |side: EndSide| matches!(side, EndSide::Left | EndSide::Right);
     let middle = match (flat(start_out), flat(end_out)) {
         (true, true) => {
             let mx = f64::midpoint(a.x, b.x);

@@ -3,26 +3,17 @@
 use serde_json::{Value, json};
 use yrs::{Doc, Map as _, MapPrelim, Transact as _};
 
-use super::{add, add_in, edit, remove};
+use super::{add, add_in, built_with_ids, edit, remove};
 use crate::{
     domain::{
         board::{ObjectKind, any, shape_type::ShapeType},
         change::{
-            build::build,
-            tests::{ME, fields_of},
-            value::{
-                ArrowLook,
-                BoardChange,
-                ChangeSources,
-                ChangeUpdate,
-                NewObject,
-                ObjectPatch,
-            },
+            tests::fields_of,
+            value::{ArrowLook, BoardChange, ChangeUpdate, NewObject, ObjectPatch},
             write::object_map,
         },
         geometry::{Point, Size},
         id_source::SequentialIds,
-        time::Timestamp,
     },
     error::{
         Error,
@@ -45,12 +36,8 @@ pub(super) fn nested_frames() -> Result<(Doc, SequentialIds)> {
             look: crate::domain::change::value::FrameEdit::default(),
         }))
     };
-    let context = ChangeSources {
-        built_at: Timestamp::from_millis(1),
-        ids: &ids,
-    };
-    build(&document, &frame(0.0, 0.0, 800.0, 600.0)?, ME, &context)?;
-    build(&document, &frame(100.0, 100.0, 400.0, 300.0)?, ME, &context)?;
+    built_with_ids(&document, &ids, &frame(0.0, 0.0, 800.0, 600.0)?)?;
+    built_with_ids(&document, &ids, &frame(100.0, 100.0, 400.0, 300.0)?)?;
     Ok((document, ids))
 }
 
@@ -65,15 +52,7 @@ pub(super) fn move_to(
         ..ObjectPatch::default()
     };
     let change = edit(object.into(), patch);
-    build(
-        document,
-        &change,
-        ME,
-        &ChangeSources {
-            built_at: Timestamp::from_millis(2),
-            ids,
-        },
-    )
+    built_with_ids(document, ids, &change)
 }
 
 #[test]
@@ -89,15 +68,7 @@ fn a_move_reparents_like_the_web_client() -> Result<()> {
         size: None,
         color: None,
     };
-    build(
-        &document,
-        &add(new_sticker),
-        ME,
-        &ChangeSources {
-            built_at: Timestamp::from_millis(1),
-            ids: &ids,
-        },
-    )?;
+    built_with_ids(&document, &ids, &add(new_sticker))?;
     let sticker = "r-3";
     assert_eq!(fields_of(&document, sticker).get("parentId"), None);
     let into = move_to(&document, &ids, sticker, Point::new(150.0, 150.0)?)?;
@@ -119,15 +90,7 @@ fn a_move_reparents_like_the_web_client() -> Result<()> {
         fields_of(&document, sticker).get("parentId"),
         Some(&Value::Null)
     );
-    let removed = build(
-        &document,
-        &remove("r-1".into()),
-        ME,
-        &ChangeSources {
-            built_at: Timestamp::from_millis(3),
-            ids: &ids,
-        },
-    )?;
+    let removed = built_with_ids(&document, &ids, &remove("r-1".into()))?;
     assert_eq!(removed.objects.len(), 2, "the moved-out sticker stays");
     assert_eq!(crate::domain::board::objects(&document).len(), 1);
     Ok(())
@@ -136,10 +99,6 @@ fn a_move_reparents_like_the_web_client() -> Result<()> {
 #[test]
 fn a_carried_arrow_moves_its_ends() -> Result<()> {
     let (document, ids) = nested_frames()?;
-    let context = ChangeSources {
-        built_at: Timestamp::from_millis(1),
-        ids: &ids,
-    };
     let sticker = |x| -> Result<BoardChange> {
         Ok(add(NewObject::Sticker {
             text: "s".into(),
@@ -148,15 +107,15 @@ fn a_carried_arrow_moves_its_ends() -> Result<()> {
             color: None,
         }))
     };
-    build(&document, &sticker(110.0)?, ME, &context)?;
-    build(&document, &sticker(300.0)?, ME, &context)?;
+    built_with_ids(&document, &ids, &sticker(110.0)?)?;
+    built_with_ids(&document, &ids, &sticker(300.0)?)?;
     let new_arrow = NewObject::Arrow {
         from: "r-3".into(),
         to: "r-7".into(),
         color: None,
         look: ArrowLook::default(),
     };
-    build(&document, &add(new_arrow), ME, &context)?;
+    built_with_ids(&document, &ids, &add(new_arrow))?;
     let arrow = "r-11";
     assert_eq!(
         fields_of(&document, arrow).get("parentId"),
@@ -199,10 +158,6 @@ fn a_carried_arrow_moves_its_ends() -> Result<()> {
 fn a_moved_frame_takes_what_it_covers() -> Result<()> {
     let document = Doc::new();
     let ids = SequentialIds::new("a");
-    let context = ChangeSources {
-        built_at: Timestamp::from_millis(1),
-        ids: &ids,
-    };
     let frame = NewObject::Frame {
         title: "F".into(),
         at: Point::ORIGIN,
@@ -210,14 +165,14 @@ fn a_moved_frame_takes_what_it_covers() -> Result<()> {
         color: None,
         look: crate::domain::change::value::FrameEdit::default(),
     };
-    build(&document, &add(frame), ME, &context)?;
+    built_with_ids(&document, &ids, &add(frame))?;
     let note = NewObject::Sticker {
         text: "s".into(),
         at: Point::new(1000.0, 100.0)?,
         size: None,
         color: None,
     };
-    build(&document, &add(note), ME, &context)?;
+    built_with_ids(&document, &ids, &add(note))?;
     let built = move_to(&document, &ids, "a-1", Point::new(900.0, 0.0)?)?;
     assert_eq!(
         fields_of(&document, "a-2").get("parentId"),
@@ -235,10 +190,6 @@ fn a_moved_frame_takes_what_it_covers() -> Result<()> {
 #[test]
 fn an_object_in_a_frame_must_fit_it() -> Result<()> {
     let (document, ids) = nested_frames()?;
-    let context = ChangeSources {
-        built_at: Timestamp::from_millis(1),
-        ids: &ids,
-    };
     let sticker = |x, y| -> Result<BoardChange> {
         Ok(add_in(
             NewObject::Sticker {
@@ -251,14 +202,14 @@ fn an_object_in_a_frame_must_fit_it() -> Result<()> {
         ))
     };
     assert!(matches!(
-        build(&document, &sticker(700.0, 10.0)?, ME, &context),
+        built_with_ids(&document, &ids, &sticker(700.0, 10.0)?),
         Err(Error::BoardChange(BoardChangeError::OutsideFrame { .. }))
     ));
     assert!(matches!(
-        build(&document, &sticker(-5.0, 10.0)?, ME, &context),
+        built_with_ids(&document, &ids, &sticker(-5.0, 10.0)?),
         Err(Error::BoardChange(BoardChangeError::OutsideFrame { .. }))
     ));
-    let deep = build(&document, &sticker(150.0, 150.0)?, ME, &context)?;
+    let deep = built_with_ids(&document, &ids, &sticker(150.0, 150.0)?)?;
     let id = deep
         .objects
         .first()
@@ -268,7 +219,7 @@ fn an_object_in_a_frame_must_fit_it() -> Result<()> {
         fields_of(&document, &id).get("parentId"),
         Some(&json!("r-2"))
     );
-    let shallow = build(&document, &sticker(10.0, 10.0)?, ME, &context)?;
+    let shallow = built_with_ids(&document, &ids, &sticker(10.0, 10.0)?)?;
     let shallow_id = shallow
         .objects
         .first()
@@ -285,12 +236,9 @@ fn an_object_in_a_frame_must_fit_it() -> Result<()> {
 fn moving_a_frame_carries_what_it_holds() -> Result<()> {
     let document = Doc::new();
     let ids = SequentialIds::new("m");
-    let context = ChangeSources {
-        built_at: Timestamp::from_millis(1),
-        ids: &ids,
-    };
-    build(
+    built_with_ids(
         &document,
+        &ids,
         &add(NewObject::Frame {
             title: "F".into(),
             at: Point::ORIGIN,
@@ -298,17 +246,14 @@ fn moving_a_frame_carries_what_it_holds() -> Result<()> {
             color: None,
             look: crate::domain::change::value::FrameEdit::default(),
         }),
-        ME,
-        &context,
     )?;
-    build(
+    built_with_ids(
         &document,
+        &ids,
         &add(NewObject::Text {
             text: "t".into(),
             at: Point::new(10.0, 20.0)?,
         }),
-        ME,
-        &context,
     )?;
     let child = document.get_or_insert_map("objects");
     {
@@ -317,8 +262,9 @@ fn moving_a_frame_carries_what_it_holds() -> Result<()> {
         let text = object_map(&transaction, &child, "m-2", &ObjectKind::Text)?;
         text.insert(&mut transaction, "parentId", "m-1");
     }
-    let built = build(
+    let built = built_with_ids(
         &document,
+        &ids,
         &edit(
             "m-1".into(),
             ObjectPatch {
@@ -326,8 +272,6 @@ fn moving_a_frame_carries_what_it_holds() -> Result<()> {
                 ..ObjectPatch::default()
             },
         ),
-        ME,
-        &context,
     )?;
     let text = crate::domain::board::objects(&document)
         .into_iter()
@@ -348,10 +292,6 @@ fn moving_a_frame_carries_what_it_holds() -> Result<()> {
 fn an_object_added_in_a_frame_counts_from_its_corner() -> Result<()> {
     let document = Doc::new();
     let ids = SequentialIds::new("p");
-    let context = ChangeSources {
-        built_at: Timestamp::from_millis(1),
-        ids: &ids,
-    };
     let frame = NewObject::Frame {
         title: "F".into(),
         at: Point::new(100.0, 50.0)?,
@@ -359,7 +299,7 @@ fn an_object_added_in_a_frame_counts_from_its_corner() -> Result<()> {
         color: None,
         look: crate::domain::change::value::FrameEdit::default(),
     };
-    build(&document, &add(frame), ME, &context)?;
+    built_with_ids(&document, &ids, &add(frame))?;
     let sticker = NewObject::Sticker {
         text: "in".into(),
         at: Point::new(10.0, 20.0)?,
@@ -367,7 +307,7 @@ fn an_object_added_in_a_frame_counts_from_its_corner() -> Result<()> {
         color: None,
     };
     let inside = add_in(sticker.clone(), "p-1".into());
-    let built = build(&document, &inside, ME, &context)?;
+    let built = built_with_ids(&document, &ids, &inside)?;
     let id = built
         .objects
         .first()
@@ -382,7 +322,7 @@ fn an_object_added_in_a_frame_counts_from_its_corner() -> Result<()> {
     );
     let into_sticker = add_in(sticker, id);
     assert!(matches!(
-        build(&document, &into_sticker, ME, &context),
+        built_with_ids(&document, &ids, &into_sticker),
         Err(Error::BoardChange(BoardChangeError::NotFrame { .. }))
     ));
     Ok(())
@@ -392,10 +332,6 @@ fn an_object_added_in_a_frame_counts_from_its_corner() -> Result<()> {
 fn a_frame_is_named_by_title_as_a_snapshot_names_it() -> Result<()> {
     let document = Doc::new();
     let ids = SequentialIds::new("t");
-    let context = ChangeSources {
-        built_at: Timestamp::from_millis(1),
-        ids: &ids,
-    };
     let frame = |label: &str, x: f64| -> Result<NewObject> {
         Ok(NewObject::Frame {
             title: label.into(),
@@ -405,8 +341,8 @@ fn a_frame_is_named_by_title_as_a_snapshot_names_it() -> Result<()> {
             look: crate::domain::change::value::FrameEdit::default(),
         })
     };
-    build(&document, &add(frame("Retro plan", 0.0)?), ME, &context)?;
-    build(&document, &add(frame("Retro", 2000.0)?), ME, &context)?;
+    built_with_ids(&document, &ids, &add(frame("Retro plan", 0.0)?))?;
+    built_with_ids(&document, &ids, &add(frame("Retro", 2000.0)?))?;
     let sticker = NewObject::Sticker {
         text: "in".into(),
         at: Point::new(10.0, 20.0)?,
@@ -414,12 +350,8 @@ fn a_frame_is_named_by_title_as_a_snapshot_names_it() -> Result<()> {
         color: None,
     };
     let parent_of = |spec: &str| -> Result<Option<(f64, Option<String>)>> {
-        let built = build(
-            &document,
-            &add_in(sticker.clone(), spec.into()),
-            ME,
-            &context,
-        )?;
+        let built =
+            built_with_ids(&document, &ids, &add_in(sticker.clone(), spec.into()))?;
         let id = built.objects.first().map(|t| t.id.clone());
         Ok(crate::domain::board::objects(&document)
             .into_iter()
@@ -454,35 +386,15 @@ fn a_short_id_start_names_no_frame_to_add_into() -> Result<()> {
             look: crate::domain::change::value::FrameEdit::default(),
         })
     };
-    build(
-        &document,
-        &frame("Backlog"),
-        ME,
-        &ChangeSources {
-            built_at: Timestamp::from_millis(1),
-            ids: &backlog,
-        },
-    )?;
-    build(
-        &document,
-        &frame("Week 2"),
-        ME,
-        &ChangeSources {
-            built_at: Timestamp::from_millis(1),
-            ids: &week,
-        },
-    )?;
+    built_with_ids(&document, &backlog, &frame("Backlog"))?;
+    built_with_ids(&document, &week, &frame("Week 2"))?;
     let sticker = NewObject::Sticker {
         text: "in".into(),
         at: Point::new(10.0, 20.0)?,
         size: None,
         color: None,
     };
-    let context = ChangeSources {
-        built_at: Timestamp::from_millis(1),
-        ids: &week,
-    };
-    let added = build(&document, &add_in(sticker, "1".into()), ME, &context);
+    let added = built_with_ids(&document, &week, &add_in(sticker, "1".into()));
     assert!(
         matches!(
             added,
@@ -501,10 +413,6 @@ fn a_short_id_start_names_no_frame_to_add_into() -> Result<()> {
 fn a_frame_without_a_stored_size_takes_its_drawn_size() -> Result<()> {
     let document = Doc::new();
     let ids = SequentialIds::new("z");
-    let context = ChangeSources {
-        built_at: Timestamp::from_millis(1),
-        ids: &ids,
-    };
     let frame = NewObject::Frame {
         title: "F".into(),
         at: Point::ORIGIN,
@@ -512,7 +420,7 @@ fn a_frame_without_a_stored_size_takes_its_drawn_size() -> Result<()> {
         color: None,
         look: crate::domain::change::value::FrameEdit::default(),
     };
-    build(&document, &add(frame), ME, &context)?;
+    built_with_ids(&document, &ids, &add(frame))?;
     {
         let objects = document.get_or_insert_map("objects");
         // imperative: yrs writes take `&mut TransactionMut`
@@ -528,7 +436,7 @@ fn a_frame_without_a_stored_size_takes_its_drawn_size() -> Result<()> {
         size: None,
         color: None,
     };
-    let built = build(&document, &add_in(sticker, "z-1".into()), ME, &context)?;
+    let built = built_with_ids(&document, &ids, &add_in(sticker, "z-1".into()))?;
     let id = built
         .objects
         .first()
@@ -545,10 +453,6 @@ fn a_frame_without_a_stored_size_takes_its_drawn_size() -> Result<()> {
 fn new_objects_take_the_kind_default_size() -> Result<()> {
     let document = Doc::new();
     let ids = SequentialIds::new("d");
-    let context = ChangeSources {
-        built_at: Timestamp::from_millis(1),
-        ids: &ids,
-    };
     let at = Point::ORIGIN;
     let news = [
         (
@@ -582,7 +486,7 @@ fn new_objects_take_the_kind_default_size() -> Result<()> {
         ),
     ];
     news.into_iter().try_for_each(|(kind, new)| {
-        let built = build(&document, &add(new), ME, &context)?;
+        let built = built_with_ids(&document, &ids, &add(new))?;
         let id = built
             .objects
             .first()
@@ -740,15 +644,7 @@ fn a_new_object_is_not_put_in_a_hidden_frame() -> Result<()> {
         size: None,
         color: None,
     };
-    let built = build(
-        &document,
-        &add(new),
-        ME,
-        &ChangeSources {
-            built_at: Timestamp::from_millis(2),
-            ids: &ids,
-        },
-    )?;
+    let built = built_with_ids(&document, &ids, &add(new))?;
     let id = built
         .objects
         .first()

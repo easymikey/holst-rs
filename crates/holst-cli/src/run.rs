@@ -180,11 +180,6 @@ fn unsaved_warning(
     }
 }
 
-#[must_use]
-pub(crate) fn latest_session(client: &Client) -> Option<Session> {
-    client.rotated().or_else(|| client.session())
-}
-
 pub(crate) async fn run_signed_in(
     run: &RunSettings,
     work: impl AsyncFnOnce(&Client) -> Result<()>,
