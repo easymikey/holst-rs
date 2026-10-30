@@ -59,7 +59,7 @@ pub(super) async fn created(
             Some(shared_in(client, args.workspace.as_deref()).await?)
         }
     };
-    let content = board_load::content(
+    let (content, read) = board_load::content_with_channel(
         RemoteBoard {
             client,
             connector,
@@ -91,7 +91,9 @@ pub(super) async fn created(
     // The server wants a workspace for every scope, a personal one too.
     let workspace_id = match &workspace {
         Some(workspace) => workspace.id.clone(),
-        None => board_workspace(client, &board).await?,
+        None => {
+            board_workspace(&board_load::channel_or_get(client, &board, read).await?)?
+        }
     };
     let thumbnail = match args.dry_run {
         WriteMode::DryRun => UPLOADED_LATER.to_owned(),
@@ -145,9 +147,8 @@ pub(super) async fn created(
 }
 
 /// The id of the workspace the board lives in.
-async fn board_workspace(client: &Client, board: &str) -> Result<String> {
-    let reply = api::channel::get(client, board).await?;
-    NodeBrief::of(&reply)?
+fn board_workspace(reply: &Value) -> Result<String> {
+    NodeBrief::of(reply)?
         .workspace_id()
         .map(str::to_owned)
         .ok_or_else(|| missing_field("workspace_id"))

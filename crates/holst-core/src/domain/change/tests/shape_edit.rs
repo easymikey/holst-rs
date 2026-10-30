@@ -169,3 +169,28 @@ fn only_a_shape_has_an_outline() -> Result<()> {
     ));
     Ok(())
 }
+
+#[test]
+fn a_shape_width_outside_a_whole_0_to_10_is_refused_by_name() -> Result<()> {
+    let document = seeded()?;
+    let id = shape(&document)?;
+    let refused = apply(
+        &document,
+        &edit(
+            id,
+            shape_edit(ShapeEdit {
+                stroke_width: Some(11.0),
+                ..ShapeEdit::default()
+            }),
+        ),
+    )
+    .err()
+    .map(|error| error.to_string());
+    assert_eq!(
+        refused.as_deref(),
+        Some(
+            "\"11\" is not a valid shape stroke width: expected a whole number 0 to 10"
+        )
+    );
+    Ok(())
+}

@@ -1,6 +1,8 @@
 //! Copying a whole board document: export from one board, import into another.
 
 use futures_util::future::OptionFuture;
+use serde::Deserialize as _;
+use serde_json::Value;
 use yrs::Doc;
 
 use crate::{
@@ -20,7 +22,7 @@ use crate::{
         board_change::BoardChangeError,
         board_socket::BoardSocketError,
     },
-    protocol::document::OBJECTS,
+    protocol::{channel::BoardFormat, document::OBJECTS},
     remote::client::Client,
 };
 
@@ -29,6 +31,8 @@ use crate::{
 pub(in crate::command) struct BoardFile {
     pub(in crate::command) content: BoardContent,
     pub(in crate::command) document: Vec<u8>,
+    /// The `channel/{id}` reply the load read, if it read one.
+    pub(in crate::command) channel: Option<Value>,
 }
 
 /// Load the board fully through the cache of `loading` and take its whole
@@ -42,7 +46,7 @@ pub(in crate::command) async fn export_with(
     loading: Loading<'_>,
     board: &str,
 ) -> Result<BoardFile> {
-    let (loaded, _) = board_load::load(
+    let (loaded, _, channel) = board_load::load_with_channel(
         RemoteBoard {
             client,
             connector: loading.connector,
@@ -59,6 +63,7 @@ pub(in crate::command) async fn export_with(
             objects: crate::domain::board::objects(&loaded.document),
         },
         document: crate::domain::board_file::document::encoded(&loaded.document),
+        channel,
     })
 }
 
@@ -100,6 +105,8 @@ pub(in crate::command) struct ImportRequest<'a> {
     pub(in crate::command) document: &'a [u8],
     pub(in crate::command) overwrite: Overwrite,
     pub(in crate::command) mode: WriteMode,
+    /// The `channel/{id}` reply of the board, if the caller has read it.
+    pub(in crate::command) channel: Option<&'a Value>,
 }
 
 /// Load the target, plan the import and, unless dry, send it and await the ack.
@@ -118,9 +125,10 @@ pub(in crate::command) async fn import_with(
         document: state,
         overwrite: fill,
         mode,
+        channel,
     } = request;
     let saved = crate::domain::board_file::document::saved_objects(state)?;
-    write_with(client, loading, board, mode, |document| {
+    write_with(client, loading, (board, channel), mode, |document| {
         crate::domain::board_file::document::import_plan(document, state, saved, fill)
     })
     .await
@@ -136,18 +144,20 @@ pub(in crate::command) async fn replace_with(
     client: &Client,
     loading: Loading<'_>,
     board: &str,
+    channel: &Value,
     state: &[u8],
     mode: WriteMode,
 ) -> Result<ImportedBoardFile> {
     let saved = crate::domain::board_file::document::saved_objects(state)?;
-    write_with(client, loading, board, mode, |document| {
+    write_with(client, loading, (board, Some(channel)), mode, |document| {
         crate::domain::board_file::document::replace_plan(document, state, saved)
     })
     .await
 }
 
 /// Load the board, let `plan` change its document, and, unless dry, send what
-/// the change adds and await the ack.
+/// the change adds and await the ack. The format is checked on the
+/// `channel/{id}` reply `target` carries, else on one asked for.
 ///
 /// # Errors
 /// Those of `plan`,
@@ -155,11 +165,14 @@ pub(in crate::command) async fn replace_with(
 pub(in crate::command) async fn write_with(
     client: &Client,
     loading: Loading<'_>,
-    board: &str,
+    (board, channel): (&str, Option<&Value>),
     mode: WriteMode,
     plan: impl FnOnce(&Doc) -> Result<ImportPlan>,
 ) -> Result<ImportedBoardFile> {
-    board_load::whole_file(client, board).await?;
+    match channel {
+        Some(reply) => BoardFormat::deserialize(reply)?.whole_file()?,
+        None => board_load::whole_file(client, board).await?,
+    }
     let connected =
         crate::remote::socket::write::open_with(client, loading.connector, board)
             .await?;

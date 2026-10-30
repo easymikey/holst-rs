@@ -1,67 +1,12 @@
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
-
-use holst_core::domain::tree::name_index::build::NameIndex;
-use itertools::Itertools as _;
-
 use crate::memory::{
     McpMemory,
-    WORKSPACES_TRUST_WINDOW,
     alias::{Aliases, UnknownAlias, alias_text, expand_json},
-    lock,
-    tree_memory::{KeptTree, KeptWorkspaces, TREE_TRUST_WINDOW, TreeMemory},
 };
 
 const ID: &str = "ae1f0a2b-c3d4-4f19-8a7b-1c2d3e4f5a6b";
 
 fn uuid(number: usize) -> String {
     format!("00000001-0000-4000-8000-{number:012x}")
-}
-
-fn ago(after: Duration) -> Instant {
-    Instant::now()
-        .checked_sub(after)
-        .unwrap_or_else(Instant::now)
-}
-
-fn tree(generation: u64, at: Instant, weight: u64) -> KeptTree {
-    KeptTree {
-        generation,
-        at,
-        used: 0,
-        weight,
-        index: Arc::new(NameIndex::default()),
-    }
-}
-
-fn cached(trees: &TreeMemory) -> Vec<&str> {
-    trees
-        .trees
-        .keys()
-        .map(String::as_str)
-        .sorted_unstable()
-        .collect()
-}
-
-fn list_at(state: &McpMemory, generation: u64, at: Instant) {
-    state.workspaces.store(Some(Arc::new(KeptWorkspaces {
-        generation,
-        at,
-        list: Arc::from(Vec::new()),
-    })));
-}
-
-fn no_stale_tree(state: &McpMemory) {
-    assert!(
-        state.tree("w").is_none(),
-        "a tree from before the write is cached"
-    );
-    assert!(
-        lock(&state.trees).trees.is_empty(),
-        "a stale tree was stored"
-    );
 }
 
 #[test]
@@ -177,87 +122,6 @@ fn only_whole_alias_strings_are_expanded_in_json(
 }
 
 #[test]
-fn write_during_fetch_keeps_stale_tree_out_of_cache() {
-    let state = McpMemory::default();
-    let before = state.generation();
-    state.invalidate_all();
-    state.store_tree("w", NameIndex::default(), before);
-    no_stale_tree(&state);
-    state.store_tree("w", NameIndex::default(), state.generation());
-    assert!(state.tree("w").is_some());
-}
-
-#[test]
-fn concurrent_invalidate_keeps_stale_tree_out_of_cache() {
-    let state = McpMemory::default();
-    (0..1_000).for_each(|_| {
-        let before = state.generation();
-        std::thread::scope(|s| {
-            s.spawn(|| state.invalidate_all());
-            s.spawn(|| state.store_tree("w", NameIndex::default(), before));
-            s.spawn(|| state.store_workspaces(Vec::new(), before));
-        });
-        no_stale_tree(&state);
-        assert!(state.workspaces().is_none(), "a stale list is cached");
-    });
-}
-
-#[test]
-fn ttl_expires() {
-    let state = McpMemory::default();
-    let generation = state.generation();
-    let old = ago(TREE_TRUST_WINDOW + Duration::from_secs(1));
-    lock(&state.trees).insert("w", tree(generation, old, 1), 100);
-    assert!(state.tree("w").is_none(), "a stale tree was read");
-    list_at(
-        &state,
-        generation,
-        ago(WORKSPACES_TRUST_WINDOW + Duration::from_secs(1)),
-    );
-    assert!(state.workspaces().is_none(), "a stale list was read");
-}
-
-#[test]
-fn trees_respect_memory_limit() {
-    // imperative: the cache is changed through `&mut self` methods.
-    let mut trees = TreeMemory::default();
-    let at = |ms| ago(Duration::from_millis(ms));
-    trees.insert("a", tree(0, at(30), 40), 100);
-    trees.insert("b", tree(0, at(20), 40), 100);
-    assert_eq!(cached(&trees), ["a", "b"]);
-    trees.insert("c", tree(0, at(10), 40), 100);
-    assert_eq!(
-        cached(&trees),
-        ["b", "c"],
-        "not the least recent was evicted"
-    );
-    // Reading extends a life: the queue goes by the last read.
-    assert!(trees.get("b").is_some());
-    trees.insert("a", tree(0, at(5), 40), 100);
-    assert_eq!(cached(&trees), ["a", "b"], "a tree just read was evicted");
-    trees.insert("d", tree(0, at(5), 100), 100);
-    assert_eq!(cached(&trees), ["d"], "a cache of 100 holds more than 100");
-    trees.insert("d", tree(0, Instant::now(), 101), 100);
-    assert!(
-        trees.trees.is_empty(),
-        "a tree heavier than the capacity is cached"
-    );
-    // Exactly the capacity fits.
-    trees.insert("e", tree(0, Instant::now(), 100), 100);
-    assert_eq!(cached(&trees), ["e"]);
-}
-
-#[test]
-fn stale_trees_go_first() {
-    // imperative: the cache is changed through `&mut self` methods.
-    let mut trees = TreeMemory::default();
-    trees.insert("fresh", tree(1, ago(Duration::from_secs(30)), 40), 100);
-    trees.insert("ttl", tree(1, ago(TREE_TRUST_WINDOW * 2), 10), 100);
-    trees.insert("new", tree(1, Instant::now(), 40), 100);
-    assert_eq!(cached(&trees), ["fresh", "new"], "a stale entry stayed");
-}
-
-#[test]
 fn inline_keeps_everything_but_whole_uuids() {
     let text = format!("«{ID}»,{ID} f{ID} {ID}0 😀");
     assert_eq!(
@@ -268,13 +132,10 @@ fn inline_keeps_everything_but_whole_uuids() {
 
 #[test]
 #[expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
-fn invalidate_drops_trees_keeps_aliases() -> Result<(), UnknownAlias> {
+fn invalidate_keeps_aliases() -> Result<(), UnknownAlias> {
     let state = McpMemory::default();
-    state.store_tree("w", NameIndex::default(), state.generation());
     state.alias(ID);
-    assert!(state.tree("w").is_some());
     state.invalidate_all();
-    assert!(state.tree("w").is_none());
     assert_eq!(state.expand("@1")?, ID);
     Ok(())
 }

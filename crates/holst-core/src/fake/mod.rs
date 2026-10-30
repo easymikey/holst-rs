@@ -262,6 +262,13 @@ impl Fake {
         self.locked().files.uploads()
     }
 
+    /// Returns the page runs the page service was asked to convert, in order:
+    /// the stored file name, the first page and the last.
+    #[must_use]
+    pub fn page_runs(&self) -> Vec<(String, u32, u32)> {
+        self.locked().files.page_runs()
+    }
+
     /// Returns the pictures uploaded outside any board, such as the thumbnail
     /// of a template.
     #[must_use]

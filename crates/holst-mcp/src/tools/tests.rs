@@ -376,11 +376,12 @@ async fn a_dry_move_names_the_request_and_an_alias_stands_for_the_folder() {
 }
 
 #[tokio::test]
-async fn a_second_search_costs_no_request() {
+#[expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
+async fn a_second_search_costs_no_request() -> holst_core::Result<()> {
     let tree = r#"{"channels":[{"id":"00000001-0000-4000-8000-000000000009",
         "type":"board","name":"Plans"}]}"#;
     let (holst, network) =
-        McpServer::scripted([CannedResponse::ok(ME), CannedResponse::ok(tree)]);
+        McpServer::scripted_kept([CannedResponse::ok(ME), CannedResponse::ok(tree)])?;
     let search = async || {
         let arguments = serde_json::json!({ "query": "plans", "mode": "names" });
         let arguments = arguments.as_object().cloned().unwrap_or_default();
@@ -392,6 +393,7 @@ async fn a_second_search_costs_no_request() {
         "{replies:?}"
     );
     assert_eq!(network.seen().len(), 2, "{:?}", network.seen());
+    Ok(())
 }
 
 /// A new empty folder of this process for a download to go into.

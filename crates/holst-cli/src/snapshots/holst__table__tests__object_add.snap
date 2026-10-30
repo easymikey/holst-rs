@@ -23,6 +23,15 @@ KINDS
   sticker-stack:Add sticker-stacks
   flipcard:    Add flipcards
   mind-map:    Add mind-maps
+  document:    Add documents
+  stamp:       Add stamps
+  code:        Add codes
+  table:       Add tables
+  reaction-stamp:Add reaction-stamps
+  icon:        Add icons
+  task:        Add tasks
+  kanban:      Add kanbans
+  drawing:     Add drawings
 
 INHERITED FLAGS
   --output, --verbose, --base-url, --home, --no-cache, --help   as in `holst -h`
@@ -39,6 +48,15 @@ EXAMPLES
   $ holst o add sticker-stack "Roadmap" Ideas --size 384,192
   $ holst o add flipcard "Roadmap" Question --back Answer
   $ holst o add mind-map "Roadmap" "Budget" --parent @3 --direction down
+  $ holst o add document "Roadmap" "# Spec" --text-format markdown -c blue3
+  $ holst o add stamp "Roadmap" "👍" --at 10,20
+  $ holst o add code "Roadmap" "$(cat main.rs)" --language rust --theme dark
+  $ holst o add table "Roadmap" --rows 3 --columns 4
+  $ holst o add reaction-stamp "Roadmap" --on @3 --reaction heart
+  $ holst o add icon "Roadmap" rocket-launch --weight bold -c red9
+  $ holst o add task "Roadmap" "Ship" --status in-progress --due 2026-11-06
+  $ holst o add kanban "Roadmap" --column Now --column Next --swimlane Team
+  $ holst o add drawing "Roadmap" --point 10,20 --point 120,80 -c red9
 
 LEARN MORE
   How a board is given: `holst b -h`.

@@ -5,13 +5,13 @@ use holst_core::{
         change::ChangeReport,
         storage::{Cleaned, Listing},
     },
-    domain::text::{joined, printable},
+    domain::text::{joined, printable, size_text},
     storage::{local_data::DataPlace, session_store::SessionStoreKind},
 };
 
 use crate::{
     error::Result,
-    output::{self, OutputFormat, view::size_text},
+    output::{self, OutputFormat},
 };
 
 /// Prints every place holst keeps data in, with sizes.

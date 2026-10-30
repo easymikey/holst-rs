@@ -353,7 +353,7 @@ fn a_subcommand_is_one_choice_and_its_kinds_are_among_the_choices() {
 // The gh rules over the whole table. Each test lists every offender.
 
 // The verbs a command may be named by.
-const VERBS: [&str; 36] = [
+const VERBS: [&str; 37] = [
     "login",
     "logout",
     "status",
@@ -390,6 +390,7 @@ const VERBS: [&str; 36] = [
     "resolve",
     "read",
     "clean",
+    "tag",
 ];
 
 // Commands on one surface only, each with its reason.

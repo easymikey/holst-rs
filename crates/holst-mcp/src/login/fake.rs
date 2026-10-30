@@ -18,11 +18,16 @@ use std::{
 use holst_core::{
     domain::session::Session,
     effect::{
+        cache::AccountCache,
         clock::Clock,
         http::{BoxFuture, HttpRequest, HttpResponse, Transport},
+        settings::CacheSettings,
     },
     remote::client::Client,
-    storage::session_store::{LoginSaveReport, SessionStoreKind},
+    storage::{
+        cache::account::AccountDisk,
+        session_store::{LoginSaveReport, SessionStoreKind},
+    },
 };
 use reqwest::header::{HeaderMap, HeaderValue, SET_COOKIE};
 use secrecy::SecretString;
@@ -53,6 +58,28 @@ pub(crate) fn client(
         holst_core::system::id::RandomIds,
     )?
     .with_transport(Arc::clone(network)))
+}
+
+/// An account cache in a folder of its own, empty.
+pub(crate) fn account_disk() -> holst_core::Result<Arc<AccountDisk>> {
+    static COUNT: AtomicUsize = AtomicUsize::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "holst-mcp-account-{}-{}",
+        std::process::id(),
+        COUNT.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::remove_dir_all(&dir).unwrap_or_default();
+    let settings = CacheSettings {
+        root: Some(dir.clone()),
+        roots: vec![dir],
+        host: "app.holst.so".into(),
+        ..CacheSettings::default()
+    };
+    AccountDisk::from_settings(&settings).map(Arc::new).ok_or(
+        holst_core::Error::LocalData(
+            holst_core::error::local_data::LocalDataError::NoHome,
+        ),
+    )
 }
 
 #[derive(Clone)]
@@ -201,6 +228,7 @@ pub(crate) struct Memory {
     locked: Mutex<Lock>,
     writable: Mutex<Lock>,
     network: Arc<Script>,
+    cache: Option<Arc<dyn AccountCache>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -223,6 +251,15 @@ impl Memory {
             locked: Mutex::new(Lock::Open),
             writable: Mutex::new(Lock::Open),
             network,
+            cache: None,
+        }
+    }
+
+    /// The clients it connects keep the workspace list and trees in `cache`.
+    pub(crate) fn with_account_cache(self, cache: Arc<dyn AccountCache>) -> Self {
+        Self {
+            cache: Some(cache),
+            ..self
         }
     }
 
@@ -341,6 +378,9 @@ impl Backend for Memory {
     }
 
     fn connect(&self, session: Session) -> holst_core::Result<Client> {
-        client(session, &self.network)
+        let client = client(session, &self.network)?;
+        Ok(self.cache.iter().fold(client, |client, cache| {
+            client.with_account_cache(Arc::clone(cache))
+        }))
     }
 }

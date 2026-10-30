@@ -1,9 +1,12 @@
 #![expect(clippy::panic_in_result_fn, reason = "assert — the point of a test")]
 
+use std::collections::HashMap;
+
+use rstest::rstest;
 use serde_json::{Value, json};
 use yrs::{Doc, Transact as _, Update, updates::decoder::Decode as _};
 
-use super::add;
+use super::{RemoveRight, add, board, built, check};
 use crate::{
     domain::{
         change::{
@@ -242,4 +245,149 @@ fn a_file_object_holds_its_type_size_and_stamp_display() -> Result<()> {
         )
     );
     Ok(())
+}
+
+const PEN: u32 = 1_973_790;
+
+fn stroke(points: &[(f64, f64)], width: f64) -> Result<NewObject> {
+    Ok(NewObject::Drawing {
+        points: points
+            .iter()
+            .map(|&(x, y)| Point::new(x, y))
+            .collect::<Result<_>>()?,
+        color: PEN,
+        width,
+        alpha: 1.0,
+    })
+}
+
+fn refused(new: NewObject) -> Option<String> {
+    check(&add(new), &HashMap::new(), RemoveRight::Anyone, None)
+        .err()
+        .map(|error| error.to_string())
+}
+
+#[test]
+fn a_pen_stroke_is_written_as_the_web_pen_writes_one() -> Result<()> {
+    let mut fields = written(stroke(
+        &[(300.0, 500.0), (450.0, 550.0), (600.0, 600.0)],
+        3.0,
+    )?)?;
+    let (_, layered, _, updated) = common(&mut fields);
+    assert_eq!(
+        (layered, updated, fields),
+        (
+            true,
+            Value::Null,
+            json!({
+                "type": "drawing", "algorithm": "lazy", "path": "0,0,150,50,300,100",
+                "pivot": {"x": 0, "y": 0}, "position": {"x": 300, "y": 500},
+                "strokeWidth": 3, "color": 1_973_790, "alpha": 1, "parentId": null,
+            })
+        )
+    );
+    Ok(())
+}
+
+#[test]
+fn a_highlighter_stroke_keeps_its_color_width_and_alpha() -> Result<()> {
+    let fields = written(NewObject::Drawing {
+        points: vec![Point::ORIGIN, Point::new(40.0, 0.0)?],
+        color: 16_511_040,
+        width: 22.0,
+        alpha: 0.5,
+    })?;
+    assert_eq!(
+        [
+            fields.get("color"),
+            fields.get("strokeWidth"),
+            fields.get("alpha"),
+            fields.get("width"),
+            fields.get("height"),
+        ],
+        [
+            Some(&json!(16_511_040)),
+            Some(&json!(22)),
+            Some(&json!(0.5)),
+            None,
+            None,
+        ]
+    );
+    Ok(())
+}
+
+#[rstest]
+#[case::up_left(&[(300.0, 500.0), (200.0, 400.0)], "0,0,-100,-100", (-100.0, -100.0), (200.0, 400.0))]
+#[case::rounded_to_a_tenth(&[(300.04, 500.06), (450.26, 550.34)], "0,0,150.2,50.3", (0.0, 0.0), (300.04, 500.06))]
+#[case::one_point_repeats(&[(10.0, 20.0)], "0,0,0,0", (0.0, 0.0), (10.0, 20.0))]
+fn a_stroke_is_relative_to_its_first_point_and_positioned_by_its_pivot(
+    #[case] points: &[(f64, f64)],
+    #[case] path: &str,
+    #[case] pivot: (f64, f64),
+    #[case] position: (f64, f64),
+) -> Result<()> {
+    let fields = written(stroke(points, 3.0)?)?;
+    let number = |pointer: &str| fields.pointer(pointer).and_then(Value::as_f64);
+    assert_eq!(
+        (
+            fields.get("path").and_then(Value::as_str),
+            number("/pivot/x").zip(number("/pivot/y")),
+            number("/position/x").zip(number("/position/y")),
+        ),
+        (Some(path), Some(pivot), Some(position))
+    );
+    Ok(())
+}
+
+#[rstest]
+#[case::centre_inside(&[(-100.0, 100.0), (200.0, 100.0)], Some("seed-1"))]
+#[case::centre_outside(&[(-900.0, 100.0), (100.0, 100.0)], None)]
+fn a_stroke_goes_into_the_frame_around_its_centre(
+    #[case] points: &[(f64, f64)],
+    #[case] parent: Option<&str>,
+) -> Result<()> {
+    let document = board()?;
+    let update = built(&document, &add(stroke(points, 3.0)?))?;
+    let id = update.objects.first().map(|object| object.id.clone());
+    let fields = fields_of(&document, id.as_deref().unwrap_or_default());
+    assert_eq!(fields.get("parentId"), Some(&json!(parent)));
+    Ok(())
+}
+
+#[rstest]
+#[case::none(
+    0,
+    3.0,
+    Some("\"0\" is not a valid drawing point count: expected 1 to 10000")
+)]
+#[case::most(10_000, 3.0, None)]
+#[case::too_many(
+    10_001,
+    3.0,
+    Some("\"10001\" is not a valid drawing point count: expected 1 to 10000")
+)]
+#[case::thin(
+    2,
+    0.5,
+    Some("\"0.5\" is not a valid drawing stroke width: expected 1 to 30")
+)]
+#[case::thinnest(2, 1.0, None)]
+#[case::widest(2, 30.0, None)]
+#[case::wide(
+    2,
+    31.0,
+    Some("\"31\" is not a valid drawing stroke width: expected 1 to 30")
+)]
+fn a_stroke_has_up_to_10000_points_and_a_width_of_1_to_30(
+    #[case] count: usize,
+    #[case] width: f64,
+    #[case] error: Option<&str>,
+) {
+    let refusal = refused(NewObject::Drawing {
+        points: vec![Point::ORIGIN; count],
+        color: PEN,
+        width,
+        alpha: 1.0,
+    });
+    assert_eq!(refusal.as_deref(), error);
 }

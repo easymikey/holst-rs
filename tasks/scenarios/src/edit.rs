@@ -13,10 +13,26 @@ use crate::{
 };
 
 /// Flags the command line repeats and the tool takes as an array.
-const REPEATED: [&str; 6] = ["object", "tag", "label", "mark", "choice", "reaction"];
+const REPEATED: [&str; 10] = [
+    "object", "tag", "label", "mark", "choice", "reaction", "column", "swimlane",
+    "assignee", "point",
+];
 /// Flags that hold a count, a number for the tool.
-const COUNTS: [&str; 7] = [
-    "offset", "limit", "padding", "radius", "check", "uncheck", "faces",
+const COUNTS: [&str; 14] = [
+    "offset",
+    "limit",
+    "padding",
+    "radius",
+    "check",
+    "uncheck",
+    "faces",
+    "rows",
+    "columns",
+    "insert_row",
+    "insert_column",
+    "delete_row",
+    "delete_column",
+    "start_page",
 ];
 /// Flags that hold a fraction, a number for the tool.
 const FRACTIONS: [&str; 4] = ["opacity", "stroke_width", "rotate", "scale"];
@@ -250,7 +266,7 @@ impl ObjectCall {
                 )
                 .collect(),
             switches: self.switches.clone(),
-            confirms: self.verb == "rm",
+            confirms: matches!(self.verb, "rm" | "edit"),
             writes: !self.lists(),
         };
         let (line, mut tool) = arguments(&words, mode);
@@ -270,10 +286,14 @@ impl ObjectCall {
             let fraction = values(name).last()?.parse::<f64>().ok()?;
             Some(((*name).to_owned(), Value::from(fraction)))
         });
-        let arrays = REPEATED.iter().filter_map(|name| {
-            let found = values(name);
-            (!found.is_empty()).then(|| ((*name).to_owned(), Value::from(found)))
-        });
+        // a listing's `--tag` is one text for the tool, an edit's is an array
+        let arrays = REPEATED
+            .iter()
+            .filter(|name| !(self.lists() && **name == "tag"))
+            .filter_map(|name| {
+                let found = values(name);
+                (!found.is_empty()).then(|| ((*name).to_owned(), Value::from(found)))
+            });
         tool.extend(counts.chain(fractions).chain(arrays));
         if let Some(items) = &self.items {
             tool.insert("items".to_owned(), Value::Array(items.clone()));
@@ -334,6 +354,25 @@ impl Holst {
                 board: board.to_owned(),
                 kind: kind.to_owned(),
             })
+    }
+
+    /// Returns every object of this `kind` that the fake holds on `board`, as
+    /// the document keeps them.
+    ///
+    /// # Errors
+    /// [`ScenarioError::NoBoard`] when the fake holds no such board.
+    pub fn all_of_kind(
+        &self,
+        board: &str,
+        kind: &str,
+    ) -> Result<Vec<Value>, ScenarioError> {
+        self.board_id(board)?;
+        Ok(self
+            .fake
+            .objects_of(board)
+            .into_iter()
+            .filter(|object| object.get("type").and_then(Value::as_str) == Some(kind))
+            .collect())
     }
 
     /// Adds objects to `board` as another client would, so what a surface

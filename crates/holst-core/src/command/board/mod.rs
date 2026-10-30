@@ -580,8 +580,7 @@ pub struct TagArgs {
     pub workspace: Option<String>,
     #[argument(
         value_name = "text",
-        help = "The new title; another tag of the board cannot have it",
-        tool_doc = "The new title."
+        help = "The new title; another tag of the board cannot have it"
     )]
     pub name: Option<String>,
     #[argument(

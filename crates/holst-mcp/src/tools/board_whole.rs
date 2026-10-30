@@ -22,7 +22,7 @@ use holst_core::{
     },
     domain::{
         picture::MAX_SIDE_MODEL,
-        text::{counted, printable},
+        text::{counted, printable, size_text},
     },
     remote::client::Client,
 };
@@ -169,11 +169,17 @@ impl McpServer {
     }
 
     fn board_text(&self, board: &BoardBrief) -> String {
-        let place = [board.workspace.as_deref(), board.folder.as_deref()]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>()
-            .join(" / ");
+        let place = [
+            board
+                .workspace_name
+                .as_deref()
+                .or(board.workspace.as_deref()),
+            board.folder_name.as_deref().or(board.folder.as_deref()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" / ");
         let trash = if board.in_trash { " · in trash" } else { "" };
         let kinds = board
             .objects
@@ -235,13 +241,15 @@ impl McpServer {
     }
 
     fn saved_text(saved: &Saved) -> String {
-        let files = saved
-            .files
-            .iter()
-            .map(|file| format!("{} {} bytes · {}", file.name, file.bytes, file.about));
+        let files = saved.files.iter().map(|file| {
+            format!("{} {} · {}", file.name, size_text(file.bytes), file.about)
+        });
         let originals: usize = saved.images.iter().map(|image| image.bytes).sum();
-        let images =
-            format!("images/ {} files · {originals} bytes", saved.images.len());
+        let images = format!(
+            "images/ {} files · {}",
+            saved.images.len(),
+            size_text(originals)
+        );
         let not_saved = saved
             .not_saved
             .iter()
@@ -260,14 +268,19 @@ impl McpServer {
         let before = if exported.state_bytes == bytes {
             String::new()
         } else {
-            format!(" ({} before gzip)", exported.state_bytes)
+            format!(" ({} before gzip)", size_text(exported.state_bytes))
         };
         let listing = exported.object_list.iter().map(|list| {
-            format!("\nlisting: {} bytes: {}", list.bytes, list.file.display())
+            format!(
+                "\nlisting: {}: {}",
+                size_text(list.bytes),
+                list.file.display()
+            )
         });
         let text = format!(
-            "exported {}, {bytes} bytes{before}: {}{}",
+            "exported {}, {}{before}: {}{}",
             counted(objects, "object"),
+            size_text(bytes),
             exported.file.display(),
             listing.collect::<String>()
         );
@@ -333,4 +346,94 @@ fn snapped_blocks(snapped: Snapped) -> Vec<ContentBlock> {
         }
     };
     vec![picture, ContentBlock::text(about)]
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::BTreeMap, path::PathBuf};
+
+    use holst_core::{
+        command::board::{
+            file::{Exported, ObjectList},
+            picture::{Saved, SavedFile},
+            show::BoardBrief,
+        },
+        domain::board::EditRight,
+    };
+
+    use crate::{login::fake::CannedResponse, server::McpServer};
+
+    fn brief(names: bool) -> BoardBrief {
+        BoardBrief {
+            id: "b1".to_owned(),
+            name: "Plan".to_owned(),
+            link: "L".to_owned(),
+            workspace: Some("00000002-0000-4000-8000-000000000001".to_owned()),
+            workspace_name: names.then(|| "Team".to_owned()),
+            folder: Some("00000004-0000-4000-8000-000000000001".to_owned()),
+            folder_name: names.then(|| "Work".to_owned()),
+            in_trash: false,
+            edit_right: EditRight::Editable,
+            rectangle: None,
+            count: 0,
+            objects: BTreeMap::new(),
+            members: None,
+            rights: None,
+            sharing: None,
+            note: None,
+        }
+    }
+
+    #[test]
+    fn the_place_line_names_the_workspace_and_folder() {
+        let (holst, _) = McpServer::scripted(Vec::<CannedResponse>::new());
+        let text = holst.board_text(&brief(true));
+        assert!(text.contains(" · editable · Team / Work\n"), "{text}");
+    }
+
+    #[test]
+    fn a_place_without_names_shows_the_ids_as_aliases() {
+        let (holst, _) = McpServer::scripted(Vec::<CannedResponse>::new());
+        let text = holst.board_text(&brief(false));
+        assert!(text.contains(" · editable · @"), "{text}");
+    }
+
+    #[test]
+    fn a_saved_folder_reads_sizes_in_units() {
+        let file = |name: &str, bytes| SavedFile {
+            name: name.to_owned(),
+            bytes,
+            about: "about".to_owned(),
+        };
+        let saved = Saved {
+            dir: PathBuf::from("/d/Plan-b1"),
+            files: vec![file("board.svg", 2048)],
+            images: vec![file("images/a.png", 1024), file("images/b.png", 1024)],
+            not_saved: Vec::new(),
+        };
+        assert_eq!(
+            McpServer::saved_text(&saved),
+            "saved /d/Plan-b1/\nboard.svg 2.0 KiB · about\nimages/ 2 files · 2.0 KiB\n"
+        );
+    }
+
+    #[test]
+    fn an_export_reads_sizes_in_units() {
+        let exported = Exported {
+            board: "b1".to_owned(),
+            objects: 2,
+            state_bytes: 4096,
+            bytes: 2048,
+            file: PathBuf::from("out.ydoc.gz"),
+            object_list: Some(ObjectList {
+                file: PathBuf::from("out.jsonl"),
+                bytes: 7,
+            }),
+            inline: None,
+        };
+        assert_eq!(
+            McpServer::exported_text(&exported),
+            "exported 2 objects, 2.0 KiB (4.0 KiB before gzip): out.ydoc.gz\nlisting: 7 B: out.jsonl\n"
+        );
+    }
 }

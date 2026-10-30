@@ -33,6 +33,7 @@ fn object(id: &str, kind: ObjectKind, text: &str) -> Object {
         text: text.to_owned(),
         color: Some("yellow4".to_owned()),
         look: None,
+        media: None,
         ends: None,
         author: Some("author-1".to_owned()),
         locked: false,
@@ -214,6 +215,7 @@ fn any_object() -> impl Strategy<Value = Object> {
                     text,
                     color,
                     look: None,
+                    media: None,
                     ends: ends.map(|(start, end)| ArrowEnds {
                         start,
                         end,

@@ -6,8 +6,8 @@ use std::{
     sync::Arc,
 };
 
-use futures_util::future::try_join;
 use serde::Serialize;
+use serde_json::Value;
 
 use crate::{
     command::{
@@ -32,7 +32,7 @@ use crate::{
     },
     domain::{
         area::{Area, ListedArea, listed_area, scene::Scene},
-        board::{BoardContent, Object, ObjectKind},
+        board::{BoardContent, EditRight, Object, ObjectKind},
         geometry::Rectangle,
         id,
         image,
@@ -42,7 +42,7 @@ use crate::{
     },
     effect::settings::CacheSettings,
     error::{Error, Result, stored_file::StoredFileError},
-    remote::{api, client::Client},
+    remote::client::Client,
     storage::file::{
         PartialDir,
         create_dir,
@@ -147,8 +147,16 @@ struct Drawing {
     id: String,
     name: String,
     content: BoardContent,
+    /// The board's `channel/{id}` reply, read once by the load.
+    channel: Value,
     request: PictureRequest,
     drawn: LinkedPicture,
+}
+
+/// What the load of a drawn board showed besides its picture.
+pub(super) struct Seen {
+    pub(super) right: EditRight,
+    pub(super) channel: Value,
 }
 
 /// `<title>-<id>`: the title made safe for a file name and the first 8
@@ -179,19 +187,17 @@ impl Drawing {
             ask.max_side,
         )?;
         let id = board_id(client, ask.board, ask.workspace, loading.cache_use).await?;
-        let (channel, content) = try_join(
-            api::channel::get(client, &id),
-            board_load::content(
-                RemoteBoard {
-                    client,
-                    connector: loading.connector,
-                    board: &id,
-                },
-                loading.cache,
-                loading.cache_use,
-            ),
+        let (content, read) = board_load::content_with_channel(
+            RemoteBoard {
+                client,
+                connector: loading.connector,
+                board: &id,
+            },
+            loading.cache,
+            loading.cache_use,
         )
         .await?;
+        let channel = board_load::channel_or_get(client, &id, read).await?;
         let request = PictureRequest {
             area: chosen_area(
                 &request.area,
@@ -206,6 +212,7 @@ impl Drawing {
             name: NodeBrief::of(&channel)?.name().to_owned(),
             id,
             content,
+            channel,
             request,
             drawn,
         })
@@ -365,6 +372,18 @@ pub(super) async fn snapped(
     downloads: Option<&Path>,
     args: &SnapArgs,
 ) -> Result<Snapped> {
+    snapped_seen(client, loading, downloads, args)
+        .await
+        .map(|(snapped, _)| snapped)
+}
+
+/// As [`snapped`], with the right and the reply the load read.
+pub(super) async fn snapped_seen(
+    client: &Client,
+    loading: Loading<'_>,
+    downloads: Option<&Path>,
+    args: &SnapArgs,
+) -> Result<(Snapped, Seen)> {
     let file = args.file.as_ref().map(|file| file.0.as_path());
     let format = picture_format(args.picture_format, file)?;
     let board = Drawing::of(
@@ -393,7 +412,7 @@ pub(super) async fn snapped(
         None => Delivery::Inline { bytes },
     };
     let picture = &board.drawn.picture;
-    Ok(Snapped {
+    let snapped = Snapped {
         link: client
             .base_url()
             .link(&board.id, board.drawn.target.as_deref()),
@@ -404,7 +423,12 @@ pub(super) async fn snapped(
         format,
         warning: picture.warning(),
         delivery,
-    })
+    };
+    let seen = Seen {
+        right: board.content.edit_right,
+        channel: board.channel,
+    };
+    Ok((snapped, seen))
 }
 
 async fn saved(

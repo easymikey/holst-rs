@@ -2,7 +2,7 @@
 
 use holst_core::domain::board::shape_type::ShapeLook;
 use serde::Deserialize;
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::{
     cli,
@@ -41,6 +41,8 @@ struct Listed {
     link_to: Option<String>,
     #[serde(default)]
     tags: Vec<String>,
+    #[serde(default)]
+    reactions: Map<String, Value>,
     #[serde(default)]
     marks: Vec<String>,
     text_color: Option<String>,
@@ -197,6 +199,35 @@ impl On<'_> {
         self.object(board, ObjectCall::list()).await
     }
 
+    /// The `media` part the JSON listing of `board` shows for its first object
+    /// of `kind`; null when it shows none.
+    ///
+    /// # Errors
+    /// As [`ScenarioError`].
+    pub async fn listed_media(
+        &self,
+        board: &str,
+        kind: &str,
+    ) -> Result<Value, ScenarioError> {
+        let shown = self
+            .reading(
+                &["object", "ls", board],
+                "object",
+                json!({ "action": "ls", "board": board, "output": "json" }),
+            )
+            .await?;
+        let listing: Value = serde_json::from_str(shown.shown().unwrap_or_default())?;
+        Ok(listing
+            .get("objects")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .find(|object| object.get("kind").and_then(Value::as_str) == Some(kind))
+            .and_then(|object| object.get("media"))
+            .cloned()
+            .unwrap_or(Value::Null))
+    }
+
     /// Searches the boards by name and the text on them.
     ///
     /// # Errors
@@ -313,6 +344,11 @@ pub(crate) fn cli_objects(stdout: &[u8]) -> Result<Observation, ScenarioError> {
                 color: listed.color,
                 look: listed.look.map(|look| look.words()),
                 tags: listed.tags,
+                reactions: listed
+                    .reactions
+                    .into_iter()
+                    .map(|(name, count)| format!("{name}:{count}"))
+                    .collect(),
                 ends: listed.ends.map(|ends| (ends.start, ends.end)),
                 text_look: listed
                     .marks
@@ -346,6 +382,15 @@ pub(crate) fn mcp_objects(text: &str) -> Observation {
             .filter_map(listed_object)
             .collect(),
     )
+}
+
+/// A `name:count` word of a listing line; the `{..}` style word and a frame
+/// ratio such as `4:3` are not one.
+fn is_reaction(word: &str) -> bool {
+    word.split_once(':').is_some_and(|(name, count)| {
+        name.starts_with(|first: char| first.is_ascii_alphabetic())
+            && count.parse::<u32>().is_ok()
+    })
 }
 
 /// Reads `@N kind (x, y) [WxH] [in @M]  [color]  [A → B]  [#tag]  ["text"]`,
@@ -389,6 +434,7 @@ fn listed_object(line: &str) -> Option<ListedObject> {
             !spoken_for.contains(at)
                 && !word.contains('×')
                 && !word.starts_with(['#', '{'])
+                && !is_reaction(word)
                 && **word != "locked"
                 && !word.ends_with('°')
                 && !word.starts_with("link-to=")
@@ -423,6 +469,11 @@ fn listed_object(line: &str) -> Option<ListedObject> {
             .iter()
             .filter_map(|word| word.strip_prefix('#'))
             .map(str::to_owned)
+            .collect(),
+        reactions: rest
+            .iter()
+            .filter(|word| is_reaction(word))
+            .map(|word| (*word).to_owned())
             .collect(),
         text_look: rest
             .iter()
@@ -683,6 +734,21 @@ impl Then<'_> {
                 .iter()
                 .any(|row| row.text == text && row.tags == tags),
             "expected {text:?} tagged {tags:?}, got {:?}",
+            self.observation
+        );
+    }
+
+    /// Expects the object with this text to list exactly these reactions as
+    /// `name:count` words.
+    ///
+    /// # Panics
+    /// When there is none, or it differs.
+    pub fn lists_object_reactions(&self, text: &str, reactions: &[&str]) {
+        assert!(
+            self.objects()
+                .iter()
+                .any(|row| row.text == text && row.reactions == reactions),
+            "expected {text:?} reacted {reactions:?}, got {:?}",
             self.observation
         );
     }

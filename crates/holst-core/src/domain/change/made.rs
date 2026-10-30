@@ -125,7 +125,10 @@ fn put(
 }
 
 /// `entry` in its store, unless it is to be kept and the store has one.
-fn store(transaction: &mut TransactionMut<'_>, entry: &StoreEntry) -> Result<()> {
+pub(super) fn store(
+    transaction: &mut TransactionMut<'_>,
+    entry: &StoreEntry,
+) -> Result<()> {
     let stored = transaction.get_or_insert_map(entry.store);
     let present = stored.get(&*transaction, entry.id.as_str()).is_some();
     Some(entry)

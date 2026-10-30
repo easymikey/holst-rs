@@ -16,7 +16,7 @@ FLAGS
   -w, --workspace ws   Where names are looked up and new things go: a workspace id or part of its name; all of yours by default
       --frame frame    Put it inside this frame: id, link, title or part of a title; --at counts from its corner
       --at x,y         The top-left corner in board units, from the frame's corner with --frame; a free corner by default
-  -c, --color color    The fill, or an arrow's line color: a palette token, e.g. yellow4; the kind's own color by default
+  -c, --color color    The fill, or an arrow's line color: a palette token, e.g. yellow4; a task's: gray, green, yellow, orange, red, violet, blue, sky, lime or pink; a drawing's line: a palette token; #1E1E1E (#FBF040 highlighter) by default; the kind's own color by default; an icon takes gray12, gray8, red9, orange9, yellow9, lime9, green9, mint9, blue9, indigo9, violet9 or pink9
       --faces n        A die's faces: 2, 4, 6, 8, 10, 12 or 20; 6 by default
       --items file     Many in one write: a JSON array or JSON lines file, - for stdin; its keys are the flags of one call
   -n, --dry-run        Show what would change; change nothing

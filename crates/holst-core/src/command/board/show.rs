@@ -2,7 +2,11 @@
 
 use std::collections::BTreeMap;
 
-use futures_util::future::{OptionFuture, join, join_all, try_join};
+use futures_util::{
+    StreamExt as _,
+    future::{OptionFuture, join, join_all},
+    stream,
+};
 use itertools::Itertools as _;
 use serde::Serialize;
 use serde_json::Value;
@@ -20,6 +24,7 @@ use crate::{
     command::{
         board::{AreaArgs, ShowArgs, ShowPart, rights::Right},
         board_load::{self, RemoteBoard},
+        lookup,
         table::not_value,
     },
     domain::{
@@ -61,8 +66,12 @@ pub struct BoardBrief {
     /// A link to the board, or to the selected frame or object.
     pub link: String,
     pub workspace: Option<String>,
+    /// From the kept trees; `None` when none holds the board.
+    pub workspace_name: Option<String>,
     /// The folder it sits in; `None` at the workspace root.
     pub folder: Option<String>,
+    /// From the kept trees; `None` at the root or when none holds the board.
+    pub folder_name: Option<String>,
     pub in_trash: bool,
     pub edit_right: EditRight,
     /// The part shown with its padding; the extent of the objects when none.
@@ -116,11 +125,28 @@ async fn shown(
 ) -> Result<Briefs> {
     let (area, padding) = asked(args)?;
     let area = &area;
+    let resolved = stream::iter(&args.board.0)
+        .then(|reference| async move {
+            let id = board_id(
+                client,
+                reference,
+                args.workspace.as_deref(),
+                loading.cache_use,
+            )
+            .await;
+            (reference, id)
+        })
+        .collect::<Vec<_>>()
+        .await;
     let (boards, failed): (Vec<_>, Vec<_>) =
-        join_all(args.board.0.iter().map(|reference| async move {
-            board(client, loading, reference, (area, padding), args)
-                .await
-                .map_err(|error| (reference, error))
+        join_all(resolved.into_iter().map(|(reference, id)| async move {
+            match id {
+                Ok(id) => {
+                    board(client, loading, (reference, id), (area, padding), args).await
+                }
+                Err(error) => Err(error),
+            }
+            .map_err(|error| (reference, error))
         }))
         .await
         .into_iter()
@@ -185,22 +211,13 @@ fn area_flag(selection: &AreaArgs) -> Option<&'static str> {
 async fn board(
     client: &Client,
     loading: Loading<'_>,
-    reference: &str,
+    (reference, id): (&str, String),
     (area, padding): (&Area, Option<BoardLength>),
     args: &ShowArgs,
 ) -> Result<BoardBrief> {
-    let id = board_id(
-        client,
-        reference,
-        args.workspace.as_deref(),
-        loading.cache_use,
-    )
-    .await?;
-    let (channel, (right, objects, held_note)) = try_join(
-        api::channel::get(client, &id),
-        read_board(client, loading, &id, args),
-    )
-    .await?;
+    let (right, objects, held_note, read) =
+        read_board(client, loading, &id, args).await?;
+    let channel = board_load::channel_or_get(client, &id, read).await?;
     let area = chosen_area(area, id::object_in(reference), &objects)?;
     let listed = listed_area(&objects, &area, padding)?;
     let target = listed.target.map(|object| object.id.as_str());
@@ -216,6 +233,7 @@ async fn board(
             counts
         });
     let node = NodeBrief::of(&channel)?;
+    let kept = lookup::cached_node(client, &id);
     let (members, rights) = join(
         part(
             args,
@@ -235,6 +253,8 @@ async fn board(
         link: client.base_url().link(&id, target),
         name: node.name().to_owned(),
         workspace: node.workspace_id().map(str::to_owned),
+        workspace_name: kept.as_ref().map(|kept| kept.workspace.name.clone()),
+        folder_name: kept.and_then(|kept| kept.folder.map(|(_, name)| name)),
         folder: match node.parent() {
             Some(Parent::Folder(folder)) => Some(folder),
             Some(Parent::Workspace(_)) | None => None,
@@ -264,21 +284,23 @@ async fn read_board(
     loading: Loading<'_>,
     id: &str,
     args: &ShowArgs,
-) -> Result<(EditRight, Vec<Object>, Option<String>)> {
+) -> Result<(EditRight, Vec<Object>, Option<String>, Option<Value>)> {
     let link = RemoteBoard {
         client,
         connector: loading.connector,
         board: id,
     };
     if args.with.contains(&ShowPart::Note) {
-        let (loaded, _) =
-            board_load::load(link, loading.cache, loading.cache_use).await?;
+        let (loaded, _, channel) =
+            board_load::load_with_channel(link, loading.cache, loading.cache_use)
+                .await?;
         let note = note_text(&loaded.document, args.note_format.unwrap_or_default());
-        Ok((loaded.right, objects(&loaded.document), Some(note)))
+        Ok((loaded.right, objects(&loaded.document), Some(note), channel))
     } else {
-        let (right, index) =
-            board_load::index(link, loading.cache, loading.cache_use).await?;
-        Ok((right, index.objects(), None))
+        let (right, index, channel) =
+            board_load::index_with_channel(link, loading.cache, loading.cache_use)
+                .await?;
+        Ok((right, index.objects(), None, channel))
     }
 }
 
@@ -438,7 +460,6 @@ mod tests {
     #[tokio::test]
     async fn rights_are_shown_on_the_scale_with_full_for_co_owner() -> Result<()> {
         let (_, client) = client([
-            json_reply(&channel()),
             json_reply(&channel()),
             json_reply(
                 r#"{"permits":[{"userId":"a","permits":["read","write","set_permits"]},{"userId":"b","permits":["read","read_comments"]},{"userId":"c","permits":null}]}"#,

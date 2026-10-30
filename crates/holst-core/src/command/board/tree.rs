@@ -232,7 +232,7 @@ async fn live(
     workspace: &Workspace,
     folder: Option<&str>,
 ) -> Result<Vec<ListedNode>> {
-    let index = api::workspace::tree_index(client, &workspace.id).await?;
+    let index = lookup::tree(client, &workspace.id, lookup::Fresh::Asked).await?;
     let root = folder_node(&index, workspace, folder)?;
     Ok(walked(workspace, &index, root, TrashWalk::Hidden))
 }
@@ -305,7 +305,7 @@ async fn favorites(client: &Client, workspace: &Workspace) -> Result<Vec<ListedN
 async fn sidebar(client: &Client, workspace: &Workspace) -> Result<Vec<ListedNode>> {
     let (order, index) = try_join(
         api::channel::order_index_list(client, &workspace.id),
-        api::workspace::tree_index(client, &workspace.id),
+        lookup::tree(client, &workspace.id, lookup::Fresh::Asked),
     )
     .await?;
     Ok(ordered_ids(&order)
@@ -348,11 +348,21 @@ async fn recent(client: &Client, args: &LsArgs) -> Result<Listing> {
         Some(limit) => limit.min(RECENT_MAX),
     };
     let reply = api::recent::page(client, size, args.cursor.as_deref()).await?;
-    let trees = lookup::trees(client, workspaces.clone())
-        .await
-        .into_iter()
-        .map(|(workspace, index)| index.map(|index| (workspace, index)))
-        .collect::<Result<Vec<_>>>()?;
+    let cached = workspaces
+        .iter()
+        .any(|workspace| client.known_tree(&workspace.id).is_some());
+    let kept = named_trees(client, &workspaces, lookup::Fresh::Kept).await?;
+    let known = |trees: &[(Workspace, NameIndex)]| {
+        reply.channels.iter().all(|entry| {
+            trees
+                .iter()
+                .any(|(_, index)| index.find_id(&entry.channel_id).is_some())
+        })
+    };
+    let trees = match (known(&kept), cached) {
+        (true, _) | (false, false) => kept,
+        (false, true) => named_trees(client, &workspaces, lookup::Fresh::Asked).await?,
+    };
     let nodes: Vec<ListedNode> = reply
         .channels
         .iter()
@@ -365,6 +375,18 @@ async fn recent(client: &Client, args: &LsArgs) -> Result<Listing> {
         nodes,
         cursor: reply.cursor,
     })
+}
+
+async fn named_trees(
+    client: &Client,
+    workspaces: &[Workspace],
+    fresh: lookup::Fresh,
+) -> Result<Vec<(Workspace, NameIndex)>> {
+    lookup::trees(client, workspaces.to_vec(), fresh)
+        .await
+        .into_iter()
+        .map(|(workspace, index)| index.map(|index| (workspace, index)))
+        .collect()
 }
 
 fn recent_node(trees: &[(Workspace, NameIndex)], id: &str) -> ListedNode {

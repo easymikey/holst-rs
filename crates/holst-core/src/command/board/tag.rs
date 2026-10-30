@@ -1,4 +1,4 @@
-//! `board tag`: rename, recolour or remove a tag of a board.
+//! `board tag`: rename, recolor or remove a tag of a board.
 
 use std::fmt;
 
@@ -48,8 +48,7 @@ pub struct TagLine {
 #[derive(Debug)]
 pub struct Tagged {
     pub tag: TagLine,
-    /// The objects the change touched, not the tag itself (it is not an
-    /// object).
+    /// The objects the change touched; the tag itself is not an object.
     pub report: ChangeReport,
     /// Whether the change went out, was a dry run, or is held.
     pub outcome: Settled<()>,
@@ -106,7 +105,7 @@ impl Outcome for Tagged {
     }
 }
 
-/// Renames, recolours or removes a tag of a board. A removal stays unsent
+/// Renames, recolors or removes a tag of a board. A removal stays unsent
 /// without the confirmation.
 ///
 /// # Errors

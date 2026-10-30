@@ -91,9 +91,18 @@ pub async fn tree_index(
     client: &Client,
     workspace_id: &str,
 ) -> Result<crate::domain::tree::name_index::build::NameIndex> {
-    let (index, fallback) = crate::domain::tree::name_index::build::NameIndex::parse(
-        &tree_text(client, workspace_id).await?,
-    )?;
+    parse_tree(&tree_text(client, workspace_id).await?)
+}
+
+/// A tree reply, asked or kept, as a compact search index.
+///
+/// # Errors
+/// [`crate::domain::tree::name_index::build::NameIndex::parse`] errors.
+pub fn parse_tree(
+    text: &str,
+) -> Result<crate::domain::tree::name_index::build::NameIndex> {
+    let (index, fallback) =
+        crate::domain::tree::name_index::build::NameIndex::parse(text)?;
     Ok(logged(index, fallback))
 }
 

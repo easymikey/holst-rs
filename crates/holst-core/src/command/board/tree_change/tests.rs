@@ -70,7 +70,7 @@ fn writes(asked: &[String]) -> usize {
 
 #[tokio::test]
 async fn a_board_is_created_in_a_folder_and_has_a_link() -> Result<()> {
-    let (_, client) = client([account(), tree(), account(), done()])?;
+    let (_, client) = client([account(), tree(), done()])?;
     let args = create_args(&json!({ "name": "Notes", "folder": "Plans" }))?;
     let changed = create(&client, &args).await?;
     assert_eq!(status_of(&changed.outcome), "sent");
@@ -87,7 +87,7 @@ async fn a_board_is_created_in_a_folder_and_has_a_link() -> Result<()> {
 
 #[tokio::test]
 async fn a_folder_is_created_and_has_a_link_in_its_workspace() -> Result<()> {
-    let (_, client) = client([account(), account(), account(), done()])?;
+    let (_, client) = client([account(), account(), done()])?;
     let args = create_args(&json!({ "name": "Notes", "kind": "folder" }))?;
     let changed = create(&client, &args).await?;
     let link = changed.node.link.unwrap_or_default();

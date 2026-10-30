@@ -9,7 +9,7 @@ USAGE
 
 COMMANDS
   ls:          List the objects of a board or a part of it
-  add:         Add stickers, texts, shapes, frames, arrows, links, images, files, dice, a spinner wheel, sticker stacks, flip cards or mind-map nodes to a board
+  add:         Add stickers, texts, shapes, frames, arrows, links, images, files, dice, a spinner wheel, sticker stacks, flip cards, mind-map nodes, documents, text stamps, code blocks, tables, reaction stamps, icons, task cards, kanbans or freehand strokes to a board
   edit:        Change text, corner, size, color, order or tags of objects
   cp:          Copy objects on their board or onto another board
   group:       Put objects into a group

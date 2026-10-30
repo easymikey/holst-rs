@@ -5,10 +5,11 @@ use holst_core::{
         board::picture::Delivery,
         object::{get::Downloaded, list::Listing},
     },
-    domain::{id::short_id, text::counted},
+    domain::{
+        id::short_id,
+        text::{counted, size_text},
+    },
 };
-
-use crate::output::view::size_text;
 
 const TEXT_MAX_CHARS: usize = 60;
 pub(super) fn listing_text(listing: &Listing) -> String {
@@ -103,6 +104,7 @@ mod tests {
             text: text.into(),
             color: Some("yellow4".into()),
             look: None,
+            media: None,
             ends: None,
             author: None,
             locked: false,
@@ -121,6 +123,7 @@ mod tests {
             file: None,
             card: None,
             tags: Vec::new(),
+            reactions: std::collections::BTreeMap::new(),
             style: TextStyle::default(),
             detail: Vec::new(),
         }

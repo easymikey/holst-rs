@@ -6,7 +6,7 @@
 
 use std::{
     future::Future as _,
-    sync::Arc,
+    sync::{Arc, Mutex, PoisonError},
     task::{Context, Poll, Waker},
     time::Duration,
 };
@@ -14,9 +14,13 @@ use std::{
 use holst_core::{
     Error as E,
     domain::session::Session,
-    effect::{clock::Clock, settings::CacheSettings},
+    effect::{
+        cache::{AccountCache as _, Forget},
+        clock::Clock,
+        settings::CacheSettings,
+    },
     error,
-    storage::session_store::SessionStoreKind,
+    storage::{cache::account::AccountDisk, session_store::SessionStoreKind},
 };
 use rmcp::ServerHandler;
 
@@ -24,7 +28,15 @@ use crate::{
     error::{Error, Result},
     login::{
         HandedClient,
-        fake::{CannedResponse, Manual, Memory, Script, session, session_with},
+        fake::{
+            CannedResponse,
+            Manual,
+            Memory,
+            Script,
+            account_disk,
+            session,
+            session_with,
+        },
         machine::{RECHECK, REVOKED_RECHECK},
         store::Backend,
     },
@@ -40,6 +52,17 @@ impl McpServer {
         let memory = Memory::new(Some(session("a")), Arc::clone(&network));
         let holst = Self::with(Arc::new(memory), Arc::new(Manual::default()));
         (holst, network)
+    }
+
+    /// As `scripted`, with the clients keeping the account's list and trees.
+    pub(crate) fn scripted_kept(
+        replies: impl IntoIterator<Item = CannedResponse>,
+    ) -> holst_core::Result<(Self, Arc<Script>)> {
+        let network = Script::new(replies);
+        let memory = Memory::new(Some(session("a")), Arc::clone(&network))
+            .with_account_cache(account_disk()?);
+        let holst = Self::with(Arc::new(memory), Arc::new(Manual::default()));
+        Ok((holst, network))
     }
 }
 
@@ -88,7 +111,7 @@ async fn install(holst: &McpServer) -> Result<(u64, u64)> {
     holst
         .client()
         .await
-        .map(|client| (client.generation, client.epoch))
+        .map(|client| (holst.state.generation(), client.epoch))
 }
 
 fn spawn_read(holst: &McpServer) -> tokio::task::JoinHandle<bool> {
@@ -108,6 +131,7 @@ fn cache(test: &str) -> CacheSettings {
     }
 }
 
+const HOUR: Duration = Duration::from_hours(1);
 const ALICE: &str = "aaaaaaaa-0000-4000-8000-000000000001";
 
 #[tokio::test]
@@ -199,21 +223,32 @@ fn fake_session() -> Session {
     )
 }
 
-/// A login store that holds the fake server's login and signs in to the fake.
+/// A login store on the fake; its clients keep the account's trees in `disk`.
 struct OnFake {
     base_url: String,
+    disk: Arc<AccountDisk>,
+    clock: Arc<Manual>,
+    stored: Mutex<Session>,
+}
+
+impl OnFake {
+    fn log_in(&self, session: Session) {
+        *self.stored.lock().unwrap_or_else(PoisonError::into_inner) = session;
+    }
 }
 
 impl Backend for OnFake {
     fn load(&self) -> holst_core::Result<Option<(Session, SessionStoreKind)>> {
-        Ok(Some((fake_session(), SessionStoreKind::File)))
+        let stored = self.stored.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(Some((stored.clone(), SessionStoreKind::File)))
     }
 
     fn save(
         &self,
-        _: &Session,
+        session: &Session,
         from: SessionStoreKind,
     ) -> holst_core::Result<holst_core::storage::session_store::LoginSaveReport> {
+        self.log_in(session.clone());
         Ok(holst_core::storage::session_store::LoginSaveReport {
             store: from,
             stale: None,
@@ -224,12 +259,13 @@ impl Backend for OnFake {
         &self,
         session: Session,
     ) -> holst_core::Result<holst_core::remote::client::Client> {
-        holst_core::command::login::connect(
+        Ok(holst_core::command::login::connect(
             Some(session),
             self.base_url.parse()?,
-            holst_core::system::clock::SystemClock,
+            Arc::clone(&self.clock),
             holst_core::system::id::RandomIds,
-        )
+        )?
+        .with_account_cache(Arc::<AccountDisk>::clone(&self.disk)))
     }
 }
 
@@ -259,13 +295,10 @@ async fn plans_of(
         fake.base_url().parse()?,
         SystemClock,
         RandomIds,
-    )?;
+    )?
+    .with_account_cache(account_disk()?);
     let board = lookup::board_id(&client, "Plans", None).await?;
-    let client = HandedClient {
-        client,
-        generation: 0,
-        epoch: 0,
-    };
+    let client = HandedClient { client, epoch: 0 };
     Ok((fake, client, board))
 }
 
@@ -736,34 +769,6 @@ async fn cancelled_write_still_drops_the_cache() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn old_client_does_not_fill_new_cache() -> Result<()> {
-    let account = r#"{"id":"u1","name":"Me","workspaces":[]}"#;
-    let (holst, memory, clock) =
-        with_a([CannedResponse::ok(account), CannedResponse::ok(account)]);
-    let old = holst.client().await?;
-    memory.store(Some(session("b")));
-    clock.advance(RECHECK);
-    let new = holst.client().await?;
-    assert_ne!(
-        old.generation, new.generation,
-        "a login change kept the cache"
-    );
-
-    holst.workspaces(&old).await?;
-    assert!(
-        holst.state.workspaces().is_none(),
-        "the old login's workspaces are cached"
-    );
-
-    holst.workspaces(&new).await?;
-    assert!(
-        holst.state.workspaces().is_some(),
-        "the new login's workspaces are not cached"
-    );
-    Ok(())
-}
-
 const ME: &str = r#"{"id":"00000003-0000-4000-8000-000000000001","name":"Ann",
     "workspaces":[{"id":"00000002-0000-4000-8000-000000000001","name":"easy"}]}"#;
 const TREE: &str = r#"{"channels":[
@@ -1021,10 +1026,26 @@ async fn on_fake_of(
     objects: Vec<holst_core::fake::FixtureObject>,
 ) -> holst_core::Result<(holst_core::fake::Fake, McpServer, HandedClient)> {
     let (fake, client, _) = plans_of(objects).await?;
-    let base_url = fake.base_url().to_owned();
-    let holst =
-        McpServer::with(Arc::new(OnFake { base_url }), Arc::new(Manual::default()));
+    let (holst, ..) = served(&fake)?;
     Ok((fake, holst, client))
+}
+
+/// A server on `fake`, its login store, and the clock of the server's login.
+fn served(
+    fake: &holst_core::fake::Fake,
+) -> holst_core::Result<(McpServer, Arc<OnFake>, Arc<Manual>)> {
+    let clock = Arc::new(Manual::default());
+    clock.advance(HOUR * 10);
+    let login = Arc::new(OnFake {
+        base_url: fake.base_url().to_owned(),
+        disk: account_disk()?,
+        clock,
+        stored: Mutex::new(fake_session()),
+    });
+    let ticks = Arc::new(Manual::default());
+    let backend: Arc<dyn Backend> = Arc::<OnFake>::clone(&login);
+    let holst = McpServer::with(backend, Arc::<Manual>::clone(&ticks));
+    Ok((holst, login, ticks))
 }
 
 #[tokio::test]
@@ -1156,5 +1177,151 @@ async fn a_default_json_page_of_the_richest_kinds_fits_the_limit()
         refused && refusal.contains("pass a lower `limit`"),
         "{refusal}"
     );
+    Ok(())
+}
+
+const FAKE_USER: &str = "00000000-0000-4000-8000-000000000000";
+
+async fn plans_fake() -> holst_core::Result<holst_core::fake::Fake> {
+    let seed = holst_core::fake::Fixture::default()
+        .workspace("Team")
+        .board("Plans", "Team", None);
+    Ok(holst_core::fake::Fake::start(seed).await?)
+}
+
+/// What a call replies; the call must not fail.
+async fn replied(
+    holst: &McpServer,
+    tool: &str,
+    arguments: serde_json::Value,
+) -> String {
+    let (failed, text) = table_call(holst, tool, arguments).await;
+    assert!(!failed, "{text}");
+    text
+}
+
+fn show_plans() -> serde_json::Value {
+    serde_json::json!({ "action": "show", "board": "Plans" })
+}
+
+fn add_note() -> serde_json::Value {
+    serde_json::json!({ "action": "add", "board": "Plans", "text": "note" })
+}
+
+/// The requests for `last` the fake got after the log was `since` long.
+fn asked(fake: &holst_core::fake::Fake, since: usize, last: &str) -> usize {
+    fake.requests()
+        .split_off(since)
+        .iter()
+        .filter(|request| request.ends_with(last))
+        .count()
+}
+
+#[tokio::test]
+async fn a_second_board_show_by_name_asks_no_account_and_no_tree()
+-> holst_core::Result<()> {
+    let fake = plans_fake().await?;
+    let (holst, ..) = served(&fake)?;
+    replied(&holst, "board", show_plans()).await;
+    let before = fake.requests().len();
+    replied(&holst, "board", show_plans()).await;
+    assert_eq!(asked(&fake, before, "/current_user"), 0);
+    assert_eq!(asked(&fake, before, "/tree"), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_second_object_write_by_name_asks_no_account_and_no_tree()
+-> holst_core::Result<()> {
+    let fake = plans_fake().await?;
+    let (holst, ..) = served(&fake)?;
+    replied(&holst, "object_write", add_note()).await;
+    let before = fake.requests().len();
+    replied(&holst, "object_write", add_note()).await;
+    assert_eq!(asked(&fake, before, "/current_user"), 0);
+    assert_eq!(asked(&fake, before, "/tree"), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_board_show_by_name_after_a_search_reads_no_tree() -> holst_core::Result<()> {
+    let fake = plans_fake().await?;
+    let (holst, ..) = served(&fake)?;
+    let search = serde_json::json!({ "query": "plans", "mode": "names" });
+    assert!(replied(&holst, "search", search).await.contains("Plans"));
+    let before = fake.requests().len();
+    replied(&holst, "board", show_plans()).await;
+    assert_eq!(asked(&fake, before, "/tree"), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_object_write_by_name_asks_a_tree_older_than_an_hour_once()
+-> holst_core::Result<()> {
+    let fake = plans_fake().await?;
+    let (holst, login, _) = served(&fake)?;
+    replied(&holst, "board", show_plans()).await;
+    let before = fake.requests().len();
+    replied(&holst, "object_write", add_note()).await;
+    assert_eq!(asked(&fake, before, "/tree"), 0, "a young tree was asked");
+    login.clock.advance(HOUR * 2);
+    let later = fake.requests().len();
+    replied(&holst, "object_write", add_note()).await;
+    assert_eq!(asked(&fake, later, "/tree"), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_new_login_reads_its_account_and_list_from_the_store_and_asks_the_trees()
+-> Result<()> {
+    let fake = plans_fake().await?;
+    let (holst, login, ticks) = served(&fake)?;
+    replied(&holst, "board", show_plans()).await;
+    let first = holst.client().await?.epoch;
+    // What `holst-mcp setup` leaves: the list fresh, no trees.
+    let list = login.disk.workspaces(FAKE_USER).unwrap_or_default();
+    login.disk.forget(FAKE_USER, Forget::Trees)?;
+    login.disk.keep_workspaces(FAKE_USER, &list)?;
+    login.log_in(fake_session().with_account_id(FAKE_USER));
+    ticks.advance(RECHECK);
+    let before = fake.requests().len();
+    replied(&holst, "board", show_plans()).await;
+    assert_ne!(
+        holst.client().await?.epoch,
+        first,
+        "the login was not renewed"
+    );
+    assert_eq!(asked(&fake, before, "/current_user"), 0);
+    assert_eq!(asked(&fake, before, "/tree"), 1);
+    Ok(())
+}
+
+#[test]
+fn the_system_backends_clients_keep_the_account_list_on_disk() -> holst_core::Result<()>
+{
+    use holst_core::{domain::account::Workspace, effect::settings::Settings};
+
+    let home =
+        std::env::temp_dir().join(format!("holst-mcp-system-{}", std::process::id()));
+    std::fs::remove_dir_all(&home).unwrap_or_default();
+    let variables = [
+        ("HOLST_HOME", home.clone().into_os_string()),
+        ("HOLST_CACHE_DIR", home.join("cache").into_os_string()),
+    ];
+    let settings = Settings::from_variables(|name| {
+        variables
+            .iter()
+            .find(|(key, _)| *key == name)
+            .map(|(_, value)| value.clone())
+    })?;
+    let client = crate::login::store::SystemBackend::new(settings)
+        .connect(session("a").with_account_id(ALICE))?;
+    client.learn_workspaces(&[Workspace {
+        id: "bbbbbbbb-0000-4000-8000-000000000001".into(),
+        name: "Team".into(),
+    }]);
+    let kept = client.known_workspaces();
+    std::fs::remove_dir_all(&home).unwrap_or_default();
+    assert_eq!(kept.map(|list| list.len()), Some(1));
     Ok(())
 }

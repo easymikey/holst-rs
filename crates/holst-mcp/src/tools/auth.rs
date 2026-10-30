@@ -67,7 +67,7 @@ impl McpServer {
         args: &StatusArgs,
     ) -> Result<String> {
         match status(client, args).await {
-            StatusReport::Active(found) => Ok(self.status_text(client, source, found)),
+            StatusReport::Active(found) => Ok(self.status_text(source, found)),
             // The words and the hint of the error, as every other tool says them.
             StatusReport::Revoked(err) => {
                 Ok(format!("{}\n", reply::explain(&Error::from(err))))
@@ -76,16 +76,7 @@ impl McpServer {
         }
     }
 
-    fn status_text(
-        &self,
-        client: &HandedClient,
-        source: &str,
-        found: AccountStatus,
-    ) -> String {
-        drop(
-            self.state
-                .store_workspaces(found.account.workspaces.clone(), client.generation),
-        );
+    fn status_text(&self, source: &str, found: AccountStatus) -> String {
         let account = format!(
             "logged in: {} {} · login from: {source}\n",
             found.account.name.as_deref().unwrap_or("?"),

@@ -20,7 +20,6 @@ use holst_core::{
         local_data::{CONFIG_DIR, DataPlace, DataRoots, FilePlace, PlaceRole},
     },
 };
-use rstest::rstest;
 use serde_json::json;
 
 use crate::{
@@ -29,21 +28,9 @@ use crate::{
         store_read,
     },
     error::Error,
-    output::view::size_text,
     run::{RunSettings, local_data::forget_cache},
     terminal::detect::TerminalType,
 };
-
-#[rstest]
-#[case(0, "0 B")]
-#[case(1023, "1023 B")]
-#[case(1024, "1.0 KiB")]
-#[case(1536, "1.5 KiB")]
-#[case(169_869_312, "162.0 MiB")]
-#[case(3 << 30, "3.0 GiB")]
-fn sizes_read_as_a_person_would(#[case] bytes: u64, #[case] expected: &str) {
-    assert_eq!(size_text(bytes), expected);
-}
 
 fn file(name: &str, bytes: u64, role: PlaceRole) -> FilePlace {
     FilePlace {

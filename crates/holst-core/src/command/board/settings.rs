@@ -4,18 +4,18 @@ use std::path::PathBuf;
 
 use futures_util::future::OptionFuture;
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::{
     command::{
         board::{
             EditArgs,
             SnapArgs,
-            picture::{Delivery, snapped},
+            picture::{Delivery, snapped_seen},
             show::{Loading, through_cache},
         },
         board_load::{CacheUse, supported},
-        board_write::{BoardWrite, change_board},
+        board_write::{BoardWrite, change_board_with},
         change::ChangeReport,
         lookup,
         node,
@@ -155,19 +155,26 @@ async fn edited(
     }?;
     let id = lookup::board_id(client, &args.board, args.workspace.as_deref()).await?;
     let sending = args.dry_run == WriteMode::Send;
-    // The right is read once, before anything is sent or built.
-    editable(client, loading, &id).await?;
+    // A file's right is read before it is uploaded; a reset draws the board first.
+    match &cover {
+        Some(Cover::File { .. }) => editable(client, loading, &id).await,
+        Some(Cover::Auto) | None => Ok(()),
+    }?;
     // Uploads first: a refused upload leaves the board as it was.
-    let cover = OptionFuture::from(
+    let (cover, read) = match OptionFuture::from(
         cover.map(|cover| cover_uploaded(client, loading, &id, cover, sending)),
     )
     .await
-    .transpose()?;
+    .transpose()?
+    {
+        Some((done, read)) => (Some(done), read),
+        None => (None, None),
+    };
     if let Some(cover) = &cover {
         cover_fixed(client, &id, cover).await?;
     }
     // The note goes last: an error above leaves it as it was.
-    let note = note_written(client, loading, &id, note, args.dry_run).await?;
+    let note = note_written(client, loading, &id, note, (args.dry_run, read)).await?;
     Ok(Edited {
         link: client.board_link(&id),
         board: id,
@@ -208,7 +215,7 @@ async fn note_written(
     loading: Loading<'_>,
     id: &str,
     note: Option<NoteContent>,
-    mode: WriteMode,
+    (mode, read): (WriteMode, Option<Value>),
 ) -> Result<Option<NoteEdit>> {
     OptionFuture::from(note.map(|content| async move {
         let edit = NoteEdit {
@@ -218,7 +225,7 @@ async fn note_written(
             },
             warning: kept_note(&content.parsed().kept),
         };
-        change_board(
+        change_board_with(
             client,
             loading,
             BoardWrite {
@@ -228,6 +235,7 @@ async fn note_written(
                 guard: None,
                 mode,
             },
+            read,
         )
         .await?;
         Ok::<_, Error>(edit)
@@ -269,20 +277,24 @@ async fn editable(client: &Client, loading: Loading<'_>, id: &str) -> Result<()>
     }
 }
 
-/// Uploads the cover's picture; the board is not changed yet.
+/// Uploads the cover's picture; the board is not changed yet. Also the
+/// `channel/{id}` reply the drawing of a reset read.
 async fn cover_uploaded(
     client: &Client,
     loading: Loading<'_>,
     id: &str,
     cover: Cover,
     sending: bool,
-) -> Result<CoverEdit> {
+) -> Result<(CoverEdit, Option<Value>)> {
     match (cover, sending) {
-        (Cover::File { path, bytes, .. }, false) => Ok(CoverEdit::File {
-            file: path,
-            bytes: bytes.len(),
-            uploaded: None,
-        }),
+        (Cover::File { path, bytes, .. }, false) => Ok((
+            CoverEdit::File {
+                file: path,
+                bytes: bytes.len(),
+                uploaded: None,
+            },
+            None,
+        )),
         (
             Cover::File {
                 path,
@@ -307,16 +319,19 @@ async fn cover_uploaded(
                 bytes,
             )
             .await?;
-            Ok(CoverEdit::File {
-                file: path,
-                bytes: size,
-                uploaded: Some(name),
-            })
+            Ok((
+                CoverEdit::File {
+                    file: path,
+                    bytes: size,
+                    uploaded: Some(name),
+                },
+                None,
+            ))
         }
-        (Cover::Auto, false) => Ok(CoverEdit::Auto { uploaded: None }),
+        (Cover::Auto, false) => Ok((CoverEdit::Auto { uploaded: None }, None)),
         (Cover::Auto, true) => {
             // Drawn and uploaded first: a board that cannot be drawn keeps its cover.
-            let picture = preview(client, loading, id).await?;
+            let (picture, channel) = preview(client, loading, id).await?;
             let key = format!("preview-{id}");
             let name = uploaded(
                 client,
@@ -329,9 +344,12 @@ async fn cover_uploaded(
                 picture,
             )
             .await?;
-            Ok(CoverEdit::Auto {
-                uploaded: Some(name),
-            })
+            Ok((
+                CoverEdit::Auto {
+                    uploaded: Some(name),
+                },
+                Some(channel),
+            ))
         }
     }
 }
@@ -394,14 +412,21 @@ async fn uploaded(
     .ok_or_else(|| node::missing_field("name"))
 }
 
-/// The board drawn small by our renderer, as PNG.
-async fn preview(client: &Client, loading: Loading<'_>, id: &str) -> Result<Vec<u8>> {
+/// The board drawn small by our renderer, as PNG, and the `channel/{id}` reply
+/// its load read; a board the load shows read only is refused.
+async fn preview(
+    client: &Client,
+    loading: Loading<'_>,
+    id: &str,
+) -> Result<(Vec<u8>, Value)> {
     let drawing =
         json!({ "board": id, "picture_format": "png", "max_side": PREVIEW_SIDE });
     let args: SnapArgs = parse(drawing.as_object().cloned().unwrap_or_default())?;
-    match snapped(client, loading, None, &args).await?.delivery {
-        Delivery::Inline { bytes } => Ok(bytes),
-        Delivery::Written { .. } => {
+    let (snapped, seen) = snapped_seen(client, loading, None, &args).await?;
+    match (seen.right, snapped.delivery) {
+        (EditRight::ReadOnly, _) => Err(Error::BoardChange(BoardChangeError::ReadOnly)),
+        (EditRight::Editable, Delivery::Inline { bytes }) => Ok((bytes, seen.channel)),
+        (EditRight::Editable, Delivery::Written { .. }) => {
             Err(not_value(EDIT, "cover", "a picture drawn in memory"))
         }
     }
@@ -465,38 +490,26 @@ mod tests {
         acking([Some(empty_board(EditRight::Editable))])
     }
 
-    /// The connections of a dry run with a note: the right, then the build.
+    /// The one connection of a dry run with a note: the build.
     fn built() -> Scripted {
-        acking([
-            Some(empty_board(EditRight::Editable)),
-            Some(empty_board(EditRight::Editable)),
-        ])
+        acking([Some(empty_board(EditRight::Editable))])
     }
 
-    /// The replies of a dry run with a note: the format check twice, the
-    /// account and the board of the build.
-    fn note_replies() -> [HttpResponse; 4] {
-        [
-            channel(),
-            channel(),
-            json_reply(&json!({ "id": "me" })),
-            channel(),
-        ]
+    /// The replies of a dry run with a note: the account and the board of the
+    /// build; the note alone reads the board once.
+    fn note_replies() -> [HttpResponse; 2] {
+        [json_reply(&json!({ "id": "me" })), channel()]
     }
 
-    /// Two connections to a board of one sticker: the right is read on the
-    /// first, the preview is drawn from the second.
+    /// One connection to a board of one sticker: the preview is drawn from it.
     fn drawn() -> Scripted {
         let (state, _) = sticker_by(4, "a");
-        let session = || {
-            Some(vec![
-                answer(DocumentResponse::Subscribed {
-                    right: EditRight::Editable,
-                }),
-                update(0, UpdatePayload::Inline(state.clone())),
-            ])
-        };
-        script([session(), session()])
+        script([Some(vec![
+            answer(DocumentResponse::Subscribed {
+                right: EditRight::Editable,
+            }),
+            update(0, UpdatePayload::Inline(state)),
+        ])])
     }
 
     /// A file with the signature of a PNG in a new directory.
@@ -571,11 +584,7 @@ mod tests {
     async fn a_reset_whose_preview_is_refused_keeps_the_cover() -> Result<()> {
         let (fake, done) = run(
             &json!({ "board": BOARD, "cover": "reset" }),
-            [
-                channel(),
-                channel(),
-                crate::remote::client::fake::reply(413, &[], ""),
-            ],
+            [channel(), crate::remote::client::fake::reply(413, &[], "")],
             &drawn(),
         )
         .await?;
@@ -647,14 +656,7 @@ mod tests {
     async fn a_reset_preview_is_stored_under_the_boards_preview_key() -> Result<()> {
         let (fake, done) = run(
             &json!({ "board": BOARD, "cover": "reset" }),
-            [
-                channel(),
-                channel(),
-                channel(),
-                uploaded(),
-                channel_changed(),
-                channel_changed(),
-            ],
+            [channel(), uploaded(), channel_changed(), channel_changed()],
             &drawn(),
         )
         .await?;
@@ -677,14 +679,7 @@ mod tests {
     async fn a_reset_without_png_changes_nothing() -> Result<()> {
         let (fake, done) = run(
             &json!({ "board": BOARD, "cover": "reset" }),
-            [
-                channel(),
-                channel(),
-                channel(),
-                uploaded(),
-                channel_changed(),
-                channel_changed(),
-            ],
+            [channel(), uploaded(), channel_changed(), channel_changed()],
             &drawn(),
         )
         .await?;
@@ -750,6 +745,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_note_alone_reads_the_board_once() -> Result<()> {
+        let (fake, done) = run(
+            &json!({ "board": BOARD, "note": "hello", "dry_run": true }),
+            note_replies(),
+            &built(),
+        )
+        .await?;
+        done?;
+        let reads = fake
+            .requests()
+            .iter()
+            .filter(|request| request.url.path().starts_with("/gapi/channel/"))
+            .count();
+        assert_eq!(reads, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn a_template_dry_run_names_the_template() -> Result<()> {
         let (_, done) = run(
             &json!({ "board": BOARD, "note_template": "agenda", "dry_run": true }),
@@ -782,10 +795,7 @@ mod tests {
         let (_, done) = run(
             &json!({ "board": BOARD, "note": "hello", "dry_run": true }),
             note_replies(),
-            &acking([
-                Some(empty_board(EditRight::Editable)),
-                Some(empty_board(EditRight::ReadOnly)),
-            ]),
+            &acking([Some(empty_board(EditRight::ReadOnly))]),
         )
         .await?;
         assert!(matches!(

@@ -1,21 +1,24 @@
 //! `object add`: new objects of every kind the CLI can place.
 
-use std::path::Path;
+use std::{path::Path, pin::pin, time::Duration};
 
-use futures_util::{StreamExt as _, TryStreamExt as _, stream};
+use futures_util::{StreamExt as _, TryStreamExt as _, future, stream};
+use serde_json::Value;
+use yrs::Doc;
 
 use crate::{
     command::{
         board::show::{Loading, board_id, through_cache},
         board_load::CacheUse,
-        board_write::{BoardWrite, change_board},
+        board_write::{BoardWrite, change_board_with},
         object::{
             AddArgs,
             AddFields,
             AddItem,
             AddKind,
-            change::{load_board, refuse_hiding},
+            change::{load_board_read, refuse_hiding},
         },
+        stored_file::download,
         table::{ArgumentGroup as _, not_value},
     },
     domain::{
@@ -29,6 +32,7 @@ use crate::{
             shape_type::ShapeType,
         },
         change::{
+            build::author_number,
             receipt::ChangeReport,
             value::{
                 ArrowEdit,
@@ -47,14 +51,22 @@ use crate::{
         id,
         image::pixel_size,
         kinds::{
+            code,
             dice,
+            document,
             flipcard,
+            icon,
+            kanban,
             mind_map::{self, Direction, Under},
+            reaction_stamp::{self, Target},
+            stamp,
             sticker_stack,
+            table,
+            task::{self, Day},
             wheel,
         },
         lookup::rules::find_id,
-        palette::Color,
+        palette::{self, Color},
         placement::{free_corner, free_spot_among},
         response::LinkPreview,
         rich_text::TextFormat,
@@ -115,7 +127,7 @@ async fn added(
         loading.cache_use,
     )
     .await?;
-    let loaded = load_board(client, &loading, &board).await?;
+    let (loaded, read) = load_board_read(client, &loading, &board).await?;
     // Before any upload: a board that cannot be changed takes no file.
     match loaded.right {
         EditRight::Editable => Ok(()),
@@ -125,7 +137,7 @@ async fn added(
         |item| matches!(&item.what, What::Frame { look, .. } if look.hidden.is_some()),
     );
     if hides {
-        refuse_hiding(client, &board).await?;
+        refuse_hiding(client, &board, read.as_ref()).await?;
     }
     let objects = board_objects(&loaded.document);
     let scene = Scene::new(&objects);
@@ -135,6 +147,8 @@ async fn added(
         .filter_map(|item| item.frame.as_deref())
         .filter(|name| !name.starts_with('#'))
         .try_for_each(|name| scene.frame(name).map(|_| ()))?;
+    // Before any upload: an icon the set lacks is refused with nothing sent.
+    let unchecked = icons_checked(client, items).await?;
     let got = fetched(
         client,
         &board,
@@ -142,13 +156,14 @@ async fn added(
         items,
     )
     .await?;
+    let got = with_tasks(items, got, &loaded.document, &scene)?;
     let change = BoardChange::AddAll(entries(
         items,
         &got,
         &scene,
         linked_frame(&scene, &args.board),
     )?);
-    let report = change_board(
+    let report = change_board_with(
         client,
         loading,
         BoardWrite {
@@ -158,6 +173,7 @@ async fn added(
             guard: None,
             mode: args.dry_run,
         },
+        read,
     )
     .await?;
     Ok(ChangeReport {
@@ -165,9 +181,81 @@ async fn added(
             .warnings
             .into_iter()
             .chain(warnings(items, &got))
+            .chain(unchecked)
             .collect(),
         ..report
     })
+}
+
+/// The longest wait for the icon manifest.
+const MANIFEST_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// The most bytes the icon manifest may have.
+const MANIFEST_LIMIT: usize = 8 * 1024 * 1024;
+
+/// The icon manifest the web client reads: the gzipped form, else the plain
+/// one; none when neither can be read.
+async fn icon_manifest(client: &Client) -> Option<icon::Manifest> {
+    let address = format!("{}{}", client.base_url().storage(), icon::MANIFEST_PATH);
+    let limited = client
+        .clone()
+        .with_response_limit(MANIFEST_TIMEOUT, MANIFEST_LIMIT)
+        .ok()?;
+    let read = async |suffix: &str| {
+        download(&limited, &format!("{address}{suffix}"), MANIFEST_LIMIT)
+            .await
+            .ok()
+            .and_then(|bytes| icon::Manifest::parse(&bytes))
+    };
+    pin!(
+        stream::iter([".gz", ""])
+            .then(read)
+            .filter_map(future::ready)
+    )
+    .next()
+    .await
+}
+
+/// Checks the icon names against the manifest, read once and only when an item
+/// is an icon; a manifest that cannot be read is a warning.
+async fn icons_checked(client: &Client, items: &[Item]) -> Result<Vec<String>> {
+    let names: Vec<&str> = items
+        .iter()
+        .filter_map(|item| match &item.what {
+            What::Made { made, .. } => icon::named(made),
+            What::Sticker { .. }
+            | What::Text { .. }
+            | What::Shape { .. }
+            | What::Frame { .. }
+            | What::Arrow { .. }
+            | What::Link { .. }
+            | What::Image { .. }
+            | What::File { .. }
+            | What::Node { .. }
+            | What::Stuck { .. }
+            | What::Task { .. }
+            | What::Drawing { .. } => None,
+        })
+        .collect();
+    let asked =
+        future::OptionFuture::from(names.first().map(|_| icon_manifest(client)));
+    match asked.await {
+        None => Ok(Vec::new()),
+        Some(Some(listed)) => names
+            .iter()
+            .try_for_each(|name| {
+                listed.has(name).then_some(()).ok_or_else(|| {
+                    Error::Input(InputError::NotIcon {
+                        name: (*name).to_owned(),
+                        close: listed.close(name),
+                    })
+                })
+            })
+            .map(|()| Vec::new()),
+        Some(None) => Ok(vec![
+            "icons not checked: the icon list could not be read".to_owned(),
+        ]),
+    }
 }
 
 /// What the network gave an item before the write.
@@ -179,6 +267,11 @@ enum Fetched {
     Page(Option<LinkPreview>),
     /// The file the server holds.
     Upload(Upload),
+    /// The status and the kanban cell a task names, if it names them.
+    Task {
+        status: Option<String>,
+        cell: Option<task::Cell>,
+    },
 }
 
 /// What the network gives each item, in item order, one request after the
@@ -210,7 +303,10 @@ async fn fetched(
                 | What::Image { .. }
                 | What::File { .. }
                 | What::Node { .. }
-                | What::Made { .. } => Ok(Fetched::Nothing),
+                | What::Made { .. }
+                | What::Stuck { .. }
+                | What::Task { .. }
+                | What::Drawing { .. } => Ok(Fetched::Nothing),
             }
         })
         .try_collect()
@@ -218,7 +314,11 @@ async fn fetched(
 }
 
 /// The file uploaded to `board` under a fresh key; the server names it.
-async fn uploaded(client: &Client, board: &str, file: &Local) -> Result<Upload> {
+pub(super) async fn uploaded(
+    client: &Client,
+    board: &str,
+    file: &Local,
+) -> Result<Upload> {
     let key = client.new_id();
     let options = UploadOptions {
         key: Some(&key),
@@ -239,6 +339,140 @@ async fn uploaded(client: &Client, board: &str, file: &Local) -> Result<Upload> 
         field: "name",
     }))?;
     Ok(file.upload(name))
+}
+
+/// What was fetched, with the status each task names settled among the
+/// built-in ones and those the board stores, by id or by title, and the cell
+/// each names in a kanban of the board.
+fn with_tasks(
+    items: &[Item],
+    got: Vec<Fetched>,
+    document: &Doc,
+    scene: &Scene<'_>,
+) -> Result<Vec<Fetched>> {
+    let stored = task::statuses(document);
+    items
+        .iter()
+        .zip(got)
+        .try_fold(Vec::new(), |mut done, (item, got)| {
+            let next = match &item.what {
+                What::Task { status, ask, .. } => Fetched::Task {
+                    status: status
+                        .as_deref()
+                        .map(|given| {
+                            task::status_id(given, &stored).ok_or_else(unknown_status)
+                        })
+                        .transpose()?,
+                    cell: ask
+                        .as_ref()
+                        .map(|ask| cell_of(ask, scene, document, &done))
+                        .transpose()?,
+                },
+                What::Sticker { .. }
+                | What::Text { .. }
+                | What::Shape { .. }
+                | What::Frame { .. }
+                | What::Arrow { .. }
+                | What::Link { .. }
+                | What::Image { .. }
+                | What::File { .. }
+                | What::Node { .. }
+                | What::Made { .. }
+                | What::Stuck { .. }
+                | What::Drawing { .. } => got,
+            };
+            done.push(next);
+            Ok::<_, Error>(done)
+        })
+}
+
+/// The cell `ask` names in a kanban of the board; a card put there goes after
+/// the last one, those of `done` included.
+fn cell_of(
+    ask: &Ask,
+    scene: &Scene<'_>,
+    document: &Doc,
+    done: &[Fetched],
+) -> Result<task::Cell> {
+    let id = find_id(
+        scene.objects().iter().map(|object| object.id.as_str()),
+        &ask.kanban,
+    )?;
+    let holder = scene
+        .get(&id)
+        .filter(|object| kanban::is_kanban(object))
+        .ok_or_else(|| not_value(COMMAND, "kanban", "a kanban"))?;
+    let column = titled(
+        "column",
+        ask.column.as_deref(),
+        &kanban::columns(document, holder),
+    )?;
+    let swimlane = titled(
+        "swimlane",
+        ask.swimlane.as_deref(),
+        &kanban::swimlanes(document, holder),
+    )?;
+    let sits = |fields: &Value, key: &str, wanted: &str| {
+        fields.get(key).and_then(Value::as_str) == Some(wanted)
+    };
+    let there = scene
+        .objects()
+        .iter()
+        .filter(|card| card.parent.as_deref() == Some(id.as_str()))
+        .filter(|card| {
+            sits(&card.fields, "columnId", &column)
+                && sits(&card.fields, "swimlaneId", &swimlane)
+        })
+        .filter_map(|card| card.fields.get("index").and_then(Value::as_f64));
+    let before = done.iter().filter_map(|got| match got {
+        Fetched::Task {
+            cell: Some(cell), ..
+        } if (&cell.kanban, &cell.column, &cell.swimlane)
+            == (&id, &column, &swimlane) =>
+        {
+            Some(cell.index())
+        }
+        Fetched::Task { .. }
+        | Fetched::Nothing
+        | Fetched::Page(_)
+        | Fetched::Upload(_) => None,
+    });
+    Ok(task::Cell {
+        after: there.chain(before).max_by(f64::total_cmp),
+        kanban: id,
+        column,
+        swimlane,
+    })
+}
+
+/// The id of the kanban cell `given` titles among `cells`, ignoring case; the
+/// first when none is given.
+fn titled(
+    name: &'static str,
+    given: Option<&str>,
+    cells: &[(String, String)],
+) -> Result<String> {
+    let found = given.map_or_else(
+        || cells.first(),
+        |title| {
+            cells
+                .iter()
+                .find(|(_, known)| known.to_lowercase() == title.to_lowercase())
+        },
+    );
+    found.map(|(id, _)| id.clone()).ok_or_else(|| {
+        let titles: Vec<&str> = cells.iter().map(|(_, known)| known.as_str()).collect();
+        not_value(COMMAND, name, &format!("one of {}", titles.join(", ")))
+    })
+}
+
+fn unknown_status() -> Error {
+    let ids = task::STATUSES.map(|(id, _)| id).join(", ");
+    not_value(
+        COMMAND,
+        "status",
+        &format!("one of {ids}, or the title of a status of the board"),
+    )
 }
 
 /// A card for each link whose page gave no preview.
@@ -310,10 +544,16 @@ enum What {
         file: Local,
         at: Option<Point>,
     },
-    /// A node of a mind map: a root, or a child of `parent`, an object as
-    /// given.
+    /// A mind-map node: a root, or a child of `parent` as given.
     Node {
         branch: Branch,
+        at: Option<Point>,
+    },
+    /// A task card; `status` is as given, an id or a title.
+    Task {
+        made: Made,
+        status: Option<String>,
+        ask: Option<Ask>,
         at: Option<Point>,
     },
     /// An object its kind's own code builds; `at` is asked for, else found.
@@ -321,10 +561,25 @@ enum What {
         made: Made,
         at: Option<Point>,
     },
+    /// A reaction stamp stuck to the object `on` names.
+    Stuck {
+        made: Made,
+        on: String,
+        at: Option<Point>,
+    },
+    /// A freehand stroke, a [`NewObject::Drawing`] ready to write.
+    Drawing(NewObject),
 }
 
-/// Where a mind-map node hangs: from `parent` on the `direction` side, or a
-/// root.
+/// The kanban a task goes into and the cell, by title, as given.
+#[derive(Debug, PartialEq)]
+struct Ask {
+    kanban: String,
+    column: Option<String>,
+    swimlane: Option<String>,
+}
+
+/// Where a mind-map node hangs: from `parent` on `direction`, or a root.
 #[derive(Debug, PartialEq)]
 struct Branch {
     text: String,
@@ -337,16 +592,16 @@ const LONG_SIDE: f64 = 1000.0;
 
 /// A local file read before the first request.
 #[derive(Debug, PartialEq)]
-struct Local {
+pub(super) struct Local {
     /// The name on disk, without the folders.
-    name: String,
+    pub(super) name: String,
     mime: &'static str,
     bytes: Vec<u8>,
 }
 
 impl Local {
     /// The file as the server holds it under `name`.
-    fn upload(&self, name: String) -> Upload {
+    pub(super) fn upload(&self, name: String) -> Upload {
         Upload {
             name,
             original: self.name.clone(),
@@ -412,16 +667,71 @@ fn read_items(args: &AddArgs, ids: &dyn Fn() -> String) -> Result<Vec<Item>> {
 }
 
 impl AddFields {
+    /// The keys only a code block takes, each with whether it is given.
+    fn code_keys(&self) -> [(&'static str, bool); 2] {
+        [
+            ("language", self.language.is_some()),
+            ("theme", self.theme.is_some()),
+        ]
+    }
+
+    /// The keys only a table takes, each with whether it is given.
+    fn table_keys(&self) -> [(&'static str, bool); 2] {
+        [
+            ("rows", self.rows.is_some()),
+            ("columns", self.columns.is_some()),
+        ]
+    }
+
     /// The keys only an arrow takes, each with whether it is given.
-    fn arrow_keys(&self) -> [(&'static str, bool); 7] {
+    fn arrow_keys(&self) -> [(&'static str, bool); 6] {
         [
             ("from", self.from.is_some()),
             ("to", self.to.is_some()),
             ("line", self.line.is_some()),
             ("heads", self.heads.is_some()),
             ("stroke_style", self.stroke_style.is_some()),
-            ("stroke_width", self.stroke_width.is_some()),
             ("label", !self.label.is_empty()),
+        ]
+    }
+
+    /// The keys only a drawing takes, each with whether it is given.
+    fn drawing_keys(&self) -> [(&'static str, bool); 2] {
+        [
+            ("point", self.point.is_some()),
+            ("highlighter", self.highlighter),
+        ]
+    }
+
+    /// The keys only a reaction stamp takes, each with whether it is given.
+    fn reaction_keys(&self) -> [(&'static str, bool); 2] {
+        [
+            ("on", self.on.is_some()),
+            ("reaction", !self.reaction.is_empty()),
+        ]
+    }
+
+    /// The keys only an icon takes, each with whether it is given.
+    fn icon_keys(&self) -> [(&'static str, bool); 1] {
+        [("weight", self.weight.is_some())]
+    }
+
+    /// The keys only a task takes, each with whether it is given.
+    fn task_keys(&self) -> [(&'static str, bool); 5] {
+        [
+            ("description", self.description.is_some()),
+            ("status", self.status.is_some()),
+            ("start", self.start.is_some()),
+            ("due", self.due.is_some()),
+            ("kanban", self.kanban.is_some()),
+        ]
+    }
+
+    /// The keys only a kanban takes, each with whether it is given.
+    fn kanban_keys(&self) -> [(&'static str, bool); 2] {
+        [
+            ("column", !self.column.is_empty()),
+            ("swimlane", !self.swimlane.is_empty()),
         ]
     }
 
@@ -459,7 +769,11 @@ impl Reader<'_> {
     fn rich(&self, kind: AddKind, word: &str) -> Result<bool> {
         let rich = matches!(
             kind,
-            AddKind::Sticker | AddKind::Text | AddKind::Shape | AddKind::MindMap
+            AddKind::Sticker
+                | AddKind::Text
+                | AddKind::Shape
+                | AddKind::MindMap
+                | AddKind::Document
         );
         match (rich, self.many, self.format) {
             (false, false, TextFormat::Markdown) => {
@@ -537,42 +851,16 @@ impl Reader<'_> {
     ) -> Result<Item> {
         let kind = item.kind.unwrap_or(kind);
         let fields = &item.add;
-        let word = word(kind);
-        let refuse = |name: &'static str, given: bool| {
-            given
-                .then(|| self.bad(name, &format!("left out for {word}")))
-                .map_or(Ok(()), Err)
-        };
-        let arrow = kind == AddKind::Arrow;
-        self.refuse_foreign(kind, AddKind::Arrow, &fields.arrow_keys())?;
-        let linked = kind == AddKind::Link;
-        let uploaded = matches!(kind, AddKind::Image | AddKind::File);
-        let die = kind == AddKind::Dice;
-        let wheel = kind == AddKind::Wheel;
-        refuse(
-            "text",
-            (arrow || linked || uploaded || die || wheel) && fields.text.is_some(),
-        )?;
-        refuse("faces", !die && fields.faces.is_some())?;
-        refuse("choice", !wheel && !fields.choice.is_empty())?;
-        refuse("back", kind != AddKind::Flipcard && fields.back.is_some())?;
-        self.refuse_node_keys(kind, fields, item.frame.is_some() || frame.is_some())?;
-        refuse("at", arrow && fields.at.is_some())?;
-        refuse("size", sizeless(kind) && fields.size.is_some())?;
-        refuse("shape", kind != AddKind::Shape && fields.shape.is_some())?;
-        refuse(
-            "color",
-            (linked || uploaded || wheel) && fields.color.is_some(),
-        )?;
-        refuse("url", !linked && fields.url.is_some())?;
-        refuse("path", !uploaded && fields.path.is_some())?;
-        let rich = self.rich(kind, word)?;
-        refuse("no_preview", !linked && fields.no_preview)?;
-        self.refuse_foreign(kind, AddKind::Frame, &fields.frame_keys())?;
+        self.refuse_misplaced(kind, item, frame)?;
+        let rich = self.rich(kind, word(kind))?;
         let at = fields.at.as_deref().map(str::parse).transpose()?;
         let size = fields.size.as_deref().map(str::parse).transpose()?;
-        let color: Option<Color> =
-            fields.color.as_deref().map(str::parse).transpose()?;
+        let color: Option<Color> = fields
+            .color
+            .as_deref()
+            .filter(|_| kind != AddKind::Task)
+            .map(str::parse)
+            .transpose()?;
         let text = fields.text.clone();
         let needed = || text.clone().ok_or_else(|| self.missing("text"));
         let what = match kind {
@@ -604,14 +892,20 @@ impl Reader<'_> {
             },
             AddKind::Image => self.image(fields.path.as_deref(), at, size)?,
             AddKind::File => self.file(fields.path.as_deref(), at)?,
-            AddKind::Dice => What::Made {
-                made: dice::made(self.faces(fields.faces)?, color.as_ref()),
-                at,
-            },
+            AddKind::Dice => self.die(fields.faces, color.as_ref(), at)?,
             AddKind::StickerStack => self.stack(fields, size, color.as_ref(), at)?,
             AddKind::Flipcard => self.card(fields, color.as_ref(), at)?,
-            AddKind::Wheel => What::Made {
-                made: wheel::made(self.choices(&fields.choice)?, self.ids),
+            AddKind::Document => self.document(fields, color.as_ref(), at)?,
+            AddKind::Wheel => self.wheel(&fields.choice, at)?,
+            AddKind::Stamp => self.stamp(fields.text.as_deref(), at)?,
+            AddKind::Code => self.code(fields, at)?,
+            AddKind::Table => self.table(fields, at)?,
+            AddKind::ReactionStamp => self.reaction_stamp(item, frame, at)?,
+            AddKind::Icon => self.icon(fields, size, color.as_ref(), at)?,
+            AddKind::Task => self.task(fields, at)?,
+            AddKind::Drawing => self.drawing(fields, color.as_ref())?,
+            AddKind::Kanban => What::Made {
+                made: kanban::made(&fields.column, &fields.swimlane, self.ids),
                 at,
             },
             AddKind::MindMap => What::Node {
@@ -624,14 +918,7 @@ impl Reader<'_> {
             },
         };
         let frame = item.frame.as_deref().or(frame);
-        frame
-            .filter(|reference| reference.starts_with('#'))
-            .filter(|reference| {
-                !slot_of(reference)
-                    .and_then(|slot| earlier.get(slot))
-                    .is_some_and(|before| matches!(before.what, What::Frame { .. }))
-            })
-            .map_or(Ok(()), |_| Err(self.bad("frame", "#N of an earlier frame")))?;
+        self.refuse_frame_slot(frame, earlier)?;
         Ok(Item {
             what,
             color,
@@ -640,7 +927,205 @@ impl Reader<'_> {
         })
     }
 
+    /// Refuses a frame `#N` that is not an earlier frame of the list.
+    fn refuse_frame_slot(&self, frame: Option<&str>, earlier: &[Item]) -> Result<()> {
+        frame
+            .filter(|reference| reference.starts_with('#'))
+            .filter(|reference| {
+                !slot_of(reference)
+                    .and_then(|slot| earlier.get(slot))
+                    .is_some_and(|before| matches!(before.what, What::Frame { .. }))
+            })
+            .map_or(Ok(()), |_| Err(self.bad("frame", "#N of an earlier frame")))
+    }
+
+    /// Refuses each key given for a kind that does not take it.
+    fn refuse_misplaced(
+        &self,
+        kind: AddKind,
+        item: &AddItem,
+        frame: Option<&str>,
+    ) -> Result<()> {
+        let fields = &item.add;
+        let word = word(kind);
+        let refuse = |name: &'static str, given: bool| {
+            given
+                .then(|| self.bad(name, &format!("left out for {word}")))
+                .map_or(Ok(()), Err)
+        };
+        let arrow = kind == AddKind::Arrow;
+        let drawing = kind == AddKind::Drawing;
+        self.refuse_foreign(kind, AddKind::Arrow, &fields.arrow_keys())?;
+        self.refuse_foreign(kind, AddKind::Drawing, &fields.drawing_keys())?;
+        refuse(
+            "stroke_width",
+            !(arrow || drawing) && fields.stroke_width.is_some(),
+        )?;
+        let linked = kind == AddKind::Link;
+        let uploaded = matches!(kind, AddKind::Image | AddKind::File);
+        let wheel = kind == AddKind::Wheel;
+        refuse("text", textless(kind) && fields.text.is_some())?;
+        refuse("faces", kind != AddKind::Dice && fields.faces.is_some())?;
+        refuse("choice", !wheel && !fields.choice.is_empty())?;
+        refuse("back", kind != AddKind::Flipcard && fields.back.is_some())?;
+        self.refuse_node_keys(kind, fields, item.frame.is_some() || frame.is_some())?;
+        refuse("at", (arrow || drawing) && fields.at.is_some())?;
+        refuse("size", sizeless(kind) && fields.size.is_some())?;
+        refuse("shape", kind != AddKind::Shape && fields.shape.is_some())?;
+        refuse("color", colourless(kind) && fields.color.is_some())?;
+        refuse("url", !linked && fields.url.is_some())?;
+        refuse("path", !uploaded && fields.path.is_some())?;
+        refuse("no_preview", !linked && fields.no_preview)?;
+        self.refuse_foreign(kind, AddKind::Frame, &fields.frame_keys())?;
+        self.refuse_foreign(kind, AddKind::Code, &fields.code_keys())?;
+        self.refuse_foreign(kind, AddKind::Table, &fields.table_keys())?;
+        self.refuse_foreign(kind, AddKind::ReactionStamp, &fields.reaction_keys())?;
+        self.refuse_foreign(kind, AddKind::Icon, &fields.icon_keys())?;
+        self.refuse_foreign(kind, AddKind::Task, &fields.task_keys())?;
+        // A task takes the keys of a kanban's cells, for the cell it goes into.
+        let cell_keys = fields
+            .kanban_keys()
+            .map(|(name, given)| (name, given && kind != AddKind::Task));
+        self.refuse_foreign(kind, AddKind::Kanban, &cell_keys)?;
+        [
+            ("at", fields.at.is_some()),
+            ("frame", item.frame.is_some() || frame.is_some()),
+        ]
+        .into_iter()
+        .find(|(_, given)| *given && fields.kanban.is_some())
+        .map_or(Ok(()), |(name, _)| {
+            Err(self.bad(name, "left out with kanban"))
+        })?;
+        Ok(())
+    }
+
+    /// A stroke through the points the call gives, with the pen's or the
+    /// highlighter's defaults; the color is a palette token written as its
+    /// RGB number.
+    fn drawing(&self, fields: &AddFields, color: Option<&Color>) -> Result<What> {
+        let points = fields
+            .point
+            .iter()
+            .flat_map(|given| &given.0)
+            .map(|raw| raw.parse())
+            .collect::<Result<Vec<Point>>>()?;
+        (points.len() >= 2).then_some(()).ok_or_else(|| {
+            self.bad(
+                "point",
+                "at least 2 points, e.g. --point 10,20 --point 120,80",
+            )
+        })?;
+        let (width, rgb, alpha) = [PEN, HIGHLIGHTER]
+            .get(usize::from(fields.highlighter))
+            .copied()
+            .unwrap_or(PEN);
+        let width = fields.stroke_width.unwrap_or(width);
+        ((1.0..=30.0).contains(&width) && (width - width.round()).abs() < f64::EPSILON)
+            .then_some(())
+            .ok_or_else(|| self.bad("stroke_width", "a whole number from 1 to 30"))?;
+        let color = color
+            .and_then(|token| palette::hex(token.as_str()))
+            .and_then(|hex| u32::from_str_radix(hex.trim_start_matches('#'), 16).ok())
+            .unwrap_or(rgb);
+        Ok(What::Drawing(NewObject::Drawing {
+            points,
+            color,
+            width,
+            alpha,
+        }))
+    }
+
     /// The faces asked for, or the default, which the web client offers.
+    fn die(
+        &self,
+        faces: Option<u32>,
+        color: Option<&Color>,
+        at: Option<Point>,
+    ) -> Result<What> {
+        Ok(What::Made {
+            made: dice::made(self.faces(faces)?, color),
+            at,
+        })
+    }
+
+    fn stamp(&self, text: Option<&str>, at: Option<Point>) -> Result<What> {
+        let text = text.ok_or_else(|| self.missing("text"))?;
+        Ok(What::Made {
+            made: stamp::made(text),
+            at,
+        })
+    }
+
+    /// A reaction stamp tilted by a draw, stuck to `on` when given.
+    fn reaction_stamp(
+        &self,
+        item: &AddItem,
+        frame: Option<&str>,
+        at: Option<Point>,
+    ) -> Result<What> {
+        let fields = &item.add;
+        let key = self.reaction_key(&fields.reaction)?;
+        let draw = f64::from(author_number(&(self.ids)(), 0)) / f64::from(DRAWS);
+        let made = reaction_stamp::made(key, draw);
+        match fields.on.clone() {
+            Some(_) if item.frame.is_some() || frame.is_some() => {
+                Err(self.bad("frame", "left out with on"))
+            }
+            Some(on) => Ok(What::Stuck { made, on, at }),
+            None => Ok(What::Made { made, at }),
+        }
+    }
+
+    /// The stamp asked for, or the default, from the ones the web client
+    /// offers.
+    fn reaction_key<'k>(&self, given: &'k [String]) -> Result<&'k str> {
+        match given {
+            [] => Ok(reaction_stamp::DEFAULT_KEY),
+            [key] if reaction_stamp::KEYS.contains(&key.as_str()) => Ok(key),
+            [_] => Err(self.bad("reaction", &one_of(&reaction_stamp::KEYS))),
+            _ => Err(self.bad("reaction", "one key")),
+        }
+    }
+
+    /// An icon named by the text, in a square size and one of the colors the
+    /// web client's picker offers.
+    fn icon(
+        &self,
+        fields: &AddFields,
+        size: Option<Size>,
+        color: Option<&Color>,
+        at: Option<Point>,
+    ) -> Result<What> {
+        let name = fields.text.as_deref().ok_or_else(|| self.missing("text"))?;
+        icon::is_name(name).then_some(()).ok_or_else(|| {
+            self.bad(
+                "text",
+                "lower-case letters, digits and dashes, e.g. rocket-launch",
+            )
+        })?;
+        color
+            .filter(|color| !icon::COLORS.contains(&color.as_str()))
+            .map_or(Ok(()), |_| Err(self.bad("color", &one_of(&icon::COLORS))))?;
+        let edge = size.map_or(Ok(icon::DEFAULT_SIDE), |given| {
+            Size::new(given.width(), given.width())
+                .ok()
+                .filter(|square| *square == given)
+                .map(|_| given.width())
+                .ok_or_else(|| self.bad("size", "square, e.g. 48,48"))
+        })?;
+        Ok(What::Made {
+            made: icon::made(name, fields.weight.unwrap_or_default(), color, edge),
+            at,
+        })
+    }
+
+    fn wheel(&self, choices: &[String], at: Option<Point>) -> Result<What> {
+        Ok(What::Made {
+            made: wheel::made(self.choices(choices)?, self.ids),
+            at,
+        })
+    }
+
     fn faces(&self, given: Option<u32>) -> Result<u32> {
         let faces = given.unwrap_or(dice::DEFAULT_FACES);
         dice::FACES
@@ -662,6 +1147,131 @@ impl Reader<'_> {
             made: flipcard::made(front, back, color),
             at,
         })
+    }
+
+    /// A document of the text, on one of the colors the card offers.
+    fn document(
+        &self,
+        fields: &AddFields,
+        color: Option<&Color>,
+        at: Option<Point>,
+    ) -> Result<What> {
+        let text = fields.text.as_deref().ok_or_else(|| self.missing("text"))?;
+        color
+            .filter(|color| !document::COLORS.contains(&color.as_str()))
+            .map_or(Ok(()), |_| {
+                Err(self
+                    .bad("color", &format!("one of {}", document::COLORS.join(", "))))
+            })?;
+        Ok(What::Made {
+            made: document::made(text, color),
+            at,
+        })
+    }
+
+    /// A code block of the text, in the language and theme the call gives.
+    fn code(&self, fields: &AddFields, at: Option<Point>) -> Result<What> {
+        let text = fields.text.as_deref().ok_or_else(|| self.missing("text"))?;
+        fields.color.as_ref().map_or(Ok(()), |_| {
+            Err(self.bad("color", "left out for a code block"))
+        })?;
+        Ok(What::Made {
+            made: code::made(text, fields.language, fields.theme.unwrap_or_default()),
+            at,
+        })
+    }
+
+    /// A task titled by the text, with the days, color and status the call
+    /// gives; a start after the due day is refused.
+    fn task(&self, fields: &AddFields, at: Option<Point>) -> Result<What> {
+        let title = fields.text.as_deref().ok_or_else(|| self.missing("text"))?;
+        let day = |name: &'static str, given: Option<&str>| {
+            given
+                .map(|raw| {
+                    raw.parse::<Day>()
+                        .map_err(|expected| self.bad(name, &expected.to_string()))
+                })
+                .transpose()
+        };
+        let start = day("start", fields.start.as_deref())?;
+        let due = day("due", fields.due.as_deref())?;
+        start
+            .iter()
+            .zip(&due)
+            .find(|(start, due)| start > due)
+            .map_or(Ok(()), |_| {
+                Err(self.bad("start", "on or before the due day"))
+            })?;
+        let ask = self.ask(fields)?;
+        let color = fields
+            .color
+            .as_deref()
+            .map(|name| {
+                task::tint(name).ok_or_else(|| {
+                    let names = task::COLORS.map(|(known, _)| known);
+                    self.bad("color", &format!("one of {}", names.join(", ")))
+                })
+            })
+            .transpose()?;
+        Ok(What::Task {
+            made: task::made(
+                title,
+                fields.description.as_deref(),
+                (start.as_ref(), due.as_ref()),
+                color,
+                (self.ids)(),
+            ),
+            status: fields.status.clone(),
+            ask,
+            at,
+        })
+    }
+
+    /// The kanban cell a task names: one title each, and only with a kanban.
+    fn ask(&self, fields: &AddFields) -> Result<Option<Ask>> {
+        let one = |name: &'static str, given: &[String]| match given {
+            [] => Ok(None),
+            [title] => Ok(Some(title.clone())),
+            _ => Err(self.bad(name, "one title for a task")),
+        };
+        let (column, swimlane) = (
+            one("column", &fields.column)?,
+            one("swimlane", &fields.swimlane)?,
+        );
+        [
+            ("column", column.is_some()),
+            ("swimlane", swimlane.is_some()),
+        ]
+        .into_iter()
+        .find(|(_, given)| *given && fields.kanban.is_none())
+        .map_or(Ok(()), |(name, _)| {
+            Err(self.bad(name, "left out without kanban"))
+        })?;
+        Ok(fields.kanban.clone().map(|kanban| Ask {
+            kanban,
+            column,
+            swimlane,
+        }))
+    }
+
+    /// A table of the rows and columns the call gives, within the cell limit.
+    fn table(&self, fields: &AddFields, at: Option<Point>) -> Result<What> {
+        let count = |name: &'static str, given: Option<u32>, default: u32| match given {
+            Some(0) => Err(self.bad(name, "at least 1")),
+            _ => Ok(given.unwrap_or(default)),
+        };
+        let rows = count("rows", fields.rows, table::DEFAULT_ROWS)?;
+        let columns = count("columns", fields.columns, table::DEFAULT_COLUMNS)?;
+        match rows.saturating_mul(columns) {
+            cells if cells > table::CELL_LIMIT => Err(self.bad(
+                "rows",
+                &format!("at most {} cells with the columns", table::CELL_LIMIT),
+            )),
+            _ => Ok(What::Made {
+                made: table::made(rows, columns),
+                at,
+            }),
+        }
     }
 
     /// A sticker stack titled by the text, of one of the two widths.
@@ -725,18 +1335,20 @@ impl Reader<'_> {
         at: Option<Point>,
         size: Option<Size>,
     ) -> Result<What> {
-        let (name, bytes) = self.read(path)?;
-        let (pixels, mime) = self.picture(&bytes)?;
+        let path = path.ok_or_else(|| self.missing("path"))?;
+        let (file, pixels) =
+            local_picture(path, |expected| self.bad("path", expected))?;
         Ok(What::Image {
             size: size.map_or_else(|| fitted(pixels), Ok)?,
             pixels,
             at,
-            file: Local { name, mime, bytes },
+            file,
         })
     }
 
     fn file(&self, path: Option<&str>, at: Option<Point>) -> Result<What> {
-        let (name, bytes) = self.read(path)?;
+        let path = path.ok_or_else(|| self.missing("path"))?;
+        let (name, bytes) = read_local(path, || self.bad("path", "a file"))?;
         Ok(What::File {
             at,
             file: Local {
@@ -745,33 +1357,6 @@ impl Reader<'_> {
                 bytes,
             },
         })
-    }
-
-    /// The name and the bytes of the local file `given`.
-    fn read(&self, given: Option<&str>) -> Result<(String, Vec<u8>)> {
-        let path = given.ok_or_else(|| self.missing("path"))?;
-        let name = Path::new(path)
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .ok_or_else(|| self.bad("path", "a file"))?;
-        let bytes = file::read(path)?;
-        Ok((name, bytes))
-    }
-
-    /// The pixels and the MIME type of `bytes`, which must be a PNG, JPEG, GIF
-    /// or WebP picture.
-    fn picture(&self, bytes: &[u8]) -> Result<(Size, &'static str)> {
-        let (format, (width, height)) = match UploadKind::of(bytes, true) {
-            Some(UploadKind::Image(format)) => {
-                pixel_size(bytes).map(|pixels| (format, pixels))
-            }
-            Some(UploadKind::File) | None => None,
-        }
-        .ok_or_else(|| self.bad("path", "a png, jpg, gif or webp picture"))?;
-        Ok((
-            Size::new(f64::from(width), f64::from(height))?,
-            format.mime(),
-        ))
     }
 
     /// An arrow end: an object as given, or `#N`, an earlier item that is not
@@ -798,6 +1383,44 @@ impl Reader<'_> {
             Some(_) | None => Ok(end.to_owned()),
         }
     }
+}
+
+/// The name and the bytes of the local file `path`; `refused` says what a
+/// path with no file name should have been.
+fn read_local(
+    path: &str,
+    refused: impl FnOnce() -> Error,
+) -> Result<(String, Vec<u8>)> {
+    let name = Path::new(path)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .ok_or_else(refused)?;
+    Ok((name, file::read(path)?))
+}
+
+/// The local picture at `path` and its pixels; `refused` is given what a path
+/// should have been when it is no file or no PNG, JPEG, GIF or WebP picture.
+pub(super) fn local_picture(
+    path: &str,
+    refused: impl Fn(&str) -> Error,
+) -> Result<(Local, Size)> {
+    let (name, bytes) = read_local(path, || refused("a file"))?;
+    let (format, (width, height)) = match UploadKind::of(&bytes, true) {
+        Some(UploadKind::Image(format)) => {
+            pixel_size(&bytes).map(|pixels| (format, pixels))
+        }
+        Some(UploadKind::File) | None => None,
+    }
+    .ok_or_else(|| refused("a png, jpg, gif or webp picture"))?;
+    let pixels = Size::new(f64::from(width), f64::from(height))?;
+    Ok((
+        Local {
+            name,
+            mime: format.mime(),
+            bytes,
+        },
+        pixels,
+    ))
 }
 
 /// A frame with the ratio, background and hidden content the item asks for.
@@ -839,7 +1462,53 @@ fn slot_of(reference: &str) -> Option<usize> {
         .checked_sub(1)
 }
 
+/// The web's pen and highlighter: width, packed RGB and alpha.
+const PEN: (f64, u32, f64) = (3.0, 0x001E_1E1E, 1.0);
+const HIGHLIGHTER: (f64, u32, f64) = (22.0, 0x00FB_F040, 0.5);
+
+/// What `author_number` is under: its draws are in `0..DRAWS`.
+const DRAWS: u32 = 0x8000_0000;
+
+/// `one of a, b or c`.
+fn one_of(words: &[&str]) -> String {
+    words.split_last().map_or_else(String::new, |(last, rest)| {
+        format!("one of {} or {last}", rest.join(", "))
+    })
+}
+
 /// Whether the kind has a size of its own, which a call cannot change.
+/// Whether the kind takes no text.
+const fn textless(kind: AddKind) -> bool {
+    matches!(
+        kind,
+        AddKind::Arrow
+            | AddKind::Link
+            | AddKind::Image
+            | AddKind::File
+            | AddKind::Dice
+            | AddKind::Wheel
+            | AddKind::Table
+            | AddKind::ReactionStamp
+            | AddKind::Kanban
+            | AddKind::Drawing
+    )
+}
+
+/// Whether the kind takes no color.
+const fn colourless(kind: AddKind) -> bool {
+    matches!(
+        kind,
+        AddKind::Link
+            | AddKind::Image
+            | AddKind::File
+            | AddKind::Wheel
+            | AddKind::Stamp
+            | AddKind::Table
+            | AddKind::ReactionStamp
+            | AddKind::Kanban
+    )
+}
+
 const fn sizeless(kind: AddKind) -> bool {
     matches!(
         kind,
@@ -851,6 +1520,14 @@ const fn sizeless(kind: AddKind) -> bool {
             | AddKind::Wheel
             | AddKind::Flipcard
             | AddKind::MindMap
+            | AddKind::Document
+            | AddKind::Stamp
+            | AddKind::Code
+            | AddKind::Table
+            | AddKind::ReactionStamp
+            | AddKind::Task
+            | AddKind::Kanban
+            | AddKind::Drawing
     )
 }
 
@@ -869,6 +1546,15 @@ const fn word(kind: AddKind) -> &'static str {
         AddKind::StickerStack => "a sticker stack",
         AddKind::Flipcard => "a flip card",
         AddKind::MindMap => "a mind-map node",
+        AddKind::Document => "a document",
+        AddKind::Stamp => "a stamp",
+        AddKind::Code => "a code block",
+        AddKind::Table => "a table",
+        AddKind::ReactionStamp => "a reaction stamp",
+        AddKind::Icon => "an icon",
+        AddKind::Task => "a task",
+        AddKind::Kanban => "a kanban",
+        AddKind::Drawing => "a drawing",
     }
 }
 
@@ -944,6 +1630,46 @@ fn parent_node<'a>(scene: &Scene<'a>, reference: &str) -> Result<&'a Object> {
         .ok_or_else(|| not_value(COMMAND, "parent", "a mind-map node"))
 }
 
+/// `made` stuck to the object `on` names.
+fn stuck_stamp(
+    scene: &Scene<'_>,
+    made: &Made,
+    on: &str,
+    at: Option<Point>,
+) -> Result<NewObject> {
+    let target = stuck_target(scene, on)?;
+    reaction_stamp::stuck(made.clone(), &target, at).map(NewObject::Made)
+}
+
+/// The object `reference` names, which the web client sticks a stamp to, with
+/// its box.
+fn stuck_target<'a>(scene: &Scene<'a>, reference: &str) -> Result<Target<'a>> {
+    let id = find_id(
+        scene.objects().iter().map(|object| object.id.as_str()),
+        reference,
+    )?;
+    let refused =
+        || not_value(COMMAND, "on", "a shape, sticker, document, task or image");
+    let object = scene
+        .get(&id)
+        .filter(|object| {
+            matches!(
+                object.kind,
+                ObjectKind::Shape
+                    | ObjectKind::Sticker
+                    | ObjectKind::Document
+                    | ObjectKind::Task
+                    | ObjectKind::Image
+            )
+        })
+        .ok_or_else(refused)?;
+    Ok(Target {
+        id: &object.id,
+        area: scene.rectangle_of(object).ok_or_else(refused)?,
+        rotation: object.rotation,
+    })
+}
+
 /// The new objects in order: a corner is found for those without one, among
 /// the objects there and the ones before in the list. A frame `#N` is the
 /// N-th item, a frame made in the same list, and is kept as `#N`.
@@ -961,7 +1687,6 @@ fn entries(
         .enumerate()
         .map(|(place, item)| {
             let (within, named) = frames_of(item, scene, &frames)?;
-            let color = item.color.clone();
             let mut spot =
                 |at: Option<Point>, size: Option<Size>, kind: &ObjectKind| {
                     let at = Placement {
@@ -980,7 +1705,7 @@ fn entries(
                     text: text.clone(),
                     at: spot(*at, *size, &ObjectKind::Sticker)?,
                     size: *size,
-                    color,
+                    color: item.color.clone(),
                 },
                 What::Text { text, at } => NewObject::Text {
                     text: text.clone(),
@@ -995,7 +1720,7 @@ fn entries(
                     text: text.clone(),
                     at: spot(*at, *size, &ObjectKind::Shape)?,
                     size: *size,
-                    color,
+                    color: item.color.clone(),
                     kind: *kind,
                 },
                 What::Frame {
@@ -1007,13 +1732,13 @@ fn entries(
                     title: title.clone(),
                     at: spot(*at, *size, &ObjectKind::Frame)?,
                     size: *size,
-                    color,
+                    color: item.color.clone(),
                     look: *look,
                 },
                 What::Arrow { from, to, look } => NewObject::Arrow {
                     from: from.clone(),
                     to: to.clone(),
-                    color,
+                    color: item.color.clone(),
                     look: look.clone(),
                 },
                 What::Link { url, at, embed } => NewObject::Link {
@@ -1039,21 +1764,54 @@ fn entries(
                     upload: held(file, got.get(place)),
                     at: spot(*at, None, &ObjectKind::File)?,
                 },
-                What::Made { made, at } => NewObject::Made(Made {
-                    at: spot(*at, made.size, &made.kind)?,
-                    ..made.clone()
-                }),
+                What::Stuck { made, on, at } => stuck_stamp(scene, made, on, *at)?,
+                What::Drawing(stroke) => stroke.clone(),
+                What::Made { made, at } => put(made.clone(), *at, &mut spot)?,
+                What::Task { made, at, .. } => {
+                    put(settled(made, got.get(place)), *at, &mut spot)?
+                }
                 What::Node { branch, at } => {
-                    let node = hung_node(scene, branch, color.as_ref())?;
+                    let node = hung_node(scene, branch, item.color.as_ref())?;
                     let fixed = branch.parent.as_ref().map(|_| node.at).or(*at);
-                    let corner = spot(fixed, node.size, &node.kind)?;
-                    NewObject::Made(Made { at: corner, ..node })
+                    put(node, fixed, &mut spot)?
                 }
             };
             frames.push(made_frame(item, &placed));
             Ok(entry_in(item, new, (named, linked)))
         })
         .collect()
+}
+
+/// `made` at the corner `at` or a free one that `spot` finds; one held by a
+/// kanban stays at its origin.
+fn put(
+    made: Made,
+    at: Option<Point>,
+    spot: &mut impl FnMut(Option<Point>, Option<Size>, &ObjectKind) -> Result<Point>,
+) -> Result<NewObject> {
+    Ok(NewObject::Made(match made.parent {
+        Some(_) => made,
+        None => Made {
+            at: spot(at, made.size, &made.kind)?,
+            ..made
+        },
+    }))
+}
+
+/// The task with the status its call named, settled, if it named one.
+fn settled(made: &Made, got: Option<&Fetched>) -> Made {
+    match got {
+        Some(Fetched::Task { status, cell }) => {
+            let card = status
+                .as_deref()
+                .map_or_else(|| made.clone(), |id| task::with_status(made.clone(), id));
+            cell.as_ref()
+                .map_or(card.clone(), |cell| task::in_cell(card, cell))
+        }
+        Some(Fetched::Nothing | Fetched::Page(_) | Fetched::Upload(_)) | None => {
+            made.clone()
+        }
+    }
 }
 
 /// The new object as an entry, in the frame it names or, but for an arrow,
@@ -1064,8 +1822,9 @@ fn entry_in(
     (named, linked): (Option<&Object>, Option<&Object>),
 ) -> NewEntry {
     let fresh = item.frame.as_deref().filter(|name| name.starts_with('#'));
-    // An arrow goes into a frame only when asked, else where its ends are.
-    let frame = named.or(linked.filter(|_| !matches!(item.what, What::Arrow { .. })));
+    // An arrow or a stuck stamp is put in a frame by where it falls, if not asked.
+    let frame = named.or(linked
+        .filter(|_| !matches!(item.what, What::Arrow { .. } | What::Stuck { .. })));
     NewEntry {
         new,
         frame: fresh
@@ -1110,7 +1869,9 @@ fn frames_of<'a>(
 fn page(got: Option<&Fetched>) -> Option<LinkPreview> {
     match got {
         Some(Fetched::Page(preview)) => preview.clone(),
-        Some(Fetched::Nothing | Fetched::Upload(_)) | None => None,
+        Some(Fetched::Nothing | Fetched::Upload(_) | Fetched::Task { .. }) | None => {
+            None
+        }
     }
 }
 
@@ -1118,7 +1879,7 @@ fn page(got: Option<&Fetched>) -> Option<LinkPreview> {
 fn held(file: &Local, got: Option<&Fetched>) -> Upload {
     match got {
         Some(Fetched::Upload(done)) => done.clone(),
-        Some(Fetched::Nothing | Fetched::Page(_)) | None => {
+        Some(Fetched::Nothing | Fetched::Page(_) | Fetched::Task { .. }) | None => {
             file.upload(file.name.clone())
         }
     }
@@ -1191,7 +1952,16 @@ mod tests {
     use std::{cell::Cell, sync::Arc};
 
     use serde_json::{Map, Value, json};
-    use yrs::{Any, Doc, Map as _, ReadTxn as _, StateVector, Transact as _};
+    use yrs::{
+        Any,
+        ArrayPrelim,
+        Doc,
+        Map as _,
+        MapPrelim,
+        ReadTxn as _,
+        StateVector,
+        Transact as _,
+    };
 
     use super::{
         Fetched,
@@ -1202,6 +1972,7 @@ mod tests {
         fetched,
         linked_frame,
         read_items,
+        with_tasks,
     };
     use crate::{
         Error,
@@ -1216,7 +1987,10 @@ mod tests {
         domain::{
             area::scene::Scene,
             board::{EditRight, Object, ObjectKind, object_of},
-            change::value::{Made, NewObject, Upload},
+            change::{
+                receipt::ChangeReport,
+                value::{Made, NewObject, Upload},
+            },
             response::LinkPreview,
         },
         effect::{http::HttpResponse, settings::CacheSettings},
@@ -1297,7 +2071,7 @@ mod tests {
                     | NewObject::Image { at, .. }
                     | NewObject::File { at, .. }
                     | NewObject::Made(Made { at, .. }) => Some((at.x(), at.y())),
-                    NewObject::Arrow { .. } => None,
+                    NewObject::Arrow { .. } | NewObject::Drawing { .. } => None,
                 };
                 (corner, entry.frame)
             })
@@ -1423,6 +2197,602 @@ mod tests {
                 "back of `object add` must be given, in item 1",
                 "text of `object add` must be given, in item 1",
                 "back of `object add` must be left out for a sticker, in item 1",
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_document_needs_its_text_and_takes_only_the_colors_of_the_card() -> Result<()> {
+        let refused = |item: Value| -> Result<String> {
+            Ok(read(&args(json!({ "items": [item] }))?)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default())
+        };
+        assert_eq!(
+            [
+                refused(json!({"kind": "document", "text": "Spec", "color": "red4"}))?,
+                refused(json!({"kind": "document", "color": "white1"}))?,
+                refused(json!({"kind": "document", "text": "a", "size": "9,9"}))?,
+                refused(json!({"kind": "document", "text": "a", "color": "blue3"}))?,
+            ],
+            [
+                "color of `object add` must be one of white1, gray3, red3, orange3, yellow3, green3, blue3, violet3, in item 1",
+                "text of `object add` must be given, in item 1",
+                "size of `object add` must be left out for a document, in item 1",
+                "",
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_code_block_needs_its_text_and_takes_only_its_language_and_theme() -> Result<()>
+    {
+        let refused = |item: Value| -> Result<String> {
+            Ok(read(&args(json!({ "items": [item] }))?)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default())
+        };
+        assert_eq!(
+            [
+                refused(json!({"kind": "code"}))?,
+                refused(json!({"kind": "code", "text": "a", "color": "red4"}))?,
+                refused(json!({"kind": "code", "text": "a", "size": "9,9"}))?,
+                refused(json!({"kind": "sticker", "text": "a", "theme": "dark"}))?,
+                refused(
+                    json!({"kind": "code", "text": "a", "language": "rust", "theme": "dark"})
+                )?,
+            ],
+            [
+                "text of `object add` must be given, in item 1",
+                "color of `object add` must be left out for a code block, in item 1",
+                "size of `object add` must be left out for a code block, in item 1",
+                "theme of `object add` must be left out for a sticker, in item 1",
+                "",
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_language_the_web_does_not_offer_is_refused_with_the_list() {
+        let refused = args(json!({
+            "items": [{"kind": "code", "text": "a", "language": "cobol"}]
+        }))
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+        assert!(
+            refused.contains("typescript") && refused.contains("plain_text"),
+            "{refused}"
+        );
+    }
+
+    #[test]
+    fn a_table_refuses_no_rows_too_many_cells_and_keys_of_other_kinds() -> Result<()> {
+        let refused = |item: Value| -> Result<String> {
+            Ok(read(&args(json!({ "items": [item] }))?)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default())
+        };
+        assert_eq!(
+            [
+                refused(json!({"kind": "table", "rows": 0}))?,
+                refused(json!({"kind": "table", "columns": 0}))?,
+                refused(json!({"kind": "table", "rows": 60, "columns": 50}))?,
+                refused(json!({"kind": "table", "size": "10,10"}))?,
+                refused(json!({"kind": "table", "color": "red4"}))?,
+                refused(json!({"kind": "table", "text": "a"}))?,
+                refused(json!({"text": "a", "rows": 2}))?,
+                refused(json!({"kind": "table", "rows": 50, "columns": 50}))?,
+            ],
+            [
+                "rows of `object add` must be at least 1, in item 1",
+                "columns of `object add` must be at least 1, in item 1",
+                "rows of `object add` must be at most 2500 cells with the columns, in item 1",
+                "size of `object add` must be left out for a table, in item 1",
+                "color of `object add` must be left out for a table, in item 1",
+                "text of `object add` must be left out for a table, in item 1",
+                "rows of `object add` must be left out for a sticker, in item 1",
+                "",
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_table_is_made_with_its_counts_and_corner() -> Result<()> {
+        let args = args(json!({
+            "kind": "table", "rows": 3, "columns": 4, "at": "10,20"
+        }))?;
+        let scene = Scene::new(&[]);
+        let found = entries(&read(&args)?, &[], &scene, None)?;
+        let table = found.into_iter().find_map(|entry| made_of(entry.new));
+        assert_eq!(
+            table.map(|made| (
+                made.kind,
+                (made.at.x(), made.at.y()),
+                made.size.map(|size| (size.width(), size.height())),
+                made.fields
+                    .iter()
+                    .filter(|(name, _)| name.starts_with("row-"))
+                    .count(),
+            )),
+            Some((ObjectKind::Table, (10.0, 20.0), Some((960.0, 180.0)), 3))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_kanban_refuses_a_size_a_text_a_color_and_keys_of_other_kinds() -> Result<()> {
+        let refused = |item: Value| -> Result<String> {
+            Ok(read(&args(json!({ "items": [item] }))?)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default())
+        };
+        assert_eq!(
+            [
+                refused(json!({"kind": "kanban", "size": "10,10"}))?,
+                refused(json!({"kind": "kanban", "text": "a"}))?,
+                refused(json!({"kind": "kanban", "color": "red"}))?,
+                refused(json!({"kind": "kanban", "status": "done"}))?,
+                refused(json!({"text": "a", "column": ["Now"]}))?,
+                refused(json!({"text": "a", "swimlane": ["Team"]}))?,
+                refused(
+                    json!({"kind": "kanban", "column": ["Now"], "swimlane": ["Team"]})
+                )?,
+            ],
+            [
+                "size of `object add` must be left out for a kanban, in item 1",
+                "text of `object add` must be left out for a kanban, in item 1",
+                "color of `object add` must be left out for a kanban, in item 1",
+                "status of `object add` must be left out for a kanban, in item 1",
+                "column of `object add` must be left out for a sticker, in item 1",
+                "swimlane of `object add` must be left out for a sticker, in item 1",
+                "",
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_drawing_refuses_a_text_a_size_a_corner_and_keys_of_other_kinds() -> Result<()>
+    {
+        let refused = |item: Value| -> Result<String> {
+            Ok(read(&args(json!({ "items": [item] }))?)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default())
+        };
+        let points = json!(["1,1", "2,2"]);
+        assert_eq!(
+            [
+                refused(json!({"kind": "drawing", "point": points, "text": "a"}))?,
+                refused(json!({"kind": "drawing", "point": points, "size": "9,9"}))?,
+                refused(json!({"kind": "drawing", "point": points, "at": "1,1"}))?,
+                refused(json!({"kind": "drawing", "point": points, "faces": 6}))?,
+                refused(json!({"text": "a", "point": points}))?,
+                refused(json!({"text": "a", "highlighter": true}))?,
+                refused(json!({"text": "a", "stroke_width": 4}))?,
+                refused(json!({"kind": "drawing", "point": ["1,1"]}))?,
+                refused(
+                    json!({"kind": "drawing", "point": points, "stroke_width": 2.5})
+                )?,
+                refused(
+                    json!({"kind": "drawing", "point": points, "stroke_width": 31})
+                )?,
+            ],
+            [
+                "text of `object add` must be left out for a drawing, in item 1",
+                "size of `object add` must be left out for a drawing, in item 1",
+                "at of `object add` must be left out for a drawing, in item 1",
+                "faces of `object add` must be left out for a drawing, in item 1",
+                "point of `object add` must be left out for a sticker, in item 1",
+                "highlighter of `object add` must be left out for a sticker, in item 1",
+                "stroke_width of `object add` must be left out for a sticker, in item 1",
+                "point of `object add` must be at least 2 points, e.g. --point 10,20 --point 120,80, in item 1",
+                "stroke_width of `object add` must be a whole number from 1 to 30, in item 1",
+                "stroke_width of `object add` must be a whole number from 1 to 30, in item 1",
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_stroke_is_a_pen_or_a_highlighter_with_a_palette_color() -> Result<()> {
+        let drawn = |item: Value| -> Result<Vec<super::What>> {
+            Ok(read(&args(json!({ "items": [item] }))?)?
+                .into_iter()
+                .map(|item| item.what)
+                .collect())
+        };
+        let made = |color: u32, width: f64, alpha: f64| -> Result<Vec<super::What>> {
+            Ok(vec![super::What::Drawing(NewObject::Drawing {
+                points: vec![
+                    crate::domain::geometry::Point::new(1.0, 1.0)?,
+                    crate::domain::geometry::Point::new(2.0, 2.0)?,
+                ],
+                color,
+                width,
+                alpha,
+            })])
+        };
+        let two = json!(["1,1", "2,2"]);
+        assert_eq!(
+            [
+                drawn(json!({"kind": "drawing", "point": two}))?,
+                drawn(json!({"kind": "drawing", "point": two, "highlighter": true}))?,
+                drawn(
+                    json!({"kind": "drawing", "point": two, "color": "yellow4", "stroke_width": 9})
+                )?,
+            ],
+            [
+                made(0x001E_1E1E, 3.0, 1.0)?,
+                made(0x00FB_F040, 22.0, 0.5)?,
+                made(0x00FC_F3AF, 9.0, 1.0)?,
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_kanban_is_made_at_its_corner_with_its_cells_and_first_card() -> Result<()> {
+        let args = args(json!({
+            "kind": "kanban", "column": ["Now", "Next"], "at": "10,20"
+        }))?;
+        let found = entries(&read(&args)?, &[], &Scene::new(&[]), None)?;
+        let kanban = found.into_iter().find_map(|entry| made_of(entry.new));
+        assert_eq!(
+            kanban.map(|made| (
+                made.kind,
+                (made.at.x(), made.at.y()),
+                made.parts.len(),
+                made.entries.len(),
+            )),
+            Some((ObjectKind::Other("kanban".to_owned()), (10.0, 20.0), 1, 4))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_task_refuses_no_title_bad_days_a_late_start_and_keys_of_other_kinds()
+    -> Result<()> {
+        let refused = |item: Value| -> Result<String> {
+            Ok(read(&args(json!({ "items": [item] }))?)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default())
+        };
+        assert_eq!(
+            [
+                refused(json!({"kind": "task"}))?,
+                refused(json!({"kind": "task", "text": "a", "start": "soon"}))?,
+                refused(json!({"kind": "task", "text": "a", "due": "2026-02-30"}))?,
+                refused(json!({
+                    "kind": "task", "text": "a", "start": "2026-11-07", "due": "2026-11-06"
+                }))?,
+                refused(json!({"kind": "task", "text": "a", "color": "red4"}))?,
+                refused(json!({"kind": "task", "text": "a", "size": "10,10"}))?,
+                refused(json!({"text": "a", "status": "done"}))?,
+                refused(json!({"text": "a", "due": "2026-11-06"}))?,
+                refused(json!({
+                    "kind": "task", "text": "a", "start": "2026-11-06", "due": "2026-11-06"
+                }))?,
+            ],
+            [
+                "text of `object add` must be given, in item 1",
+                "start of `object add` must be a day as YYYY-MM-DD, e.g. 2026-11-06, in item 1",
+                "due of `object add` must be a day as YYYY-MM-DD, e.g. 2026-11-06, in item 1",
+                "start of `object add` must be on or before the due day, in item 1",
+                "color of `object add` must be one of gray, green, yellow, orange, red, violet, blue, sky, lime, pink, in item 1",
+                "size of `object add` must be left out for a task, in item 1",
+                "status of `object add` must be left out for a sticker, in item 1",
+                "due of `object add` must be left out for a sticker, in item 1",
+                "",
+            ]
+        );
+        Ok(())
+    }
+
+    /// A board whose status store holds `stored`, as id and title.
+    fn board_with_statuses(stored: &[(&str, &str)]) -> Doc {
+        let document = Doc::new();
+        let store = document.get_or_insert_map("task-card-statusesStore");
+        // imperative: yrs inserts through one `&mut` transaction
+        let mut transaction = document.transact_mut();
+        let written = stored
+            .iter()
+            .map(|(id, title)| {
+                store.insert(
+                    &mut transaction,
+                    *id,
+                    MapPrelim::from_iter([("title", Any::from(*title))]),
+                )
+            })
+            .count();
+        assert_eq!(written, stored.len());
+        drop(transaction);
+        document
+    }
+
+    /// The status of the task `given` makes on a board that stores `stored`,
+    /// or the error text.
+    fn status_of(given: &str, stored: &[(&str, &str)]) -> Result<Value> {
+        let args = args(json!({
+            "kind": "task", "text": "Ship", "status": given, "at": "10,20",
+            "description": "Go live", "due": "2026-11-06", "color": "yellow"
+        }))?;
+        let items = read(&args)?;
+        let board = board_with_statuses(stored);
+        Ok(
+            match with_tasks(&items, vec![Fetched::Nothing], &board, &Scene::new(&[])) {
+                Ok(got) => entries(&items, &got, &Scene::new(&[]), None)?
+                    .into_iter()
+                    .find_map(|entry| made_of(entry.new))
+                    .and_then(|made| {
+                        made.fields
+                            .into_iter()
+                            .find(|(name, _)| *name == "statusId")
+                            .map(|(_, id)| id)
+                    })
+                    .unwrap_or_default(),
+                Err(error) => json!(error.to_string()),
+            },
+        )
+    }
+
+    #[test]
+    fn a_task_takes_its_status_by_id_or_by_a_title_of_the_board() -> Result<()> {
+        let review = [("s9", "In review")];
+        assert_eq!(
+            [
+                status_of("in-progress", &[])?,
+                status_of("Done", &[])?,
+                status_of("in review", &review)?,
+                status_of("s9", &review)?,
+            ],
+            [
+                json!("in-progress"),
+                json!("done"),
+                json!("s9"),
+                json!("s9")
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_task_names_the_statuses_it_can_take_when_the_status_is_unknown() -> Result<()>
+    {
+        assert_eq!(
+            status_of("later", &[("s9", "In review")])?,
+            json!(
+                "status of `object add` must be one of backlog, to-do, in-progress, done, canceled, or the title of a status of the board"
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_task_without_a_status_is_made_with_its_corner_size_and_info() -> Result<()> {
+        let args = args(json!({ "kind": "task", "text": "Ship", "at": "10,20" }))?;
+        let found = entries(&read(&args)?, &[], &Scene::new(&[]), None)?;
+        let task = found.into_iter().find_map(|entry| made_of(entry.new));
+        assert_eq!(
+            task.map(|made| (
+                made.kind,
+                (made.at.x(), made.at.y()),
+                made.size.map(|size| (size.width(), size.height())),
+                made.fields.iter().any(|(name, _)| *name == "statusId"),
+                made.fields
+                    .iter()
+                    .find(|(name, _)| *name == "taskCardInfoId")
+                    .map(|(_, id)| id.clone()),
+                made.entries.len(),
+            )),
+            Some((
+                ObjectKind::Task,
+                (10.0, 20.0),
+                Some((300.0, 120.0)),
+                false,
+                Some(json!("w1")),
+                6
+            ))
+        );
+        Ok(())
+    }
+
+    /// The board of a kanban `k1` with the columns To do (`c1`) and Done
+    /// (`c2`), one swimlane Untitled (`l1`) and a card `t0` in Done.
+    fn kanban_board() -> (Doc, Vec<Object>) {
+        let document = Doc::new();
+        let infos = document.get_or_insert_map("kanban-infoStore");
+        let columns = document.get_or_insert_map("kanban-columnsStore");
+        let lanes = document.get_or_insert_map("kanban-swimlanesStore");
+        {
+            // imperative: yrs inserts through one `&mut` transaction
+            let mut transaction = document.transact_mut();
+            let info = infos.insert(
+                &mut transaction,
+                "i1",
+                MapPrelim::from_iter([("columns", Any::from(0))]),
+            );
+            info.insert(
+                &mut transaction,
+                "columns",
+                ArrayPrelim::from_iter([Any::from("c1"), Any::from("c2")]),
+            );
+            info.insert(
+                &mut transaction,
+                "swimlanes",
+                ArrayPrelim::from_iter([Any::from("l1")]),
+            );
+            [
+                (&columns, "c1", "To do", 0),
+                (&columns, "c2", "Done", 10_000),
+            ]
+            .into_iter()
+            .chain([(&lanes, "l1", "Untitled", 0)])
+            .for_each(|(store, id, title, index)| {
+                store.insert(
+                    &mut transaction,
+                    id,
+                    MapPrelim::from_iter([
+                        ("title", Any::from(title)),
+                        ("index", Any::from(index)),
+                    ]),
+                );
+            });
+        }
+        let objects = [
+            json!({"id": "k1", "type": "kanban", "position": {"x": 0, "y": 0},
+                   "kanbanInfoId": "i1"}),
+            json!({"id": "t0", "type": "task-card", "position": {"x": 0, "y": 0},
+                   "parentId": "k1", "columnId": "c2", "swimlaneId": "l1",
+                   "index": 1_099_511_627_776.0}),
+            json!({"id": "s1", "type": "sticker", "position": {"x": 0, "y": 0}}),
+        ];
+        (
+            document,
+            objects.into_iter().filter_map(object_of).collect(),
+        )
+    }
+
+    /// For each task of `items` on the kanban board: its holder, column,
+    /// swimlane and index; or the error text.
+    fn carded(items: &Value) -> Result<Value> {
+        let (board, objects) = kanban_board();
+        let scene = Scene::new(&objects);
+        let items = read(&args(json!({ "items": items }))?)?;
+        let got = items.iter().map(|_| Fetched::Nothing).collect();
+        Ok(match with_tasks(&items, got, &board, &scene) {
+            Ok(got) => json!(
+                entries(&items, &got, &scene, None)?
+                    .into_iter()
+                    .filter_map(|entry| made_of(entry.new))
+                    .map(|made| {
+                        let field = |name: &str| {
+                            made.fields
+                                .iter()
+                                .find(|(field, _)| *field == name)
+                                .map(|(_, value)| value.clone())
+                        };
+                        json!([
+                            made.parent,
+                            field("columnId"),
+                            field("swimlaneId"),
+                            field("index"),
+                            (made.at.x(), made.at.y())
+                        ])
+                    })
+                    .collect::<Vec<_>>()
+            ),
+            Err(error) => json!(error.to_string()),
+        })
+    }
+
+    #[test]
+    fn a_task_goes_into_the_cell_its_kanban_column_and_swimlane_name() -> Result<()> {
+        let card = |extra: Value| {
+            let mut item: Map<String, Value> =
+                [("kind", "task"), ("text", "Ship"), ("kanban", "k1")]
+                    .into_iter()
+                    .map(|(key, value)| (key.to_owned(), json!(value)))
+                    .collect();
+            item.extend(extra.as_object().cloned().unwrap_or_default());
+            Value::Object(item)
+        };
+        assert_eq!(
+            [
+                carded(&json!([card(json!({}))]))?,
+                carded(&json!([card(
+                    json!({"column": ["DONE"], "swimlane": ["untitled"]})
+                )]))?,
+                carded(&json!([
+                    card(json!({"column": ["Done"]})),
+                    card(json!({"column": ["Done"]})),
+                    card(json!({}))
+                ]))?,
+            ],
+            [
+                json!([["k1", "c1", "l1", 1_099_511_627_776.0, [0.0, 0.0]]]),
+                json!([["k1", "c2", "l1", 2_199_023_255_552.0, [0.0, 0.0]]]),
+                json!([
+                    ["k1", "c2", "l1", 2_199_023_255_552.0, [0.0, 0.0]],
+                    ["k1", "c2", "l1", 3_298_534_883_328.0, [0.0, 0.0]],
+                    ["k1", "c1", "l1", 1_099_511_627_776.0, [0.0, 0.0]]
+                ]),
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_task_in_a_kanban_refuses_an_unknown_cell_and_a_board_object_that_is_no_kanban()
+    -> Result<()> {
+        let task = |extra: (&str, Value)| json!([{"kind": "task", "text": "a", "kanban": "k1", extra.0: extra.1}]);
+        assert_eq!(
+            [
+                carded(&task(("column", json!(["Later"]))))?,
+                carded(&task(("swimlane", json!(["Team"]))))?,
+                carded(&json!([{"kind": "task", "text": "a", "kanban": "s1"}]))?,
+            ],
+            [
+                json!("column of `object add` must be one of To do, Done"),
+                json!("swimlane of `object add` must be one of Untitled"),
+                json!("kanban of `object add` must be a kanban"),
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_task_refuses_a_kanban_beside_a_corner_a_frame_or_a_second_title() -> Result<()>
+    {
+        let refused = |item: Value| -> Result<String> {
+            Ok(read(&args(json!({ "items": [item] }))?)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default())
+        };
+        assert_eq!(
+            [
+                refused(json!({"text": "a", "kanban": "k1"}))?,
+                refused(json!({"kind": "kanban", "kanban": "k1"}))?,
+                refused(
+                    json!({"kind": "task", "text": "a", "kanban": "k1", "at": "1,2"})
+                )?,
+                refused(
+                    json!({"kind": "task", "text": "a", "kanban": "k1", "frame": "Q3"})
+                )?,
+                refused(json!({"kind": "task", "text": "a", "column": ["Done"]}))?,
+                refused(json!({"kind": "task", "text": "a", "swimlane": ["Team"]}))?,
+                refused(json!({
+                    "kind": "task", "text": "a", "kanban": "k1", "column": ["a", "b"]
+                }))?,
+                refused(json!({
+                    "kind": "task", "text": "a", "kanban": "k1", "swimlane": ["a", "b"]
+                }))?,
+                refused(json!({
+                    "kind": "task", "text": "a", "kanban": "k1",
+                    "column": ["Done"], "swimlane": ["Team"]
+                }))?,
+            ],
+            [
+                "kanban of `object add` must be left out for a sticker, in item 1",
+                "kanban of `object add` must be left out for a kanban, in item 1",
+                "at of `object add` must be left out with kanban, in item 1",
+                "frame of `object add` must be left out with kanban, in item 1",
+                "column of `object add` must be left out without kanban, in item 1",
+                "swimlane of `object add` must be left out without kanban, in item 1",
+                "column of `object add` must be one title for a task, in item 1",
+                "swimlane of `object add` must be one title for a task, in item 1",
+                "",
             ]
         );
         Ok(())
@@ -1693,6 +3063,225 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn a_reaction_stamp_refuses_what_it_cannot_take_and_what_only_it_takes()
+    -> Result<()> {
+        let refused = |item: Value| -> Result<String> {
+            Ok(read(&args(json!({ "items": [item] }))?)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default())
+        };
+        let stamp = |extra: Value| {
+            let mut item = json!({"kind": "reaction-stamp"});
+            item.as_object_mut()
+                .zip(extra.as_object())
+                .into_iter()
+                .for_each(|(item, extra)| item.extend(extra.clone()));
+            item
+        };
+        assert_eq!(
+            [
+                refused(stamp(json!({"text": "a"})))?,
+                refused(stamp(json!({"size": "10,10"})))?,
+                refused(stamp(json!({"color": "red4"})))?,
+                refused(stamp(json!({"on": "s1", "frame": "f1"})))?,
+                refused(stamp(json!({"reaction": ["like", "heart"]})))?,
+                refused(stamp(json!({"reaction": ["thumbs-up"]})))?,
+                refused(json!({"text": "a", "on": "s1"}))?,
+                refused(json!({"text": "a", "reaction": ["like"]}))?,
+                refused(stamp(json!({"on": "s1", "at": "1,2", "reaction": ["+1"]})))?,
+            ],
+            [
+                "text of `object add` must be left out for a reaction stamp, in item 1",
+                "size of `object add` must be left out for a reaction stamp, in item 1",
+                "color of `object add` must be left out for a reaction stamp, in item 1",
+                "frame of `object add` must be left out with on, in item 1",
+                "reaction of `object add` must be one key, in item 1",
+                "reaction of `object add` must be one of like, heart, star, +1, dislike, figma-question, check or cross, in item 1",
+                "on of `object add` must be left out for a sticker, in item 1",
+                "reaction of `object add` must be left out for a sticker, in item 1",
+                "",
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_reaction_stamp_sticks_to_its_object_outside_the_frame_it_is_in() -> Result<()>
+    {
+        let board = on_board();
+        let scene = Scene::new(&board);
+        let args =
+            args(json!({"kind": "reaction-stamp", "on": "s1", "reaction": ["heart"]}))?;
+        let found = entries(&read(&args)?, &[], &scene, scene.get("f1"))?;
+        let stamp = found.into_iter().find_map(|entry| {
+            let frame = entry.frame;
+            made_of(entry.new).map(|made| (frame, made.fields))
+        });
+        let (frame, fields) = stamp.unzip();
+        let field = |name: &str| {
+            fields
+                .iter()
+                .flatten()
+                .find(|(each, _)| *each == name)
+                .map(|(_, value)| value.clone())
+        };
+        assert_eq!(
+            (frame, field("stampKey"), field("stickyPosition"),),
+            (
+                Some(None),
+                Some(json!("heart")),
+                Some(json!({
+                    "parentId": "s1",
+                    "constraints": {"x": "normalized", "y": "normalized"},
+                    "x": 0.5,
+                    "y": 0.5,
+                })),
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_loose_reaction_stamp_is_like_by_default_and_sticks_to_nothing() -> Result<()> {
+        let args = args(json!({"kind": "reaction-stamp", "at": "10,20"}))?;
+        let scene = Scene::new(&[]);
+        let found = entries(&read(&args)?, &[], &scene, None)?;
+        let stamp = found.into_iter().find_map(|entry| made_of(entry.new));
+        assert_eq!(
+            stamp.map(|made| (
+                (made.at.x(), made.at.y()),
+                made.fields.contains(&("stampKey", json!("like"))),
+                made.fields
+                    .iter()
+                    .any(|(name, _)| *name == "stickyPosition"),
+            )),
+            Some(((10.0, 20.0), true, false))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_reaction_stamp_sticks_only_to_what_the_web_sticks_it_to() -> Result<()> {
+        let refused = |on: &str| -> Result<String> {
+            Ok(
+                placed_on(&on_board(), json!({"kind": "reaction-stamp", "on": on}))
+                    .err()
+                    .map(|error| error.to_string())
+                    .unwrap_or_default(),
+            )
+        };
+        assert_eq!(
+            refused("f1")?,
+            "on of `object add` must be a shape, sticker, document, task or image"
+        );
+        assert!(!refused("nowhere")?.is_empty());
+        assert_eq!(refused("s1")?, "");
+        Ok(())
+    }
+
+    fn icon_made(given: Value) -> Result<Option<Made>> {
+        let scene = Scene::new(&[]);
+        let found = entries(&read(&args(given)?)?, &[], &scene, None)?;
+        Ok(found.into_iter().find_map(|entry| made_of(entry.new)))
+    }
+
+    #[test]
+    fn an_icon_takes_the_defaults_of_the_web_client_and_what_the_call_gives()
+    -> Result<()> {
+        let stored = |made: Option<Made>| {
+            made.map(|made| {
+                (
+                    (made.at.x(), made.at.y()),
+                    made.fields
+                        .into_iter()
+                        .map(|(name, value)| (name.to_owned(), value))
+                        .collect::<Map<_, _>>(),
+                )
+            })
+        };
+        let plain =
+            icon_made(json!({"kind": "icon", "text": "rocket-launch", "at": "10,20"}))?;
+        let asked = icon_made(json!({"kind": "icon", "text": "star", "at": "0,0",
+            "weight": "bold", "color": "red9", "size": "96,96"}))?;
+        assert_eq!(
+            [stored(plain), stored(asked)],
+            [
+                Some((
+                    (10.0, 20.0),
+                    json!({"iconName": "rocket-launch", "weight": "duotone",
+                        "width": 48.0, "height": 48.0,
+                        "fillColor": {"color": "gray12", "opacity": 1}})
+                    .as_object()
+                    .cloned()
+                    .unwrap_or_default()
+                )),
+                Some((
+                    (0.0, 0.0),
+                    json!({"iconName": "star", "weight": "bold",
+                        "width": 96.0, "height": 96.0,
+                        "fillColor": {"color": "red9", "opacity": 1}})
+                    .as_object()
+                    .cloned()
+                    .unwrap_or_default()
+                )),
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn an_icon_refuses_a_name_a_color_a_size_and_a_weight_it_cannot_take() -> Result<()>
+    {
+        let refused = |item: Value| -> Result<String> {
+            Ok(read(&args(json!({ "items": [item] }))?)
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default())
+        };
+        let icon = |extra: Value| {
+            let mut item = json!({"kind": "icon", "text": "rocket-launch"});
+            item.as_object_mut()
+                .zip(extra.as_object())
+                .into_iter()
+                .for_each(|(item, extra)| item.extend(extra.clone()));
+            item
+        };
+        assert_eq!(
+            [
+                refused(icon(json!({"text": "Rocket Launch"})))?,
+                refused(icon(json!({"text": "rocket_launch"})))?,
+                refused(json!({"kind": "icon"}))?,
+                refused(icon(json!({"color": "red4"})))?,
+                refused(icon(json!({"size": "48,64"})))?,
+                refused(json!({"text": "a", "weight": "bold"}))?,
+                refused(icon(
+                    json!({"weight": "fill", "color": "gray8", "size": "24,24"})
+                ))?,
+            ],
+            [
+                "text of `object add` must be lower-case letters, digits and dashes, e.g. rocket-launch, in item 1",
+                "text of `object add` must be lower-case letters, digits and dashes, e.g. rocket-launch, in item 1",
+                "text of `object add` must be given, in item 1",
+                "color of `object add` must be one of gray12, gray8, red9, orange9, yellow9, lime9, green9, mint9, blue9, indigo9, violet9 or pink9, in item 1",
+                "size of `object add` must be square, e.g. 48,48, in item 1",
+                "weight of `object add` must be left out for a sticker, in item 1",
+                "",
+            ]
+        );
+        let heavy = args(json!({"kind": "icon", "text": "star", "weight": "heavy"}))
+            .err()
+            .map(|error| error.to_string());
+        assert_eq!(
+            heavy.as_deref(),
+            Some(
+                "weight of `object add icon` must be one of thin, light, regular, bold, fill, duotone"
+            )
+        );
+        Ok(())
+    }
+
     fn made_of(new: NewObject) -> Option<Made> {
         match new {
             NewObject::Made(made) => Some(made),
@@ -1703,7 +3292,8 @@ mod tests {
             | NewObject::Arrow { .. }
             | NewObject::Link { .. }
             | NewObject::Image { .. }
-            | NewObject::File { .. } => None,
+            | NewObject::File { .. }
+            | NewObject::Drawing { .. } => None,
         }
     }
 
@@ -1896,6 +3486,74 @@ mod tests {
         Ok(())
     }
 
+    /// What a dry run of two icons says, given the replies after the load.
+    async fn icons_dry_run(
+        between: Vec<HttpResponse>,
+        names: [&str; 2],
+    ) -> Result<ChangeReport> {
+        let (_, client) = serving(between)?;
+        let arguments = args(json!({"dry_run": true, "items": [
+            {"kind": "icon", "text": names[0]},
+            {"kind": "icon", "text": names[1]}]}))?;
+        added(
+            &client,
+            Loading {
+                connector: &board_document(),
+                cache: None,
+                cache_use: CacheUse::Use,
+            },
+            &arguments,
+            &read(&arguments)?,
+        )
+        .await
+    }
+
+    const ICON_MANIFEST: &str =
+        r#"[{"n":"rocket"},{"n":"rocket-launch"},{"n":"star"}]"#;
+
+    #[tokio::test]
+    async fn an_icon_the_manifest_lacks_is_refused_with_close_names_even_in_a_dry_run()
+    -> Result<()> {
+        let refused =
+            icons_dry_run(vec![reply(200, &[], ICON_MANIFEST)], ["star", "rokcet"])
+                .await;
+        assert_eq!(
+            error_of(refused).as_deref(),
+            Some(
+                "\"rokcet\" is not an icon: expected an icon name, e.g. rocket-launch \
+                (close: rocket, rocket-launch)"
+            )
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn icons_the_manifest_lists_are_written_after_one_request_for_the_manifest()
+    -> Result<()> {
+        let written = icons_dry_run(
+            vec![reply(200, &[], ICON_MANIFEST)],
+            ["star", "rocket-launch"],
+        )
+        .await?;
+        assert_eq!(written.warnings, Vec::<String>::new());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_manifest_that_cannot_be_read_is_a_warning_and_the_write_goes_on()
+    -> Result<()> {
+        let written = icons_dry_run(
+            vec![reply(404, &[], ""), reply(404, &[], "")],
+            ["star", "rokcet"],
+        )
+        .await?;
+        assert_eq!(
+            written.warnings,
+            ["icons not checked: the icon list could not be read"]
+        );
+        Ok(())
+    }
+
     /// A new file in a folder of its own: its path.
     fn local(name: &str, bytes: &[u8]) -> Result<String> {
         let path = directory()?.join(name);
@@ -1929,6 +3587,7 @@ mod tests {
             | NewObject::Arrow { .. }
             | NewObject::Image { .. }
             | NewObject::File { .. }
+            | NewObject::Drawing { .. }
             | NewObject::Made(_) => None,
         }
     }
@@ -1945,6 +3604,7 @@ mod tests {
             | NewObject::Arrow { .. }
             | NewObject::Link { .. }
             | NewObject::File { .. }
+            | NewObject::Drawing { .. }
             | NewObject::Made(_) => None,
         }
     }

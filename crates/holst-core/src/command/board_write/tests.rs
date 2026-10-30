@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use futures_util::future;
 
-use super::{WriteRequest, write, write_cached};
+use super::{Guard, WriteRequest, refuse_in, write, write_cached};
 use crate::{
     command::board_load::tests::{
         body,
@@ -217,6 +217,7 @@ async fn written_by<I: WriteInterpreter>(
             account_id: &account.id,
             kept: None,
         },
+        None,
     )
     .await
     .map(|changed| changed.written)
@@ -276,6 +277,7 @@ async fn a_held_back_change_is_built_but_not_sent() -> Result<()> {
             account_id: "me",
             kept: None,
         },
+        None,
     )
     .await?;
     assert_eq!(changed.written.delivery, Delivery::Built);
@@ -475,4 +477,18 @@ async fn a_write_from_a_copy_ahead_of_the_server_heals() -> Result<()> {
     assert!(kept.contains(&"restored".to_owned()), "{kept:?}");
     assert!(!kept.contains(&"mine".to_owned()), "a write kept the copy");
     Ok(())
+}
+
+const HIDING: Guard = ("who_can_hide", |needs, holds| {
+    BoardChangeError::HideWithheld { needs, holds }
+});
+
+#[rstest::rstest]
+#[case::withheld(serde_json::json!({ "who_can_hide": "editor", "permits": [] }), true)]
+#[case::held(serde_json::json!({ "who_can_hide": "editor", "permits": ["write"] }), false)]
+fn a_reply_already_read_decides_the_guard(
+    #[case] reply: serde_json::Value,
+    #[case] refused: bool,
+) {
+    assert_eq!(refuse_in(&reply, HIDING).is_err(), refused);
 }

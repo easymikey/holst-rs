@@ -30,8 +30,9 @@ fn no_backups_list_as_none() {
 }
 
 #[rstest]
-#[case::gzip(300, 900, "saved 300 bytes (900 before gzip) to /tmp/b.ydoc.gz")]
-#[case::plain(900, 900, "saved 900 bytes to /tmp/b.ydoc.gz")]
+#[case::gzip(300, 900, "saved 300 B (900 B before gzip) to /tmp/b.ydoc.gz")]
+#[case::plain(900, 900, "saved 900 B to /tmp/b.ydoc.gz")]
+#[case::large(1_234_567, 1_234_567, "saved 1.1 MiB to /tmp/b.ydoc.gz")]
 fn a_saved_backup_says_its_size(
     #[case] bytes: usize,
     #[case] before: usize,

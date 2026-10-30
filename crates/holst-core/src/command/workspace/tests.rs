@@ -74,6 +74,16 @@ fn sent(fake: &Fake) -> Vec<String> {
         .collect()
 }
 
+#[tokio::test]
+async fn the_own_list_names_the_account_from_its_one_reply() -> Result<()> {
+    let (fake, client) = served(&[me()])?;
+    let rows = list(&client, &ListArgs { joinable: false }).await?;
+    assert_eq!(rows.len(), 2);
+    assert_eq!(sent(&fake), ["Get /gapi/current_user"]);
+    assert_eq!(client.account_id().as_deref(), Some("u1"));
+    Ok(())
+}
+
 fn shown_with(with: Vec<ShowPart>, user: Option<&str>) -> ShowArgs {
     ShowArgs {
         workspace: Some("w1".to_owned()),

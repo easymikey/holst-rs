@@ -1,4 +1,4 @@
-//! State between calls: workspaces, trees and boards (dropped narrowly), `@N`.
+//! State between calls: boards (dropped narrowly) and `@N`.
 
 #![expect(
     clippy::disallowed_methods,
@@ -9,7 +9,6 @@ pub(crate) mod alias;
 pub(crate) mod board_memory;
 pub(crate) mod invalidation;
 #[cfg(test)] mod tests;
-pub(crate) mod tree_memory;
 
 use std::{
     sync::{
@@ -19,14 +18,10 @@ use std::{
         PoisonError,
         atomic::{AtomicU64, Ordering},
     },
-    time::{Duration, Instant},
+    time::Instant,
 };
 
-use arc_swap::ArcSwapOption;
-use holst_core::{
-    domain::{account::Workspace, tree::name_index::build::NameIndex},
-    effect::cache::trust::Unverified,
-};
+use holst_core::effect::cache::trust::Unverified;
 use itertools::Itertools as _;
 
 use crate::memory::{
@@ -39,23 +34,11 @@ use crate::memory::{
         KeptBoard,
         KeptCopy,
     },
-    tree_memory::{
-        KeptTree,
-        KeptWorkspaces,
-        TREE_MEMORY_BYTES,
-        TreeMemory,
-        heap_weight,
-    },
 };
-
-const WORKSPACES_TRUST_WINDOW: Duration = Duration::from_mins(5);
 
 #[derive(Default)]
 pub(crate) struct McpMemory {
     generation: AtomicU64,
-    workspaces_floor: AtomicU64,
-    workspaces: ArcSwapOption<KeptWorkspaces>,
-    trees: Mutex<TreeMemory>,
     boards: Mutex<BoardMemory>,
     aliases: Aliases,
 }
@@ -85,17 +68,6 @@ fn least_used<'a>(
 }
 
 impl McpMemory {
-    pub(crate) fn workspaces(&self) -> Option<Arc<[Workspace]>> {
-        let floor = self.workspaces_floor.load(Ordering::Acquire);
-        self.workspaces
-            .load()
-            .as_ref()
-            .filter(|w| {
-                w.generation >= floor && w.at.elapsed() < WORKSPACES_TRUST_WINDOW
-            })
-            .map(|w| Arc::clone(&w.list))
-    }
-
     pub(crate) fn generation(&self) -> u64 {
         self.generation.load(Ordering::Acquire)
     }
@@ -104,48 +76,6 @@ impl McpMemory {
         self.generation
             .fetch_add(1, Ordering::AcqRel)
             .saturating_add(1)
-    }
-
-    pub(crate) fn store_workspaces(
-        &self,
-        list: Vec<Workspace>,
-        generation: u64,
-    ) -> Arc<[Workspace]> {
-        let list = Arc::<[Workspace]>::from(list);
-        // A reset meanwhile is harmless: the entry keeps the old generation.
-        let floor = self.workspaces_floor.load(Ordering::Acquire);
-        (generation >= floor).then(|| {
-            self.workspaces.store(Some(Arc::new(KeptWorkspaces {
-                generation,
-                at: Instant::now(),
-                list: Arc::clone(&list),
-            })));
-        });
-        list
-    }
-
-    pub(crate) fn tree(&self, workspace_id: &str) -> Option<Arc<NameIndex>> {
-        lock(&self.trees).get(workspace_id)
-    }
-
-    pub(crate) fn store_tree(
-        &self,
-        workspace_id: &str,
-        index: NameIndex,
-        generation: u64,
-    ) -> Arc<NameIndex> {
-        let weight = heap_weight(&index);
-        let index = Arc::new(index);
-        let tree = KeptTree {
-            generation,
-            at: Instant::now(),
-            used: 0,
-            weight,
-            index: Arc::clone(&index),
-        };
-        // Under the lock the floors move with: a stale tree never stays.
-        lock(&self.trees).insert(workspace_id, tree, TREE_MEMORY_BYTES);
-        index
     }
 
     pub(crate) fn with_download_trust(download_trust: DownloadTrust) -> Self {

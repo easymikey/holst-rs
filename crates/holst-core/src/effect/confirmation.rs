@@ -21,6 +21,10 @@ pub const NEVER: ReleaseCheck = |_| false;
 pub const UNLESS_FRAME_CONTENT: ReleaseCheck =
     |built| frame_content_count(&built.objects).is_none();
 
+/// Holds back a change that removes table cells that held text.
+pub const UNLESS_CELL_TEXT: ReleaseCheck =
+    |built| cell_text_unconfirmed(&built.objects).is_none();
+
 /// The one rule of both shells for a change that takes more along or cannot be
 /// undone: `unconfirmed` stands unless the call is `confirmed` or a dry run,
 /// which changes nothing.
@@ -71,9 +75,55 @@ pub fn frame_content_unconfirmed(touched: &[ChangedObject]) -> Option<Unconfirme
     })
 }
 
+/// The refusal to remove table cells that held text unasked (a removed cell
+/// names `text` among its fields when it did); none without such a cell.
+#[must_use]
+pub fn cell_text_unconfirmed(touched: &[ChangedObject]) -> Option<Unconfirmed> {
+    let cells = touched
+        .iter()
+        .filter(|object| {
+            object.kind == ObjectKind::TableCell
+                && ((object.change == ObjectChangeKind::Removed
+                    && object.fields.contains(&"text"))
+                    || object.fields.contains(&"text cleared"))
+        })
+        .count();
+    match cells {
+        0 => None,
+        1 => Some(Unconfirmed::new(
+            "removing 1 table cell with text",
+            ChangeRisk::Contents,
+        )),
+        cells => Some(Unconfirmed::new(
+            format!("removing {cells} table cells with text"),
+            ChangeRisk::Contents,
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn removing_table_cells_with_text_is_held_back_and_names_the_count() {
+        let cell = |text: bool| ChangedObject {
+            fields: text.then_some("text").into_iter().collect(),
+            ..removed(ObjectKind::TableCell)
+        };
+        let refusal = |cells: &[ChangedObject]| {
+            cell_text_unconfirmed(cells).map(|unconfirmed| unconfirmed.to_string())
+        };
+        assert_eq!(refusal(&[cell(false), removed(ObjectKind::Sticker)]), None);
+        assert_eq!(
+            refusal(&[cell(true), cell(false)]).as_deref(),
+            Some("removing 1 table cell with text takes everything inside along")
+        );
+        assert_eq!(
+            refusal(&[cell(true), cell(true)]).as_deref(),
+            Some("removing 2 table cells with text takes everything inside along")
+        );
+    }
 
     fn removed(kind: ObjectKind) -> ChangedObject {
         ChangedObject {

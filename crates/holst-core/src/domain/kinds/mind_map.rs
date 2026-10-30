@@ -17,11 +17,11 @@ use crate::{
 };
 
 /// The stored type of a node.
-const NODE: &str = "mind-map-node";
+pub(crate) const NODE: &str = "mind-map-node";
 
 const NODE_TYPE: &str = "nodeType";
-const NODE_COLOR: &str = "nodeColor";
-const HIDE_CHILDREN: &str = "hideChildren";
+pub(crate) const NODE_COLOR: &str = "nodeColor";
+pub(crate) const HIDE_CHILDREN: &str = "hideChildren";
 
 /// The outline the web client gives a new node (`nodeType` PILL).
 const PILL: i64 = 1;

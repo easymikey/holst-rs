@@ -178,6 +178,7 @@ async fn a_saved_original_is_linked_by_its_percent_encoded_name() -> Result<()> 
         text: String::new(),
         color: None,
         look: None,
+        media: None,
         ends: None,
         author: None,
         locked: false,

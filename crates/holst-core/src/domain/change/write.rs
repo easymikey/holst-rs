@@ -11,6 +11,7 @@ use yrs::{
     ReadTxn,
     Text as _,
     TransactionMut,
+    WriteTxn as _,
     Xml as _,
     XmlTextPrelim,
     XmlTextRef,
@@ -48,8 +49,9 @@ use crate::{
                 subtree,
             },
             journal,
-            kind_edit::KindEdit,
+            kind_edit::{KindEdit, next_index},
             made,
+            media,
             rich::{fill_blocks, restyle, tick},
             stacking::bounds,
             value::{
@@ -75,7 +77,13 @@ use crate::{
         },
         geometry::{Point, Rectangle, Size},
         id_source::IdSource,
-        palette::Color,
+        kinds::{
+            flipcard::FRONT_DOCUMENT,
+            mind_map::{self, NODE_COLOR},
+            stamp,
+            task::TITLE_DOCUMENT,
+        },
+        palette::{self, Color},
         response::LinkPreview,
         rich_text::{Editor, TextFormat, parse},
         text_layout,
@@ -83,13 +91,17 @@ use crate::{
     },
     error::{Error, Result, board_change::BoardChangeError},
     protocol::document::{
+        ALGORITHM,
+        ALPHA,
         ARROW_TYPE,
         BACKGROUND_STYLE,
         COLOR,
+        COLOR_TOKEN,
         COLUMN_PREFIX,
         CONTENT_HIDDEN,
         CONTROL,
         CREATED,
+        DATA,
         DISPLAY_FILE_NAME,
         DOCUMENT_ID,
         END,
@@ -107,6 +119,8 @@ use crate::{
         OPACITY,
         ORIGINAL_NAME,
         PARENT_ID,
+        PATH,
+        PIVOT,
         POINT,
         POSITION,
         RATIO,
@@ -123,6 +137,7 @@ use crate::{
         TEXT_BACKGROUND_COLOR,
         TEXT_COLOR,
         TEXT_SCALE,
+        TITLE,
         TYPE,
         UPDATED,
         WIDTH,
@@ -312,7 +327,8 @@ fn add(
         | NewObject::Arrow { .. }
         | NewObject::Link { .. }
         | NewObject::Image { .. }
-        | NewObject::File { .. } => add_plain(transaction, scope, new, placement),
+        | NewObject::File { .. }
+        | NewObject::Drawing { .. } => add_plain(transaction, scope, new, placement),
     }
 }
 
@@ -497,6 +513,12 @@ fn stored_fields<'a>(
             image_fields(upload, at, size.as_ref())
         }
         NewObject::File { upload, at } => file_fields(upload, at),
+        NewObject::Drawing {
+            points,
+            color,
+            width,
+            alpha,
+        } => drawing_fields(points, *color, *width, *alpha),
         NewObject::Made(made) => (
             made.kind.clone(),
             Value::Object(made::own_fields(made).into_iter().collect()),
@@ -571,6 +593,44 @@ fn file_fields<'a>(
             (POSITION): at, (FILE_NAME): upload.name,
             (DISPLAY_FILE_NAME): upload.original, "fileType": upload.mime,
             "fileSize": upload.bytes, "displayType": "stamp",
+        }),
+        None,
+    )
+}
+
+/// A stroke as the web client's pen stores one: `path` the points relative to
+/// the first, each rounded to a tenth, `pivot` the least of them and `position`
+/// the first point moved by it (main.a33651a4.js 132115-132135, 209610-209633).
+fn drawing_fields<'a>(
+    points: &[Point],
+    color: u32,
+    width: f64,
+    alpha: f64,
+) -> (ObjectKind, Value, Option<&'a str>) {
+    let first = points.first().copied().unwrap_or(Point::ORIGIN);
+    let drawn = match points {
+        [only] => vec![*only; 2],
+        _ => points.to_vec(),
+    };
+    let tenth = |value: f64| (value * 10.0 + 0.5).floor() / 10.0;
+    let relative: Vec<(f64, f64)> = drawn
+        .iter()
+        .map(|point| (tenth(point.x() - first.x()), tenth(point.y() - first.y())))
+        .collect();
+    let pivot = relative.iter().fold((0.0, 0.0), |least: (f64, f64), at| {
+        (least.0.min(at.0), least.1.min(at.1))
+    });
+    let path = relative
+        .iter()
+        .flat_map(|&(x, y)| [x, y])
+        .map(|number| number.to_string())
+        .join(",");
+    (
+        ObjectKind::Drawing,
+        json!({
+            (POSITION): { (X): first.x() + pivot.0, (Y): first.y() + pivot.1 },
+            (ALGORITHM): "lazy", (PATH): path, (PIVOT): { (X): pivot.0, (Y): pivot.1 },
+            (STROKE_WIDTH): width, (COLOR): color, (ALPHA): alpha,
         }),
         None,
     )
@@ -749,7 +809,12 @@ pub(super) fn edit(
         .chain(written.iter().flat_map(|done| done.fields.iter().cloned()))
         .chain(reparented.as_ref().map(|name| (PARENT_ID, json!(name))))
         .chain(also.layer.map(|layer| (Z_INDEX, json!(layer))))
-        .chain(also.tag_ids.as_ref().map(|ids| (TAG_IDS, json!(ids))))
+        .chain(
+            also.tag_ids
+                .as_ref()
+                .filter(|_| *kind != ObjectKind::Task)
+                .map(|ids| (TAG_IDS, json!(ids))),
+        )
         .chain(also.link_to.as_ref().map(|link| (LINK_TO, json!(link))))
         .map(web_rounded)
         .collect();
@@ -905,34 +970,41 @@ fn content_changes(
         .text
         .as_ref()
         .map(|text| {
-            if *kind == ObjectKind::Frame {
-                vec![(LABEL_TEXT, json!(text))]
-            } else {
-                write_text(transaction, scope, fields, (text, patch.format, kind))
-            }
+            text_changes(transaction, scope, fields, (text, patch.format, kind))
         })
         .unwrap_or_default();
     text.into_iter()
-        .chain(shape_changes(&patch.shape, fields, patch.size, patch.color.is_some()))
-        .chain(arrow_changes(&patch.arrow, fields, scope.states, scope.context.ids))
+        .chain(shape_changes(
+            &patch.shape,
+            fields,
+            patch.size,
+            patch.color.is_some(),
+        ))
+        .chain(arrow_changes(
+            &patch.arrow,
+            fields,
+            scope.states,
+            scope.context.ids,
+        ))
         .chain(frame_changes(patch, fields))
+        .chain(media::changes(kind, &patch.media, fields))
         .chain(
             patch
                 .at
                 .filter(|_| patch.rotation.is_none())
                 .map(|at| (POSITION, json!(at))),
         )
-        .chain(
-            patch.rotation.into_iter().flat_map(|degrees| {
-                turn_changes(&*transaction, scope, fields, patch, degrees)
-            }),
-        )
+        .chain(patch.rotation.into_iter().flat_map(|degrees| {
+            turn_changes(&*transaction, scope, fields, patch, degrees)
+        }))
         .chain(
             patch
                 .size
                 .filter(|_| patch.frame.ratio.is_none())
                 .into_iter()
-                .flat_map(|size| size_changes(&*transaction, scope, kind, fields, size)),
+                .flat_map(|size| {
+                    size_changes(&*transaction, scope, kind, fields, size)
+                }),
         )
         .chain(patch.scale.map(|scale| {
             let field = if matches!(
@@ -945,13 +1017,38 @@ fn content_changes(
             };
             (field, json!(scale))
         }))
-        .chain(patch.width.into_iter().flat_map(|width| width_changes(width, fields)))
-        .chain(patch.color.as_ref().map(|color| {
-            (
-                color_field(kind),
-                json!({ (COLOR): color.as_str(), (OPACITY): patch.shape.opacity.map_or_else(|| json!(1), |opacity| json!(opacity)) }),
-            )
-        }))
+        .chain(
+            patch
+                .width
+                .into_iter()
+                .flat_map(|width| width_changes(width, fields)),
+        )
+        .chain(
+            patch
+                .color
+                .as_ref()
+                .filter(|_| *kind == ObjectKind::Drawing)
+                .map(|color| (COLOR, json!(packed(color)))),
+        )
+        .chain(
+            patch
+                .color
+                .as_ref()
+                .filter(|_| *kind != ObjectKind::Drawing)
+                .map(|color| color_change(kind, color, patch.shape.opacity)),
+        )
+        .chain(
+            patch
+                .color
+                .as_ref()
+                .filter(|_| *kind == ObjectKind::Table)
+                .map(|_| {
+                    (
+                        "fillColorIndex",
+                        json!(next_index(scope.states, edited.id, "fillColorIndex")),
+                    )
+                }),
+        )
         .chain(
             patch
                 .look
@@ -1182,12 +1279,120 @@ fn scaled_size(
         .collect()
 }
 
-fn color_field(kind: &ObjectKind) -> &'static str {
-    if *kind == ObjectKind::Arrow {
-        "strokeColor"
-    } else {
-        "fillColor"
+/// The palette token as the pen stores it: its hex colour as one number.
+fn packed(color: &Color) -> u32 {
+    palette::hex(color.as_str())
+        .and_then(|hex| u32::from_str_radix(hex.trim_start_matches('#'), 16).ok())
+        .unwrap_or_default()
+}
+
+/// The field a colour is stored in and its value: a document keeps the token
+/// alone, the rest a token with an opacity.
+fn color_change(
+    kind: &ObjectKind,
+    color: &Color,
+    opacity: Option<f64>,
+) -> (&'static str, Value) {
+    let painted = json!({
+        (COLOR): color.as_str(),
+        (OPACITY): opacity.map_or_else(|| json!(1), |opacity| json!(opacity)),
+    });
+    match kind {
+        ObjectKind::Document => (COLOR_TOKEN, json!(color.as_str())),
+        ObjectKind::Arrow => (STROKE_COLOR, painted),
+        ObjectKind::Other(name) if name == mind_map::NODE => (NODE_COLOR, painted),
+        ObjectKind::Sticker
+        | ObjectKind::StickerStack
+        | ObjectKind::Text
+        | ObjectKind::Shape
+        | ObjectKind::Frame
+        | ObjectKind::Image
+        | ObjectKind::File
+        | ObjectKind::Stamp
+        | ObjectKind::Group
+        | ObjectKind::Table
+        | ObjectKind::TableCell
+        | ObjectKind::Code
+        | ObjectKind::Drawing
+        | ObjectKind::Dice
+        | ObjectKind::Wheel
+        | ObjectKind::Flipcard
+        | ObjectKind::Task
+        | ObjectKind::Link
+        | ObjectKind::Other(_) => (FILL_COLOR, painted),
     }
+}
+
+/// The text of a kind where the web stores it: a frame's label, a stack's
+/// title, a stamp's `data`, a code block's root text, or the document the
+/// kind keeps its words in.
+fn text_changes(
+    transaction: &mut TransactionMut<'_>,
+    scope: &WriteTransaction<'_>,
+    fields: &Value,
+    (text, format, kind): (&str, TextFormat, &ObjectKind),
+) -> Vec<(&'static str, Value)> {
+    match kind {
+        ObjectKind::Frame => vec![(LABEL_TEXT, json!(text))],
+        ObjectKind::StickerStack => vec![(TITLE, json!(text))],
+        ObjectKind::Stamp => vec![(DATA, stamp::retexted(fields, text))],
+        ObjectKind::Code => code_text(transaction, scope, fields, text),
+        ObjectKind::Task => write_text(
+            transaction,
+            scope,
+            fields,
+            TITLE_DOCUMENT,
+            (text, format, kind),
+        ),
+        ObjectKind::Flipcard => write_text(
+            transaction,
+            scope,
+            fields,
+            FRONT_DOCUMENT,
+            (text, format, kind),
+        ),
+        ObjectKind::Sticker
+        | ObjectKind::Text
+        | ObjectKind::Shape
+        | ObjectKind::Document
+        | ObjectKind::Arrow
+        | ObjectKind::Image
+        | ObjectKind::File
+        | ObjectKind::Group
+        | ObjectKind::Table
+        | ObjectKind::TableCell
+        | ObjectKind::Drawing
+        | ObjectKind::Dice
+        | ObjectKind::Wheel
+        | ObjectKind::Link
+        | ObjectKind::Other(_) => write_text(
+            transaction,
+            scope,
+            fields,
+            DOCUMENT_ID,
+            (text, format, kind),
+        ),
+    }
+}
+
+/// The root text `code-mirror-<documentId>` replaced; a block with no
+/// document gets one.
+fn code_text(
+    transaction: &mut TransactionMut<'_>,
+    scope: &WriteTransaction<'_>,
+    fields: &Value,
+    text: &str,
+) -> Vec<(&'static str, Value)> {
+    let held = fields.get(DOCUMENT_ID).and_then(Value::as_str);
+    let document = held.map_or_else(|| scope.context.ids.new_id(), str::to_owned);
+    let root = transaction.get_or_insert_text(format!("code-mirror-{document}"));
+    let length = root.len(&*transaction);
+    root.remove_range(transaction, 0, length);
+    root.insert(transaction, 0, text);
+    held.is_none()
+        .then(|| (DOCUMENT_ID, json!(document)))
+        .into_iter()
+        .collect()
 }
 
 fn placed_rectangle(patch: &ObjectPatch, fields: &Value) -> Option<Rectangle> {
@@ -1227,6 +1432,7 @@ fn changed_names(
     .chain(patch.shape.fields())
     .chain(patch.arrow.fields())
     .chain(patch.frame.fields())
+    .chain(patch.media.fields())
     .chain(patch.kind_edits.iter().map(KindEdit::field))
     .collect()
 }
@@ -1361,16 +1567,19 @@ pub(crate) fn object_map<T: ReadTxn>(
     }
 }
 
-fn write_text(
+/// Replaces the text of the document that `field` of the object names; a new
+/// document, named in the result, when it has none.
+pub(super) fn write_text(
     transaction: &mut TransactionMut<'_>,
     scope: &WriteTransaction<'_>,
     fields: &Value,
+    field: &'static str,
     (text, format, kind): (&str, TextFormat, &ObjectKind),
 ) -> Vec<(&'static str, Value)> {
     let documents = &scope.roots.documents;
     let context = scope.context;
     let current = fields
-        .get(DOCUMENT_ID)
+        .get(field)
         .and_then(Value::as_str)
         .and_then(|document| document_root(transaction, documents, document));
     let cleared = current.inspect(|root| {
@@ -1387,7 +1596,7 @@ fn write_text(
         root.map(|root| fill_as(transaction, &root, text, (format, kind), context.ids));
     filled
         .and(document)
-        .map(|document| vec![(DOCUMENT_ID, json!(document))])
+        .map(|document| vec![(field, json!(document))])
         .unwrap_or_default()
 }
 
@@ -1571,7 +1780,7 @@ pub(super) fn arrow_moved(
     .collect()
 }
 
-fn remove_all(
+pub(super) fn remove_all(
     transaction: &mut TransactionMut<'_>,
     scope: &WriteTransaction<'_>,
     ids: &[String],

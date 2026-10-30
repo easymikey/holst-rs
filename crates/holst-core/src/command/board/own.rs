@@ -99,7 +99,10 @@ pub async fn leave(client: &Client, args: &LeaveArgs) -> Result<Changed> {
                 name: board.node.name.clone().unwrap_or_else(|| board.id.clone()),
             })
             .map_or_else(
-                || api::channel::leave_request(&board.id),
+                || {
+                    lookup::forget_trees_holding(client, &board.id);
+                    api::channel::leave_request(&board.id)
+                },
                 |refusal| Err(refusal.into()),
             )
     };
@@ -147,8 +150,16 @@ async fn board(
     action: Action,
 ) -> Result<Found> {
     let id = lookup::board_id(client, reference, workspace).await?;
-    let reply = api::channel::get(client, &id).await?;
-    let name = NodeBrief::of(&reply)?.name().to_owned();
+    let kept =
+        lookup::cached_node(client, &id).filter(|_| !matches!(action, Action::Leave));
+    let reply = match &kept {
+        Some(_) => Value::Null,
+        None => api::channel::get(client, &id).await?,
+    };
+    let name = match kept {
+        Some(kept) => kept.name,
+        None => NodeBrief::of(&reply)?.name().to_owned(),
+    };
     let node = ChangedNode {
         name: Some(name).filter(|name| !name.is_empty()),
         ..node_of(action, Some(id.clone()), Some(NodeKind::Board))

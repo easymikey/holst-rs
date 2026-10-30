@@ -12,6 +12,7 @@ mod folders;
 mod grouping;
 mod kind_edits;
 mod locking;
+mod reactions;
 mod search;
 mod session;
 mod settings;

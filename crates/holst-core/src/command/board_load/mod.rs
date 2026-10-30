@@ -3,6 +3,7 @@
 #[cfg(test)] pub(crate) mod tests;
 
 use futures_util::future::{OptionFuture, try_join};
+use serde::Deserialize;
 use serde_json::Value;
 use yrs::{
     Doc,
@@ -96,6 +97,20 @@ pub async fn load(
     cache: Option<&dyn CachePort>,
     cache_use: CacheUse,
 ) -> Result<(LoadedBoard, LoadSource)> {
+    let (loaded, source, _) = load_with_channel(link, cache, cache_use).await?;
+    Ok((loaded, source))
+}
+
+/// As [`load`], with the `channel/{id}` reply the format check read; none
+/// when no check ran (offline).
+///
+/// # Errors
+/// As [`load`].
+pub async fn load_with_channel(
+    link: RemoteBoard<'_>,
+    cache: Option<&dyn CachePort>,
+    cache_use: CacheUse,
+) -> Result<(LoadedBoard, LoadSource, Option<Value>)> {
     let RemoteBoard {
         client,
         connector,
@@ -111,15 +126,19 @@ pub async fn load(
         }
         (CacheUse::Refresh, Some(cache)) => through(link, cache, None).await,
         (CacheUse::Use | CacheUse::Refresh, None) => {
-            let (loaded, source, _) = seeded(client, connector, board, None).await?;
-            Ok((loaded, source))
+            let (loaded, source, _, channel) =
+                seeded_channel(client, connector, board, None).await?;
+            Ok((loaded, source, Some(channel)))
         }
     }
 }
 
+async fn channel_reply(client: &Client, board: &str) -> Result<Value> {
+    crate::remote::api::channel::get(client, board).await
+}
+
 async fn format(client: &Client, board: &str) -> Result<BoardFormat> {
-    let reply = crate::remote::api::channel::get(client, board).await?;
-    Ok(serde_json::from_value(reply)?)
+    Ok(serde_json::from_value(channel_reply(client, board).await?)?)
 }
 
 /// The root of the document that holds the objects when the board is stored
@@ -190,6 +209,17 @@ pub async fn seeded(
     board: &str,
     seed: Option<Doc>,
 ) -> Result<(LoadedBoard, LoadSource, Option<StateVector>)> {
+    let (loaded, source, used, _) =
+        seeded_channel(client, connector, board, seed).await?;
+    Ok((loaded, source, used))
+}
+
+async fn seeded_channel(
+    client: &Client,
+    connector: &dyn SocketConnector,
+    board: &str,
+    seed: Option<Doc>,
+) -> Result<(LoadedBoard, LoadSource, Option<StateVector>, Value)> {
     let before = seed.as_ref().map(|doc| doc.transact().state_vector());
     let loading = async {
         match load_seeded(client, connector, board, seed.unwrap_or_default()).await {
@@ -202,10 +232,11 @@ pub async fn seeded(
         }
     };
     // Registered, so an empty version 3 board writes under `objects_v3`.
-    let (root, ((loaded, source), used)) =
-        try_join(supported(client, board), loading).await?;
+    let (channel, ((loaded, source), used)) =
+        try_join(channel_reply(client, board), loading).await?;
+    let root = BoardFormat::deserialize(&channel)?.supported()?;
     loaded.document.get_or_insert_map(root);
-    Ok((loaded, source, used))
+    Ok((loaded, source, used, channel))
 }
 
 /// The board's objects loaded through `cache`.
@@ -217,17 +248,46 @@ pub async fn content(
     cache: Option<&dyn CachePort>,
     cache_use: CacheUse,
 ) -> Result<BoardContent> {
-    let (loaded, _) = load(link, cache, cache_use).await?;
-    Ok(BoardContent {
+    let (content, _) = content_with_channel(link, cache, cache_use).await?;
+    Ok(content)
+}
+
+/// As [`content`], with the `channel/{id}` reply the load read, if any.
+///
+/// # Errors
+/// As [`load`].
+pub async fn content_with_channel(
+    link: RemoteBoard<'_>,
+    cache: Option<&dyn CachePort>,
+    cache_use: CacheUse,
+) -> Result<(BoardContent, Option<Value>)> {
+    let (loaded, _, channel) = load_with_channel(link, cache, cache_use).await?;
+    let content = BoardContent {
         edit_right: loaded.right,
         objects: crate::domain::board::objects(&loaded.document),
-    })
+    };
+    Ok((content, channel))
+}
+
+/// The `channel/{id}` reply a load read, or the board's own when it read none.
+///
+/// # Errors
+/// The API's refusal of the board.
+pub async fn channel_or_get(
+    client: &Client,
+    board: &str,
+    read: Option<Value>,
+) -> Result<Value> {
+    match read {
+        Some(reply) => Ok(reply),
+        None => channel_reply(client, board).await,
+    }
 }
 
 async fn offline(
     cache: &dyn CachePort,
     board: &str,
-) -> Result<(LoadedBoard, LoadSource)> {
+) -> Result<(LoadedBoard, LoadSource, Option<Value>)> {
     let cached = CachedCopy::read(cache, board)
         .map(CachedCopy::offline)
         .and_then(|cached| cached.with_document(cache, document::decoded).ok())
@@ -244,6 +304,7 @@ async fn offline(
             document: cached.into_body(),
         },
         LoadSource::Skipped,
+        None,
     ))
 }
 
@@ -275,24 +336,24 @@ async fn through(
     link: RemoteBoard<'_>,
     cache: &dyn CachePort,
     seed: Option<Doc>,
-) -> Result<(LoadedBoard, LoadSource)> {
+) -> Result<(LoadedBoard, LoadSource, Option<Value>)> {
     let RemoteBoard {
         client,
         connector,
         board,
     } = link;
     let had_seed = seed.is_some();
-    let (result, before) = match seeded(client, connector, board, seed).await {
-        Ok((loaded, source, before)) => {
+    let (result, before) = match seeded_channel(client, connector, board, seed).await {
+        Ok((loaded, source, before, channel)) => {
             if had_seed && before.is_none() {
                 tracing::debug!(board, "board cache: the copy is ahead of the server");
                 forget(cache, board).await;
             }
-            (Ok((loaded, source)), before)
+            (Ok((loaded, source, Some(channel))), before)
         }
         Err(error) => (Err(error), None),
     };
-    let (loaded, source) = guarded(client, Some(cache), board, result).await?;
+    let (loaded, source, channel) = guarded(client, Some(cache), board, result).await?;
     tracing::debug!(board, ?source, "board cache: loaded");
     remember(
         cache,
@@ -305,7 +366,7 @@ async fn through(
         },
     )
     .await;
-    Ok((loaded, source))
+    Ok((loaded, source, channel))
 }
 
 async fn guarded<T>(
@@ -334,6 +395,7 @@ pub async fn guarded_loss<T>(
         forget(cache, board)
     });
     OptionFuture::from(dropping).await;
+    lost.then(|| super::lookup::forget_trees_holding(client, board));
     (result, lost)
 }
 
@@ -448,6 +510,20 @@ pub async fn index(
     cache: Option<&dyn CachePort>,
     cache_use: CacheUse,
 ) -> Result<(EditRight, BoardIndex)> {
+    let (right, index, _) = index_with_channel(link, cache, cache_use).await?;
+    Ok((right, index))
+}
+
+/// As [`index`], with the `channel/{id}` reply the load read for the format
+/// check; none when the index came from the cache without a load.
+///
+/// # Errors
+/// As [`load`].
+pub async fn index_with_channel(
+    link: RemoteBoard<'_>,
+    cache: Option<&dyn CachePort>,
+    cache_use: CacheUse,
+) -> Result<(EditRight, BoardIndex, Option<Value>)> {
     let board = link.board;
     let found = cache
         .filter(|_| cache_use != CacheUse::Refresh)
@@ -456,7 +532,7 @@ pub async fn index(
         (Some((held, cached)), CacheUse::Offline) => {
             let served = cached.offline();
             touched(held, board, served.read_check()).await;
-            Ok((served.right(), served.into_body()))
+            Ok((served.right(), served.into_body(), None))
         }
         (Some((held, cached)), CacheUse::Use) => match cached.trusted(held) {
             Ok(trusted) => checked(link, held, trusted).await,
@@ -472,7 +548,7 @@ async fn checked(
     link: RemoteBoard<'_>,
     cache: &dyn CachePort,
     cached: CachedCopy<Trusted, BoardIndex>,
-) -> Result<(EditRight, BoardIndex)> {
+) -> Result<(EditRight, BoardIndex, Option<Value>)> {
     let RemoteBoard {
         client,
         connector,
@@ -489,7 +565,7 @@ async fn checked(
     match verified {
         Ok(verified) => {
             touched(cache, board, verified.read_check()).await;
-            Ok((access, verified.into_body()))
+            Ok((access, verified.into_body(), None))
         }
         Err(StaleCopy::Ahead) => {
             forget(cache, board).await;
@@ -505,9 +581,9 @@ async fn loaded_index(
     link: RemoteBoard<'_>,
     cache: Option<&dyn CachePort>,
     cache_use: CacheUse,
-) -> Result<(EditRight, BoardIndex)> {
+) -> Result<(EditRight, BoardIndex, Option<Value>)> {
     let board = link.board;
-    let (loaded, _) = load(link, cache, cache_use).await?;
+    let (loaded, _, channel) = load_with_channel(link, cache, cache_use).await?;
     let rebuilt = cache
         .filter(|_| cache_use == CacheUse::Offline)
         .map(|cache| {
@@ -523,6 +599,7 @@ async fn loaded_index(
     Ok((
         loaded.right,
         BoardIndex::from_document(&loaded.document, board),
+        channel,
     ))
 }
 

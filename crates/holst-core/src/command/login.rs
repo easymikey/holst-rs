@@ -225,6 +225,7 @@ pub async fn finish<S, E>(
     save: impl AsyncFnOnce(Session) -> std::result::Result<S, E>,
 ) -> std::result::Result<LoggedIn<S>, Stopped<E>> {
     let account = account(&client).await.map_err(Stopped::Check)?;
+    super::lookup::forget_trees(&client, None);
     // `account` saved it with the login: `--offline` knows whose cache to read.
     let session = client
         .rotated()

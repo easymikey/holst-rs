@@ -580,6 +580,26 @@ mod tests {
     }
 
     #[test]
+    fn a_new_pen_stroke_draws_one_path() {
+        let objects = object(
+            &json!({"id": "d", "type": "drawing", "algorithm": "lazy",
+                    "path": "0,0,150,50,300,100", "pivot": {"x": 0, "y": 0},
+                    "position": {"x": 300, "y": 500}, "strokeWidth": 3,
+                    "color": 1_973_790, "alpha": 1, "parentId": null}),
+            "",
+        )
+        .into_iter()
+        .collect::<Vec<_>>();
+        let svg = render_all(&objects).svg;
+        assert_eq!(svg.matches("<path").count(), 1, "{svg}");
+        assert!(svg.contains("d=\"M0 0 L150 50 L300 100\""), "{svg}");
+        assert!(
+            svg.contains("stroke=\"#1e1e1e\" stroke-width=\"3\""),
+            "{svg}"
+        );
+    }
+
+    #[test]
     fn a_drawing_stored_as_path_data_is_kept() {
         assert_eq!(drawing_path_of(&json!("M0 0 L5 5 Z")), "M0 0 L5 5 Z");
     }

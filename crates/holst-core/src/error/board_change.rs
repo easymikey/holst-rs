@@ -120,6 +120,64 @@ impl fmt::Display for LockRefusal {
     }
 }
 
+/// Why a table cannot take an edit, as the web client's menu refuses it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableRefusal {
+    OutOfRange {
+        track: &'static str,
+        at: u32,
+        most: usize,
+    },
+    TooBig,
+    MergedAcross {
+        track: &'static str,
+        at: u32,
+    },
+    LastTrack {
+        track: &'static str,
+        at: u32,
+    },
+    OneCell,
+    Ragged {
+        first: (u32, u32),
+        last: (u32, u32),
+    },
+    NotMerged {
+        row: u32,
+        column: u32,
+    },
+}
+
+impl fmt::Display for TableRefusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TableRefusal::OutOfRange { track, at, most } => {
+                write!(f, "{track} {at} is not in the table: use 1 to {most}")
+            }
+            TableRefusal::TooBig => f.write_str("a table holds at most 2500 cells"),
+            TableRefusal::MergedAcross { track, at } => write!(
+                f,
+                "a merged block crosses {track} {at}: unmerge it in the web client first"
+            ),
+            TableRefusal::LastTrack { track, at } => {
+                write!(
+                    f,
+                    "{track} {at} is the last {track}: remove the table instead"
+                )
+            }
+            TableRefusal::OneCell => f.write_str("merging takes at least two cells"),
+            TableRefusal::Ragged { first, last } => write!(
+                f,
+                "a merged block reaches out of cells {},{} to {},{}: take all of it or none",
+                first.0, first.1, last.0, last.1
+            ),
+            TableRefusal::NotMerged { row, column } => {
+                write!(f, "cell {row},{column} does not lead a merged block")
+            }
+        }
+    }
+}
+
 /// A board change that was refused, malformed or not accepted.
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(test, derive(strum::EnumDiscriminants))]
@@ -167,6 +225,11 @@ pub enum BoardChangeError {
     #[error("{kind} objects have no {field} to change")]
     NotChangeable { kind: String, field: &'static str },
 
+    #[error(
+        "a wheel spins among at least 2 choices still in play: this one has {choices}"
+    )]
+    NotSpinnable { choices: usize },
+
     #[error("{kind} objects cannot move into or out of a frame: {why}")]
     NotMovable { kind: String, why: String },
 
@@ -203,6 +266,9 @@ pub enum BoardChangeError {
     #[error("the text has no checklist item {item}: it has {count}")]
     NoCheckItem { item: u32, count: usize },
 
+    #[error("the file has no page {page}: it has {count}")]
+    NoPage { page: u32, count: u32 },
+
     #[error("\"{raw}\" is not a point: expected x,y, e.g. 100,-40")]
     NotPoint { raw: String },
 
@@ -219,6 +285,12 @@ pub enum BoardChangeError {
 
     #[error("\"{raw}\" is not {expected}")]
     NotArrowLook { raw: String, expected: &'static str },
+    #[error("\"{raw}\" is not a valid {field}: expected {expected}")]
+    BadValue {
+        field: &'static str,
+        raw: String,
+        expected: &'static str,
+    },
 
     #[error("a sticker is square or twice as wide as tall, not {width}×{height}")]
     StickerSize { width: f64, height: f64 },
@@ -278,6 +350,9 @@ pub enum BoardChangeError {
     )]
     TooFewToArrange { needs: usize, given: usize },
 
+    #[error("{why}: nothing was changed")]
+    TableRefused { why: TableRefusal },
+
     #[error(
         "the server did not accept the change within {seconds} s — it may or may not be on \
          the board"
@@ -323,6 +398,7 @@ impl BoardChangeError {
             BoardChangeError::NotAccepted { .. } => Some(Hint::ReadBeforeRetry),
             BoardChangeError::NotEmpty { .. }
             | BoardChangeError::NotChangeable { .. }
+            | BoardChangeError::NotSpinnable { .. }
             | BoardChangeError::NotMovable { .. }
             | BoardChangeError::PlacedByContainer { .. }
             | BoardChangeError::Locked { .. }
@@ -331,11 +407,13 @@ impl BoardChangeError {
             | BoardChangeError::NoTag { .. }
             | BoardChangeError::TagTaken { .. }
             | BoardChangeError::NoCheckItem { .. }
+            | BoardChangeError::NoPage { .. }
             | BoardChangeError::NotPoint { .. }
             | BoardChangeError::OffBoard { .. }
             | BoardChangeError::NotSize { .. }
             | BoardChangeError::NotColor { .. }
             | BoardChangeError::NotArrowLook { .. }
+            | BoardChangeError::BadValue { .. }
             | BoardChangeError::StickerSize { .. }
             | BoardChangeError::TooFewToGroup { .. }
             | BoardChangeError::NotGroupable { .. }
@@ -343,6 +421,7 @@ impl BoardChangeError {
             | BoardChangeError::NothingToUnlock
             | BoardChangeError::NotArrangeable { .. }
             | BoardChangeError::TooFewToArrange { .. }
+            | BoardChangeError::TableRefused { .. }
             | BoardChangeError::ContentHidden { .. } => None,
         }
     }
@@ -374,6 +453,7 @@ impl BoardChangeError {
             | BoardChangeError::HideWithheld { .. }
             | BoardChangeError::DeleteWithheld { .. }
             | BoardChangeError::NotChangeable { .. }
+            | BoardChangeError::NotSpinnable { .. }
             | BoardChangeError::NotMovable { .. }
             | BoardChangeError::PlacedByContainer { .. }
             | BoardChangeError::Locked { .. }
@@ -382,11 +462,13 @@ impl BoardChangeError {
             | BoardChangeError::NoTag { .. }
             | BoardChangeError::TagTaken { .. }
             | BoardChangeError::NoCheckItem { .. }
+            | BoardChangeError::NoPage { .. }
             | BoardChangeError::NotPoint { .. }
             | BoardChangeError::OffBoard { .. }
             | BoardChangeError::NotSize { .. }
             | BoardChangeError::NotColor { .. }
             | BoardChangeError::NotArrowLook { .. }
+            | BoardChangeError::BadValue { .. }
             | BoardChangeError::StickerSize { .. }
             | BoardChangeError::NotFrame { .. }
             | BoardChangeError::TooFewToGroup { .. }
@@ -397,6 +479,7 @@ impl BoardChangeError {
             | BoardChangeError::NothingToUnlock
             | BoardChangeError::NotArrangeable { .. }
             | BoardChangeError::TooFewToArrange { .. }
+            | BoardChangeError::TableRefused { .. }
             | BoardChangeError::ContentHidden { .. }
             | BoardChangeError::AcceptTimeout { .. }
             | BoardChangeError::ClosedBeforeAccept
@@ -427,6 +510,7 @@ pub(super) mod tests {
             GroupRefusal,
             LockRefusal,
             OffBoardValue,
+            TableRefusal,
         },
         hint::{Hint, Surface, decided::assert_every_variant},
     };
@@ -458,6 +542,13 @@ pub(super) mod tests {
                 },
                 None,
             ),
+            (BoardChangeError::NotSpinnable { choices: 1 }, None),
+            (
+                BoardChangeError::TableRefused {
+                    why: TableRefusal::TooBig,
+                },
+                None,
+            ),
             (
                 BoardChangeError::NotMovable {
                     kind: text(),
@@ -478,6 +569,7 @@ pub(super) mod tests {
             (BoardChangeError::NoTag { reference: text() }, None),
             (BoardChangeError::TagTaken { title: text() }, None),
             (BoardChangeError::NoCheckItem { item: 1, count: 0 }, None),
+            (BoardChangeError::NoPage { page: 4, count: 3 }, None),
             (BoardChangeError::NotPoint { raw: text() }, None),
             (
                 BoardChangeError::OffBoard {
@@ -489,6 +581,14 @@ pub(super) mod tests {
             (BoardChangeError::NotColor { raw: text() }, None),
             (
                 BoardChangeError::NotArrowLook {
+                    raw: text(),
+                    expected: "x",
+                },
+                None,
+            ),
+            (
+                BoardChangeError::BadValue {
+                    field: "x",
                     raw: text(),
                     expected: "x",
                 },

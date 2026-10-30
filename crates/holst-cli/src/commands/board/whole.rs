@@ -13,7 +13,7 @@ use holst_core::{
         change::{ChangeReport, PlannedRequest},
         table,
     },
-    domain::text::{counted, printable},
+    domain::text::{counted, printable, size_text},
     error::lookup::{LookupError, LookupKind, LookupMiss},
 };
 use serde_json::{Map, Value};
@@ -21,7 +21,7 @@ use serde_json::{Map, Value};
 use crate::{
     commands,
     error::{Error, Result},
-    output::{self, DiagnosticLabel, OutputFormat, OutputTarget, view::size_text},
+    output::{self, DiagnosticLabel, OutputFormat, OutputTarget},
     run::{RunSettings, run_signed_in},
 };
 
@@ -175,11 +175,17 @@ fn shown_text(shown: &Briefs) -> String {
 }
 
 fn board_text(board: &BoardBrief) -> String {
-    let place = [board.workspace.as_deref(), board.folder.as_deref()]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>()
-        .join(" / ");
+    let place = [
+        board
+            .workspace_name
+            .as_deref()
+            .or(board.workspace.as_deref()),
+        board.folder_name.as_deref().or(board.folder.as_deref()),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" / ");
     let trash = if board.in_trash { " · in trash" } else { "" };
     let kinds = board
         .objects
@@ -313,7 +319,7 @@ fn exported_text(exported: &Exported) -> String {
     let before = if exported.state_bytes == bytes {
         String::new()
     } else {
-        format!(" ({} before gzip)", exported.state_bytes)
+        format!(" ({} before gzip)", size_text(exported.state_bytes))
     };
     let place = if exported.inline.is_some() {
         " to stdout".to_owned()
@@ -321,11 +327,16 @@ fn exported_text(exported: &Exported) -> String {
         format!(": {}", exported.file.display())
     };
     let listing = exported.object_list.iter().map(|list| {
-        format!("\nlisting: {} bytes: {}", list.bytes, list.file.display())
+        format!(
+            "\nlisting: {}: {}",
+            size_text(list.bytes),
+            list.file.display()
+        )
     });
     printable(&format!(
-        "exported {}, {bytes} bytes{before}{place}{}",
+        "exported {}, {}{before}{place}{}",
         counted(objects, "object"),
+        size_text(bytes),
         listing.collect::<String>()
     ))
     .into_owned()
@@ -404,8 +415,10 @@ mod tests {
             id: "b1".to_owned(),
             name: "Plan".to_owned(),
             link: "https://holst/b1".to_owned(),
-            workspace: Some("Team".to_owned()),
-            folder: Some("Work".to_owned()),
+            workspace: Some("w-id".to_owned()),
+            workspace_name: Some("Team".to_owned()),
+            folder: Some("f-id".to_owned()),
+            folder_name: Some("Work".to_owned()),
             in_trash: true,
             edit_right: EditRight::Editable,
             rectangle: None,
@@ -430,13 +443,38 @@ mod tests {
     }
 
     #[test]
+    fn a_place_without_names_shows_the_ids() {
+        let board = BoardBrief {
+            id: "b1".to_owned(),
+            name: "Plan".to_owned(),
+            link: "L".to_owned(),
+            workspace: Some("w-id".to_owned()),
+            workspace_name: None,
+            folder: Some("f-id".to_owned()),
+            folder_name: None,
+            in_trash: false,
+            edit_right: EditRight::Editable,
+            rectangle: None,
+            count: 1,
+            objects: BTreeMap::new(),
+            members: None,
+            rights: None,
+            sharing: None,
+            note: None,
+        };
+        assert!(board_text(&board).contains("\n  editable · w-id / f-id\n"));
+    }
+
+    #[test]
     fn one_object_is_not_plural() {
         let board = BoardBrief {
             id: "b1".to_owned(),
             name: "Plan".to_owned(),
             link: "L".to_owned(),
             workspace: None,
+            workspace_name: None,
             folder: None,
+            folder_name: None,
             in_trash: false,
             edit_right: EditRight::Editable,
             rectangle: None,
@@ -459,7 +497,7 @@ mod tests {
         };
         assert_eq!(
             exported_text(&exported),
-            "exported 1 object, 30 bytes: out.ydoc.gz"
+            "exported 1 object, 30 B: out.ydoc.gz"
         );
     }
 
@@ -488,8 +526,8 @@ mod tests {
         let exported = Exported {
             board: "b1".to_owned(),
             objects: 2,
-            state_bytes: 90,
-            bytes: 30,
+            state_bytes: 4096,
+            bytes: 2048,
             file: PathBuf::from("out.ydoc.gz"),
             object_list: Some(ObjectList {
                 file: PathBuf::from("out.ydoc.objects.jsonl"),
@@ -499,8 +537,8 @@ mod tests {
         };
         assert_eq!(
             exported_text(&exported),
-            "exported 2 objects, 30 bytes (90 before gzip): out.ydoc.gz\n\
-             listing: 7 bytes: out.ydoc.objects.jsonl"
+            "exported 2 objects, 2.0 KiB (4.0 KiB before gzip): out.ydoc.gz\n\
+             listing: 7 B: out.ydoc.objects.jsonl"
         );
     }
 }

@@ -229,6 +229,28 @@ pub fn is_blank(value: &Value) -> bool {
     }
 }
 
+/// A file size as a person reads it: bytes, then KiB, MiB, GiB with a tenth.
+///
+/// ```
+/// use holst_core::domain::text::size_text;
+/// assert_eq!(size_text(1536_u64), "1.5 KiB");
+/// ```
+#[must_use]
+pub fn size_text<N: TryInto<u64>>(bytes: N) -> String {
+    let bytes = bytes.try_into().unwrap_or(u64::MAX);
+    let units = [(1 << 30, "GiB"), (1 << 20, "MiB"), (1 << 10, "KiB")];
+    units
+        .into_iter()
+        .find(|&(unit, _)| bytes >= unit)
+        .map_or_else(
+            || format!("{bytes} B"),
+            |(unit, name)| {
+                let tenths = bytes.saturating_mul(10) / unit;
+                format!("{}.{} {name}", tenths / 10, tenths % 10)
+            },
+        )
+}
+
 #[cfg(test)]
 mod tests {
     use std::borrow::Cow;
@@ -236,7 +258,7 @@ mod tests {
     use rstest::rstest;
     use serde_json::{Value, json};
 
-    use crate::domain::text::{file_part, is_blank, one_line, printable};
+    use crate::domain::text::{file_part, is_blank, one_line, printable, size_text};
 
     #[test]
     fn a_file_part_is_cut_by_bytes_on_a_character_boundary() {
@@ -295,5 +317,16 @@ mod tests {
                 .map_or(Blankness::Shown, |kind| kind),
             blank
         );
+    }
+
+    #[rstest]
+    #[case(0, "0 B")]
+    #[case(1023, "1023 B")]
+    #[case(1024, "1.0 KiB")]
+    #[case(1536, "1.5 KiB")]
+    #[case(169_869_312, "162.0 MiB")]
+    #[case(3 << 30, "3.0 GiB")]
+    fn sizes_read_as_a_person_would(#[case] bytes: u64, #[case] expected: &str) {
+        assert_eq!(size_text(bytes), expected);
     }
 }

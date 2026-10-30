@@ -1,5 +1,7 @@
 //! The SVG a reply carries.
 
+use holst_core::domain::text::size_text;
+
 /// The most SVG a reply carries: the tokens of a full object page.
 const SVG_INLINE_MAX: usize = 50_000;
 
@@ -9,10 +11,10 @@ pub(super) fn inline_svg(svg: String) -> String {
         svg
     } else {
         format!(
-            "SVG is {} KB, too big to return inline (limit {} KB): use format png \
+            "SVG is {}, too big to return inline (limit {}): use format png \
              (the default), or a smaller part: frame, rectangle or object",
-            svg.len().div_ceil(1000),
-            SVG_INLINE_MAX / 1000
+            size_text(svg.len()),
+            size_text(SVG_INLINE_MAX)
         )
     }
 }
@@ -30,7 +32,11 @@ mod tests {
         let huge = "x".repeat(1_500_000);
         let note = inline_svg(huge);
         assert!(note.len() < 300, "the note is short: {note}");
-        assert!(note.contains("1500 KB") && note.contains("png"));
+        assert!(
+            note.contains("1.4 MiB")
+                && note.contains("48.8 KiB")
+                && note.contains("png")
+        );
         assert!(note.contains("frame") && note.contains("object"));
     }
 }

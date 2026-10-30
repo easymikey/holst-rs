@@ -710,3 +710,638 @@ async fn media_commands_need_a_login(
     uploads_of(&holst).is_empty();
     Ok(())
 }
+
+/// A board with an image, a file and a sticker.
+fn with_an_image_a_file_and_a_sticker() -> Given {
+    given().saved_login().workspace("Team").board_with_objects(
+        "Plans",
+        "Team",
+        vec![
+            FixtureObject::Image("cat.png".into()),
+            FixtureObject::File("plan.pdf".into(), 70),
+            FixtureObject::Sticker("Buy milk".into()),
+        ],
+    )
+}
+
+#[rstest]
+#[tokio::test]
+async fn an_image_and_a_file_are_renamed_and_read_back(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_an_image_a_file_and_a_sticker().start().await?;
+    let image = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("name", "Logo.png");
+    then(&holst.on(surface).object("Plans", image).await?).succeeded();
+    let file = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 2)?)
+        .with("name", " Plan.pdf ");
+    then(&holst.on(surface).object("Plans", file).await?).succeeded();
+    assert_eq!(
+        in_first(&holst, "image", "/originalName")?,
+        json!("Logo.png")
+    );
+    assert_eq!(
+        in_first(&holst, "file", "/displayFileName")?,
+        json!("Plan.pdf")
+    );
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_sticker_takes_no_name(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_an_image_a_file_and_a_sticker().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 3)?)
+        .with("name", "Logo");
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("name")
+        .signalled_as(surface.usage());
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_blank_name_of_an_image_is_refused(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_an_image_a_file_and_a_sticker().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("name", "  ");
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("an image or a file needs a visible name")
+        .signalled_as(surface.usage());
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_dry_run_of_a_rename_sends_nothing(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_an_image_a_file_and_a_sticker().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("name", "Logo.png");
+    then(
+        &holst
+            .on(surface)
+            .dry_running()
+            .object("Plans", call)
+            .await?,
+    )
+    .succeeded();
+    board_of(&holst).got_no_update();
+    assert_eq!(
+        in_first(&holst, "image", "/originalName")?,
+        json!("cat.png")
+    );
+    Ok(())
+}
+
+/// The numbers of a stored array, `null` as none.
+fn numbers_at(holst: &Holst, pointer: &str) -> Result<Vec<Option<f64>>, ScenarioError> {
+    Ok(in_first(holst, "image", pointer)?
+        .as_array()
+        .map(|values| values.iter().map(Value::as_f64).collect())
+        .unwrap_or_default())
+}
+
+#[rstest]
+#[tokio::test]
+async fn an_image_is_cropped_to_a_circle_and_read_back(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_an_image_a_file_and_a_sticker().start().await?;
+    let circle = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("crop", "circle");
+    then(&holst.on(surface).object("Plans", circle).await?).succeeded();
+    let cut = (
+        numbers_at(&holst, "/cropTransform")?,
+        in_first(&holst, "image", "/width")?.as_f64(),
+        in_first(&holst, "image", "/position/x")?.as_f64(),
+    );
+    let whole = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("crop", "none");
+    then(&holst.on(surface).object("Plans", whole).await?).succeeded();
+    assert_eq!(
+        (cut, numbers_at(&holst, "/cropTransform")?),
+        (
+            (
+                vec![Some(0.125), Some(0.0), Some(0.75), Some(1.0), Some(1.0)],
+                Some(150.0),
+                Some(125.0)
+            ),
+            vec![Some(0.0), Some(0.0), Some(1.0), Some(1.0), None]
+        )
+    );
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn an_image_gets_an_outline_and_round_corners(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_an_image_a_file_and_a_sticker().start().await?;
+    let outline = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("stroke_color", "gray12")
+        .with("stroke_width", "4")
+        .with("stroke_style", "dashed")
+        .with("radius", "20");
+    then(&holst.on(surface).object("Plans", outline).await?).succeeded();
+    let drawn = holst.on(surface).listed_media("Plans", "image").await?;
+    let circle = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("crop", "circle");
+    then(&holst.on(surface).object("Plans", circle).await?).succeeded();
+    let round = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("radius", "10");
+    then(&holst.on(surface).object("Plans", round).await?)
+        .failed_saying("circle-cropped image objects have no radius to change")
+        .signalled_as(surface.usage());
+    assert_eq!(
+        drawn,
+        json!({
+            "stroke_color": "gray12",
+            "stroke_width": 4.0,
+            "stroke_style": "dashed",
+            "radius": 20.0,
+        })
+    );
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_flip_is_set_not_toggled(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_an_image_a_file_and_a_sticker().start().await?;
+    let mut seen = Vec::new();
+    // imperative: each call is a write, read back before the next
+    for axes in ["horizontal", "horizontal", "both", "none"] {
+        let call = ObjectCall::edit()
+            .with("object", holst.fixture_object("Plans", 1)?)
+            .with("flip_image", axes);
+        then(&holst.on(surface).object("Plans", call).await?).succeeded();
+        seen.push(holst.on(surface).listed_media("Plans", "image").await?);
+    }
+    assert_eq!(
+        seen,
+        vec![
+            json!({"flip": "horizontal"}),
+            json!({"flip": "horizontal"}),
+            json!({"flip": "both"}),
+            Value::Null,
+        ]
+    );
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_crop_beside_a_size_is_refused(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_an_image_a_file_and_a_sticker().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("crop", "square")
+        .with("size", "100,100");
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("left out with --crop")
+        .signalled_as(surface.usage());
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+/// A board with an image, a file and a sticker, and a picture and a text on
+/// disk.
+fn with_a_new_picture() -> Given {
+    with_an_image_a_file_and_a_sticker()
+        .local_file("dog.png", &png(32, 16))
+        .local_file("notes.txt", b"just words")
+}
+
+#[rstest]
+#[tokio::test]
+async fn an_image_takes_a_new_file(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_a_new_picture().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("path", holst.work_place("dog.png"));
+    then(&holst.on(surface).object("Plans", call).await?).succeeded();
+    uploads_of(&holst).holds_one_named("dog.png");
+    let observation = holst.on(surface).objects("Plans").await?;
+    then(&observation).lists_objects(&[
+        ("image", ""),
+        ("file", ""),
+        ("sticker", "Buy milk"),
+    ]);
+    assert_eq!(
+        (
+            in_first(&holst, "image", "/originalName")?,
+            in_first(&holst, "image", "/naturalWidth")?,
+            numbers_at(&holst, "/cropTransform")?,
+        ),
+        (
+            json!("dog.png"),
+            json!(32),
+            vec![Some(0.166_667), Some(0.0), Some(0.666_667), Some(1.0), None]
+        )
+    );
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_dry_run_replacement_uploads_nothing(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_a_new_picture().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("path", holst.work_place("dog.png"));
+    then(
+        &holst
+            .on(surface)
+            .dry_running()
+            .object("Plans", call)
+            .await?,
+    )
+    .succeeded();
+    uploads_of(&holst).is_empty();
+    board_of(&holst).got_no_update();
+    assert_eq!(
+        in_first(&holst, "image", "/originalName")?,
+        json!("cat.png")
+    );
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_sticker_takes_no_path(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_a_new_picture().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 3)?)
+        .with("path", holst.work_place("dog.png"));
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("path")
+        .signalled_as(surface.usage());
+    uploads_of(&holst).is_empty();
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_text_file_is_not_a_picture(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_a_new_picture().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("path", holst.work_place("notes.txt"));
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("a png, jpg, gif or webp picture")
+        .signalled_as(surface.usage());
+    uploads_of(&holst).is_empty();
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+/// A board with a three-page pdf whose pages the client has counted.
+fn with_a_counted_pdf() -> Given {
+    given().saved_login().workspace("Team").board_with_objects(
+        "Plans",
+        "Team",
+        vec![FixtureObject::Set(
+            Box::new(FixtureObject::File("plan.pdf".into(), 70)),
+            "pagesInfo".into(),
+            json!({"count": 3, "valid": true}),
+        )],
+    )
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_pdf_is_shown_as_pages_from_page_two(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_a_counted_pdf().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("display", "content")
+        .with("start_page", "2");
+    then(&holst.on(surface).object("Plans", call).await?).succeeded();
+    assert_eq!(
+        holst.on(surface).listed_media("Plans", "file").await?,
+        json!({"display": "content", "start_page": 2, "pages": 3})
+    );
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_start_page_past_the_last_page_is_refused_on_the_board(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_a_counted_pdf().start().await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("start_page", "4");
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("the file has no page 4: it has 3")
+        .signalled_as(surface.usage());
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+/// A board with a pdf whose pages nobody has counted yet.
+fn with_an_uncounted(file: &str) -> Given {
+    given().saved_login().workspace("Team").board_with_objects(
+        "Plans",
+        "Team",
+        vec![FixtureObject::File(file.into(), 70)],
+    )
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_pdf_without_pages_is_counted_then_shown_as_pages(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_an_uncounted("plan.pdf")
+        .page_count("plan.pdf", 3)
+        .start()
+        .await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("display", "content");
+    then(&holst.on(surface).object("Plans", call).await?).succeeded();
+    assert_eq!(
+        (
+            holst.page_counts_asked(),
+            holst.on(surface).listed_media("Plans", "file").await?,
+        ),
+        (1, json!({"display": "content", "pages": 3}))
+    );
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn an_unconvertible_file_says_why(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_an_uncounted("plan.docx")
+        .unconvertible_file(
+            "plan.docx",
+            "office_conversion_unavailable",
+            "no converter",
+        )
+        .start()
+        .await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("display", "content");
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("office_conversion_unavailable: no converter")
+        .signalled_as(surface.data_error());
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_dry_run_of_showing_pages_asks_nothing(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_an_uncounted("plan.pdf")
+        .page_count("plan.pdf", 3)
+        .start()
+        .await?;
+    let call = ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("display", "content");
+    let observation = holst
+        .on(surface)
+        .dry_running()
+        .object("Plans", call)
+        .await?;
+    then(&observation).succeeded();
+    assert_eq!(holst.page_counts_asked(), 0);
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+/// A board with a pdf of `pages` pages counted at 100,200; the page service
+/// is told nothing yet.
+fn with_a_pdf_of(pages: u32) -> Given {
+    given().saved_login().workspace("Team").board_with_objects(
+        "Plans",
+        "Team",
+        vec![FixtureObject::Set(
+            Box::new(FixtureObject::Set(
+                Box::new(FixtureObject::File("plan.pdf".into(), 70)),
+                "pagesInfo".into(),
+                json!({"count": pages, "valid": true}),
+            )),
+            "position".into(),
+            json!({"x": 100, "y": 200}),
+        )],
+    )
+}
+
+/// The page objects of "Plans", as (page, x, y) in page order.
+fn extracted_pages(holst: &Holst) -> Result<Vec<(u64, f64, f64)>, ScenarioError> {
+    let mut found: Vec<(u64, f64, f64)> = holst
+        .all_of_kind("Plans", "file")?
+        .iter()
+        .filter(|object| object.pointer("/extracted") == Some(&json!(true)))
+        .map(|object| {
+            let at = |pointer: &str| {
+                object
+                    .pointer(pointer)
+                    .and_then(Value::as_f64)
+                    .unwrap_or(f64::NAN)
+            };
+            (
+                object
+                    .pointer("/pinnedPage")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0),
+                at("/position/x"),
+                at("/position/y"),
+            )
+        })
+        .collect();
+    found.sort_by_key(|(page, _, _)| *page);
+    Ok(found)
+}
+
+fn extract_call(holst: &Holst, pages: &str) -> Result<ObjectCall, ScenarioError> {
+    Ok(ObjectCall::edit()
+        .with("object", holst.fixture_object("Plans", 1)?)
+        .with("extract", pages))
+}
+
+fn runs(list: &[(u32, u32)]) -> Vec<(String, u32, u32)> {
+    list.iter()
+        .map(|(start, end)| ("plan.pdf".to_owned(), *start, *end))
+        .collect()
+}
+
+#[rstest]
+#[tokio::test]
+async fn three_pages_of_a_pdf_are_extracted_in_a_row(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_a_pdf_of(3).page_count("plan.pdf", 3).start().await?;
+    let call = extract_call(&holst, "all")?;
+    then(&holst.on(surface).object("Plans", call).await?).succeeded();
+    assert_eq!(
+        (
+            holst.page_runs(),
+            extracted_pages(&holst)?,
+            holst.all_of_kind("Plans", "file")?.len(),
+        ),
+        (
+            runs(&[(1, 3)]),
+            vec![(1, 100.0, 328.0), (2, 404.0, 328.0), (3, 708.0, 328.0)],
+            4,
+        )
+    );
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn pages_1_to_25_take_two_runs(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_a_pdf_of(30).page_count("plan.pdf", 30).start().await?;
+    let call = extract_call(&holst, "1-25")?;
+    then(&holst.on(surface).object("Plans", call).await?).succeeded();
+    let pages = extracted_pages(&holst)?;
+    assert_eq!(
+        (holst.page_runs(), pages.len(), pages.get(8).copied()),
+        (runs(&[(1, 20), (21, 25)]), 25, Some((9, 100.0, 456.0)))
+    );
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_failed_run_adds_nothing(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_a_pdf_of(30)
+        .unconvertible_file("plan.pdf", "conversion_failed", "no converter")
+        .start()
+        .await?;
+    let call = extract_call(&holst, "1-25")?;
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("conversion_failed: no converter")
+        .signalled_as(surface.data_error());
+    assert_eq!(
+        (holst.page_runs(), objects_on(&holst, "Plans")),
+        (runs(&[(1, 20)]), 1)
+    );
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_file_without_pages_refuses_extract(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_an_uncounted("plan.pdf")
+        .page_count("plan.pdf", 3)
+        .start()
+        .await?;
+    let call = extract_call(&holst, "all")?;
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("a file with pages")
+        .signalled_as(surface.usage());
+    assert_eq!(holst.page_runs(), runs(&[]));
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_dry_run_of_extract_converts_nothing(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_a_pdf_of(3).page_count("plan.pdf", 3).start().await?;
+    let call = extract_call(&holst, "all")?;
+    let observation = holst
+        .on(surface)
+        .dry_running()
+        .object("Plans", call)
+        .await?;
+    then(&observation).succeeded();
+    assert_eq!(holst.page_runs(), runs(&[]));
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn extract_takes_no_other_field(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_a_pdf_of(3).page_count("plan.pdf", 3).start().await?;
+    let call = extract_call(&holst, "all")?.with("color", "yellow4");
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("left out with --extract")
+        .signalled_as(surface.usage());
+    assert_eq!(holst.page_runs(), runs(&[]));
+    board_of(&holst).got_no_update();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn more_than_fifty_pages_are_refused_before_any_run(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = with_a_pdf_of(60).page_count("plan.pdf", 60).start().await?;
+    let call = extract_call(&holst, "1-51")?;
+    let observation = holst.on(surface).object("Plans", call).await?;
+    then(&observation)
+        .failed_saying("must be at most 50 pages")
+        .signalled_as(surface.usage());
+    assert_eq!(holst.page_runs(), runs(&[]));
+    board_of(&holst).got_no_update();
+    Ok(())
+}

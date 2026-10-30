@@ -235,14 +235,15 @@ async fn account_status(
     status: &StatusArgs,
     account: Account,
 ) -> AccountStatus {
-    let workspaces = lookup::trees(client, account.workspaces.clone())
-        .await
-        .into_iter()
-        .map(|(workspace, tree)| WorkspaceStatus {
-            workspace,
-            counts: tree.map(|tree| NodeCounts::of(&tree)),
-        })
-        .collect();
+    let workspaces =
+        lookup::trees(client, account.workspaces.clone(), lookup::Fresh::Asked)
+            .await
+            .into_iter()
+            .map(|(workspace, tree)| WorkspaceStatus {
+                workspace,
+                counts: tree.map(|tree| NodeCounts::of(&tree)),
+            })
+            .collect();
     let tokens = if status.with.contains(&StatusPart::Tokens) {
         Some(api::user::pat_list(client).await.map(hide_tokens))
     } else {

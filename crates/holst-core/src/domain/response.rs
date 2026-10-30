@@ -42,6 +42,13 @@ pub struct Uploaded {
     pub other: OtherFields,
 }
 
+/// What the page service reports of a file: pages and whether they show.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PagesInfo {
+    pub count: u32,
+    pub valid: bool,
+}
+
 /// What a site offers to embed.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]

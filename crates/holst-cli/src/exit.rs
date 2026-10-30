@@ -246,10 +246,12 @@ fn input_code(error: &InputError) -> u8 {
         | InputError::NotPositive { .. }
         | InputError::NotNodeKind { .. }
         | InputError::NotObjectKind { .. }
+        | InputError::NotIcon { .. }
         | InputError::NotHttpMethod { .. }
         | InputError::OfflineByName { .. }
         | InputError::RootOrFolder { .. }
         | InputError::BlankName
+        | InputError::BlankMediaName
         | InputError::LeaveOwnBoard { .. }
         | InputError::MoveIntoItself { .. }
         | InputError::WorkspaceNotChosen { .. }
@@ -363,17 +365,20 @@ fn board_write_code(error: &BoardChangeError) -> u8 {
         | BoardChangeError::NotYours { .. } => EX_NOPERM,
         BoardChangeError::NoObject { .. }
         | BoardChangeError::NotChangeable { .. }
+        | BoardChangeError::NotSpinnable { .. }
         | BoardChangeError::NotMovable { .. }
         | BoardChangeError::PlacedByContainer { .. }
         | BoardChangeError::NothingToChange
         | BoardChangeError::NoTag { .. }
         | BoardChangeError::TagTaken { .. }
         | BoardChangeError::NoCheckItem { .. }
+        | BoardChangeError::NoPage { .. }
         | BoardChangeError::NotPoint { .. }
         | BoardChangeError::OffBoard { .. }
         | BoardChangeError::NotSize { .. }
         | BoardChangeError::NotColor { .. }
         | BoardChangeError::NotArrowLook { .. }
+        | BoardChangeError::BadValue { .. }
         | BoardChangeError::StickerSize { .. }
         | BoardChangeError::NotFrame { .. }
         | BoardChangeError::ContentHidden { .. }
@@ -385,6 +390,7 @@ fn board_write_code(error: &BoardChangeError) -> u8 {
         | BoardChangeError::NothingToUnlock
         | BoardChangeError::NotArrangeable { .. }
         | BoardChangeError::TooFewToArrange { .. }
+        | BoardChangeError::TableRefused { .. }
         | BoardChangeError::OutsideFrame { .. } => EX_USAGE,
         BoardChangeError::AcceptTimeout { .. }
         | BoardChangeError::ClosedBeforeAccept

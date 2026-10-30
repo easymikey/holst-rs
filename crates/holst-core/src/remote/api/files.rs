@@ -1,12 +1,22 @@
 use holst_macros::post;
+use serde_json::Value;
 
 use crate::{
-    domain::response::Uploaded,
-    effect::http::HttpBody,
-    error::Result,
+    domain::{
+        response::{PagesInfo, Uploaded},
+        url::encode_segment,
+    },
+    effect::{
+        http::{HttpBody, HttpMethod},
+        request::{ApiRequest, Authorization, QueryParameter},
+    },
+    error::{Error, Result, http::HttpError},
     protocol::upload::multipart_body,
     remote::client::Client,
 };
+
+/// The page service, on the app's own origin (main.a33651a4.js 226402).
+const PAGE_SERVICE: &str = "/pdfpage/file/";
 
 /// A file and the boundary line that delimits it in a multipart body.
 #[derive(Debug, Clone, Copy)]
@@ -109,6 +119,92 @@ pub async fn upload(
         bytes: &bytes,
     };
     upload_parts(client, bind, &key, options.freshness, &part).await
+}
+
+/// Ask the page service how many pages the stored file `file_name` has, with
+/// the session of the `/gapi` calls (open question W4-Q10); a failure is
+/// `{code, detail}` (`filePagesInfo`, main.a33651a4.js 209839-209848).
+///
+/// # Errors
+/// [`Client::send_typed`] errors; a refusal of the service says its code and
+/// detail in the place of the raw body.
+pub async fn page_count(client: &Client, file_name: &str) -> Result<PagesInfo> {
+    let request = ApiRequest {
+        method: HttpMethod::Get,
+        path: format!("{PAGE_SERVICE}{}/page_count", encode_segment(file_name)?),
+        query: Vec::new(),
+        body: None,
+        authorization: Authorization::Session,
+    };
+    client.send_typed(request).await.map_err(said_by_service)
+}
+
+/// Ask the page service to convert the pages `start` to `end` of the stored
+/// file `file_name` into page images; the reply body is not read
+/// (`convertPagesRange`, main.a33651a4.js 209849-209852).
+///
+/// # Errors
+/// [`Client::send_text`] errors; a refusal of the service says its code and
+/// detail in the place of the raw body.
+pub async fn convert_pages(
+    client: &Client,
+    file_name: &str,
+    start: u32,
+    end: u32,
+) -> Result<()> {
+    let parameter = |name: &str, page: u32| QueryParameter {
+        name: name.to_owned(),
+        value: page.to_string(),
+    };
+    let request = ApiRequest {
+        method: HttpMethod::Post,
+        path: format!("{PAGE_SERVICE}{}/convert_pages", encode_segment(file_name)?),
+        query: vec![parameter("start", start), parameter("end", end)],
+        body: None,
+        authorization: Authorization::Session,
+    };
+    client
+        .send_text(request)
+        .await
+        .map(|_reply| ())
+        .map_err(said_by_service)
+}
+
+/// A refusal of the page service as its `code` and `detail`.
+fn said_by_service(err: Error) -> Error {
+    match err {
+        Error::Http(HttpError::Status {
+            method,
+            path,
+            status,
+            detail,
+        }) => Error::Http(HttpError::Status {
+            method,
+            path,
+            status,
+            detail: coded(&detail).unwrap_or(detail),
+        }),
+        other @ (Error::Login(_)
+        | Error::Http(_)
+        | Error::Input(_)
+        | Error::LocalData(_)
+        | Error::Lookup(_)
+        | Error::BoardSocket(_)
+        | Error::BoardChange(_)
+        | Error::Picture(_)
+        | Error::StoredFile(_)) => other,
+    }
+}
+
+fn coded(body: &str) -> Option<String> {
+    let reply: Value = serde_json::from_str(body).ok()?;
+    let code = reply.get("code")?.as_str()?;
+    Some(
+        reply
+            .get("detail")
+            .and_then(Value::as_str)
+            .map_or_else(|| code.to_owned(), |detail| format!("{code}: {detail}")),
+    )
 }
 
 #[cfg(test)]

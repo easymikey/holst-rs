@@ -79,15 +79,13 @@ impl SharedLogin {
 #[derive(Clone)]
 pub(crate) struct HandedClient {
     pub(crate) client: Client,
-    pub(crate) generation: u64,
     pub(crate) epoch: u64,
 }
 
 impl HandedClient {
-    pub(crate) fn new(ready: &ReadyLogin, generation: u64) -> Self {
+    pub(crate) fn new(ready: &ReadyLogin) -> Self {
         Self {
             client: ready.client.clone(),
-            generation,
             epoch: ready.epoch,
         }
     }
@@ -103,7 +101,6 @@ impl HandedClient {
                 holst_core::system::clock::SystemClock,
                 holst_core::system::id::RandomIds,
             )?,
-            generation: 0,
             epoch: 0,
         })
     }
@@ -117,9 +114,9 @@ impl std::ops::Deref for HandedClient {
     }
 }
 
-pub(crate) fn hand_out(login: &LoginState, generation: u64) -> Result<HandedClient> {
+pub(crate) fn hand_out(login: &LoginState) -> Result<HandedClient> {
     match login {
-        LoginState::Ready(ready) => Ok(HandedClient::new(ready, generation)),
+        LoginState::Ready(ready) => Ok(HandedClient::new(ready)),
         LoginState::Revoked(_) => Err(holst_core::Error::Login(
             holst_core::error::login::LoginError::SessionRevoked,
         )

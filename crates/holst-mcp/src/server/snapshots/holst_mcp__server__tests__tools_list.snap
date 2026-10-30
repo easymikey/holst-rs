@@ -729,6 +729,13 @@ expression: "*holst.tools"
         "all": {
           "type": "boolean"
         },
+        "assignee": {
+          "description": "Assignees; none clears.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "at": {
           "description": "x,y; add, cp: a free corner by default; edit: unchanged.",
           "type": "string"
@@ -753,6 +760,10 @@ expression: "*holst.tools"
         "board": {
           "type": "string"
         },
+        "cell": {
+          "description": "Table cell row,column or r1,c1,r2,c2 from 1; takes text or -c.",
+          "type": "string"
+        },
         "check": {
           "description": "Tick checklist item n, from 1.",
           "type": "integer"
@@ -764,12 +775,51 @@ expression: "*holst.tools"
           },
           "type": "array"
         },
+        "clear": {
+          "description": "Table: clear r1,c1,r2,c2.",
+          "type": "string"
+        },
         "color": {
           "description": "E.g. yellow4.",
           "type": "string"
         },
+        "column": {
+          "description": "Kanban column titles.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "columns": {
+          "description": "Table columns.",
+          "type": "integer"
+        },
         "confirm": {
           "type": "boolean"
+        },
+        "crop": {
+          "description": "circle, square, portrait, landscape, wide, none.",
+          "enum": [
+            "circle",
+            "square",
+            "portrait",
+            "landscape",
+            "wide",
+            "none"
+          ],
+          "type": "string"
+        },
+        "delete_column": {
+          "description": "Table: delete n-th column.",
+          "type": "integer"
+        },
+        "delete_row": {
+          "description": "Table: delete n-th row.",
+          "type": "integer"
+        },
+        "description": {
+          "description": "Task description.",
+          "type": "string"
         },
         "dir": {
           "type": "string"
@@ -784,6 +834,14 @@ expression: "*holst.tools"
           ],
           "type": "string"
         },
+        "display": {
+          "description": "File: stamp or content.",
+          "enum": [
+            "stamp",
+            "content"
+          ],
+          "type": "string"
+        },
         "distribute": {
           "description": "Spread evenly: horizontal or vertical. Align instead with to: left, center, right, top, middle or bottom.",
           "enum": [
@@ -795,12 +853,34 @@ expression: "*holst.tools"
         "dry_run": {
           "type": "boolean"
         },
+        "due": {
+          "description": "Task due YYYY-MM-DD.",
+          "type": "string"
+        },
+        "extract": {
+          "description": "File: all or pages, e.g. 1-3,5.",
+          "type": "string"
+        },
         "faces": {
           "description": "Die faces 2, 4, 6, 8, 10, 12, 20.",
           "type": "integer"
         },
         "file": {
           "description": "Where to save it.",
+          "type": "string"
+        },
+        "flip": {
+          "description": "Turn flip card over.",
+          "type": "boolean"
+        },
+        "flip_image": {
+          "description": "none, horizontal, vertical, both.",
+          "enum": [
+            "none",
+            "horizontal",
+            "vertical",
+            "both"
+          ],
           "type": "string"
         },
         "frame": {
@@ -818,9 +898,29 @@ expression: "*holst.tools"
           "description": "Hide sticker author.",
           "type": "boolean"
         },
+        "hide_children": {
+          "description": "Hide node children.",
+          "type": "boolean"
+        },
         "hide_content": {
           "description": "Hide frame content.",
           "type": "boolean"
+        },
+        "hide_details": {
+          "description": "Hide video details.",
+          "type": "boolean"
+        },
+        "highlighter": {
+          "description": "Highlighter stroke.",
+          "type": "boolean"
+        },
+        "insert_column": {
+          "description": "Table: column before n-th.",
+          "type": "integer"
+        },
+        "insert_row": {
+          "description": "Table: row before n-th.",
+          "type": "integer"
         },
         "into": {
           "type": "string"
@@ -831,6 +931,10 @@ expression: "*holst.tools"
             "type": "object"
           },
           "type": "array"
+        },
+        "kanban": {
+          "description": "Kanban of a task.",
+          "type": "string"
         },
         "kind": {
           "description": "Sticker by default.",
@@ -847,7 +951,16 @@ expression: "*holst.tools"
             "wheel",
             "sticker-stack",
             "flipcard",
-            "mind-map"
+            "mind-map",
+            "document",
+            "stamp",
+            "code",
+            "table",
+            "reaction-stamp",
+            "icon",
+            "task",
+            "kanban",
+            "drawing"
           ],
           "type": "string"
         },
@@ -857,6 +970,29 @@ expression: "*holst.tools"
             "type": "string"
           },
           "type": "array"
+        },
+        "language": {
+          "description": "Code language.",
+          "enum": [
+            "typescript",
+            "javascript",
+            "python",
+            "cpp",
+            "java",
+            "go",
+            "rust",
+            "plain_text",
+            "swift",
+            "ruby",
+            "sql",
+            "html",
+            "css",
+            "json",
+            "kotlin",
+            "bash",
+            "php"
+          ],
+          "type": "string"
         },
         "line": {
           "description": "Arrow line.",
@@ -886,6 +1022,14 @@ expression: "*holst.tools"
           },
           "type": "array"
         },
+        "merge": {
+          "description": "Table: merge r1,c1,r2,c2.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Image or file name.",
+          "type": "string"
+        },
         "no_preview": {
           "description": "Plain card.",
           "type": "boolean"
@@ -895,6 +1039,10 @@ expression: "*holst.tools"
             "type": "string"
           },
           "type": "array"
+        },
+        "on": {
+          "description": "Object a reaction stamp sticks to.",
+          "type": "string"
         },
         "only": {
           "type": "boolean"
@@ -917,8 +1065,22 @@ expression: "*holst.tools"
           "type": "string"
         },
         "path": {
-          "description": "Local file.",
+          "description": "Local file; edit: the new picture.",
           "type": "string"
+        },
+        "point": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "description": "Stroke points x,y, 2 to 10000; its stroke_width is 1..30."
         },
         "radius": {
           "description": "Corner radius.",
@@ -945,9 +1107,17 @@ expression: "*holst.tools"
         "refresh": {
           "type": "boolean"
         },
+        "roll": {
+          "description": "Roll dice, spin wheels.",
+          "type": "boolean"
+        },
         "rotate": {
           "description": "Degrees clockwise; not frame, table, group, arrow.",
           "type": "number"
+        },
+        "rows": {
+          "description": "Table rows.",
+          "type": "integer"
         },
         "scale": {
           "description": "Factor; not with size.",
@@ -1025,8 +1195,16 @@ expression: "*holst.tools"
           "description": "Show sticker author.",
           "type": "boolean"
         },
+        "show_children": {
+          "description": "Show node children.",
+          "type": "boolean"
+        },
         "show_content": {
           "description": "Show frame content.",
+          "type": "boolean"
+        },
+        "show_details": {
+          "description": "Show video details.",
           "type": "boolean"
         },
         "side": {
@@ -1034,6 +1212,18 @@ expression: "*holst.tools"
         },
         "size": {
           "description": "W,H.",
+          "type": "string"
+        },
+        "start": {
+          "description": "Task start YYYY-MM-DD.",
+          "type": "string"
+        },
+        "start_page": {
+          "description": "File start page from 1.",
+          "type": "integer"
+        },
+        "status": {
+          "description": "Task status.",
           "type": "string"
         },
         "stroke_color": {
@@ -1052,6 +1242,13 @@ expression: "*holst.tools"
         "stroke_width": {
           "description": "Shape 0..10; arrow 1, 1.5, 2, 4, 5, 6, 9, 13, 17.",
           "type": "number"
+        },
+        "swimlane": {
+          "description": "Kanban swimlane titles.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "tag": {
           "items": {
@@ -1083,6 +1280,14 @@ expression: "*holst.tools"
           "description": "Sticker: auto or 4..64.",
           "type": "string"
         },
+        "theme": {
+          "description": "Code theme.",
+          "enum": [
+            "light",
+            "dark"
+          ],
+          "type": "string"
+        },
         "to": {
           "description": "Arrow end; cp: the target board. On edit object:side or x,y.",
           "type": "string"
@@ -1091,8 +1296,24 @@ expression: "*holst.tools"
           "description": "Untick checklist item n.",
           "type": "integer"
         },
+        "unmerge": {
+          "description": "Table: unmerge block led by r,c.",
+          "type": "string"
+        },
         "url": {
           "description": "Page address.",
+          "type": "string"
+        },
+        "weight": {
+          "description": "Icon weight.",
+          "enum": [
+            "thin",
+            "light",
+            "regular",
+            "bold",
+            "fill",
+            "duotone"
+          ],
           "type": "string"
         },
         "width": {

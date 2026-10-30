@@ -18,7 +18,7 @@ use crate::{
             frame_look::{FrameBackground, FrameRatio},
             shape_type::{ShapeType, StrokeStyle},
         },
-        change::{kind_edit::KindEdit, receipt::Delivery},
+        change::{kind_edit::KindEdit, media::MediaEdit, receipt::Delivery},
         geometry::{Point, Size},
         id_source::IdSource,
         palette::Color,
@@ -108,6 +108,13 @@ pub enum NewObject {
         upload: Upload,
         at: Point,
     },
+    /// A freehand stroke; `color` is packed RGB.
+    Drawing {
+        points: Vec<Point>,
+        color: u32,
+        width: f64,
+        alpha: f64,
+    },
     /// An object as the web client stores it, built by its kind's own code.
     Made(Made),
 }
@@ -150,7 +157,8 @@ pub struct StoreEntry {
 }
 
 impl NewObject {
-    /// The same object moved by `dx`, `dy`; an arrow has no corner to move.
+    /// The same object moved by `dx`, `dy`; an arrow has no corner to move, a
+    /// stroke moves every point.
     ///
     /// # Errors
     /// [`crate::error::input::InputError::NotFinite`] when the corner
@@ -168,6 +176,13 @@ impl NewObject {
             | NewObject::Made(Made {
                 at, parent: None, ..
             }) => Some(at),
+            NewObject::Drawing { points, .. } => {
+                *points = points
+                    .iter()
+                    .map(|point| point.shifted(dx, dy))
+                    .collect::<Result<_>>()?;
+                None
+            }
             NewObject::Arrow { .. } | NewObject::Made(_) => None,
         };
         corner
@@ -198,6 +213,7 @@ pub struct ObjectPatch {
     pub arrow: ArrowEdit,
     pub frame: FrameEdit,
     pub reparent: Option<Reparent>,
+    pub media: MediaEdit,
     /// What only some kinds take; none for now.
     pub kind_edits: Vec<KindEdit>,
 }
@@ -717,6 +733,12 @@ mod tests {
         size: Some(Size::SHAPE),
     })]
     #[case::file(|at| NewObject::File { upload: upload(), at })]
+    #[case::drawing(|at| NewObject::Drawing {
+        points: vec![at, at.shifted(5.0, 5.0).unwrap_or(at)],
+        color: 1_973_790,
+        width: 3.0,
+        alpha: 1.0,
+    })]
     #[case::made(|at| NewObject::Made(Made {
         kind: ObjectKind::Other("dice".into()),
         at,

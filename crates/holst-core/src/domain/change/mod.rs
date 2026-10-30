@@ -6,6 +6,7 @@ mod check;
 mod journal;
 pub mod kind_edit;
 mod made;
+pub mod media;
 pub mod receipt;
 mod rich;
 #[cfg(any(test, feature = "fake"))] pub(crate) use rich::fill_blocks;

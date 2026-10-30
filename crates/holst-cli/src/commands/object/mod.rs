@@ -60,7 +60,7 @@ pub(crate) async fn run(
                 run,
                 format,
                 async |client, args| change::edit(client, run.cache(), args).await,
-                output::board::report,
+                removed,
             )
             .await
         }
@@ -138,10 +138,13 @@ pub(crate) async fn run(
     }
 }
 
-/// Prints a removal: the trash warning, then the removal itself.
+/// Prints a removal or an edit that may wait: the trash warning, then the
+/// result itself, then its warnings.
 fn removed(format: OutputFormat, removed: &Removed) -> Result<()> {
     output::board::warn_if_trashed(&removed.report);
-    output::print(format, &removed.report.to_string(), removed)
+    output::print(format, &removed.report.to_string(), removed)?;
+    output::board::warnings(&removed.report);
+    Ok(())
 }
 
 /// Downloads the originals of objects; a file of `-` sends the bytes to stdout.

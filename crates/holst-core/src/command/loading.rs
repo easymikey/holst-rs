@@ -5,7 +5,7 @@ use crate::{
         account,
         board::{AreaArgs, Caching},
         board_load::CacheUse,
-        lookup,
+        lookup::{self, Fresh},
         table::not_value,
     },
     domain::{
@@ -118,8 +118,11 @@ pub(in crate::command) async fn board_id(
                     reference: reference.to_owned(),
                 })
             }),
-        CacheUse::Use | CacheUse::Refresh => {
-            lookup::board_id(client, reference, workspace).await
+        CacheUse::Use => {
+            lookup::board_id_with(client, reference, workspace, Fresh::Kept).await
+        }
+        CacheUse::Refresh => {
+            lookup::board_id_with(client, reference, workspace, Fresh::Asked).await
         }
     }
 }

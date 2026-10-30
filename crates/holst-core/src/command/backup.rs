@@ -14,7 +14,7 @@ use crate::{
         },
         board_file,
         board_load::CacheUse,
-        board_write::{Guard, refuse_withheld},
+        board_write::{Guard, refuse_in},
         change::{ChangeReport, gate},
         lookup,
         table::{Command, CommandArgs, Confirmation, NewFile},
@@ -26,7 +26,7 @@ use crate::{
             document,
         },
         change::receipt::UpdateReceipt,
-        text::{counted, joined},
+        text::{counted, joined, size_text},
     },
     effect::{board_write::WriteMode, settings::CacheSettings},
     error::{
@@ -173,11 +173,16 @@ impl fmt::Display for Fetched {
             Delivery::Written { file, bytes } => {
                 let before = match self.uncompressed_bytes {
                     size if size == *bytes => String::new(),
-                    size => format!(" ({size} before gzip)"),
+                    size => format!(" ({} before gzip)", size_text(size)),
                 };
-                write!(f, "saved {bytes} bytes{before} to {}", file.display())
+                write!(
+                    f,
+                    "saved {}{before} to {}",
+                    size_text(*bytes),
+                    file.display()
+                )
             }
-            Delivery::Inline { bytes } => write!(f, "{} bytes", bytes.len()),
+            Delivery::Inline { bytes } => write!(f, "{}", size_text(bytes.len())),
         }
     }
 }
@@ -340,7 +345,7 @@ async fn restored(
 ) -> Result<Restored> {
     let target =
         lookup::exact_board(client, &args.board, args.workspace.as_deref()).await?;
-    refuse_withheld(client, &target.id, REMOVING).await?;
+    refuse_in(&target.channel, REMOVING)?;
     let listed = api::backup::list(client, &target.id).await?;
     let backup = listed
         .as_slice()
@@ -362,6 +367,7 @@ async fn restored(
         client,
         loading,
         &target.id,
+        &target.channel,
         &state,
         gated
             .as_ref()
@@ -592,14 +598,8 @@ mod tests {
     /// The provider a dry-run restore names in its download, when the list
     /// puts the backup in `listed`.
     async fn downloaded_from(listed: &str) -> Result<Option<String>> {
-        let (fake, client) = client([
-            channel(),
-            account(),
-            channel(),
-            listing_by(listed),
-            body()?,
-            channel(),
-        ])?;
+        let (fake, client) =
+            client([channel(), account(), listing_by(listed), body()?])?;
         let args = json!({ "board": BOARD, "key": "k1", "dry_run": true });
         restored(&client, over(&empty()), &arguments::<RestoreArgs>(args)?).await?;
         Ok(fake
@@ -647,7 +647,7 @@ mod tests {
     async fn refused(listed: &str) -> Result<()> {
         let socket = empty();
         let (fake, client) =
-            client([channel(), account(), channel(), listing_by(listed), body()?])?;
+            client([channel(), account(), listing_by(listed), body()?])?;
         let args = json!({ "board": BOARD, "key": "k1", "confirm": true });
         let error = restored(&client, over(&socket), &arguments::<RestoreArgs>(args)?)
             .await
@@ -740,14 +740,7 @@ mod tests {
             update(0, UpdatePayload::Inline(document::encoded(&live))),
         ])]);
         let server = document::decoded(&document::encoded(&live))?;
-        let (_, client) = client([
-            channel(),
-            account(),
-            channel(),
-            listing(),
-            packed(&saved)?,
-            channel(),
-        ])?;
+        let (_, client) = client([channel(), account(), listing(), packed(&saved)?])?;
         let args = json!({ "board": BOARD, "key": "k1", "confirm": true });
         restored(&client, over(&socket), &arguments::<RestoreArgs>(args)?).await?;
         server
@@ -773,7 +766,7 @@ mod tests {
     #[tokio::test]
     async fn a_restore_onto_a_board_that_withholds_removal_is_refused() -> Result<()> {
         let socket = empty();
-        let (fake, client) = client([channel(), account(), withholding()])?;
+        let (fake, client) = client([withholding(), account()])?;
         let args = json!({ "board": BOARD, "key": "k1", "confirm": true });
         let error = restored(&client, over(&socket), &arguments::<RestoreArgs>(args)?)
             .await
@@ -800,14 +793,7 @@ mod tests {
         cached_copy(&memory, &sticker_by(4, "old").0)?;
         let saved = document::encoded(&board_saying("backup"));
         let socket = empty();
-        let (_, client) = client([
-            channel(),
-            account(),
-            channel(),
-            listing(),
-            packed(&saved)?,
-            channel(),
-        ])?;
+        let (_, client) = client([channel(), account(), listing(), packed(&saved)?])?;
         let args = json!({ "board": BOARD, "key": "k1", "confirm": true });
         let loading = Loading {
             connector: &socket,

@@ -282,6 +282,7 @@ mod tests {
             text: String::new(),
             color: None,
             look: None,
+            media: None,
             ends: None,
             author: None,
             locked: false,

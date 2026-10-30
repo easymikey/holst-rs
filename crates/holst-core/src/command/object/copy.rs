@@ -8,10 +8,16 @@ use crate::{
     command::{
         board::show::{Loading, board_id, through_cache},
         board_load::CacheUse,
-        board_write::{BoardWrite, Guard, change_board, refuse_withheld},
+        board_write::{
+            BoardWrite,
+            Guard,
+            change_board_with,
+            refuse_in,
+            refuse_withheld,
+        },
         object::{
             CopyArgs,
-            change::{load_board, named},
+            change::{load_board_read, named},
         },
         table::not_value,
     },
@@ -65,7 +71,7 @@ async fn copied(
         Some(into) => board_id(client, into, workspace, loading.cache_use).await?,
         None => source.clone(),
     };
-    let loaded = load_board(client, &loading, &source).await?;
+    let (loaded, read) = load_board_read(client, &loading, &source).await?;
     let objects = board_objects(&loaded.document);
     let chosen = select(&objects, &references)?;
     let elsewhere = target != source;
@@ -75,12 +81,17 @@ async fn copied(
         let copying: Guard = ("who_can_copy_content", |needs, holds| {
             BoardChangeError::CopyWithheld { needs, holds }
         });
-        refuse_withheld(client, &source, copying).await?;
+        match &read {
+            Some(reply) => refuse_in(reply, copying),
+            None => refuse_withheld(client, &source, copying).await,
+        }?;
     }
-    let beside = if elsewhere {
-        board_objects(&load_board(client, &loading, &target).await?.document)
-    } else {
-        objects
+    let (beside, written) = match elsewhere.then_some(&target) {
+        Some(other) => {
+            let (there, asked) = load_board_read(client, &loading, other).await?;
+            (board_objects(&there.document), asked)
+        }
+        None => (objects, read),
     };
     let change = BoardChange::Paste(pasted(
         chosen,
@@ -88,7 +99,7 @@ async fn copied(
         &beside,
         args.at.as_deref(),
     )?);
-    change_board(
+    change_board_with(
         client,
         loading,
         BoardWrite {
@@ -98,6 +109,7 @@ async fn copied(
             guard: None,
             mode: args.dry_run,
         },
+        written,
     )
     .await
 }

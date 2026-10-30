@@ -14,6 +14,7 @@ use crate::{
                 BoardChange,
                 ChangeUpdate,
                 ChangedObject,
+                NewObject,
                 ObjectChangeKind,
                 ObjectEdit,
                 ObjectPatch,
@@ -21,6 +22,7 @@ use crate::{
             },
         },
         id_source::SequentialIds,
+        kinds::task,
     },
     error::{Error, Result, board_change::BoardChangeError},
 };
@@ -272,6 +274,65 @@ fn a_change_that_asks_nothing_is_refused(#[case] change: TagChange) -> Result<()
             Some(Error::BoardChange(BoardChangeError::NothingToChange))
         ),
         "{refused:?}"
+    );
+    Ok(())
+}
+
+/// A task card on the board whose info entry `info-2` holds both tags and the
+/// assignee `u1`.
+fn task_card(document: &Doc) -> Result<String> {
+    let made = task::made("Ship", None, (None, None), None, "info-2".into());
+    let built = super::built(document, &super::add(NewObject::Made(made)))?;
+    let ids = tag_ids(document);
+    let info = document.get_or_insert_map("task-card-infoStore");
+    info.insert(
+        &mut document.transact_mut(),
+        "info-2",
+        MapPrelim::from_iter([
+            ("tagIds", ArrayPrelim::from_iter(ids)),
+            ("assigneeIds", ArrayPrelim::from_iter(["u1".to_owned()])),
+        ]),
+    );
+    Ok(built
+        .objects
+        .first()
+        .map(|task| task.id.clone())
+        .unwrap_or_default())
+}
+
+#[rstest]
+#[case::replace(&["later", "Soon"], 2)]
+#[case::clear(&[], 0)]
+fn a_task_cards_tags_replace_the_list_of_its_info_entry(
+    #[case] titles: &[&str],
+    #[case] held: usize,
+) -> Result<()> {
+    let document = tagged()?;
+    let task = task_card(&document)?;
+    let edit = ObjectEdit {
+        object: task.clone(),
+        patch: ObjectPatch::default(),
+        stacking: None,
+        tags: Some(titles.iter().map(|title| (*title).to_owned()).collect()),
+    };
+    let built = apply(&document, &BoardChange::EditAll(vec![edit]))?;
+    let info = |field: &str| {
+        stored(
+            &document,
+            "task-card-infoStore",
+            &format!("/info-2/{field}"),
+        )
+    };
+    let listed = info("tagIds").as_array().map_or(0, Vec::len);
+    let own = fields_of(&document, &task).get("tagIds").cloned();
+    assert_eq!(
+        (
+            listed,
+            info("assigneeIds"),
+            own,
+            built.objects.first().map(|touched| touched.fields.clone())
+        ),
+        (held, json!(["u1"]), None, Some(vec!["tags"]))
     );
     Ok(())
 }

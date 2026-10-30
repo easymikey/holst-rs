@@ -6,14 +6,18 @@ use serde::{Deserialize, Deserializer, de::Error as _};
 use serde_json::{Map, Value};
 
 use crate::{
-    command::table::{ArgumentGroup as _, EnumArgument, Items},
+    command::table::{ArgumentGroup as _, EnumArgument, Items, OneOrMany},
     domain::{
         board::{
             arrow_look::ArrowType,
             frame_look::{FrameBackground, FrameRatio},
             shape_type::{ShapeType, StrokeStyle},
         },
-        kinds::mind_map::Direction,
+        kinds::{
+            code::{Language, Theme},
+            icon::Weight,
+            mind_map::Direction,
+        },
         rich_text::TextFormat,
     },
     effect::board_write::WriteMode,
@@ -40,11 +44,26 @@ pub enum AddKind {
     StickerStack,
     Flipcard,
     MindMap,
+    Document,
+    Stamp,
+    Code,
+    Table,
+    ReactionStamp,
+    Icon,
+    Task,
+    Kanban,
+    Drawing,
 }
 
 impl EnumArgument for AddKind {}
 
 impl EnumArgument for Direction {}
+
+impl EnumArgument for Language {}
+
+impl EnumArgument for Theme {}
+
+impl EnumArgument for Weight {}
 
 #[derive(Debug, Deserialize, CommandArgs)]
 #[holst_command(
@@ -52,7 +71,7 @@ impl EnumArgument for Direction {}
     verb = "add",
     risk = Write,
     block = Commands,
-    about = "Add stickers, texts, shapes, frames, arrows, links, images, files, dice, a spinner wheel, sticker stacks, flip cards or mind-map nodes to a board",
+    about = "Add stickers, texts, shapes, frames, arrows, links, images, files, dice, a spinner wheel, sticker stacks, flip cards, mind-map nodes, documents, text stamps, code blocks, tables, reaction stamps, icons, task cards, kanbans or freehand strokes to a board",
     help = "Add objects of one kind to a board; the kind word is the default kind of every --items item.\n\
             Without --at each goes to a free corner, in --frame if given, else in the frame a linked object sits in. It prints one line per object with @N and its link.\n\
             An image or a file is uploaded first; a link card takes its title from the page. With --items, #N names an earlier item as an arrow end, and one write holds all of them.",
@@ -66,13 +85,22 @@ impl EnumArgument for Direction {}
     example = "holst o add wheel \"Roadmap\" --choice Pizza --choice Sushi",
     example = "holst o add sticker-stack \"Roadmap\" Ideas --size 384,192",
     example = "holst o add flipcard \"Roadmap\" Question --back Answer",
-    example = "holst o add mind-map \"Roadmap\" \"Budget\" --parent @3 --direction down"
+    example = "holst o add mind-map \"Roadmap\" \"Budget\" --parent @3 --direction down",
+    example = "holst o add document \"Roadmap\" \"# Spec\" --text-format markdown -c blue3",
+    example = "holst o add stamp \"Roadmap\" \"\u{1F44D}\" --at 10,20",
+    example = "holst o add code \"Roadmap\" \"$(cat main.rs)\" --language rust --theme dark",
+    example = "holst o add table \"Roadmap\" --rows 3 --columns 4",
+    example = "holst o add reaction-stamp \"Roadmap\" --on @3 --reaction heart",
+    example = "holst o add icon \"Roadmap\" rocket-launch --weight bold -c red9",
+    example = "holst o add task \"Roadmap\" \"Ship\" --status in-progress --due 2026-11-06",
+    example = "holst o add kanban \"Roadmap\" --column Now --column Next --swimlane Team",
+    example = "holst o add drawing \"Roadmap\" --point 10,20 --point 120,80 -c red9"
 )]
 pub struct AddArgs {
     #[argument(
         subcommand,
         value_name = "kind",
-        help = "What to add: sticker, text, shape, frame, arrow, link, image, file, dice, wheel, sticker-stack, flipcard or mind-map",
+        help = "What to add: sticker, text, shape, frame, arrow, link, image, file, dice, wheel, sticker-stack, flipcard, mind-map, document, stamp, code, table, reaction-stamp, icon, task, kanban or drawing",
         tool_doc = "Sticker by default."
     )]
     pub kind: Option<AddKind>,
@@ -82,7 +110,7 @@ pub struct AddArgs {
         value_name = "format",
         help = "How the text is read: plain, or markdown for headings, lists, checkboxes, links and bold, italic, strike marks; plain by default",
         tool_doc = "plain or markdown.",
-        kinds = [sticker, text, shape, mind_map]
+        kinds = [sticker, text, shape, mind_map, document]
     )]
     pub text_format: Option<TextFormat>,
     #[argument(
@@ -116,9 +144,9 @@ pub struct AddFields {
     #[argument(
         value_name = "text",
         positional,
-        help = "The text; lines become paragraphs; the title of a frame",
+        help = "The text; lines become paragraphs; the title of a frame or task; the code of a code block; the name of an icon, e.g. rocket-launch",
         tool_doc = "Lines are paragraphs.",
-        kinds = [sticker, text, shape, frame, sticker_stack, flipcard, mind_map]
+        kinds = [sticker, text, shape, frame, sticker_stack, flipcard, mind_map, document, stamp, code, icon, task]
     )]
     pub text: Option<String>,
     #[argument(
@@ -132,7 +160,7 @@ pub struct AddFields {
         value_name = "file",
         positional,
         help = "The local file to upload",
-        tool_doc = "Local file.",
+        tool_doc = "Local file; edit: the new picture.",
         kinds = [image, file]
     )]
     pub path: Option<String>,
@@ -147,22 +175,22 @@ pub struct AddFields {
         value_name = "x,y",
         help = "The top-left corner in board units, from the frame's corner with --frame; a free corner by default",
         tool_doc = "x,y; add, cp: a free corner by default; edit: unchanged.",
-        kinds = [sticker, text, shape, frame, link, image, file, dice, wheel, sticker_stack, flipcard, mind_map]
+        kinds = [sticker, text, shape, frame, link, image, file, dice, wheel, sticker_stack, flipcard, mind_map, document, stamp, code, table, reaction_stamp, icon, task, kanban]
     )]
     pub at: Option<String>,
     #[argument(
         value_name = "w,h",
-        help = "The size as width,height, e.g. 260,160; the kind's own size by default; an image's own size, at most 1000 on the long side, by default",
+        help = "The size as width,height, e.g. 260,160; the kind's own size by default; an image's own size, at most 1000 on the long side, by default; an icon's is square, 48,48 by default",
         tool_doc = "W,H.",
-        kinds = [sticker, shape, frame, image, sticker_stack]
+        kinds = [sticker, shape, frame, image, sticker_stack, icon]
     )]
     pub size: Option<String>,
     #[argument(
         letter = 'c',
         value_name = "color",
-        help = "The fill, or an arrow's line color: a palette token, e.g. yellow4; the kind's own color by default",
+        help = "The fill, or an arrow's line color: a palette token, e.g. yellow4; a task's: gray, green, yellow, orange, red, violet, blue, sky, lime or pink; a drawing's line: a palette token; #1E1E1E (#FBF040 highlighter) by default; the kind's own color by default; an icon takes gray12, gray8, red9, orange9, yellow9, lime9, green9, mint9, blue9, indigo9, violet9 or pink9",
         tool_doc = "E.g. yellow4.",
-        kinds = [sticker, text, shape, frame, arrow, dice, sticker_stack, flipcard, mind_map]
+        kinds = [sticker, text, shape, frame, arrow, dice, sticker_stack, flipcard, mind_map, document, icon, task, drawing]
     )]
     pub color: Option<String>,
     #[argument(
@@ -243,9 +271,9 @@ pub struct AddFields {
     pub stroke_style: Option<StrokeStyle>,
     #[argument(
         value_name = "n",
-        help = "An arrow's line width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17; 2 by default",
+        help = "An arrow's line width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17; 2 by default; a drawing's: a whole 1 to 30, 3 (highlighter 22) by default",
         tool_doc = "Shape 0..10; arrow 1, 1.5, 2, 4, 5, 6, 9, 13, 17.",
-        kinds = [arrow]
+        kinds = [arrow, drawing]
     )]
     pub stroke_width: Option<f64>,
     #[argument(
@@ -275,6 +303,117 @@ pub struct AddFields {
         kinds = [frame]
     )]
     pub hide_content: bool,
+    #[argument(
+        value_name = "name",
+        help = "A code block's language for its highlighting; none marked by default",
+        tool_doc = "Code language.",
+        kinds = [code]
+    )]
+    pub language: Option<Language>,
+    #[argument(
+        value_name = "theme",
+        help = "A code block's theme: light or dark; light by default",
+        tool_doc = "Code theme.",
+        kinds = [code]
+    )]
+    pub theme: Option<Theme>,
+    #[argument(
+        value_name = "n",
+        help = "A table's rows; 2 by default, with the columns at most 2500 cells",
+        tool_doc = "Table rows.",
+        kinds = [table]
+    )]
+    pub rows: Option<u32>,
+    #[argument(
+        value_name = "n",
+        help = "A table's columns; 3 by default, with the rows at most 2500 cells",
+        tool_doc = "Table columns.",
+        kinds = [table]
+    )]
+    pub columns: Option<u32>,
+    #[argument(
+        value_name = "object",
+        help = "The object a reaction stamp sticks to and goes onto: a shape, sticker, document, task or image; id, link, @N or the first 8 characters of its id; --at counts from its corner, else the stamp goes to its middle; a loose stamp without it",
+        tool_doc = "Object a reaction stamp sticks to.",
+        kinds = [reaction_stamp]
+    )]
+    pub on: Option<String>,
+    #[argument(
+        value_name = "key",
+        help = "A reaction stamp's picture: like, heart, star, +1, dislike, figma-question, check or cross; like by default",
+        tool_doc = "Your reactions; none clears.",
+        kinds = [reaction_stamp]
+    )]
+    pub reaction: Vec<String>,
+    #[argument(
+        value_name = "weight",
+        help = "An icon's weight: thin, light, regular, bold, fill or duotone; duotone by default",
+        tool_doc = "Icon weight.",
+        kinds = [icon]
+    )]
+    pub weight: Option<Weight>,
+    #[argument(
+        value_name = "text",
+        help = "A task's description; the text is its title",
+        tool_doc = "Task description.",
+        kinds = [task]
+    )]
+    pub description: Option<String>,
+    #[argument(
+        value_name = "status",
+        help = "A task's status: backlog, to-do, in-progress, done, canceled, or the title of a status of the board; none by default",
+        tool_doc = "Task status.",
+        kinds = [task]
+    )]
+    pub status: Option<String>,
+    #[argument(
+        value_name = "day",
+        help = "The day a task starts, YYYY-MM-DD, e.g. 2026-11-02; on or before --due",
+        tool_doc = "Task start YYYY-MM-DD.",
+        kinds = [task]
+    )]
+    pub start: Option<String>,
+    #[argument(
+        value_name = "day",
+        help = "The day a task is due, YYYY-MM-DD, e.g. 2026-11-06",
+        tool_doc = "Task due YYYY-MM-DD.",
+        kinds = [task]
+    )]
+    pub due: Option<String>,
+    #[argument(
+        value_name = "text",
+        help = "A kanban's column, repeat for each, in order; To do, In progress and Done by default; a task's: the title of its column in --kanban, the first by default",
+        tool_doc = "Kanban column titles.",
+        kinds = [kanban, task]
+    )]
+    pub column: Vec<String>,
+    #[argument(
+        value_name = "text",
+        help = "A kanban's swimlane, repeat for each, in order; one, Untitled, by default; a task's: the title of its swimlane in --kanban, the first by default",
+        tool_doc = "Kanban swimlane titles.",
+        kinds = [kanban, task]
+    )]
+    pub swimlane: Vec<String>,
+    #[argument(
+        value_name = "object",
+        help = "The kanban a task goes into, as a card in its cell: id, link, @N or the first 8 characters of its id; --column and --swimlane pick the cell; left out with --at and --frame",
+        tool_doc = "Kanban of a task.",
+        kinds = [task]
+    )]
+    pub kanban: Option<String>,
+    #[argument(
+        value_name = "x,y",
+        help = "A drawing's point, repeat for each, in order: at least 2; with --frame from its corner",
+        tool_doc = "Stroke points x,y, 2 to 10000; its stroke_width is 1..30.",
+        kinds = [drawing]
+    )]
+    pub point: Option<OneOrMany<String>>,
+    #[argument(
+        help = "Draw a highlighter stroke: half transparent, 22 wide, yellow by default",
+        tool_doc = "Highlighter stroke.",
+        kinds = [drawing]
+    )]
+    pub highlighter: bool,
 }
 
 /// One object of `--items` of `object add`: the arguments of one call.
@@ -381,6 +520,119 @@ mod tests {
         );
     }
 
+    const EXPECTED: &[(&str, &[&str])] = &[
+        (
+            "text_format",
+            &["sticker", "text", "shape", "mind-map", "document"],
+        ),
+        (
+            "text",
+            &[
+                "sticker",
+                "text",
+                "shape",
+                "frame",
+                "sticker-stack",
+                "flipcard",
+                "mind-map",
+                "document",
+                "stamp",
+                "code",
+                "icon",
+                "task",
+            ],
+        ),
+        ("url", &["link"]),
+        ("path", &["image", "file"]),
+        ("shape", &["shape"]),
+        (
+            "at",
+            &[
+                "sticker",
+                "text",
+                "shape",
+                "frame",
+                "link",
+                "image",
+                "file",
+                "dice",
+                "wheel",
+                "sticker-stack",
+                "flipcard",
+                "mind-map",
+                "document",
+                "stamp",
+                "code",
+                "table",
+                "reaction-stamp",
+                "icon",
+                "task",
+                "kanban",
+            ],
+        ),
+        (
+            "size",
+            &[
+                "sticker",
+                "shape",
+                "frame",
+                "image",
+                "sticker-stack",
+                "icon",
+            ],
+        ),
+        (
+            "color",
+            &[
+                "sticker",
+                "text",
+                "shape",
+                "frame",
+                "arrow",
+                "dice",
+                "sticker-stack",
+                "flipcard",
+                "mind-map",
+                "document",
+                "icon",
+                "task",
+                "drawing",
+            ],
+        ),
+        ("faces", &["dice"]),
+        ("choice", &["wheel"]),
+        ("back", &["flipcard"]),
+        ("parent", &["mind-map"]),
+        ("direction", &["mind-map"]),
+        ("no_preview", &["link"]),
+        ("from", &["arrow"]),
+        ("to", &["arrow"]),
+        ("line", &["arrow"]),
+        ("heads", &["arrow"]),
+        ("stroke_style", &["arrow"]),
+        ("stroke_width", &["arrow", "drawing"]),
+        ("label", &["arrow"]),
+        ("ratio", &["frame"]),
+        ("background", &["frame"]),
+        ("hide_content", &["frame"]),
+        ("language", &["code"]),
+        ("theme", &["code"]),
+        ("rows", &["table"]),
+        ("columns", &["table"]),
+        ("on", &["reaction-stamp"]),
+        ("reaction", &["reaction-stamp"]),
+        ("weight", &["icon"]),
+        ("description", &["task"]),
+        ("status", &["task"]),
+        ("start", &["task"]),
+        ("due", &["task"]),
+        ("column", &["kanban", "task"]),
+        ("swimlane", &["kanban", "task"]),
+        ("kanban", &["task"]),
+        ("point", &["drawing"]),
+        ("highlighter", &["drawing"]),
+    ];
+
     #[test]
     fn the_kinds_table_names_the_kinds_of_each_argument() {
         let limited: Vec<_> = AddArgs::COMMAND
@@ -389,83 +641,12 @@ mod tests {
             .filter(|argument| !argument.kinds.is_empty())
             .map(|argument| (argument.name, argument.kinds))
             .collect();
-        assert_eq!(
-            limited,
-            vec![
-                ("text_format", &["sticker", "text", "shape", "mind-map"][..]),
-                (
-                    "text",
-                    &[
-                        "sticker",
-                        "text",
-                        "shape",
-                        "frame",
-                        "sticker-stack",
-                        "flipcard",
-                        "mind-map"
-                    ][..]
-                ),
-                ("url", &["link"][..]),
-                ("path", &["image", "file"][..]),
-                ("shape", &["shape"][..]),
-                (
-                    "at",
-                    &[
-                        "sticker",
-                        "text",
-                        "shape",
-                        "frame",
-                        "link",
-                        "image",
-                        "file",
-                        "dice",
-                        "wheel",
-                        "sticker-stack",
-                        "flipcard",
-                        "mind-map"
-                    ][..]
-                ),
-                (
-                    "size",
-                    &["sticker", "shape", "frame", "image", "sticker-stack"][..]
-                ),
-                (
-                    "color",
-                    &[
-                        "sticker",
-                        "text",
-                        "shape",
-                        "frame",
-                        "arrow",
-                        "dice",
-                        "sticker-stack",
-                        "flipcard",
-                        "mind-map"
-                    ][..]
-                ),
-                ("faces", &["dice"][..]),
-                ("choice", &["wheel"][..]),
-                ("back", &["flipcard"][..]),
-                ("parent", &["mind-map"][..]),
-                ("direction", &["mind-map"][..]),
-                ("no_preview", &["link"][..]),
-                ("from", &["arrow"][..]),
-                ("to", &["arrow"][..]),
-                ("line", &["arrow"][..]),
-                ("heads", &["arrow"][..]),
-                ("stroke_style", &["arrow"][..]),
-                ("stroke_width", &["arrow"][..]),
-                ("label", &["arrow"][..]),
-                ("ratio", &["frame"][..]),
-                ("background", &["frame"][..]),
-                ("hide_content", &["frame"][..]),
-            ]
-        );
+        assert_eq!(limited, EXPECTED);
     }
 
     #[test]
     fn the_keys_of_an_item_are_flags_of_one_call() {
-        const ADD_KEYS: [&str; 25] = [
+        const ADD_KEYS: [&str; 41] = [
             "kind",
             "text",
             "shape",
@@ -491,6 +672,22 @@ mod tests {
             "back",
             "parent",
             "direction",
+            "language",
+            "theme",
+            "rows",
+            "columns",
+            "on",
+            "reaction",
+            "weight",
+            "description",
+            "status",
+            "start",
+            "due",
+            "column",
+            "swimlane",
+            "kanban",
+            "point",
+            "highlighter",
         ];
         let strays: Vec<_> = ADD_KEYS
             .iter()

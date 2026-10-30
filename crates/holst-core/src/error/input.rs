@@ -79,6 +79,12 @@ pub enum InputError {
     #[error("\"{raw}\" is not an object kind: expected {}", .known.join(", "))]
     NotObjectKind { raw: String, known: Vec<String> },
 
+    #[error(
+        "\"{name}\" is not an icon: expected an icon name, e.g. rocket-launch{}",
+        close_list(.close)
+    )]
+    NotIcon { name: String, close: Vec<String> },
+
     #[error("the session token contains characters that cannot be sent in a header")]
     SessionNotHeaderSafe,
 
@@ -121,6 +127,9 @@ pub enum InputError {
 
     #[error("the name is empty: a board or folder needs a visible name")]
     BlankName,
+
+    #[error("the name is empty: an image or a file needs a visible name")]
+    BlankMediaName,
 
     #[error(
         "you are a guest of workspace \"{workspace}\", and a guest cannot make its templates: \
@@ -228,11 +237,13 @@ impl InputError {
             | InputError::NotPositive { .. }
             | InputError::NotNodeKind { .. }
             | InputError::NotObjectKind { .. }
+            | InputError::NotIcon { .. }
             | InputError::NotHttpMethod { .. }
             | InputError::SessionNotHeaderSafe
             | InputError::EmptySharingPatch
             | InputError::TemplateNotObject
             | InputError::BlankName
+            | InputError::BlankMediaName
             | InputError::GuestSharesNoTemplate { .. }
             | InputError::MoveIntoItself { .. }
             | InputError::CacheMaxNotSize { .. }
@@ -275,11 +286,13 @@ impl InputError {
             | InputError::NotPositive { .. }
             | InputError::NotNodeKind { .. }
             | InputError::NotObjectKind { .. }
+            | InputError::NotIcon { .. }
             | InputError::NotHttpMethod { .. }
             | InputError::SessionNotHeaderSafe
             | InputError::EmptySharingPatch
             | InputError::TemplateNotObject
             | InputError::BlankName
+            | InputError::BlankMediaName
             // The message names the flag value to use instead.
             | InputError::GuestSharesNoTemplate { .. }
             | InputError::MoveIntoItself { .. }
@@ -304,6 +317,13 @@ impl InputError {
             // Each problem's own words say what to change.
             | InputError::Several { .. } => None,
         }
+    }
+}
+
+fn close_list(close: &[String]) -> String {
+    match close {
+        [] => String::new(),
+        _ => format!(" (close: {})", close.join(", ")),
     }
 }
 
@@ -412,6 +432,14 @@ pub(super) mod tests {
             (InputError::EmptySharingPatch, None),
             (InputError::TemplateNotObject, None),
             (InputError::BlankName, None),
+            (InputError::BlankMediaName, None),
+            (
+                InputError::NotIcon {
+                    name: text(),
+                    close: Vec::new(),
+                },
+                None,
+            ),
             (
                 InputError::GuestSharesNoTemplate { workspace: text() },
                 None,

@@ -128,6 +128,7 @@ fn plain_object(
             .get(index % 3)
             .map(|&color| color.into()),
         look: None,
+        media: None,
         ends: None,
         author: Some(id_of_author()),
         locked: false,
@@ -250,6 +251,7 @@ fn listed(holst: &McpServer, objects: &[Object]) -> String {
             file: None,
             card: None,
             tags: Vec::new(),
+            reactions: std::collections::BTreeMap::new(),
             style: TextStyle::default(),
             detail: Vec::new(),
         })

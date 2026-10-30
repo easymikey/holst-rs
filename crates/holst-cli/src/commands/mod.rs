@@ -69,7 +69,8 @@ pub(crate) async fn run(
     format: OutputFormat,
 ) -> Result<()> {
     read_files(name, &mut arguments, std::io::stdin().lock())?;
-    rounds(name, arguments, run, format, ROUNDS).await
+    let run = run.clone().for_risk(name.command().risk);
+    rounds(name, arguments, &run, format, ROUNDS).await
 }
 
 /// Runs the command; a held one that a person may answer is asked, and

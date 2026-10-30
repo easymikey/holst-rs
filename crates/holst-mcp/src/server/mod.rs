@@ -10,28 +10,18 @@ use std::{
     time::{Duration, Instant},
 };
 
-use arc_swap::ArcSwapOption;
 use futures_util::future::OptionFuture;
 use holst_core::{
-    command::{
-        board::show::account_cache,
-        board_load::CacheUse,
-        lookup::{self, IndexedNodes},
-        table::CommandName,
-    },
-    domain::{
-        account::Workspace,
-        lookup::choice::TreeReads,
-        session::Session,
-        tree::name_index::build::NameIndex,
-    },
+    command::{board::show::account_cache, board_load::CacheUse, table::CommandName},
+    domain::session::Session,
     effect::{
         cache::CachePort,
         clock::Clock,
         settings::{CacheSettings, Settings},
     },
     error::{hint::Surface, input::InputError},
-    storage::session_store::SessionStoreKind,
+    remote::client::Client,
+    storage::{cache::Cache, session_store::SessionStoreKind},
 };
 use rmcp::{
     ErrorData,
@@ -128,7 +118,6 @@ pub(crate) struct McpServer {
     /// Where `object get` puts a file when the call names no place.
     pub(crate) downloads: Option<PathBuf>,
     pub(crate) cache: Arc<CacheSettings>,
-    account: Arc<ArcSwapOption<KnownAccount>>,
 }
 
 /// A clock counting milliseconds since the server started.
@@ -150,12 +139,6 @@ impl Clock for MonotonicClock {
     fn unix_millis(&self) -> u64 {
         u64::try_from(self.0.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
-}
-
-/// Remembers the account name per connection epoch.
-struct KnownAccount {
-    epoch: u64,
-    account_id: String,
 }
 
 impl McpServer {
@@ -213,7 +196,6 @@ impl McpServer {
             secrets: SecretPaths::default(),
             downloads: None,
             cache: Arc::new(CacheSettings::default()),
-            account: Arc::new(ArcSwapOption::empty()),
         }
     }
 
@@ -225,26 +207,16 @@ impl McpServer {
         }
     }
 
+    /// The board cache of the login's account; the client keeps the account.
     pub(crate) async fn cache(
         &self,
         client: &HandedClient,
     ) -> Option<Arc<dyn CachePort>> {
-        self.account
-            .load()
-            .iter()
-            .filter(|known| known.epoch == client.epoch)
-            .for_each(|known| client.learn_account_id(&known.account_id));
-        let cache = account_cache(client, &self.cache, CacheUse::Use)
+        account_cache(client, &self.cache, CacheUse::Use)
             .await
             .ok()
-            .flatten()?;
-        client.account_id().into_iter().for_each(|account_id| {
-            self.account.store(Some(Arc::new(KnownAccount {
-                epoch: client.epoch,
-                account_id,
-            })));
-        });
-        Some(cache.into_shared())
+            .flatten()
+            .map(Cache::into_shared)
     }
 
     fn table_tool(&self, name: &str) -> Option<&TableTool> {
@@ -323,12 +295,10 @@ impl McpServer {
     }
 
     async fn client(&self) -> crate::error::Result<HandedClient> {
-        // Generation before link: a login change stores the client first.
-        let generation = self.state.generation();
         let seen = self.login.state.load_full();
         match seen.next(self.login.now()) {
             LoginStep::Reload => self.reload(&seen).await,
-            LoginStep::Use | LoginStep::Refuse => hand_out(&seen, generation),
+            LoginStep::Use | LoginStep::Refuse => hand_out(&seen),
         }
     }
 
@@ -341,7 +311,7 @@ impl McpServer {
         if Arc::ptr_eq(seen, &current) {
             self.read_store(&current).await
         } else {
-            hand_out(&current, self.state.generation())
+            hand_out(&current)
         }
     }
 
@@ -349,36 +319,27 @@ impl McpServer {
         &self,
         login: &LoginState,
     ) -> crate::error::Result<HandedClient> {
-        let generation = self.state.generation();
         let loaded = self.login.load().await;
         let checked_at = self.login.now();
         match loaded {
             Ok(loaded) => match login.plan(loaded, checked_at) {
-                LoginPlan::Keep(ready) => {
-                    self.adopt(LoginState::Ready(ready), generation)
-                }
-                LoginPlan::Refuse(revoked) => {
-                    self.adopt(LoginState::Revoked(revoked), generation)
-                }
-                LoginPlan::Forget => self.adopt(LoginState::Missing, generation),
+                LoginPlan::Keep(ready) => self.adopt(LoginState::Ready(ready)),
+                LoginPlan::Refuse(revoked) => self.adopt(LoginState::Revoked(revoked)),
+                LoginPlan::Forget => self.adopt(LoginState::Missing),
                 LoginPlan::Install(new) => {
                     self.install(new.session, new.store, checked_at)
                 }
             },
-            Err(err) => login.kept_unread(checked_at).map_or(Err(err), |ready| {
-                self.adopt(LoginState::Ready(ready), generation)
-            }),
+            Err(err) => login
+                .kept_unread(checked_at)
+                .map_or(Err(err), |ready| self.adopt(LoginState::Ready(ready))),
         }
     }
 
-    fn adopt(
-        &self,
-        login: LoginState,
-        generation: u64,
-    ) -> crate::error::Result<HandedClient> {
+    fn adopt(&self, login: LoginState) -> crate::error::Result<HandedClient> {
         let login = Arc::new(login);
         self.login.state.store(Arc::clone(&login));
-        hand_out(&login, generation)
+        hand_out(&login)
     }
 
     fn install(
@@ -398,13 +359,10 @@ impl McpServer {
             checked_at,
             store,
         };
-        // Cache dropped after the client is stored — see `client`.
-        let client = self.adopt(LoginState::Ready(ready), 0);
+        // The boards are dropped after the client is stored.
+        let client = self.adopt(LoginState::Ready(ready));
         self.state.invalidate_all();
-        client.map(|client| HandedClient {
-            generation: self.state.generation(),
-            ..client
-        })
+        client
     }
 
     async fn keep_rotated(&self, client: &HandedClient) {
@@ -476,7 +434,18 @@ impl McpServer {
     where
         F: AsyncFnOnce(HandedClient) -> crate::error::Result<String>,
     {
-        self.run_blocks(async |client| {
+        self.run_with(std::convert::identity, call).await
+    }
+
+    async fn run_with<F>(
+        &self,
+        prepare: fn(Client) -> Client,
+        call: F,
+    ) -> CallToolResult
+    where
+        F: AsyncFnOnce(HandedClient) -> crate::error::Result<String>,
+    {
+        self.run_blocks_with(prepare, async |client| {
             call(client)
                 .await
                 .map(|text| vec![ContentBlock::text(text)])
@@ -492,9 +461,24 @@ impl McpServer {
     where
         F: AsyncFnOnce(HandedClient) -> crate::error::Result<Vec<ContentBlock>>,
     {
+        self.run_blocks_with(std::convert::identity, call).await
+    }
+
+    async fn run_blocks_with<F>(
+        &self,
+        prepare: fn(Client) -> Client,
+        call: F,
+    ) -> CallToolResult
+    where
+        F: AsyncFnOnce(HandedClient) -> crate::error::Result<Vec<ContentBlock>>,
+    {
         async {
             let client = self.client().await?;
-            let outcome = call(client.clone()).await;
+            let running = HandedClient {
+                client: prepare(client.client.clone()),
+                ..client.clone()
+            };
+            let outcome = call(running).await;
             self.keep_rotated(&client).await;
             outcome
         }
@@ -515,62 +499,7 @@ impl McpServer {
         F: AsyncFnOnce(HandedClient) -> crate::error::Result<String>,
     {
         let _invalidate = FullInvalidation(&self.state);
-        self.run(call).await
-    }
-
-    pub(crate) async fn workspaces(
-        &self,
-        client: &HandedClient,
-    ) -> holst_core::Result<Arc<[Workspace]>> {
-        match self.state.workspaces() {
-            Some(all) => Ok(all),
-            None => Ok(self.state.store_workspaces(
-                lookup::workspaces(client).await?,
-                client.generation,
-            )),
-        }
-    }
-
-    pub(crate) async fn trees(
-        &self,
-        client: &HandedClient,
-        targets: Vec<Workspace>,
-    ) -> holst_core::Result<TreeReads<Arc<NameIndex>>> {
-        let (ready, missing): (Vec<_>, Vec<_>) = targets
-            .into_iter()
-            .map(|workspace| (self.state.tree(&workspace.id), workspace))
-            .partition(|(index, _)| index.is_some());
-        let ready = ready
-            .into_iter()
-            .filter_map(|(index, workspace)| index.map(|index| (workspace, index)));
-        let missing = missing
-            .into_iter()
-            .map(|(_, workspace)| workspace)
-            .collect();
-        let (fresh, unread) = holst_core::domain::lookup::choice::partition_reads(
-            lookup::trees(client, missing).await,
-        )?;
-        let stored = fresh.into_iter().map(|(workspace, index)| {
-            let index = self
-                .state
-                .store_tree(&workspace.id, index, client.generation);
-            (workspace, index)
-        });
-        Ok((ready.chain(stored).collect(), unread))
-    }
-
-    pub(crate) async fn trash_trees(
-        &self,
-        client: &HandedClient,
-        targets: Vec<Workspace>,
-    ) -> holst_core::Result<TreeReads<Arc<NameIndex>>> {
-        let read = lookup::indexes(client, targets, IndexedNodes::Trash).await;
-        let (found, unread) =
-            holst_core::domain::lookup::choice::partition_reads(read)?;
-        let found = found
-            .into_iter()
-            .map(|(workspace, index)| (workspace, Arc::new(index)));
-        Ok((found.collect(), unread))
+        self.run_with(Client::for_change, call).await
     }
 }
 

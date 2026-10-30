@@ -147,6 +147,8 @@ pub struct ListedObject {
     /// A shape's kind and outline in the words of a listing line.
     pub look: Option<String>,
     pub tags: Vec<String>,
+    /// The reactions as `name:count` words.
+    pub reactions: Vec<String>,
     /// Marks and colors of the whole text: `bold`, `text:red6`, `bg:yellow4`.
     pub text_look: Vec<String>,
     /// The words the kind adds, e.g. `rows=2`.

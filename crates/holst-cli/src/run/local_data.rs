@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use holst_core::{
-    domain::text::{joined, printable},
+    domain::text::{joined, printable, size_text},
     effect::settings::SessionLocation,
     storage::{
         cache::Cache,
@@ -12,7 +12,7 @@ use holst_core::{
     },
 };
 
-use crate::{error::Error, output, output::view::size_text, run::RunSettings};
+use crate::{error::Error, output, run::RunSettings};
 
 pub(crate) fn forgotten(
     cleared: Vec<(SessionStoreKind, holst_core::Result<LoginRemoval>)>,
@@ -76,7 +76,7 @@ pub(crate) fn leftovers_note(run: &RunSettings) -> Option<String> {
     (!left.is_empty()).then(|| {
         format!(
             "{} of old holst data is left in {}; remove it with `holst storage clean`",
-            size_text(left.iter().map(|place| place.bytes).sum()),
+            size_text(left.iter().map(|place| place.bytes).sum::<u64>()),
             joined(left.iter().map(|place| printable(&place.name)), ", ")
         )
     })

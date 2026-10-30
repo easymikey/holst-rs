@@ -3,6 +3,7 @@
 #[cfg(test)] mod tests;
 
 use futures_util::future::{self, OptionFuture};
+use serde_json::Value;
 use yrs::Doc;
 
 use crate::{
@@ -11,6 +12,7 @@ use crate::{
         board::show::Loading,
         board_load::{
             DocumentRecord,
+            channel_or_get,
             forget,
             guarded_loss,
             stored,
@@ -55,10 +57,17 @@ pub(in crate::command) type Guard =
 pub(in crate::command) async fn refuse_withheld(
     client: &Client,
     board: &str,
+    guard: Guard,
+) -> Result<()> {
+    refuse_in(&api::channel::get(client, board).await?, guard)
+}
+
+/// As [`refuse_withheld`], over a `channel/{id}` reply already read.
+pub(in crate::command) fn refuse_in(
+    channel: &Value,
     (setting, refused): Guard,
 ) -> Result<()> {
-    let channel = api::channel::get(client, board).await?;
-    withheld(&channel, setting).map_or(Ok(()), |(needs, holds)| {
+    withheld(channel, setting).map_or(Ok(()), |(needs, holds)| {
         Err(Error::BoardChange(refused(needs, holds)))
     })
 }
@@ -81,6 +90,17 @@ pub(in crate::command) async fn change_board(
     loading: Loading<'_>,
     write: BoardWrite<'_>,
 ) -> Result<ChangeReport> {
+    change_board_with(client, loading, write, None).await
+}
+
+/// As [`change_board`], given the `channel/{id}` reply of `write.board` when
+/// the caller read it. A guard asks for the reply once, and the write takes it.
+pub(in crate::command) async fn change_board_with(
+    client: &Client,
+    loading: Loading<'_>,
+    write: BoardWrite<'_>,
+    known: Option<Value>,
+) -> Result<ChangeReport> {
     let BoardWrite {
         board,
         change,
@@ -88,16 +108,20 @@ pub(in crate::command) async fn change_board(
         guard,
         mode,
     } = write;
-    match guard {
-        Some(guard) => refuse_withheld(client, board, guard).await,
-        None => Ok(()),
-    }?;
+    let known = match guard {
+        Some(guard) => {
+            let channel = channel_or_get(client, board, known).await?;
+            refuse_in(&channel, guard)?;
+            Some(channel)
+        }
+        None => known,
+    };
     let account_id = account::account_id(client).await?;
     let over = match mode {
         WriteMode::Send => WriteOver::sender(loading.connector),
         WriteMode::DryRun => WriteOver::reporter(loading.connector),
     };
-    let changed = write_cached(
+    let changed = write_cached_known(
         client,
         &over,
         WriteRequest {
@@ -108,6 +132,7 @@ pub(in crate::command) async fn change_board(
             kept: None,
         },
         loading.cache,
+        known,
     )
     .await
     .map_err(Error::from)?;
@@ -171,11 +196,13 @@ pub struct ChangedBoard {
 }
 
 /// Load the board through `interpreter`, plan the request's operation on it
-/// and carry the plan out.
+/// and carry the plan out; `known` is the board's `channel/{id}` reply if the
+/// caller has it, and then none is asked.
 async fn write<I: WriteInterpreter + ?Sized>(
     client: &Client,
     interpreter: &I,
     request: WriteRequest<'_>,
+    known: Option<Value>,
 ) -> Result<BuiltChange> {
     let WriteRequest {
         board,
@@ -185,12 +212,15 @@ async fn write<I: WriteInterpreter + ?Sized>(
         kept,
     } = request;
     let seed = kept.map_or_else(|| writer_document(client, None), Ok)?;
-    let (reply, opened) = future::join(
-        Box::pin(api::channel::get(client, board)),
+    let asking = known
+        .is_none()
+        .then(|| Box::pin(api::channel::get(client, board)));
+    let (asked, opened) = future::join(
+        OptionFuture::from(asking),
         interpreter.open(client, board, seed),
     )
     .await;
-    let reply = reply.ok();
+    let reply = known.or_else(|| asked.and_then(Result::ok));
     let trashed = reply
         .as_ref()
         .and_then(|reply| NodeBrief::of(reply).ok())
@@ -251,6 +281,18 @@ pub async fn write_cached<I: WriteInterpreter + ?Sized>(
     request: WriteRequest<'_>,
     cache: Option<&dyn CachePort>,
 ) -> std::result::Result<ChangedBoard, NotChanged> {
+    write_cached_known(client, interpreter, request, cache, None).await
+}
+
+/// As [`write_cached`], given the board's `channel/{id}` reply if the caller
+/// has it.
+async fn write_cached_known<I: WriteInterpreter + ?Sized>(
+    client: &Client,
+    interpreter: &I,
+    request: WriteRequest<'_>,
+    cache: Option<&dyn CachePort>,
+    known: Option<Value>,
+) -> std::result::Result<ChangedBoard, NotChanged> {
     let WriteRequest {
         board,
         change,
@@ -275,12 +317,12 @@ pub async fn write_cached<I: WriteInterpreter + ?Sized>(
             kept: Some(from.map_or_else(|| writer_document(client, None), Ok)?),
         })
     };
-    let first = write(client, interpreter, starting(seed)?).await;
+    let first = write(client, interpreter, starting(seed)?, known.clone()).await;
     let (changed, had_seed) = match first {
         Err(Error::BoardSocket(BoardSocketError::CopyAhead)) => {
             tracing::debug!(board, "board cache: the copy is ahead of the server");
             OptionFuture::from(cache.map(|cache| forget(cache, board))).await;
-            let retried = write(client, interpreter, starting(None)?);
+            let retried = write(client, interpreter, starting(None)?, known);
             (retried.await, Seeding::Unseeded)
         }
         other => (other, had_seed),

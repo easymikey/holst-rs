@@ -101,6 +101,7 @@ pub(crate) const PATH: &str = "path";
 pub(crate) const SCALE: &str = "scale";
 pub(crate) const ALPHA: &str = "alpha";
 pub(crate) const ALGORITHM: &str = "algorithm";
+pub(crate) const PIVOT: &str = "pivot";
 
 // PROTOCOL: table tracks `column-<id>` and `row-<id>`.
 pub(crate) const COLUMN_PREFIX: &str = "column-";

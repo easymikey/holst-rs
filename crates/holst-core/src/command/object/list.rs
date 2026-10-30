@@ -1,5 +1,7 @@
 //! `object ls`: the objects of a board or a part of it.
 
+use std::collections::BTreeMap;
+
 use itertools::Itertools as _;
 use serde::Serialize;
 use yrs::Doc;
@@ -27,7 +29,7 @@ use crate::{
             EditRight,
             Object,
             ObjectKind,
-            detail::{LinkCard, TagNames},
+            detail::{LinkCard, Reactions, TagNames},
             markdown_text,
             objects as board_objects,
             query::ObjectQuery,
@@ -83,6 +85,9 @@ pub struct ListedObject {
     pub card: Option<LinkCard>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    /// How often each reaction was given: `{"like": 2}`.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub reactions: BTreeMap<String, usize>,
     #[serde(flatten)]
     pub style: TextStyle,
     /// The words the object's kind adds: `{"rows": 2, "columns": 3}`.
@@ -136,6 +141,15 @@ impl ListedObject {
         } else {
             format!("  #{}", self.tags.join(" #"))
         };
+        let reactions = if self.reactions.is_empty() {
+            String::new()
+        } else {
+            let words = self
+                .reactions
+                .iter()
+                .map(|(reaction, count)| format!("{reaction}:{count}"));
+            format!("  {}", words.collect::<Vec<_>>().join(" "))
+        };
         let padlock = if object.locked { "  locked" } else { "" };
         let turn = if object.rotation == 0.0 {
             String::new()
@@ -149,7 +163,10 @@ impl ListedObject {
         let detail = if self.detail.is_empty() {
             String::new()
         } else {
-            format!("  [{}]", self.detail.iter().map(detail_word).join(" "))
+            format!(
+                "  [{}]",
+                named(&self.detail, &name).iter().map(detail_word).join(" ")
+            )
         };
         let text = shortened(&one_line(&object.text), max_chars);
         let quoted = if text.is_empty() {
@@ -158,18 +175,36 @@ impl ListedObject {
             format!("  \"{text}\"")
         };
         format!(
-            "{} {:<7} {corner}{size}{inside}{color}{look}{style}{detail}{ends}{padlock}{turn}{linked}{tags}{quoted}",
+            "{} {:<7} {corner}{size}{inside}{color}{look}{style}{detail}{ends}{padlock}{turn}{linked}{tags}{reactions}{quoted}",
             name(&object.id),
             object.kind.short_name(),
         )
     }
 }
 
-/// A word of the kind's detail: `rows=2`; a text with a space is quoted and a
-/// list is its length.
+/// The detail with the word that holds an object id (`on`) written as `name`
+/// writes an object.
+fn named(
+    detail: &[(&'static str, serde_json::Value)],
+    name: impl Fn(&str) -> String,
+) -> Vec<(&'static str, serde_json::Value)> {
+    detail
+        .iter()
+        .map(|(word, value)| {
+            let shown = value.as_str().filter(|_| *word == "on").map_or_else(
+                || value.clone(),
+                |id| serde_json::Value::String(name(id)),
+            );
+            (*word, shown)
+        })
+        .collect()
+}
+
+/// A word of the kind's detail: `rows=2`; a text is on one line like the
+/// listed text, and quoted with a space; a list is its length.
 fn detail_word((word, value): &(&'static str, serde_json::Value)) -> String {
     let shown = match value {
-        serde_json::Value::String(text) => text.clone(),
+        serde_json::Value::String(text) => one_line(text).into_owned(),
         serde_json::Value::Array(items) => items.len().to_string(),
         value @ (serde_json::Value::Null
         | serde_json::Value::Bool(_)
@@ -304,6 +339,7 @@ async fn listing(
     let area = chosen_area(&asked, id::object_in(&args.board), &objects)?;
     let selected = listed_area(&objects, &area, padding)?;
     let tags = TagNames::of(&loaded.document);
+    let reactions = Reactions::of(&loaded.document);
     let tag = args.tag.as_deref().filter(|tag| !tag.trim().is_empty());
     let query = ObjectQuery {
         kind,
@@ -346,6 +382,7 @@ async fn listing(
                     }),
                     card: LinkCard::of(object),
                     tags: tags.of_object(object),
+                    reactions: reactions.of_object(object),
                     style: TextStyle::of(&loaded.document, object),
                     detail: words,
                     object: Object {
@@ -372,7 +409,10 @@ fn listed_text(document: &Doc, object: &Object, format: Option<TextFormat>) -> S
 /// The object, with the size it is drawn at when a scale sets that.
 fn drawn_size(scene: &Scene<'_>, object: &Object) -> Object {
     let scaled = drawn_at_scale(&object.kind)
-        || matches!(object.kind, ObjectKind::Sticker | ObjectKind::StickerStack);
+        || matches!(
+            object.kind,
+            ObjectKind::Sticker | ObjectKind::StickerStack | ObjectKind::Table
+        );
     let rectangle = scene.rectangle_of(object).filter(|_| scaled);
     Object {
         width: rectangle.map_or(object.width, |rect| Some(rect.width)),
@@ -392,7 +432,7 @@ mod tests {
     use serde_json::{Value, json};
     use yrs::{Any, Doc, Map as _, ReadTxn as _, StateVector, Transact as _};
 
-    use super::detail_word;
+    use super::{detail_word, named};
     use crate::{
         Result,
         command::{
@@ -404,7 +444,7 @@ mod tests {
                 list::{Listing, listing},
             },
         },
-        domain::board::EditRight,
+        domain::{board::EditRight, id::short_id},
         protocol::hud::{DocumentResponse, UpdatePayload},
         remote::socket::fake::{Scripted, answer, script, update},
     };
@@ -429,12 +469,14 @@ mod tests {
         ]
     }
 
-    /// A board of `objects` and one tag, `t1`, named "Urgent".
+    /// A board of `objects`, one tag, `t1`, named "Urgent", and two likes and
+    /// a fire on `s2`.
     fn board() -> Scripted {
         let doc = Doc::with_client_id(4);
-        let (store, tags) = (
+        let (store, tags, reactions) = (
             doc.get_or_insert_map("objects"),
             doc.get_or_insert_map("task-card-tagsStore"),
+            doc.get_or_insert_map("reactionsStore"),
         );
         {
             // imperative: yrs inserts through one `&mut` transaction
@@ -447,6 +489,12 @@ mod tests {
                 store.insert(&mut txn, id, any(&fields));
             }
             tags.insert(&mut txn, "t1", any(&json!({"id": "t1", "title": "Urgent"})));
+            // imperative: yrs inserts through one `&mut` transaction
+            for (entry, reaction) in [("r1", "like"), ("r2", "like"), ("r3", "fire")] {
+                let fields =
+                    json!({"id": entry, "targetId": "s2", "reactionId": reaction});
+                reactions.insert(&mut txn, entry, any(&fields));
+            }
         }
         let state = doc
             .transact()
@@ -525,6 +573,27 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_object_a_detail_word_names_is_written_as_the_caller_writes_objects() {
+        let detail = [("reaction", json!("like")), ("on", json!("a1b2c3d4e5f6"))];
+        let shown: Vec<String> = named(&detail, |id| format!("@{}", short_id(id)))
+            .iter()
+            .map(detail_word)
+            .collect();
+        assert_eq!(shown, ["reaction=like", "on=@a1b2c3d4"]);
+    }
+
+    #[test]
+    fn a_text_of_several_lines_in_the_detail_stays_on_one_line() {
+        assert_eq!(
+            [
+                detail_word(&("back", json!("a\nb"))),
+                detail_word(&("back", json!("a\n\nb\nc"))),
+            ],
+            ["back=\"a / b\"", "back=\"a / b / c\""]
+        );
+    }
+
     #[tokio::test]
     async fn a_table_shows_its_rows_and_columns() -> Result<()> {
         let listing = run(json!({ "kind": "table" })).await?;
@@ -537,7 +606,33 @@ mod tests {
             (json.pointer("/objects/0/detail"), line.as_deref()),
             (
                 Some(&json!({"rows": 2, "columns": 3})),
-                Some("tb1 table   (2000, 0)  [rows=2 columns=3]")
+                Some("tb1 table   (2000, 0) 720×120  [rows=2 columns=3]")
+            )
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reactions_are_counted_per_object_in_the_word_and_the_json() -> Result<()> {
+        let listing = run(json!({ "contains": "Roadmap" })).await?;
+        let json = serde_json::to_value(&listing)?;
+        let plain = run(json!({ "contains": "Buy milk" })).await?;
+        let line = listing
+            .objects
+            .first()
+            .map(|listed| listed.line(str::to_owned, 40));
+        assert_eq!(
+            (
+                json.pointer("/objects/0/reactions"),
+                line.as_deref(),
+                serde_json::to_value(&plain)?
+                    .pointer("/objects/0/reactions")
+                    .cloned(),
+            ),
+            (
+                Some(&json!({"like": 2, "fire": 1})),
+                Some("s2 sticker (400, 0) 192×192  fire:1 like:2  \"Roadmap\""),
+                None
             )
         );
         Ok(())

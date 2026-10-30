@@ -162,7 +162,7 @@ pub(in crate::command) fn board_of(objects: &[Value]) -> Scripted {
     acking([Some(frames_of(objects))])
 }
 
-/// As `board_of`, with the tags `(id, title)` defined in indigo5.
+/// As `board_of`, with the tags `(id, title)` defined in `indigo5`.
 pub(in crate::command) fn board_tagged_of(
     objects: &[Value],
     tags: &[(&str, &str)],

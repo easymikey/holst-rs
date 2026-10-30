@@ -1,12 +1,19 @@
 pub(crate) mod local_data;
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use holst_core::{
+    command::table::CommandRisk,
     domain::session::Session,
     effect::settings::{CacheSettings, SessionLocation, Settings},
     remote::client::Client,
-    storage::session_store::{LoginRemoval, LoginSaveReport, SessionStoreKind},
+    storage::{
+        cache::account::AccountDisk,
+        session_store::{LoginRemoval, LoginSaveReport, SessionStoreKind},
+    },
 };
 
 use crate::{
@@ -69,6 +76,7 @@ pub(crate) struct RunSettings {
     home: Option<PathBuf>,
     terminal_type: TerminalType,
     prompting: Prompting,
+    risk: CommandRisk,
 }
 
 impl RunSettings {
@@ -83,7 +91,15 @@ impl RunSettings {
             home,
             terminal_type,
             prompting,
+            risk: CommandRisk::Read,
         }
+    }
+
+    /// The settings of a command of `risk`: a write looks names up in trees
+    /// read within the hour.
+    #[must_use]
+    pub(crate) fn for_risk(self, risk: CommandRisk) -> Self {
+        Self { risk, ..self }
     }
 
     pub(crate) fn home(&self) -> Option<&Path> {
@@ -158,12 +174,20 @@ impl RunSettings {
 
     pub(crate) fn client(&self, session: Option<Session>) -> Result<Client> {
         let base = &self.settings.base_url;
-        Ok(holst_core::command::login::connect(
+        let client = holst_core::command::login::connect(
             session.map(|login| login.on(base)).transpose()?,
             base.clone(),
             holst_core::system::clock::SystemClock,
             holst_core::system::id::RandomIds,
-        )?)
+        )?;
+        let kept = match AccountDisk::from_settings(self.cache()) {
+            Some(disk) => client.with_account_cache(Arc::new(disk)),
+            None => client,
+        };
+        Ok(match self.risk {
+            CommandRisk::Read => kept,
+            CommandRisk::Write | CommandRisk::Destroy => kept.for_change(),
+        })
     }
 }
 
@@ -252,6 +276,7 @@ mod tests {
     use std::cell::Cell;
 
     use holst_core::{
+        command::table::CommandRisk,
         domain::{cookie::CookieJar, session::Session},
         remote::client::Client,
         storage::session_store::{LoginSaveReport, SessionStoreKind},
@@ -469,6 +494,32 @@ mod tests {
             )
             .await;
         assert!(result.is_ok() && worked.get(), "{result:?}");
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::read(CommandRisk::Read, false)]
+    #[case::write(CommandRisk::Write, true)]
+    #[case::destroy(CommandRisk::Destroy, true)]
+    fn only_a_read_keeps_the_client_off_the_change_rule(
+        #[case] risk: CommandRisk,
+        #[case] change: bool,
+    ) -> Result<()> {
+        let base = holst_core::domain::url::BaseUrl::or_default(None)?;
+        let location = holst_core::effect::settings::SessionLocation::Dir("x".into());
+        let run = super::RunSettings::new(
+            holst_core::effect::settings::Settings {
+                base_url: base,
+                location,
+                log: holst_core::effect::settings::LogSettings::default(),
+                cache: holst_core::effect::settings::CacheSettings::default(),
+            },
+            None,
+            TerminalType::Capable,
+            Prompting::Off,
+        )
+        .for_risk(risk);
+        assert_eq!(run.client(None)?.runs_change(), change);
         Ok(())
     }
 }

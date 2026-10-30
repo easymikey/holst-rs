@@ -7,7 +7,17 @@ use std::{
 
 use itertools::Itertools as _;
 use serde_json::{Value, json};
-use yrs::{Map as _, TransactionMut, XmlTextPrelim, types::ToJson as _};
+use yrs::{
+    Array as _,
+    ArrayPrelim,
+    ArrayRef,
+    Map as _,
+    MapRef,
+    ReadTxn as _,
+    TransactionMut,
+    XmlTextPrelim,
+    types::ToJson as _,
+};
 
 use crate::{
     domain::{
@@ -39,6 +49,7 @@ use crate::{
             },
         },
         geometry::{Point, Rectangle},
+        kinds::task::INFO_ID,
         tree::name_index::build::normalized,
     },
     error::{Error, Result, board_change::BoardChangeError},
@@ -52,6 +63,7 @@ use crate::{
         POSITION,
         START,
         TAG_IDS,
+        TASK_INFO_STORE,
         TITLE,
     },
 };
@@ -143,6 +155,12 @@ fn edited(
         .as_ref()
         .map(|titles| tag_ids(transaction, scope, titles))
         .transpose()?;
+    tag_ids
+        .as_deref()
+        .filter(|_| *kind == ObjectKind::Task)
+        .map_or(Ok(()), |ids| {
+            card_tags(transaction, &running.states, id, ids)
+        })?;
     let also = Alongside {
         layer,
         reparent: reparent.clone(),
@@ -216,6 +234,42 @@ fn kept_in_frame(
         at: patch.at.or(at),
         ..patch.clone()
     })
+}
+
+/// The tag ids of a task card, which its info entry holds in a list of its
+/// own, replaced in place so the entry's other lists stay.
+fn card_tags(
+    transaction: &mut TransactionMut<'_>,
+    states: &HashMap<String, Value>,
+    id: &str,
+    ids: &[String],
+) -> Result<()> {
+    let info = states
+        .get(id)
+        .and_then(|fields| fields.get(INFO_ID))
+        .and_then(Value::as_str)
+        .and_then(|info| {
+            transaction
+                .get_map(TASK_INFO_STORE)?
+                .get(&*transaction, info)?
+                .cast::<MapRef>()
+                .ok()
+        })
+        .ok_or_else(|| {
+            Error::BoardChange(BoardChangeError::NotChangeable {
+                kind: ObjectKind::Task.as_str().to_owned(),
+                field: "tags",
+            })
+        })?;
+    let held = info
+        .get(&*transaction, TAG_IDS)
+        .and_then(|held| held.cast::<ArrayRef>().ok());
+    let list = held
+        .unwrap_or_else(|| info.insert(transaction, TAG_IDS, ArrayPrelim::default()));
+    let length = list.len(&*transaction);
+    list.remove_range(transaction, 0, length);
+    list.insert_range(transaction, 0, ids.iter().cloned());
+    Ok(())
 }
 
 /// The ids of the tags with these titles, in order: a title nobody has yet

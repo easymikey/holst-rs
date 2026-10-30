@@ -1337,6 +1337,23 @@ async fn a_die_is_resized_by_scale_and_read_back(
 
 #[rstest]
 #[tokio::test]
+async fn a_drawing_gets_a_thicker_red_stroke(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = one_of_kind("drawing").start().await?;
+    let drawing = holst.fixture_object("Plans", 1)?;
+    let call = ObjectCall::edit()
+        .with("object", drawing)
+        .with("stroke_width", "12")
+        .with("color", "red9");
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
+    board_of(&holst).got_one_update();
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
 async fn a_kanban_is_scaled_but_has_no_size(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {

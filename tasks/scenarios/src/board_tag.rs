@@ -19,7 +19,7 @@ pub struct TagEdit<'a> {
 }
 
 impl On<'_> {
-    /// Renames, recolours or removes the tag `tag` of the board `board`.
+    /// Renames, recolors or removes the tag `tag` of the board `board`.
     ///
     /// # Errors
     /// As [`ScenarioError`].

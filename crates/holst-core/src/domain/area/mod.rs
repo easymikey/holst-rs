@@ -142,6 +142,7 @@ mod tests {
                 .and_then(Value::as_str)
                 .map(str::to_owned),
             look: None,
+            media: None,
             ends: None,
             author: None,
             locked: false,

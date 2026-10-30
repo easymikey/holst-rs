@@ -4,6 +4,7 @@ expression: "help_of(&format!(\"{line} -h\"))"
 ---
 Change text, corner, size, color, order or tags of objects. The objects are the linked object and every --object.
 Moving a frame moves its content. It prints one line per changed object with @N and its link.
+Deleting a table row or column whose cells hold text needs -y, since the text goes with it.
 
 USAGE
   holst object edit <board> [flags]
@@ -15,15 +16,17 @@ FLAGS
       --object object           An object, repeat for several: id, link, @N or the first 8 characters of its id
   -w, --workspace ws            Where names are looked up and new things go: a workspace id or part of its name; all of yours by default
       --text-format format      How the new text is read: plain, or markdown for headings, lists, checkboxes, links and bold, italic, strike marks; plain by default
+      --path file               The picture that replaces an image's file: it covers the image's box keeping its proportions and the mask; one image per call, not with --crop, --name or --items; unchanged by default
       --text text               The new text; lines become paragraphs; unchanged by default
+      --name name               The name an image or a file shows on the board; the extension of the old name is kept when left out; unchanged by default
       --at x,y                  The new top-left corner in board units; unchanged by default
       --size w,h                The new size as width,height, e.g. 260,160; unchanged by default
-  -c, --color color             The new fill, or an arrow's line color: a palette token, e.g. yellow4; unchanged by default
+  -c, --color color             The new fill, an arrow's line color or a drawing's stroke color: a palette token, e.g. yellow4 (a task: gray, green, red...); unchanged by default
       --shape shape             Change a shape's kind, e.g. ellipse, flowchart-decision or bpmn-gateway; unchanged by default
-      --stroke-color color      A shape's outline color: a palette token, e.g. gray12; unchanged by default
-      --stroke-width n          A shape's outline width, 0 to 10, or an arrow's line width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17; unchanged by default
-      --stroke-style style      A shape's outline or an arrow's line: solid, dashed or dotted; unchanged by default
-      --radius n                A shape's corner radius, at most as the shape's size allows; unchanged by default
+      --stroke-color color      A shape's or an image's outline color: a palette token, e.g. gray12; unchanged by default
+      --stroke-width n          A shape's or an image's outline width, 0 to 10, a drawing's stroke width, 1 to 30, or an arrow's line width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17; unchanged by default
+      --stroke-style style      A shape's or an image's outline, or an arrow's line: solid, dashed or dotted; unchanged by default
+      --radius n                A shape's or an image's corner radius, at most as its size allows; unchanged by default
       --opacity n               A shape's fill opacity, 0.1 to 1; unchanged by default
       --mark marks              The marks of the whole text of a sticker, text or shape, and no others: any of bold, italic, underline, strikethrough, code, comma apart, or none; unchanged by default
       --text-color color        The color of the whole text of a sticker, text or shape: a palette token, e.g. red6; unchanged by default
@@ -32,6 +35,12 @@ FLAGS
       --show-author             Show the author on a sticker
       --hide-author             Hide the author on a sticker
       --reaction reaction       The emoji reactions you leave on a sticker, repeat for several, up to 8; they replace yours, none takes them away; unchanged by default
+      --roll                    Roll the dice and spin the wheels named, as the web client does; at most 50 objects
+      --faces n                 A die's faces: 2, 4, 6, 8, 10, 12 or 20; its value stays among them; unchanged by default
+      --hide-children           Hide the children of a mind-map node
+      --show-children           Show the children of a mind-map node
+      --flip                    Turn a flip card over: the other side up, its width and height swapped about its centre
+      --back text               A flip card's new back, written in the --text-format; unchanged by default
       --line line               An arrow's line: straight, elbow or curved; unchanged by default
       --heads start,end         An arrow's heads, e.g. none,triangle-filled: none, figma, miro, arc, triangle-filled, triangle, circle-filled, circle, rhombus-filled, rhombus, stick, stick-stick, triadius, triadius-stick, triadius-circle, stick-circle or slash; an empty side keeps that end; unchanged by default
       --bend x,y                Bend an arrow: x,y for a straight or curved one, x, or ,y for an elbow, whose middle run sits there; unchanged by default
@@ -51,7 +60,33 @@ FLAGS
       --uncheck n               Untick the n-th checklist item of a sticker, text or shape, counting from 1 in reading order; unchanged by default
       --order order             Where it stands among the objects: front or back, or forward or backward for one step past the next overlapping object; unchanged by default
       --tag tag                 The object's tags, repeat for several; a new tag is made, '' or none clears; unchanged by default
+      --language name           A code block's language for its highlighting; unchanged by default
+      --theme theme             A code block's theme: light or dark; unchanged by default
+      --cell row,column         A table's cell, counted from 1 in reading order, e.g. 2,3, or a block r1,c1,r2,c2: --text is written into the cell, -c colours the cells, a cell made for either when it has none; unchanged by default
+      --insert-row n            Insert a row into a table before its n-th, counting from 1; one past the last adds at the end; one structural flag per call; unchanged by default
+      --insert-column n         Insert a column into a table before its n-th, counting from 1; one past the last adds at the end; unchanged by default
+      --delete-row n            Delete a table's n-th row with its cells, counting from 1; refused across a merged block; text in it needs -y; unchanged by default
+      --delete-column n         Delete a table's n-th column with its cells, counting from 1; refused across a merged block; text in it needs -y; unchanged by default
+      --crop mask               An image's mask: circle, square, portrait, landscape or wide cuts the largest such box out of its box, none gives back the whole picture; it sets the corner and size, so not with --at, --size or --rotate; unchanged by default
+      --flip-image axes         An image's mirroring, set and not toggled: none, horizontal, vertical or both; unchanged by default
+      --merge r1,c1,r2,c2       Merge a block of a table's cells, counted from 1, e.g. 1,1,2,2: the first cell with text, in reading order, leads and its text is kept; unchanged by default
+      --unmerge row,column      Split the merged block of a table that the cell leads, counted from 1, e.g. 1,1; unchanged by default
+      --clear r1,c1,r2,c2       Empty the text of a block of a table's cells, counted from 1, and remove what the cells hold; text in them needs -y; unchanged by default
+      --description text        A task's description, written in the --text-format; none empties it; unchanged by default
+      --status status           A task's status: backlog, to-do, in-progress, done, canceled, or the title of a status of the board; none takes it away; unchanged by default
+      --start day               The day a task starts, YYYY-MM-DD, e.g. 2026-11-02, on or before its due day; none takes it away; unchanged by default
+      --due day                 The day a task is due, YYYY-MM-DD, e.g. 2026-11-06; none takes it away; unchanged by default
+      --display view            A file's view: stamp is the icon card, content shows the pages, the player or the video, which needs the file's page count, duration or video info; unchanged by default
+      --start-page n            The page a file of pages opens on, from 1 to its page count; unchanged by default
+      --hide-details            Hide the details of a video file shown as content
+      --show-details            Show the details of a video file shown as content
+      --extract pages           Put pages of a file of pages on the board as file objects of one page each, in a row below it: all, or pages and ranges such as 1-3,5, at most 50; takes one file and no other field; it prints one line per new object with @N and its link
+      --assignee user           The people a task is assigned to, repeat for several: members of the board's workspace by email, name or id, any part, any case; they replace the assignees, none clears; needs a member of the workspace, not a guest; unchanged by default
+      --kanban object|none      Move a task card into this kanban, as a card in its cell: id, link, @N or the first 8 characters of its id; --column and --swimlane pick the cell, alone they move it within its own kanban; none takes it out onto the board where it is drawn; unchanged by default
+      --column text             The title of the column a task card moves to, in --kanban or the kanban it is in; the first by default for another kanban
+      --swimlane text           The title of the swimlane a task card moves to, in --kanban or the kanban it is in; the first by default for another kanban
       --items file              Many in one write: a JSON array or JSON lines file, - for stdin; its keys are the flags of one call
+  -y, --yes                     Confirm a risky change; a terminal asks instead; without one only the dry run is shown (exit code 77)
   -n, --dry-run                 Show what would change; change nothing
 
 INHERITED FLAGS

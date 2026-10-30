@@ -335,6 +335,7 @@ impl BoardIndex {
             text: self.text(at).to_owned(),
             color: name(*body.colors.get(at)?),
             look: None,
+            media: None,
             ends: arrow.map(
                 |IndexedArrow {
                      start,

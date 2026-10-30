@@ -4,6 +4,7 @@ pub mod arrow_look;
 pub mod comment;
 pub mod detail;
 pub mod frame_look;
+pub mod media_look;
 pub mod query;
 pub mod shape;
 pub mod shape_type;
@@ -335,6 +336,9 @@ pub struct Object {
     /// A shape's kind and outline, an arrow's line and heads.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub look: Option<shape_type::ShapeLook>,
+    /// An image's, a file's or a drawing's look; left out when none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media: Option<media_look::MediaLook>,
     pub ends: Option<ArrowEnds>,
     pub author: Option<String>,
     /// Whether the object itself carries the lock flag.
@@ -601,6 +605,7 @@ fn object(
         )
         .then(|| shape_type::ShapeLook::of(&fields))
         .flatten(),
+        media: media_look::MediaLook::of(&kind, &fields),
         ends: matches!(kind, ObjectKind::Arrow).then(|| ArrowEnds {
             start: end_object(&fields, document::START),
             end: end_object(&fields, document::END),

@@ -107,12 +107,9 @@ async fn exported(
             "object_list",
             "left out when the file is -",
         ))?,
-        (Some(STDOUT), _) => None,
-        (Some(file), _) => Some(Place::File(Path::new(file))),
-        (None, Some(dir)) => {
-            let channel = NodeBrief::of(&api::channel::get(client, &id).await?)?;
-            Some(Place::Numbered(dir, stem_of(channel.name(), &id)))
-        }
+        (Some(STDOUT), _) => Wanted::Inline,
+        (Some(file), _) => Wanted::File(Path::new(file)),
+        (None, Some(dir)) => Wanted::Downloads(dir),
         (None, None) => Err(not_value(
             EXPORT,
             "file",
@@ -125,6 +122,18 @@ async fn exported(
         (Compression::Gzip, "ydoc.gz")
     };
     let saved = board_file::export_with(client, loading, &id).await?;
+    let place = match place {
+        Wanted::Inline => None,
+        Wanted::File(file) => Some(Place::File(file)),
+        Wanted::Downloads(dir) => {
+            let channel = match &saved.channel {
+                Some(reply) => reply.clone(),
+                None => api::channel::get(client, &id).await?,
+            };
+            let brief = NodeBrief::of(&channel)?;
+            Some(Place::Numbered(dir, stem_of(brief.name(), &id)))
+        }
+    };
     let document = compression::compressed(&saved.document, compression)?;
     let lines = args
         .object_list
@@ -154,6 +163,13 @@ async fn exported(
         object_list,
         inline,
     })
+}
+
+/// Where the file goes; a folder's file name waits for the loaded name.
+enum Wanted<'a> {
+    Inline,
+    File(&'a Path),
+    Downloads(&'a Path),
 }
 
 /// `<file>.objects.jsonl`, without the `.gz` the file may end in.
@@ -272,6 +288,7 @@ async fn into_board(
                 .as_ref()
                 .err()
                 .map_or(WriteMode::Send, |_| WriteMode::DryRun),
+            channel: Some(&target.channel),
         },
     )
     .await?;
@@ -361,6 +378,7 @@ async fn new_board(
                     document: state,
                     overwrite: Overwrite::EmptyOnly,
                     mode: WriteMode::Send,
+                    channel: None,
                 },
             )
             .await;

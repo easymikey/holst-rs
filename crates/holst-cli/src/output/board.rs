@@ -12,12 +12,16 @@ pub(crate) fn report(format: OutputFormat, change: &ChangeReport) -> Result<()> 
     warn_if_trashed(change);
     // Ids and kinds come from the board document, which others write.
     output::report(format, change)?;
-    // After the result, on stderr: stdout keeps the result alone.
+    warnings(change);
+    Ok(())
+}
+
+/// After the result, on stderr: stdout keeps the result alone.
+pub(crate) fn warnings(change: &ChangeReport) {
     change
         .warnings
         .iter()
         .for_each(|warning| output::warn(printable(warning)));
-    Ok(())
 }
 
 /// Warns when the changed board is in the trash.

@@ -266,9 +266,13 @@ pub async fn create(client: &Client, args: &CreateArgs) -> Result<Changed> {
 pub async fn rename(client: &Client, args: &RenameArgs) -> Result<Changed> {
     let name: NodeName = args.name.parse()?;
     let id = node_id(client, &args.board, args.workspace.as_deref()).await?;
-    let before = NodeBrief::of(&api::channel::get(client, &id).await?)?
-        .name()
-        .to_owned();
+    let before = match lookup::cached_node(client, &id) {
+        Some(cached) => cached.name,
+        None => NodeBrief::of(&api::channel::get(client, &id).await?)?
+            .name()
+            .to_owned(),
+    };
+    lookup::forget_trees_holding(client, &id);
     let request =
         api::channel::rename_request(&id, &api::channel::Rename::new(name.as_str()))?;
     let node = ChangedNode {
@@ -303,7 +307,7 @@ pub async fn mv(client: &Client, args: &MoveArgs) -> Result<Changed> {
         ..node_of(Action::Move, Some(id.to_string()), Some(located.kind))
     };
     let plan = Plan {
-        request: located.plan_move(&parent)?,
+        request: located.plan_move(client, &parent)?,
         node,
         unconfirmed: located.contents_unconfirmed(),
     };
@@ -377,13 +381,13 @@ async fn trash(client: &Client, args: &RemoveArgs) -> Result<Plan> {
         )
         .await?;
         let left = left_inside(located.index(), id.as_str());
-        forever(id.as_str(), &located.name, left)
+        forever(client, id.as_str(), &located.name, left)
     } else {
         let node = ChangedNode {
             name: Some(located.name.clone()),
             ..node_of(Action::Trash, Some(id.to_string()), Some(located.kind))
         };
-        Ok(Plan::plain(located.plan_trash()?, node))
+        Ok(Plan::plain(located.plan_trash(client)?, node))
     }
 }
 
@@ -397,15 +401,17 @@ async fn delete_forever(client: &Client, id: String) -> Result<Plan> {
     } else {
         (Vec::new(), None)
     };
-    forever(&id, brief.name(), left)
+    forever(client, &id, brief.name(), left)
 }
 
 /// The plan that deletes `id` for good; `left` is what it puts up a level.
 fn forever(
+    client: &Client,
     id: &str,
     name: &str,
     (left_behind, left_in): (Vec<LeftBehind>, Option<String>),
 ) -> Result<Plan> {
+    lookup::forget_trees_holding(client, id);
     let shown = if name.is_empty() { id } else { name };
     let unconfirmed = Unconfirmed {
         change: format!("deleting {shown} for good").into(),
@@ -434,7 +440,7 @@ async fn left_by(
     match brief.workspace_id() {
         None => Ok((Vec::new(), None)),
         Some(workspace) => {
-            let index = api::workspace::tree_index(client, workspace).await?;
+            let index = lookup::tree(client, workspace, lookup::Fresh::Kept).await?;
             Ok(left_inside(&index, id))
         }
     }
@@ -477,6 +483,7 @@ pub async fn restore(client: &Client, args: &RestoreArgs) -> Result<Changed> {
             lookup::trashed(client, &workspace.id, &args.board, choice::listed).await?;
         (id, None)
     };
+    lookup::forget_trees_holding(client, &id);
     let request = api::channel::restore_request(&id, &api::channel::Restore {})?;
     let node = ChangedNode {
         name,

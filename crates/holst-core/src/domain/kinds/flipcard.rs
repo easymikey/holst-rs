@@ -14,14 +14,14 @@ use crate::{
     protocol::document::{COLOR, DOCUMENTS, FILL_COLOR, HEIGHT, OPACITY, SCALE, WIDTH},
 };
 
-const FRONT_DOCUMENT: &str = "frontDocumentId";
-const BACK_DOCUMENT: &str = "backDocumentId";
-const SIDE: &str = "side";
+pub(crate) const FRONT_DOCUMENT: &str = "frontDocumentId";
+pub(crate) const BACK_DOCUMENT: &str = "backDocumentId";
+pub(crate) const SIDE: &str = "side";
 const BACK: &str = "back";
 
 /// What the web client places a card as, at scale 1, in board units.
-const WIDE: f64 = 220.0;
-const HIGH: f64 = 320.0;
+pub(crate) const WIDE: f64 = 220.0;
+pub(crate) const HIGH: f64 = 320.0;
 
 /// A new card showing its front, as the web client places it, filled with
 /// `color`; the corner is the caller's to set.

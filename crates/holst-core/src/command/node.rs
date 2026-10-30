@@ -1,5 +1,6 @@
 //! Plans changes of the tree, once for both shells.
 
+use super::lookup::{self, Fresh};
 use crate::{
     domain::{
         id::{BoardId, FolderId, WorkspaceId},
@@ -44,6 +45,7 @@ use crate::{
 /// [`crate::error::input::InputError::NotNodeKind`] for a kind the server does
 /// not create; errors of the user request.
 pub async fn plan_create(client: &Client, new: &NewNode) -> Result<ApiRequest> {
+    lookup::forget_trees(client, Some(new.workspace.as_str()));
     let author = super::account::account_id(client).await?;
     let account = match new.parent {
         NewParent::Root => Some(api::user::current(client).await?),
@@ -76,7 +78,7 @@ pub async fn parent(
         ParentReference::Known(Parent::Folder(_))
         | ParentReference::Root(_)
         | ParentReference::Named(_) => look_up_parent(
-            &api::workspace::tree_index(client, workspace.as_str()).await?,
+            &lookup::tree(client, workspace.as_str(), Fresh::Kept).await?,
             workspace,
             reference,
             shown,
@@ -161,6 +163,7 @@ pub async fn plan_copy(
     };
     let target = copy_target(&source, copying.name, folder)
         .ok_or_else(|| missing_field("parent_id/parent_type"))?;
+    lookup::forget_trees(client, Some(workspace.as_str()));
     api::channel::duplicate_request(&api::channel::Duplicate::new(
         &NodeCopy {
             source_id: id.as_str(),
@@ -205,12 +208,14 @@ pub struct LocatedNode {
 /// [`HttpError::MissingField`] when its reply has no workspace; errors of the
 /// requests.
 pub async fn locate(client: &Client, id: &BoardId) -> Result<LocatedNode> {
-    let channel = NodeBrief::of(&api::channel::get(client, id.as_str()).await?)?;
-    let workspace: WorkspaceId = channel
-        .workspace_id()
-        .ok_or_else(|| missing_field("workspace_id"))?
-        .parse()?;
-    let index = api::workspace::tree_index(client, workspace.as_str()).await?;
+    let workspace: WorkspaceId = match lookup::cached_node(client, id.as_str()) {
+        Some(cached) => cached.workspace.id.parse()?,
+        None => NodeBrief::of(&api::channel::get(client, id.as_str()).await?)?
+            .workspace_id()
+            .ok_or_else(|| missing_field("workspace_id"))?
+            .parse()?,
+    };
+    let index = lookup::tree(client, workspace.as_str(), Fresh::Kept).await?;
     located(id, workspace, index)
 }
 
@@ -289,19 +294,23 @@ impl LocatedNode {
             })
     }
 
-    /// The request that moves the node to the trash.
+    /// The request that moves the node to the trash; the kept tree of its
+    /// workspace goes.
     ///
     /// # Errors
     /// Errors of building the request.
-    pub fn plan_trash(&self) -> Result<ApiRequest> {
+    pub fn plan_trash(&self, client: &Client) -> Result<ApiRequest> {
+        lookup::forget_trees(client, Some(self.workspace.as_str()));
         api::channel::delete_request(self.id.as_str(), &DeleteMode::Trash.into())
     }
 
-    /// The request that moves the node to `parent`.
+    /// The request that moves the node to `parent`; the kept tree of its
+    /// workspace goes.
     ///
     /// # Errors
     /// Errors of building the request.
-    pub fn plan_move(&self, parent: &NewParent) -> Result<ApiRequest> {
+    pub fn plan_move(&self, client: &Client, parent: &NewParent) -> Result<ApiRequest> {
+        lookup::forget_trees(client, Some(self.workspace.as_str()));
         api::channel::move_to_request(
             self.id.as_str(),
             &api::channel::MoveTo::new(

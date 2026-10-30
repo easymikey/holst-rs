@@ -6,6 +6,7 @@ pub mod align;
 pub mod change;
 pub mod copy;
 pub mod edit_args;
+mod extract;
 pub mod get;
 pub mod group;
 pub mod list;
@@ -27,7 +28,10 @@ use crate::{
             frame_look::{FrameBackground, FrameRatio},
             shape_type::{ShapeType, StrokeStyle},
         },
-        change::value::{Axis, LayerOrder},
+        change::{
+            media::{CropMask, FileDisplay, FlipState},
+            value::{Axis, LayerOrder},
+        },
         rich_text::TextFormat,
     },
     effect::board_write::WriteMode,
@@ -144,6 +148,12 @@ impl EnumArgument for LayerOrder {}
 impl EnumArgument for Axis {}
 
 impl EnumArgument for TextFormat {}
+
+impl EnumArgument for CropMask {}
+impl EnumArgument for FileDisplay {}
+
+impl EnumArgument for FlipState {}
+
 /// A mark of the whole text, or `none` for no marks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, strum::VariantNames)]
 #[serde(rename_all = "snake_case")]
@@ -478,7 +488,16 @@ mod tests {
                     "wheel",
                     "sticker-stack",
                     "flipcard",
-                    "mind-map"
+                    "mind-map",
+                    "document",
+                    "stamp",
+                    "code",
+                    "table",
+                    "reaction-stamp",
+                    "icon",
+                    "task",
+                    "kanban",
+                    "drawing"
                 ])
             )]
         );

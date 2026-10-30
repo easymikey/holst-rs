@@ -14,7 +14,7 @@ use crate::{
         },
         board_load::CacheUse,
         board_text,
-        lookup::{self, IndexedNodes},
+        lookup::{self, Fresh, IndexedNodes},
         table::{EnumArgument, not_value},
     },
     domain::{
@@ -217,6 +217,14 @@ pub trait Reads: Sync {
     /// All workspaces of the user.
     fn workspaces(&self) -> impl Future<Output = Result<Vec<Workspace>>> + Send;
 
+    /// The workspace `reference` names, else the only one.
+    fn workspace(
+        &self,
+        reference: Option<&str>,
+    ) -> impl Future<Output = Result<Workspace>> + Send {
+        async move { choice::workspace(&self.workspaces().await?, reference) }
+    }
+
     /// The live trees or the trashes of `workspaces`; a workspace that cannot
     /// be read is reported, not fatal.
     fn trees(
@@ -246,12 +254,27 @@ impl Reads for Requests<'_> {
         }
     }
 
+    async fn workspace(&self, reference: Option<&str>) -> Result<Workspace> {
+        match self.loading.cache_use {
+            CacheUse::Offline => choice::workspace(&[], reference),
+            CacheUse::Use | CacheUse::Refresh => {
+                lookup::workspace(self.client, reference).await
+            }
+        }
+    }
+
     async fn trees(
         &self,
         workspaces: Vec<Workspace>,
         nodes: IndexedNodes,
     ) -> Result<TreeReads<NameIndex>> {
-        choice::partition_reads(lookup::indexes(self.client, workspaces, nodes).await)
+        let fresh = match self.loading.cache_use {
+            CacheUse::Refresh => Fresh::Asked,
+            CacheUse::Use | CacheUse::Offline => Fresh::Kept,
+        };
+        choice::partition_reads(
+            lookup::indexes(self.client, workspaces, nodes, fresh).await,
+        )
     }
 
     fn board(&self, board: String) -> BoardRead<'_> {
@@ -498,12 +521,9 @@ async fn searched_workspaces<R: Reads>(
     reads: &R,
     reference: Option<&str>,
 ) -> Result<Vec<Workspace>> {
-    let all = reads.workspaces().await?;
     match reference {
-        Some(reference) => {
-            choice::workspace(&all, Some(reference)).map(|one| vec![one])
-        }
-        None => Ok(all),
+        Some(reference) => reads.workspace(Some(reference)).await.map(|one| vec![one]),
+        None => reads.workspaces().await,
     }
 }
 

@@ -405,6 +405,25 @@ impl Given {
         }
     }
 
+    /// Makes the page service count `count` pages in the file stored as
+    /// `file_name`.
+    #[must_use]
+    pub fn page_count(self, file_name: &str, count: u32) -> Self {
+        Self {
+            fixture: self.fixture.page_count(file_name, count, true),
+            ..self
+        }
+    }
+
+    /// Makes the page service refuse the file stored as `file_name`.
+    #[must_use]
+    pub fn unconvertible_file(self, file_name: &str, code: &str, detail: &str) -> Self {
+        Self {
+            fixture: self.fixture.unconvertible_file(file_name, code, detail),
+            ..self
+        }
+    }
+
     /// Puts a file called `name` with `bytes` into the folder the binaries run
     /// from.
     #[must_use]

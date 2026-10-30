@@ -6,6 +6,7 @@ use holst_core::{
     command::{
         board::picture::Delivery,
         object::{
+            EditArgs,
             GetArgs,
             LsArgs,
             ObjectVerb,
@@ -21,7 +22,10 @@ use holst_core::{
         },
         table::{Changes, CommandName, parse},
     },
-    domain::{change::receipt::ChangeReport, text::counted},
+    domain::{
+        change::receipt::ChangeReport,
+        text::{counted, size_text},
+    },
     effect::settings::CacheSettings,
     remote::client::Client,
 };
@@ -131,7 +135,12 @@ impl McpServer {
         match verb {
             ObjectVerb::Ls => self.list_objects(arguments).await,
             ObjectVerb::Add => self.change_objects(arguments, add::add).await,
-            ObjectVerb::Edit => self.change_objects(arguments, change::edit).await,
+            ObjectVerb::Edit => {
+                let edit = async |client: &Client, args: &EditArgs| {
+                    change::edit(client, &self.cache, args).await
+                };
+                self.change(arguments, edit, Self::removed_text).await
+            }
             ObjectVerb::Cp => self.change_objects(arguments, copy::cp).await,
             ObjectVerb::Group => self.change_objects(arguments, group::group).await,
             ObjectVerb::Ungroup => self.change_objects(arguments, group::ungroup).await,
@@ -235,8 +244,9 @@ impl McpServer {
                 .iter()
                 .filter_map(|object| match &object.delivery {
                     Delivery::Written { file, bytes } => Some(format!(
-                        "{} saved {bytes} bytes to {}\n",
+                        "{} saved {} to {}\n",
                         self.state.alias(&object.object),
+                        size_text(*bytes),
                         file.display()
                     )),
                     Delivery::Inline { .. } => None,
@@ -290,9 +300,13 @@ fn listed_limit(given: Option<u32>, output: Output) -> u32 {
 #[cfg(test)]
 mod tests {
     use holst_core::{
-        command::object::{
-            ObjectVerb,
-            list::{ListedObject, Listing, TextStyle},
+        command::{
+            board::picture::Delivery,
+            object::{
+                ObjectVerb,
+                get::{Downloaded, DownloadedObject},
+                list::{ListedObject, Listing, TextStyle},
+            },
         },
         domain::board::{EditRight, Object, ObjectKind},
     };
@@ -300,7 +314,11 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{LIST_DEFAULT, LIST_DEFAULT_JSON, LIST_MAX, listed_limit};
-    use crate::{server::McpServer, tools::output::Output};
+    use crate::{
+        login::fake::CannedResponse,
+        server::McpServer,
+        tools::output::Output,
+    };
 
     fn one_object_listing(matched: usize) -> Listing {
         let object = Object {
@@ -315,6 +333,7 @@ mod tests {
             text: String::new(),
             color: None,
             look: None,
+            media: None,
             ends: None,
             author: None,
             locked: false,
@@ -337,6 +356,7 @@ mod tests {
                 file: None,
                 card: None,
                 tags: Vec::new(),
+                reactions: std::collections::BTreeMap::new(),
                 style: TextStyle::default(),
                 detail: Vec::new(),
             }],
@@ -386,5 +406,24 @@ mod tests {
         #[case] shown: u32,
     ) {
         assert_eq!(listed_limit(given, output), shown);
+    }
+
+    #[test]
+    fn a_downloaded_file_reads_its_size_in_units() {
+        let (holst, _) = McpServer::scripted(Vec::<CannedResponse>::new());
+        let downloaded = Downloaded {
+            board: "b1".to_owned(),
+            objects: vec![DownloadedObject {
+                object: "a1".to_owned(),
+                link: "L".to_owned(),
+                delivery: Delivery::Written {
+                    file: "/d/a.png".into(),
+                    bytes: 1_234_567,
+                },
+            }],
+            not_saved: Vec::new(),
+        };
+        let text = holst.downloaded_text(&downloaded);
+        assert!(text.contains(" saved 1.1 MiB to /d/a.png\n"), "{text}");
     }
 }

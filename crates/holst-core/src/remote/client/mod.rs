@@ -9,6 +9,7 @@ use std::{
     fmt,
     sync::{
         Arc,
+        OnceLock,
         PoisonError,
         RwLock,
         RwLockReadGuard,
@@ -27,13 +28,14 @@ use tracing::Instrument as _;
 use self::exchange::{ExchangeRequest, json_or_text};
 use crate::{
     domain::{
-        account::Account,
+        account::{Account, Workspace},
         id_source::IdSource,
         node::CreationStamp,
         session::{Session, SessionState, SessionStatus},
         url::BaseUrl,
     },
     effect::{
+        cache::{AccountCache, CachedTree, Forget},
         clock::Clock,
         http::{BoxFuture, HttpMethod, HttpResponse, Transport},
         request::{ApiRequest, Authorization},
@@ -72,7 +74,15 @@ pub struct Client {
     ids: Arc<dyn IdSource>,
     base: BaseUrl,
     state: Arc<RwLock<SessionState>>,
-    answered: Arc<AtomicU64>,
+    shared: Arc<Shared>,
+    change: bool,
+}
+
+/// What a client and its clones count and keep together.
+#[derive(Default)]
+struct Shared {
+    answered: AtomicU64,
+    account_cache: OnceLock<Arc<dyn AccountCache>>,
 }
 
 impl fmt::Debug for Client {
@@ -104,14 +114,15 @@ impl Client {
             ids: Arc::new(ids),
             base,
             state: Arc::new(RwLock::new(SessionState::from(session))),
-            answered: Arc::default(),
+            shared: Arc::default(),
+            change: false,
         })
     }
 
     /// How many requests of this client (and its clones) got a success reply.
     #[must_use]
     pub fn answered(&self) -> u64 {
-        self.answered.load(Ordering::Relaxed)
+        self.shared.answered.load(Ordering::Relaxed)
     }
 
     /// The same client on another transport.
@@ -132,6 +143,30 @@ impl Client {
     pub fn with_response_limit(self, timeout: Duration, limit: usize) -> Result<Self> {
         let transport = Arc::clone(&self.transport).limited(timeout, limit)?;
         Ok(Self { transport, ..self })
+    }
+
+    /// The same client, on every clone, keeping the workspace list of its
+    /// account in `cache`; the first cache stays.
+    #[must_use]
+    pub fn with_account_cache(self, cache: Arc<dyn AccountCache>) -> Self {
+        drop(self.shared.account_cache.set(cache));
+        self
+    }
+
+    /// The same client, marked as running a change: a name that picks a board
+    /// to write is looked up in trees read within the last hour.
+    #[must_use]
+    pub fn for_change(self) -> Self {
+        Self {
+            change: true,
+            ..self
+        }
+    }
+
+    /// The client runs a change (see [`Client::for_change`]), not a read.
+    #[must_use]
+    pub fn runs_change(&self) -> bool {
+        self.change
     }
 
     /// The same client with another clock.
@@ -225,6 +260,71 @@ impl Client {
     /// The active login's account and name became known; a change is saved.
     pub fn learn_account(&self, account: &Account) {
         self.transition(|state| state.learn_account(account));
+    }
+
+    /// The workspace list kept for the login's account; `None` when none is
+    /// kept, the login has no account id or there is no account cache.
+    #[must_use]
+    pub fn known_workspaces(&self) -> Option<Vec<Workspace>> {
+        let cache = self.shared.account_cache.get()?;
+        cache.workspaces(&self.account_id()?)
+    }
+
+    /// Keeps the workspace list for the login's account; a failure is logged.
+    pub fn learn_workspaces(&self, workspaces: &[Workspace]) {
+        self.in_account_cache(|cache, account| {
+            cache.keep_workspaces(account, workspaces)
+        });
+    }
+
+    /// The tree kept for a workspace of the login's account; `None` when none
+    /// is kept, the login has no account id or there is no account cache.
+    #[must_use]
+    pub fn known_tree(&self, workspace: &str) -> Option<CachedTree> {
+        let cache = self.shared.account_cache.get()?;
+        cache.tree(&self.account_id()?, workspace)
+    }
+
+    /// Keeps a workspace's tree reply, read now; a failure is logged.
+    pub fn learn_tree(&self, workspace: &str, text: &str) {
+        let read_at = self.unix_millis();
+        self.in_account_cache(|cache, account| {
+            cache.keep_tree(account, workspace, text, read_at)
+        });
+    }
+
+    /// Drops the kept tree of one workspace.
+    pub fn forget_tree(&self, workspace: &str) {
+        self.in_account_cache(|cache, account| {
+            cache.forget(account, Forget::Tree(workspace))
+        });
+    }
+
+    /// Drops every kept tree of the login's account; the list stays.
+    pub fn forget_all_trees(&self) {
+        self.in_account_cache(|cache, account| cache.forget(account, Forget::Trees));
+    }
+
+    /// Drops the kept workspace list of the login's account.
+    pub fn forget_workspaces(&self) {
+        self.in_account_cache(|cache, account| {
+            cache.forget(account, Forget::Workspaces)
+        });
+    }
+
+    fn in_account_cache(
+        &self,
+        act: impl FnOnce(&dyn AccountCache, &str) -> Result<()>,
+    ) {
+        let kept = self
+            .shared
+            .account_cache
+            .get()
+            .zip(self.account_id())
+            .map(|(cache, account)| act(&**cache, &account));
+        kept.and_then(std::result::Result::err)
+            .iter()
+            .for_each(|err| tracing::debug!(%err, "account cache: not updated"));
     }
 
     /// Where the login stands.

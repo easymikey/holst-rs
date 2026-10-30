@@ -66,20 +66,6 @@ fn is_wire_detail(cause: &(dyn std::error::Error + 'static)) -> bool {
         )
 }
 
-pub(crate) fn size_text(bytes: u64) -> String {
-    let units = [(1 << 30, "GiB"), (1 << 20, "MiB"), (1 << 10, "KiB")];
-    units
-        .into_iter()
-        .find(|&(unit, _)| bytes >= unit)
-        .map_or_else(
-            || format!("{bytes} B"),
-            |(unit, name)| {
-                let tenths = bytes.saturating_mul(10) / unit;
-                format!("{}.{} {name}", tenths / 10, tenths % 10)
-            },
-        )
-}
-
 pub(crate) fn display_name(account: &Account) -> &str {
     account.name.as_deref().unwrap_or("(no name)")
 }

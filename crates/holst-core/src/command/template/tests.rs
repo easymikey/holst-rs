@@ -279,7 +279,6 @@ async fn a_held_delete_and_a_dry_run_show_the_same_request() -> Result<()> {
 #[tokio::test]
 async fn a_template_is_made_from_a_whole_board_after_its_thumbnail() -> Result<()> {
     let (fake, client) = client([
-        channel(),
         board_workspace(),
         json_reply(&account()),
         json_reply(&json!({ "name": "thumb.png" })),
@@ -325,7 +324,6 @@ async fn a_template_is_made_from_a_whole_board_after_its_thumbnail() -> Result<(
             Some(1),
             vec![
                 format!("GET /gapi/channel/{BOARD}"),
-                format!("GET /gapi/channel/{BOARD}"),
                 "GET /gapi/current_user".to_owned(),
                 "POST /gapi/upload_file".to_owned(),
                 "POST /gapi/board_template/create".to_owned()
@@ -350,7 +348,6 @@ async fn a_template_is_made_from_a_whole_board_after_its_thumbnail() -> Result<(
 #[tokio::test]
 async fn a_personal_thumbnail_is_bound_to_the_user_with_its_type() -> Result<()> {
     let (fake, client) = client([
-        channel(),
         board_workspace(),
         json_reply(&account()),
         json_reply(&json!({ "name": "thumb.png" })),
@@ -405,9 +402,7 @@ async fn a_member_makes_a_workspace_template_and_a_personal_one_asks_no_role()
         channel(),
         json_reply(&json!({ "name": "thumb.png" })),
         json_reply(&json!({})),
-        channel(),
         board_workspace(),
-        json_reply(&account()),
         json_reply(&json!({ "name": "thumb.png" })),
         json_reply(&json!({})),
     ])?;
@@ -432,8 +427,6 @@ async fn a_member_makes_a_workspace_template_and_a_personal_one_asks_no_role()
             "POST /gapi/upload_file",
             "POST /gapi/board_template/create",
             &check,
-            &check,
-            "GET /gapi/current_user",
             "POST /gapi/upload_file",
             "POST /gapi/board_template/create",
         ]
@@ -472,7 +465,7 @@ async fn an_empty_board_or_a_blank_name_makes_no_template() -> Result<()> {
 
 #[tokio::test]
 async fn a_part_of_a_board_is_made_a_template_by_object() -> Result<()> {
-    let (_, client) = client([channel(), board_workspace(), channel()])?;
+    let (_, client) = client([board_workspace(), channel()])?;
     let made = make(
         &client,
         &board(),

@@ -14,6 +14,7 @@ use crate::{
             arrow_look::{ARROW_WIDTHS, ArrowEndEdit},
         },
         change::{
+            media,
             value::{
                 Arrangement,
                 ArrowEdit,
@@ -34,7 +35,9 @@ use crate::{
             write_shape::line_of,
         },
         geometry,
-        geometry::{Point, Rectangle, Size},
+        geometry::{Point, Rectangle, Size, StoredPoint},
+        kinds::{document, icon, stamp},
+        palette::Color,
         rich_text::{Editor, Kept, TextFormat, parse},
     },
     error::{
@@ -131,7 +134,8 @@ fn written_text(new: &NewObject) -> Vec<(ObjectKind, &str)> {
         | NewObject::Arrow { .. }
         | NewObject::Link { .. }
         | NewObject::Image { .. }
-        | NewObject::File { .. } => Vec::new(),
+        | NewObject::File { .. }
+        | NewObject::Drawing { .. } => Vec::new(),
     }
 }
 
@@ -218,7 +222,7 @@ const fn placed(new: &NewObject) -> (Option<&Point>, Option<&Size>) {
         NewObject::Text { at, .. }
         | NewObject::Link { at, .. }
         | NewObject::File { at, .. } => (Some(at), None),
-        NewObject::Arrow { .. } => (None, None),
+        NewObject::Arrow { .. } | NewObject::Drawing { .. } => (None, None),
     }
 }
 
@@ -977,7 +981,11 @@ fn checked_add(
         (None, None) => {
             // BUNDLE: the frame holding the corner (main.a33651a4.js 214803).
             let parent = new_rectangle(new).and_then(|rect| {
-                let corner = Rectangle::new(rect.x, rect.y, 0.0, 0.0);
+                // BUNDLE: a stroke is found by the centre of its box (132131-132133).
+                let (dx, dy) = matches!(new, NewObject::Drawing { .. })
+                    .then(|| (rect.width / 2.0, rect.height / 2.0))
+                    .unwrap_or_default();
+                let corner = Rectangle::new(rect.x + dx, rect.y + dy, 0.0, 0.0);
                 parent_frame(states, &corner, &BTreeSet::new(), None)
             });
             check_new(new, states, parent, earlier)
@@ -996,7 +1004,8 @@ fn held_by(new: &NewObject) -> Option<&str> {
         | NewObject::Arrow { .. }
         | NewObject::Link { .. }
         | NewObject::Image { .. }
-        | NewObject::File { .. } => None,
+        | NewObject::File { .. }
+        | NewObject::Drawing { .. } => None,
     }
 }
 
@@ -1080,15 +1089,17 @@ fn check_new(
             )
         });
     }
-    sticker_size(&new).map(|()| {
-        (
-            new,
-            Placement {
-                parent,
-                format: TextFormat::Plain,
-            },
-        )
-    })
+    sticker_size(&new)
+        .and_then(|()| drawing_fits(&new))
+        .map(|()| {
+            (
+                new,
+                Placement {
+                    parent,
+                    format: TextFormat::Plain,
+                },
+            )
+        })
 }
 
 /// The entry an arrow end `#N` names, counted from 0.
@@ -1153,6 +1164,11 @@ fn new_rectangle(new: &NewObject) -> Option<Rectangle> {
         NewObject::Shape { at, size, .. } => Some(placed(at, size, &ObjectKind::Shape)),
         NewObject::Frame { at, size, .. } => Some(placed(at, size, &ObjectKind::Frame)),
         NewObject::Made(Made { kind, at, size, .. }) => Some(placed(at, size, kind)),
+        NewObject::Drawing { points, .. } => Rectangle::around(
+            points
+                .iter()
+                .map(|point| StoredPoint::new(point.x(), point.y())),
+        ),
         NewObject::Arrow { .. } => None,
     }
 }
@@ -1254,6 +1270,52 @@ fn sticker_size(new: &NewObject) -> Result<()> {
     }
 }
 
+/// The most points of one stroke.
+const MAX_STROKE_POINTS: usize = 10_000;
+
+/// A stroke has 1 to 10 000 points, all on the board, and a width the web
+/// client's slider offers (109609-109610).
+fn drawing_fits(new: &NewObject) -> Result<()> {
+    match new {
+        NewObject::Drawing { points, width, .. } => stroke_fits(points, *width),
+        NewObject::Sticker { .. }
+        | NewObject::Text { .. }
+        | NewObject::Shape { .. }
+        | NewObject::Frame { .. }
+        | NewObject::Arrow { .. }
+        | NewObject::Link { .. }
+        | NewObject::Image { .. }
+        | NewObject::File { .. }
+        | NewObject::Made(_) => Ok(()),
+    }
+}
+
+fn stroke_fits(points: &[Point], width: f64) -> Result<()> {
+    let refused = |field, raw: String, expected| {
+        Error::BoardChange(BoardChangeError::BadValue {
+            field,
+            raw,
+            expected,
+        })
+    };
+    (1..=MAX_STROKE_POINTS)
+        .contains(&points.len())
+        .then_some(())
+        .ok_or_else(|| {
+            refused(
+                "drawing point count",
+                points.len().to_string(),
+                "1 to 10000",
+            )
+        })?;
+    (1.0..=30.0).contains(&width).then_some(()).ok_or_else(|| {
+        refused("drawing stroke width", format!("{width}"), "1 to 30")
+    })?;
+    points
+        .iter()
+        .try_for_each(|point| on_board(Some(point), None))
+}
+
 fn sticker_shape(size: Size) -> Result<()> {
     let near = |a: f64, b: f64| (a - b).abs() < 0.01;
     if near(size.width(), size.height()) || near(size.width(), 2.0 * size.height()) {
@@ -1275,7 +1337,7 @@ fn changeable_edit(
     edit: &ObjectEdit,
 ) -> Result<()> {
     let tags = match (&edit.tags, kind) {
-        (None, _) | (Some(_), ObjectKind::Sticker) => Ok(()),
+        (None, _) | (Some(_), ObjectKind::Sticker | ObjectKind::Task) => Ok(()),
         (Some(_), _) => Err(Error::BoardChange(BoardChangeError::NotChangeable {
             kind: kind.as_str().to_owned(),
             field: "tags",
@@ -1304,6 +1366,7 @@ fn changeable_edit(
                 arrow,
                 frame,
                 reparent: None,
+                media,
                 kind_edits,
             },
             None,
@@ -1311,11 +1374,20 @@ fn changeable_edit(
         ) if shape.first_field().is_none()
             && arrow.fields().is_empty()
             && frame.fields().is_empty()
+            && media.fields().is_empty()
             && kind_edits.is_empty() =>
         {
             Err(Error::BoardChange(BoardChangeError::NothingToChange))
         }
         (patch, _, _) => fits(kind, held, patch)
+            .and(stamp_text(kind, states.get(id), patch))
+            .and(media::fits(kind, states.get(id), &patch.media))
+            .and(media::corners_fit(
+                kind,
+                states.get(id),
+                &patch.media,
+                patch.shape.radius,
+            ))
             .and(
                 patch
                     .kind_edits
@@ -1527,20 +1599,10 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
             field,
         }))
     };
-    let text = matches!(
-        kind,
-        ObjectKind::Sticker | ObjectKind::Text | ObjectKind::Shape | ObjectKind::Frame
-    );
-    let rich = matches!(
-        kind,
-        ObjectKind::Sticker | ObjectKind::Text | ObjectKind::Shape
-    );
+    let (text, rich) = (takes_text(kind), takes_rich_text(kind));
     let place = !matches!(kind, ObjectKind::Arrow);
     let size = resizable(kind);
-    let color = matches!(
-        kind,
-        ObjectKind::Sticker | ObjectKind::Shape | ObjectKind::Frame | ObjectKind::Arrow
-    );
+    let color = takes_color(kind);
     match (patch, held) {
         (ObjectPatch { text: Some(_), .. }, _) if !text => refuse("text"),
         (
@@ -1550,7 +1612,7 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
                 ..
             },
             _,
-        ) if *kind == ObjectKind::Frame => refuse("text format"),
+        ) if !rich => refuse("text format"),
         (ObjectPatch { at: Some(_), .. }, _) if !place => refuse("position"),
         (ObjectPatch { at: Some(_), .. }, Some(Held { object, container })) => {
             Err(Error::BoardChange(BoardChangeError::PlacedByContainer {
@@ -1560,6 +1622,18 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
         }
         (ObjectPatch { size: Some(_), .. }, _) if !size => refuse("size"),
         (ObjectPatch { color: Some(_), .. }, _) if !color => refuse("color"),
+        (
+            ObjectPatch {
+                color: Some(asked), ..
+            },
+            _,
+        ) if let Some(expected) = outside_picker(kind, asked) => {
+            Err(Error::BoardChange(BoardChangeError::BadValue {
+                field: "color",
+                raw: asked.as_str().to_owned(),
+                expected,
+            }))
+        }
         (ObjectPatch { width: Some(_), .. }, _) if *kind != ObjectKind::Text => {
             refuse("width")
         }
@@ -1615,8 +1689,122 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
     }
 }
 
+/// Whether the kind has a text of its own to change.
+fn takes_text(kind: &ObjectKind) -> bool {
+    matches!(
+        kind,
+        ObjectKind::Sticker
+            | ObjectKind::Text
+            | ObjectKind::Shape
+            | ObjectKind::Frame
+            | ObjectKind::Document
+            | ObjectKind::Task
+            | ObjectKind::Flipcard
+            | ObjectKind::Code
+            | ObjectKind::StickerStack
+            | ObjectKind::Stamp
+    ) || stored_as(kind, MIND_MAP_NODE)
+}
+
+/// Whether the kind's text is rich: it takes markdown, marks and a checklist.
+fn takes_rich_text(kind: &ObjectKind) -> bool {
+    matches!(
+        kind,
+        ObjectKind::Sticker
+            | ObjectKind::Text
+            | ObjectKind::Shape
+            | ObjectKind::Document
+    ) || stored_as(kind, MIND_MAP_NODE)
+}
+
+/// Whether the kind has a colour to change.
+fn takes_color(kind: &ObjectKind) -> bool {
+    matches!(
+        kind,
+        ObjectKind::Sticker
+            | ObjectKind::Shape
+            | ObjectKind::Frame
+            | ObjectKind::Arrow
+            | ObjectKind::Table
+            | ObjectKind::Drawing
+            | ObjectKind::Document
+            | ObjectKind::Dice
+            | ObjectKind::Flipcard
+            | ObjectKind::StickerStack
+            | ObjectKind::Task
+    ) || stored_as(kind, MIND_MAP_NODE)
+        || stored_as(kind, ICON)
+}
+
+/// The colours a document's toolbar offers, as [`document::COLORS`].
+pub(super) const DOCUMENT_COLORS: &str =
+    "one of white1, gray3, red3, orange3, yellow3, green3, blue3, violet3";
+/// The colours an icon's picker offers, as [`icon::COLORS`].
+pub(super) const ICON_COLORS: &str = "one of gray12, gray8, red9, orange9, yellow9, lime9, green9, mint9, blue9, indigo9, violet9, pink9";
+/// The names of a task card's colours; a palette token is none.
+pub(super) const TASK_COLORS: &str =
+    "one of gray, green, yellow, orange, red, violet, blue, sky, lime, pink";
+/// The stored type of an icon.
+const ICON: &str = "phosphor-icon";
+
+/// Whether the kind is stored as `name`, one with no variant of its own.
+fn stored_as(kind: &ObjectKind, name: &str) -> bool {
+    matches!(kind, ObjectKind::Other(stored) if stored == name)
+}
+
+/// What a kind offers instead, when the colour is not one it takes.
+fn outside_picker(kind: &ObjectKind, color: &Color) -> Option<&'static str> {
+    let token = color.as_str();
+    match kind {
+        ObjectKind::Document => {
+            (!document::COLORS.contains(&token)).then_some(DOCUMENT_COLORS)
+        }
+        ObjectKind::Task => Some(TASK_COLORS),
+        ObjectKind::Other(name) if name == ICON => {
+            (!icon::COLORS.contains(&token)).then_some(ICON_COLORS)
+        }
+        ObjectKind::Sticker
+        | ObjectKind::StickerStack
+        | ObjectKind::Text
+        | ObjectKind::Shape
+        | ObjectKind::Frame
+        | ObjectKind::Arrow
+        | ObjectKind::Image
+        | ObjectKind::File
+        | ObjectKind::Stamp
+        | ObjectKind::Group
+        | ObjectKind::Table
+        | ObjectKind::TableCell
+        | ObjectKind::Code
+        | ObjectKind::Drawing
+        | ObjectKind::Dice
+        | ObjectKind::Wheel
+        | ObjectKind::Flipcard
+        | ObjectKind::Link
+        | ObjectKind::Other(_) => None,
+    }
+}
+
+/// Whether a stamp has a text to change: an image stamp has none.
+fn stamp_text(
+    kind: &ObjectKind,
+    stored: Option<&Value>,
+    patch: &ObjectPatch,
+) -> Result<()> {
+    let texted = *kind == ObjectKind::Stamp && patch.text.is_some();
+    (!texted || stored.is_some_and(stamp::is_text))
+        .then_some(())
+        .ok_or_else(|| {
+            Error::BoardChange(BoardChangeError::NotChangeable {
+                kind: kind.as_str().to_owned(),
+                field: "text",
+            })
+        })
+}
+
 /// The first field of an edit that only other kinds have: a shape has no
-/// arrow line, an arrow has only a dash and a width of the outline.
+/// arrow line, an arrow has only a dash and a width of the outline, an image
+/// has an outline and corners but no kind or fill opacity.
 fn unfit_field(
     kind: &ObjectKind,
     shape: &ShapeEdit,
@@ -1627,32 +1815,52 @@ fn unfit_field(
         .fields()
         .into_iter()
         .find(|field| !matches!(*field, "stroke-style" | "stroke-width"));
-    match (*kind == ObjectKind::Shape, *kind == ObjectKind::Arrow) {
-        (true, _) => line,
-        (_, true) => outline_only,
+    let fill = shape
+        .fields()
+        .into_iter()
+        .find(|field| matches!(*field, "shape" | "opacity"));
+    match (
+        *kind == ObjectKind::Shape,
+        *kind == ObjectKind::Arrow,
+        *kind == ObjectKind::Image,
+        *kind == ObjectKind::Drawing,
+    ) {
+        (true, _, _, _) => line,
+        (_, true, _, _) | (_, _, _, true) => outline_only,
+        (_, _, true, _) => fill.or(line),
         _ => shape.first_field().or(line),
     }
 }
 
-/// Whether the width is one the web client offers a shape (a whole 0 to 10)
-/// or an arrow (its nine widths).
+/// Whether the width is one the web client offers a shape or an image (a whole
+/// 0 to 10; both use the toolbar class of module 75436) or an arrow (its nine
+/// widths).
 fn stroke_width_fits(kind: &ObjectKind, width: f64) -> Result<()> {
-    let refused = |expected| {
-        let raw = format!("{width}");
-        Error::BoardChange(BoardChangeError::NotArrowLook { raw, expected })
+    let raw = format!("{width}");
+    let refused = |field, expected| {
+        Error::BoardChange(BoardChangeError::BadValue {
+            field,
+            raw: raw.clone(),
+            expected,
+        })
     };
     let whole = width.fract() == 0.0 && (0.0..=10.0).contains(&width);
+    let pen = width.fract() == 0.0 && (1.0..=30.0).contains(&width);
     match (
         *kind == ObjectKind::Arrow,
         ARROW_WIDTHS.contains(&width),
         whole,
     ) {
+        _ if *kind == ObjectKind::Drawing => pen
+            .then_some(())
+            .ok_or_else(|| refused("drawing stroke width", "a whole number 1 to 30")),
         (true, true, _) | (false, _, true) => Ok(()),
-        (true, false, _) => Err(refused(
-            "an arrow stroke width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17",
-        )),
+        (true, false, _) => Err(Error::BoardChange(BoardChangeError::NotArrowLook {
+            raw: raw.clone(),
+            expected: "an arrow stroke width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17",
+        })),
         (false, _, false) => {
-            Err(refused("a shape stroke width: a whole number 0 to 10"))
+            Err(refused("shape stroke width", "a whole number 0 to 10"))
         }
     }
 }

@@ -65,6 +65,22 @@ impl Holst {
         self.directory.join("home").join(name)
     }
 
+    /// How many page counts the fake was asked for.
+    #[must_use]
+    pub fn page_counts_asked(&self) -> usize {
+        self.fake
+            .requests()
+            .iter()
+            .filter(|request| request.ends_with("/page_count"))
+            .count()
+    }
+
+    /// The page runs the fake was asked to convert: file, first page, last.
+    #[must_use]
+    pub fn page_runs(&self) -> Vec<(String, u32, u32)> {
+        self.fake.page_runs()
+    }
+
     /// Returns the id the fake gave the board with that name.
     ///
     /// # Errors

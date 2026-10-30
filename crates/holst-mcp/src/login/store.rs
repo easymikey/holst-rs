@@ -1,10 +1,15 @@
 //! The login store port and its real adapter.
 
+use std::sync::Arc;
+
 use holst_core::{
     domain::session::Session,
     effect::settings::Settings,
     remote::client::Client,
-    storage::session_store::{LoginSaveReport, SessionStoreKind},
+    storage::{
+        cache::account::AccountDisk,
+        session_store::{LoginSaveReport, SessionStoreKind},
+    },
 };
 
 pub(crate) trait Backend: Send + Sync {
@@ -47,12 +52,16 @@ impl SystemBackend {
 
     fn client(&self, session: Option<Session>) -> holst_core::Result<Client> {
         let base = &self.settings.base_url;
-        holst_core::command::login::connect(
+        let client = holst_core::command::login::connect(
             session.map(|login| login.on(base)).transpose()?,
             base.clone(),
             holst_core::system::clock::SystemClock,
             holst_core::system::id::RandomIds,
-        )
+        )?;
+        let disk = AccountDisk::from_settings(&self.settings.cache);
+        Ok(disk.into_iter().fold(client, |client, disk| {
+            client.with_account_cache(Arc::new(disk))
+        }))
     }
 }
 

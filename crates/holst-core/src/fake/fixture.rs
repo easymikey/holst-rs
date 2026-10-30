@@ -9,7 +9,15 @@ use crate::fake::{
     State,
     access::{Access, Right},
     comment::{Comments, FixtureThread},
-    files::{Files, FixtureBackup, FixturePage, PageOutcome, gzip},
+    files::{
+        CountOutcome,
+        Files,
+        FixtureBackup,
+        FixtureCount,
+        FixturePage,
+        PageOutcome,
+        gzip,
+    },
     login::Sessions,
     templates::{FixtureTemplate, FixtureTemplateCategory, Templates},
     tree::{FixtureNode, Storage, Tree},
@@ -29,6 +37,7 @@ pub struct Fixture {
     threads: Vec<(String, FixtureThread)>,
     sidebar: Vec<String>,
     pages: Vec<FixturePage>,
+    counts: Vec<FixtureCount>,
     own_roles: Vec<(String, Right)>,
     upload_limit: Option<usize>,
     rotating: bool,
@@ -447,6 +456,26 @@ impl Fixture {
         self.page(url, PageOutcome::Fails)
     }
 
+    /// Makes the page service count `count` pages in the file stored as
+    /// `file_name`, `valid` or not.
+    #[must_use]
+    pub fn page_count(self, file_name: &str, count: u32, valid: bool) -> Self {
+        self.counted(file_name, CountOutcome::Pages { count, valid })
+    }
+
+    /// Makes the page service refuse to convert the file stored as `file_name`
+    /// with `code` and `detail`.
+    #[must_use]
+    pub fn unconvertible_file(self, file_name: &str, code: &str, detail: &str) -> Self {
+        self.counted(
+            file_name,
+            CountOutcome::Unconvertible {
+                code: code.to_owned(),
+                detail: detail.to_owned(),
+            },
+        )
+    }
+
     /// Makes the server refuse an uploaded file of more than `bytes` bytes.
     #[must_use]
     pub fn upload_limit(self, bytes: usize) -> Self {
@@ -504,6 +533,20 @@ impl Fixture {
                     provider: provider.to_owned(),
                     content,
                     objects: None,
+                }])
+                .collect(),
+            ..self
+        }
+    }
+
+    fn counted(self, file_name: &str, outcome: CountOutcome) -> Self {
+        Self {
+            counts: self
+                .counts
+                .into_iter()
+                .chain([FixtureCount {
+                    file_name: file_name.to_owned(),
+                    outcome,
                 }])
                 .collect(),
             ..self
@@ -618,7 +661,7 @@ impl State {
             })?,
             files: Files::fixture(
                 &fixture.backups,
-                (&fixture.pages, fixture.upload_limit),
+                (&fixture.pages, &fixture.counts, fixture.upload_limit),
                 |name| tree.id_of(name),
             )?,
             tree,

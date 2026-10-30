@@ -46,6 +46,28 @@ pub fn png(width: u32, height: u32) -> Vec<u8> {
     .concat()
 }
 
+/// What the page service says of a file when asked for its page count.
+#[derive(Debug, Clone)]
+pub(crate) enum CountOutcome {
+    Pages { count: u32, valid: bool },
+    Unconvertible { code: String, detail: String },
+}
+
+/// A file the page service knows when the fake starts.
+#[derive(Debug, Clone)]
+pub(crate) struct FixtureCount {
+    pub(crate) file_name: String,
+    pub(crate) outcome: CountOutcome,
+}
+
+fn coded(status: u16, code: &str, detail: &str) -> Response {
+    Response {
+        status,
+        body: json!({ "code": code, "detail": detail }).to_string(),
+        cookie: None,
+    }
+}
+
 /// A snapshot the fake holds when it starts, of the board called `board`.
 #[derive(Debug, Clone)]
 pub(crate) struct FixtureBackup {
@@ -77,6 +99,9 @@ fn held(backup: &FixtureBackup, id: &str) -> FixtureBackup {
     }
 }
 
+/// The icon manifest the storage serves, small: three icons.
+const ICON_MANIFEST: &str = r#"[{"n":"rocket","t":["space"]},{"n":"rocket-launch","a":["liftoff"]},{"n":"star","r":"favorite"}]"#;
+
 pub(crate) fn gzip(bytes: &[u8]) -> Vec<u8> {
     let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
     // writing into a `Vec` cannot fail
@@ -93,6 +118,9 @@ pub(crate) struct Files {
     /// The most bytes a file may have; none when the server takes any size.
     limit: Option<usize>,
     pages: Pages,
+    counts: Vec<FixtureCount>,
+    /// The page runs the service was asked to convert: file, first, last.
+    runs: Vec<(String, u32, u32)>,
     pub(crate) transfers: Transfers,
 }
 
@@ -127,12 +155,14 @@ impl Files {
     /// hold.
     pub(crate) fn fixture(
         backups: &[FixtureBackup],
-        (pages, limit): (&[FixturePage], Option<usize>),
+        (pages, counts, limit): (&[FixturePage], &[FixtureCount], Option<usize>),
         board_id: impl Fn(&str) -> Option<String>,
     ) -> Result<Self, FixtureError> {
         Ok(Self {
             limit,
             pages: Pages::fixture(pages),
+            counts: counts.to_vec(),
+            runs: Vec::new(),
             transfers: Transfers::default(),
             uploads: Vec::new(),
             backups: backups
@@ -144,6 +174,10 @@ impl Files {
                 })
                 .collect::<Result<_, FixtureError>>()?,
         })
+    }
+
+    pub(crate) fn page_runs(&self) -> Vec<(String, u32, u32)> {
+        self.runs.clone()
     }
 
     pub(crate) fn uploads(&self) -> Vec<Upload> {
@@ -180,11 +214,62 @@ impl Files {
             ("POST", ["", "gapi", "hud", "upload"]) => {
                 Some(self.transfers.store(request, exists))
             }
+            ("GET", ["", "pdfpage", "file", name, "page_count"]) => {
+                Some(self.counted(name))
+            }
+            ("POST", ["", "pdfpage", "file", name, "convert_pages"]) => {
+                Some(self.converted(name, (parts.query("start"), parts.query("end"))))
+            }
             ("GET", ["", "gapi", "backup", "list"]) => {
                 Some(self.listing(parts.query("name")))
             }
             _ => None,
         }
+    }
+
+    /// The page count of the file `name`, or why the service cannot give it.
+    fn counted(&self, name: &str) -> Response {
+        match self.known(name) {
+            None => coded(404, "file_not_found", "no such file"),
+            Some(CountOutcome::Pages { count, valid }) => {
+                found(&json!({ "count": count, "valid": valid }))
+            }
+            Some(CountOutcome::Unconvertible { code, detail }) => {
+                coded(400, code, detail)
+            }
+        }
+    }
+
+    /// Converts the pages `start` to `end` of the file `name`, which the
+    /// service does for a file it counts; the run is kept.
+    fn converted(
+        &mut self,
+        name: &str,
+        (start, end): (Option<&str>, Option<&str>),
+    ) -> Response {
+        let number =
+            |text: Option<&str>| text.and_then(|text| text.parse::<u32>().ok());
+        let reply = match self.known(name) {
+            None => coded(404, "file_not_found", "no such file"),
+            Some(CountOutcome::Pages { .. }) => found(&json!({})),
+            Some(CountOutcome::Unconvertible { code, detail }) => {
+                coded(400, code, detail)
+            }
+        };
+        match (number(start), number(end)) {
+            (Some(first), Some(last)) => {
+                self.runs.push((name.to_owned(), first, last));
+                reply
+            }
+            _ => refused(400, "bad-request"),
+        }
+    }
+
+    fn known(&self, name: &str) -> Option<&CountOutcome> {
+        self.counts
+            .iter()
+            .find(|known| known.file_name == name)
+            .map(|known| &known.outcome)
     }
 
     /// The snapshots of the board `board`, newest first.
@@ -219,6 +304,12 @@ impl Files {
         self.transfers.download(request).or_else(|| {
             match (parts.method, parts.segments.as_slice()) {
                 // The storage is public, and holds the bytes as they came.
+                ("GET", ["", "storage", "icons", "phosphor", "manifest.json.gz"]) => {
+                    Some(Download::Found(gzip(ICON_MANIFEST.as_bytes())))
+                }
+                ("GET", ["", "storage", "icons", "phosphor", "manifest.json"]) => {
+                    Some(Download::Found(ICON_MANIFEST.as_bytes().to_vec()))
+                }
                 ("GET", ["", "storage", name]) => self
                     .uploads
                     .iter()

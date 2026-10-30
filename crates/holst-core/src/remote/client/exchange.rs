@@ -75,7 +75,7 @@ impl Client {
             )
             .await?;
         let response = self.settle(delivered, authorization)?;
-        self.answered.fetch_add(1, Ordering::Relaxed);
+        self.shared.answered.fetch_add(1, Ordering::Relaxed);
         Ok(response)
     }
 

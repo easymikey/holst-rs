@@ -9,6 +9,7 @@ use serde_json::{Map, Value};
 
 use crate::{
     command::{
+        account,
         change::{ChangeReport, settle},
         lookup,
         table::{
@@ -314,7 +315,9 @@ pub async fn list(client: &Client, args: &ListArgs) -> Result<Vec<WorkspaceRow>>
             .await
             .and_then(joinable_rows)
     } else {
-        api::user::current(client).await.and_then(own_rows)
+        let me = api::user::current(client).await?;
+        account::learn(client, &me)?;
+        own_rows(me)
     }
 }
 
@@ -573,6 +576,7 @@ pub async fn create(client: &Client, args: &CreateArgs) -> Result<WorkspaceChang
         (args.dry_run, Confirmation::Given),
     )
     .await?;
+    matches!(report, ChangeReport::Sent).then(|| client.forget_workspaces());
     let id = reply.and_then(|reply| {
         ["/id", "/workspace/id", "/result/id"]
             .iter()
@@ -610,6 +614,7 @@ pub async fn rename(client: &Client, args: &RenameArgs) -> Result<WorkspaceChang
         (args.dry_run, args.confirm),
     )
     .await?;
+    matches!(report, ChangeReport::Sent).then(|| client.forget_workspaces());
     Ok(WorkspaceChange {
         change: ChangeKind::Rename,
         id: Some(workspace.id),

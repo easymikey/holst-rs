@@ -1,10 +1,8 @@
 //! The `search` tool: the core's search, and what it says of the matches.
 
-use std::sync::Arc;
-
 use holst_core::{
     command::{
-        lookup::IndexedNodes,
+        lookup::{self, Fresh, IndexedNodes},
         search::{
             self,
             BoardRead,
@@ -18,7 +16,7 @@ use holst_core::{
     },
     domain::{
         account::Workspace,
-        lookup::choice::TreeReads,
+        lookup::choice::{self, TreeReads},
         node::NodeKind,
         text::printable,
         tree::name_index::build::NameIndex,
@@ -37,31 +35,34 @@ use crate::{
 /// The most the lines of matches take in a reply, in bytes; the rest is cut.
 const REPLY_BYTES: usize = 6_000;
 
-/// Reads through what the server keeps, so a second search costs no request.
+/// Workspaces and trees come from core's kept copies, boards from the server.
 struct Kept<'a> {
     holst: &'a McpServer,
     client: &'a HandedClient,
 }
 
 impl Reads for Kept<'_> {
-    type Tree = Arc<NameIndex>;
+    type Tree = NameIndex;
 
     async fn workspaces(&self) -> holst_core::Result<Vec<Workspace>> {
-        Ok(self.holst.workspaces(self.client).await?.to_vec())
+        lookup::workspaces(self.client).await
+    }
+
+    async fn workspace(
+        &self,
+        reference: Option<&str>,
+    ) -> holst_core::Result<Workspace> {
+        lookup::workspace(self.client, reference).await
     }
 
     async fn trees(
         &self,
         workspaces: Vec<Workspace>,
         nodes: IndexedNodes,
-    ) -> holst_core::Result<TreeReads<Arc<NameIndex>>> {
-        match nodes {
-            IndexedNodes::Live => self.holst.trees(self.client, workspaces).await,
-            // The tree has no trashed nodes: the trash is a request of its own.
-            IndexedNodes::Trash => {
-                self.holst.trash_trees(self.client, workspaces).await
-            }
-        }
+    ) -> holst_core::Result<TreeReads<NameIndex>> {
+        choice::partition_reads(
+            lookup::indexes(self.client, workspaces, nodes, Fresh::Kept).await,
+        )
     }
 
     fn board(&self, board: String) -> BoardRead<'_> {
