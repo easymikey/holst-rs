@@ -27,8 +27,7 @@ pub const COLORS: [&str; 8] = [
     "violet3",
 ];
 
-/// A new document of `text` on `color`, as the web client places it, growing
-/// with its text; the corner is the caller's to set.
+/// Document of `text` on `color` as the web places it; corner set by caller.
 #[must_use]
 pub fn made(text: &str, color: Option<&Color>) -> Made {
     Made {

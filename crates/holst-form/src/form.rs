@@ -59,7 +59,6 @@ impl<T: Terminal> Form<T> {
     }
 
     /// # Errors
-    ///
     /// The terminal failed, or the person stopped the form.
     pub fn intro(term: T, title: &str) -> Result<Self> {
         let form = Self::bare(term);
@@ -82,7 +81,6 @@ impl<T: Terminal> Form<T> {
     }
 
     /// # Errors
-    ///
     /// The terminal failed, or the person stopped the form.
     pub fn ask<V>(
         &self,
@@ -94,7 +92,6 @@ impl<T: Terminal> Form<T> {
     }
 
     /// # Errors
-    ///
     /// The terminal failed, or the person stopped the form.
     pub fn ask_again<V>(
         &self,
@@ -113,14 +110,11 @@ impl<T: Terminal> Form<T> {
         }
     }
 
-    /// Asks, runs `attempt` on the answer and asks again while `retryable`
-    /// gives a reason, `tries` times at most; a redirected input is asked
-    /// once.
-    ///
+    /// Asks, runs `attempt` on the answer, and asks again while `retryable`
+    /// gives a reason, `tries` at most; a redirected input is asked once.
     /// # Errors
-    ///
-    /// The terminal failed, or the person stopped the form. The attempt's own
-    /// error, the last one when the tries run out, is in the inner `Result`.
+    /// The terminal failed, or the person stopped the form.
+    /// The last attempt error, if tries run out, is in the inner `Result`.
     pub async fn ask_until<V, A, E>(
         &self,
         question: Question,
@@ -186,9 +180,7 @@ impl<T: Terminal> Form<T> {
     }
 
     /// Asks yes or no; Enter takes `default`.
-    ///
     /// # Errors
-    ///
     /// The terminal failed, or the person stopped the form.
     pub fn confirm(&self, label: &str, default: bool) -> Result<bool> {
         let yes = self.run(label, Confirm::new(default))?;
@@ -196,9 +188,7 @@ impl<T: Terminal> Form<T> {
     }
 
     /// Asks for one of `options`; the answer is its place.
-    ///
     /// # Errors
-    ///
     /// The terminal failed, or the person stopped the form.
     pub fn select(&self, label: &str, options: Vec<Choice>) -> Result<usize> {
         let labels: Vec<String> =
@@ -211,9 +201,7 @@ impl<T: Terminal> Form<T> {
     }
 
     /// Asks for any of `options`; the answer is their places in option order.
-    ///
     /// # Errors
-    ///
     /// The terminal failed, or the person stopped the form.
     pub fn multiselect(
         &self,
@@ -334,14 +322,12 @@ impl<T: Terminal> Form<T> {
     }
 
     /// # Errors
-    ///
     /// The terminal failed, or the person stopped the form.
     pub fn step(&self, label: &str, value: &str) -> Result<()> {
         self.write(&draw::answered(self.coloring, label, value))
     }
 
     /// # Errors
-    ///
     /// The terminal failed, or the person stopped the form.
     pub fn write_box(&self, title: &str, lines: &[(NoteTone, String)]) -> Result<()> {
         self.write(&draw::boxed(
@@ -353,7 +339,6 @@ impl<T: Terminal> Form<T> {
     }
 
     /// # Errors
-    ///
     /// The terminal failed, or the person stopped the form.
     pub async fn wait<W>(
         &self,
@@ -410,14 +395,12 @@ impl<T: Terminal> Form<T> {
     }
 
     /// # Errors
-    ///
     /// The terminal failed, or the person stopped the form.
     pub fn outro(&self, message: &str) -> Result<()> {
         self.write(&draw::outro(self.coloring, message))
     }
 
     /// # Errors
-    ///
     /// The terminal failed, or the person stopped the form.
     pub fn cancel(&self, message: &str, causes: &[String]) -> Result<()> {
         self.write(&draw::error_outro(self.coloring, message, causes))

@@ -109,8 +109,7 @@ impl On<'_> {
         self.comment_step(board, "resolve", words).await
     }
 
-    /// Colours the thread `thread` with `color` (`none` clears it) and pins it
-    /// as `pin` says.
+    /// Colors thread `thread` with `color` (`none` clears it); pins as `pin`.
     ///
     /// # Errors
     /// As [`ScenarioError`].
@@ -151,8 +150,7 @@ impl On<'_> {
         self.comment_step(board, "rm", words).await
     }
 
-    /// Deletes the reply `reply` (a message id or its number) of the thread
-    /// `thread`.
+    /// Deletes reply `reply` (message id or number) of thread `thread`.
     ///
     /// # Errors
     /// As [`ScenarioError`].

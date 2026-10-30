@@ -178,8 +178,7 @@ fn on_cache(fake: &Fake, cache: &Arc<Scratch>) -> holst_core::Result<Client> {
     Ok(bare(fake)?.with_account_cache(Arc::<Scratch>::clone(cache)))
 }
 
-/// The fake and a client with a saved login (with its account id) and a
-/// temporary account cache.
+/// A fake and a client with a saved login (account id) and a temp cache.
 async fn started(fixture: Fixture) -> holst_core::Result<(Fake, Client)> {
     let fake = Fake::start(fixture).await?;
     let client = on_cache(&fake, &Scratch::new()?)?;
@@ -1259,8 +1258,7 @@ async fn logged_in(
 }
 
 impl World {
-    /// The first command after `login::finish`: the account and the workspaces
-    /// are known, no tree is kept.
+    /// After `login::finish`: account and workspaces known, no tree kept.
     async fn open(setup: Setup) -> holst_core::Result<Self> {
         let fake = Fake::start(world_fixture()).await?;
         let cache = Scratch::new()?;
@@ -1589,10 +1587,8 @@ async fn run_object(
     }
 }
 
-/// The requests of `name` on a world with nothing kept, then kept the way
-/// `setup` says, then kept two hours ago; the third is for a client that acts.
-/// A read keeps its trees by itself: warm is its second run on the same world,
-/// and a world kept two hours ago asks nothing more, so it is not built.
+/// Requests of `name` cold, then kept as `setup` says, then two hours ago.
+/// Warm is the second run; the third is for a client that acts.
 async fn observed(
     name: CommandName,
     given: &Value,
@@ -1641,11 +1637,8 @@ async fn observed(
     }
 }
 
-/// Pins the requests of the command cold, warm, and with trees kept two hours
-/// ago: `later` more trees than warm. The fake closes every connection and the
-/// system now and then drops one to a port it used a moment ago; the command
-/// answers what it could read, so a world that does not show the pinned counts
-/// runs again, twice at most, and the last one stands.
+/// Pins requests cold, warm, and with trees kept two hours ago (`later` more).
+/// Reruns the world, up to twice, when a dropped connection skews counts.
 async fn pins(
     name: CommandName,
     given: Value,
@@ -1892,8 +1885,7 @@ async fn template_and_backup_pins(
     pins(name, given, setup, cold, warm, later).await
 }
 
-/// The `channel/{id}` reads of one `object edit` that replaces a picture or
-/// extracts pages.
+/// `channel/{id}` reads of one `object edit` that replaces or extracts pages.
 async fn edit_channel_reads(
     objects: Vec<FixtureObject>,
     given: impl FnOnce(&str) -> Value,

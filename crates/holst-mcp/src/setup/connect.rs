@@ -47,8 +47,7 @@ impl Program for System {
     }
 }
 
-/// Under Homebrew the versioned `Cellar` path is gone after an upgrade; the
-/// `bin` link stays.
+/// Homebrew drops the versioned `Cellar` path on upgrade; the `bin` link stays.
 pub(crate) fn stable_binary(exe: &Path, linked: impl Fn(&Path) -> bool) -> PathBuf {
     exe.ancestors()
         .find(|dir| dir.file_name().is_some_and(|name| name == "Cellar"))
@@ -139,8 +138,7 @@ impl Clients {
     }
 }
 
-/// Connects the clients asked for without an entry, then prints what to put in
-/// the others.
+/// Connects clients asked for without an entry; prints the others' entries.
 pub(super) fn connect<T: Terminal>(
     programs: &impl Program,
     form: &Form<T>,
@@ -156,8 +154,8 @@ pub(super) fn connect<T: Terminal>(
         .map_err(|err| SetupError::Form(FormError::Terminal(err)))
 }
 
-/// The wanted clients that can take an entry; a named client off `PATH` stays,
-/// so that its failure is told. An entry for another binary is replaced here.
+/// Wanted clients that can take an entry; a named client off `PATH` stays
+/// so its failure is told; another binary's entry is replaced.
 fn without_entry<T: Terminal>(
     programs: &impl Program,
     form: &Form<T>,

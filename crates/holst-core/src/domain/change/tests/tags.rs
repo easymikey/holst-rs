@@ -44,8 +44,7 @@ fn store_json(document: &Doc, name: &str) -> Value {
     board::json(&store.to_json(&transaction)).unwrap_or_default()
 }
 
-/// The board with a sticker `seed-2` carrying the tags `Urgent` and `later`,
-/// and a task info holding both too.
+/// Board with sticker `seed-2` tagged `Urgent` and `later`, task info too.
 fn tagged() -> Result<Doc> {
     let document = seeded()?;
     apply(
@@ -278,8 +277,7 @@ fn a_change_that_asks_nothing_is_refused(#[case] change: TagChange) -> Result<()
     Ok(())
 }
 
-/// A task card on the board whose info entry `info-2` holds both tags and the
-/// assignee `u1`.
+/// Task card whose info `info-2` holds both tags and assignee `u1`.
 fn task_card(document: &Doc) -> Result<String> {
     let made = task::made("Ship", None, (None, None), None, "info-2".into());
     let built = super::built(document, &super::add(NewObject::Made(made)))?;

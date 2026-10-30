@@ -47,8 +47,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The ids to evict, least recently used first, until `total` fits `capacity`;
-/// never `keep`.
+/// Ids to evict, least used first, until `total` fits `capacity`, not `keep`.
 fn least_used<'a>(
     entries: impl Iterator<Item = (&'a String, u64, u64)>,
     keep: &str,

@@ -227,11 +227,8 @@ pub(super) fn fits(
     .and(view_fits(fields.unwrap_or(&Value::Null), media))
 }
 
-/// The stored name of a page file whose pages were never counted.
-///
-/// BUNDLE: the page service is asked only for a name it converts and only when
-/// the object has no `pagesInfo` (`filePagesInfo`, `preparePagePreview`,
-/// main.a33651a4.js 209839-209870; `VN`, 169688).
+/// Stored name of an uncounted page file; the page service is asked only then.
+/// (`filePagesInfo`, main.a33651a4.js 209839-209870; `VN`, 169688).
 pub(crate) fn uncounted(fields: &Value) -> Option<&str> {
     fields
         .get("fileName")
@@ -266,9 +263,8 @@ const AUDIO_EXTENSIONS: [&str; 7] =
     [".mp3", ".m4a", ".wav", ".ogg", ".aac", ".flac", ".webm"];
 const VIDEO_EXTENSIONS: [&str; 4] = [".mp4", ".m4v", ".mov", ".webm"];
 
-/// BUNDLE: a file is a page file by its extension unless its page info is
-/// invalid, audio or video by its extension, a `.webm` by the info it holds
-/// (`isPageFile`, `sL.U`, main.a33651a4.js 117089-117101, 169625-169646).
+/// BUNDLE: page file by extension unless its info is invalid; audio/video too;
+/// `.webm` by info (main.a33651a4.js 117089-117101, 169625-169646).
 fn view_of(fields: &Value) -> FileView {
     let name = fields
         .get("fileName")
@@ -359,8 +355,8 @@ fn stored_display(fields: &Value) -> &str {
         .unwrap_or("stamp")
 }
 
-/// BUNDLE: the toolbar offers a corner radius only when the mask is not a
-/// circle (main.a33651a4.js 109372); the mask is the one the same edit sets.
+/// BUNDLE: corner radius is offered only if the mask is not a circle
+/// (main.a33651a4.js 109372); the mask is the one the same edit sets.
 pub(super) fn corners_fit(
     kind: &ObjectKind,
     fields: Option<&Value>,
@@ -498,8 +494,7 @@ fn replace_changes(upload: &ImageUpload, fields: &Value) -> Vec<(&'static str, V
     .collect()
 }
 
-/// The `cropTransform` that shows the box `now` over a picture of `pixels`
-/// laid to cover it.
+/// `cropTransform` showing box `now` for a picture of `pixels` laid to cover.
 fn covered(now: Rectangle, pixels: Size, fields: &Value) -> Value {
     let ratio = pixels.width() / pixels.height();
     let (wide, high) = (now.height * ratio, now.width / ratio);
@@ -523,8 +518,8 @@ fn covered(now: Rectangle, pixels: Size, fields: &Value) -> Value {
     json!([x, y, width, height, mask])
 }
 
-/// BUNDLE: `flip` is `{x, y}` of 1 or -1; `horizontal` is `x` (main.a33651a4.js
-/// 109124-109134, 109238-109240). The state is set, not toggled.
+/// BUNDLE: `flip` is `{x, y}` of 1 or -1; `horizontal` is `x`
+/// (main.a33651a4.js 109124-109134, 109238-109240); state set, not toggled.
 fn flip_change(state: FlipState, fields: &Value) -> Option<(&'static str, Value)> {
     let wanted = match state {
         FlipState::None => (false, false),
@@ -537,8 +532,7 @@ fn flip_change(state: FlipState, fields: &Value) -> Option<(&'static str, Value)
         .then(|| (FLIP, json!({ (X): sign(wanted.0), (Y): sign(wanted.1) })))
 }
 
-/// `flipped` when `mirrored`, else `plain`: a mirrored axis reads from its far
-/// side.
+/// `flipped` if `mirrored`, else `plain`; mirrored axes read from the far side.
 fn pick<T>(mirrored: bool, flipped: T, plain: T) -> T {
     match mirrored {
         on if on => flipped,
@@ -558,8 +552,8 @@ fn mirrored(fields: &Value) -> (bool, bool) {
     (on(X), on(Y))
 }
 
-/// The four numbers of `cropTransform`; the whole picture when it is missing
-/// or invalid (main.a33651a4.js 109267-109273, 209110-209116).
+/// `cropTransform` numbers; the whole picture when it is missing or invalid
+/// (main.a33651a4.js 109267-109273, 209110-209116).
 fn crop_of(fields: &Value) -> [f64; 4] {
     fields
         .get(CROP_TRANSFORM)
@@ -598,8 +592,7 @@ fn background(fields: &Value, now: Rectangle) -> Rectangle {
     )
 }
 
-/// The largest box of the ratio `wide`:`high` centred in `now`
-/// (main.a33651a4.js 171980-171989).
+/// Largest `wide`:`high` box centred in `now` (main.a33651a4.js 171980-171989).
 fn largest(now: Rectangle, (wide, high): (f64, f64)) -> Rectangle {
     let width = now.height * wide / high;
     let height = now.width * high / wide;

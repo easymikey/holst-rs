@@ -46,12 +46,7 @@ use syn::{
 /// pub async fn bye(client: &Client) -> Result<Value>;
 /// ```
 ///
-/// A `#[body] body: &SetRecent` parameter is serialized as the JSON body, and
-/// the call's `Body` checks a user's JSON against `SetRecent`. A path parameter
-/// is any `AsRef<str>`: `&str`, or an id such as `&BoardId`.
-///
-/// `class = Read | Write | Admin` also emits `pub(crate) const TREE: Endpoint`;
-/// `unlisted` keeps the call out of the catalogue. One of the two is required.
+/// `#[body]` is the JSON body; `class = Read | Write | Admin` emits `TREE`.
 /// Only an `unlisted` call may use `body = <json>` or `payload = <HttpBody>`.
 #[proc_macro_attribute]
 pub fn get(attribute: TokenStream, item: TokenStream) -> TokenStream {
@@ -563,8 +558,7 @@ fn query_part(part: &EndpointQueryPart) -> Tokens {
     }
 }
 
-/// The `#[body]` parameter, removed from the signature: its name and the type
-/// behind its reference.
+/// The `#[body]` parameter, dropped from the signature: its name and `T`.
 fn take_body(sig: &mut Signature) -> syn::Result<Option<(Ident, Type)>> {
     let marked: Vec<_> = sig
         .inputs

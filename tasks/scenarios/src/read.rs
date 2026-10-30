@@ -199,8 +199,7 @@ impl On<'_> {
         self.object(board, ObjectCall::list()).await
     }
 
-    /// The `media` part the JSON listing of `board` shows for its first object
-    /// of `kind`; null when it shows none.
+    /// The `media` of the first `kind` object in the JSON listing, or null.
     ///
     /// # Errors
     /// As [`ScenarioError`].
@@ -384,8 +383,7 @@ pub(crate) fn mcp_objects(text: &str) -> Observation {
     )
 }
 
-/// A `name:count` word of a listing line; the `{..}` style word and a frame
-/// ratio such as `4:3` are not one.
+/// A `name:count` word; `{..}` style words and frame ratios like `4:3` are not.
 fn is_reaction(word: &str) -> bool {
     word.split_once(':').is_some_and(|(name, count)| {
         name.starts_with(|first: char| first.is_ascii_alphabetic())
@@ -733,8 +731,7 @@ impl Then<'_> {
         );
     }
 
-    /// Expects the object with this text to list exactly these reactions as
-    /// `name:count` words.
+    /// Expects the object `text` to list exactly these `name:count` reactions.
     ///
     /// # Panics
     /// When there is none, or it differs.
@@ -748,8 +745,7 @@ impl Then<'_> {
         );
     }
 
-    /// Expects an object of this kind to list these words of its kind, e.g.
-    /// `rows=2`.
+    /// Expects an object of `kind` to list these words, e.g. `rows=2`.
     ///
     /// # Panics
     /// When there is none, or it differs.

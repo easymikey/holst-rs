@@ -454,9 +454,8 @@ async fn a_lost_board_drops_the_trees_holding_it() -> holst_core::Result<()> {
     Ok(())
 }
 
-/// The cache holds the tree of `START`; `made` is then made elsewhere, and
-/// `change` runs half an hour later on that cache. Gives its result and the
-/// tree requests it sent.
+/// The cache holds the tree of `START`; `made` is made elsewhere, `change`
+/// runs half an hour later on it. Gives its result and its tree requests.
 async fn change_after_web_edit(
     made: Value,
     change: impl AsyncFnOnce(&Fake, &Client) -> holst_core::Result<()>,

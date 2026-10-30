@@ -62,7 +62,6 @@ impl std::fmt::Debug for QuietedTerminal {
 }
 
 /// # Errors
-///
 /// The settings of stdin's terminal could not be read or changed.
 pub fn quiet(quiet: TerminalQuiet) -> io::Result<QuietedTerminal> {
     exclusive(|| imp::quiet(quiet)).map(QuietedTerminal)

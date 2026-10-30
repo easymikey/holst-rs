@@ -40,13 +40,8 @@ pub(crate) struct BoardFormat {
 }
 
 impl BoardFormat {
-    /// The root of the document that holds the objects of the board.
-    ///
-    /// # Errors
-    ///
-    /// [`BoardSocketError::UnsupportedFormat`] unless the board is in format v2
-    /// or version 3 on hud; the web client reads a missing version as 1 and a
-    /// missing provider as hud.
+    /// Root of the board's objects; [`BoardSocketError::UnsupportedFormat`]
+    /// unless v2, or v3 on hud; a missing version reads 1, provider hud.
     pub(crate) fn supported(&self) -> Result<&'static str> {
         match (self.schema(), self.provider()) {
             (SCHEMA_V2, SUPPORTED_PROVIDER) => Ok(OBJECTS),
@@ -57,8 +52,7 @@ impl BoardFormat {
 
     /// # Errors
     ///
-    /// As [`Self::supported`], and for a version 3 board: whole-board files are
-    /// v2 only.
+    /// As [`Self::supported`]; whole-board files of a v3 board are v2 only.
     pub(crate) fn whole_file(&self) -> Result<()> {
         self.supported().and_then(|root| {
             (root == OBJECTS)

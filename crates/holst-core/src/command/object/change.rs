@@ -181,15 +181,10 @@ pub(super) async fn load_board_read(
     Ok((loaded, channel))
 }
 
-/// Changes text, corner, size, color, rotation, link, order or tags of
-/// objects, in one write. Deleting a table row or column whose cells hold
-/// text stays unsent without the confirmation.
+/// Changes objects in one write; deleting text rows or columns needs confirm.
 ///
 /// # Errors
-/// An item that is not valid, an object that is not found or has no such
-/// field, nothing to change, a picture that cannot be read or is not one, a
-/// board that is not found or not editable, and errors of the requests (the
-/// upload among them) and of the write.
+/// Bad item or object, nothing to change, a bad picture, or failed requests.
 pub async fn edit(
     client: &Client,
     cache: &CacheSettings,
@@ -219,8 +214,7 @@ async fn edit_fields(
     .await
 }
 
-/// What `--path` cannot stand beside: `--items`, a mask, a name, or more than
-/// one object, since a call uploads once.
+/// `--path` cannot be with `--items`, a mask, a name, or several objects.
 fn refuse_path_beside(args: &EditArgs) -> Result<()> {
     args.path.as_ref().map_or(Ok(()), |_| {
         match (
@@ -336,9 +330,7 @@ pub(super) fn settled(report: ChangeReport, args: &EditArgs) -> Removed {
     Removed { report, outcome }
 }
 
-/// `edits` with the page count of each page file they show as content and that
-/// has none yet, asked of the page service; a dry run asks nothing and says it
-/// would.
+/// Asks the page service for missing page counts in `edits`; dry run asks none.
 async fn counted(
     client: &Client,
     loading: &Loading<'_>,
@@ -490,8 +482,7 @@ fn assigning(edits: &[ObjectEdit]) -> Option<()> {
         .then_some(())
 }
 
-/// `edits` with the assignees they name turned into ids of members of the
-/// board's workspace.
+/// Turns the assignees `edits` name into ids of the board's workspace members.
 async fn assigned(
     client: &Client,
     board: &str,
@@ -532,8 +523,7 @@ async fn assigned(
         .collect()
 }
 
-/// The members of the workspace of `board`, when the caller may assign among
-/// them: a member, admin or owner, as the web client's `canEditAssignees`.
+/// Members of `board`'s workspace the caller may assign (`canEditAssignees`).
 async fn assignable(client: &Client, board: &str) -> Result<Vec<Member>> {
     let workspace = match lookup::cached_node(client, board) {
         Some(kept) => kept.workspace.id,
@@ -710,9 +700,7 @@ fn patch_of(
     })
 }
 
-/// What `--name`, `--crop`, `--flip-image`, `--display`, `--start-page`,
-/// `--hide-details` and `--show-details` say; a mask sets the corner and
-/// size itself.
+/// What `--name`, `--crop` and other media flags say; a mask sets corner, size.
 fn media_of(item: &EditFields) -> Result<MediaEdit> {
     item.crop
         .and_then(|_| {
@@ -785,9 +773,7 @@ pub(super) fn hidden_of(
     }
 }
 
-/// Refuses hiding or showing frame content on `board` when its
-/// `who_can_manage_frame_hide_content` stands above the caller's role; `read`
-/// is the board's `channel/{id}` reply if the caller has it, else it is asked.
+/// Refuses frame hide or show below `who_can_manage_frame_hide_content`.
 pub(super) async fn refuse_hiding(
     client: &Client,
     board: &str,
@@ -822,11 +808,7 @@ fn width_of(item: &EditFields) -> Result<Option<TextWidth>> {
         .transpose()
 }
 
-/// What `--text-size`, `--show-author`, `--hide-author`, `--reaction`,
-/// `--roll`, `--faces`, `--hide-children`, `--show-children`, `--flip` and
-/// `--back`, `--language` and `--theme`, `--cell` and the insert and delete
-/// flags of rows and columns, `--status`, `--start`, `--due` and
-/// `--description`, `--assignee`, `--kanban`, `--column` and `--swimlane` say.
+/// What the kind flags (`--text-size` to `--swimlane`) say.
 fn kind_edits_of(item: &EditFields, format: TextFormat) -> Result<Vec<KindEdit>> {
     let text_size = item.text_size.as_deref().map(text_size_of).transpose()?;
     let author = match (item.hide_author, item.show_author) {
@@ -861,8 +843,7 @@ fn kind_edits_of(item: &EditFields, format: TextFormat) -> Result<Vec<KindEdit>>
         .collect())
 }
 
-/// What `--cell` with `--text` and `--insert-row`, `--insert-column`,
-/// `--delete-row` and `--delete-column` say; one of them to a call.
+/// What `--cell` with `--text` or a row or column flag says; one per call.
 fn table_edit_of(item: &EditFields, format: TextFormat) -> Result<Option<KindEdit>> {
     let spanned =
         |name: &'static str, raw: Option<&str>, make: fn(Span) -> TableEdit| {
@@ -910,8 +891,7 @@ fn table_edit_of(item: &EditFields, format: TextFormat) -> Result<Option<KindEdi
     }
 }
 
-/// What `--status`, `--start`, `--due`, `--description` and `--assignee` say;
-/// `none` takes a word away. The assignees stay references until `assigned`.
+/// Task flags (`--status` to `--assignee`); `none` clears; assignees stay refs.
 fn task_edit_of(item: &EditFields, format: TextFormat) -> Result<Option<KindEdit>> {
     let day = |name: &'static str, given: Option<&str>| {
         setting_of(given, |raw| {
@@ -961,8 +941,7 @@ fn task_edit_of(item: &EditFields, format: TextFormat) -> Result<Option<KindEdit
     })))
 }
 
-/// What `--kanban`, `--column` and `--swimlane` say: `none` takes the card out
-/// of its kanban, else it goes to the cell the titles name.
+/// What `--kanban`, `--column`, `--swimlane` say; `none` takes the card out.
 fn card_move_of(item: &EditFields) -> Result<Option<KindEdit>> {
     let title = |name: &'static str, given: &[String]| match given {
         [] => Ok(None),
@@ -996,8 +975,7 @@ fn card_move_of(item: &EditFields) -> Result<Option<KindEdit>> {
     Ok(moved)
 }
 
-/// `given`, unless `--at`, `--rotate`, `--size` or `--scale` come beside it:
-/// the flip and the card move write the place, turn and size themselves.
+/// `given` unless `--at`, `--rotate`, `--size` or `--scale` come beside it.
 fn placed_beside(item: &EditFields, other: &str, given: bool) -> Result<bool> {
     [
         ("at", item.at.is_some()),
@@ -1061,8 +1039,7 @@ fn span_hint(name: &'static str) -> Error {
     )
 }
 
-/// What `--cell` says: a cell or a block of cells, to take the text (one cell)
-/// or the colour.
+/// What `--cell` says: a cell or block, for its text (one cell) or colour.
 fn cell_of(
     raw: &str,
     (text, color): (Option<&str>, Option<&str>),
@@ -1093,8 +1070,7 @@ fn cell_of(
     }
 }
 
-/// What `--faces` says: one of the face counts of the web client, not beside
-/// a roll, which changes the value the faces keep in range.
+/// What `--faces` says: a web face count; not beside `--roll`, which clamps it.
 fn faces_of(item: &EditFields) -> Result<Option<KindEdit>> {
     item.faces
         .map(|faces| match (item.roll, dice::FACES.contains(&faces)) {
@@ -1217,8 +1193,7 @@ fn marks_of(choices: &[MarkChoice]) -> Option<Vec<Mark>> {
     })
 }
 
-/// The tags (or people) asked for by title; a blank one or `none` asks for
-/// none.
+/// Tags or people by title; a blank one or `none` asks for none.
 fn tags_of(tags: &[String]) -> Option<Vec<String>> {
     (!tags.is_empty()).then(|| {
         tags.iter()
@@ -1997,8 +1972,7 @@ mod tests {
         }]
     }
 
-    /// `assigning(named)` resolved over a workspace where the caller holds
-    /// `role`, with the requests it sent.
+    /// `assigning(named)` resolved in a workspace where the caller is `role`.
     async fn assigned_by(
         role: &str,
         named: &[&str],

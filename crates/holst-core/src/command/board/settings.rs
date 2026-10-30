@@ -297,8 +297,7 @@ async fn editable(client: &Client, loading: Loading<'_>, id: &str) -> Result<()>
     }
 }
 
-/// Uploads the cover's picture; the board is not changed yet. Also the
-/// `channel/{id}` reply the drawing of a reset read.
+/// Uploads the cover, board unchanged; also a reset's `channel/{id}` reply.
 async fn cover_uploaded(
     client: &Client,
     loading: Loading<'_>,
@@ -432,8 +431,7 @@ async fn uploaded(
     .ok_or_else(|| node::missing_field("name"))
 }
 
-/// The board drawn small by our renderer, as PNG, and the `channel/{id}` reply
-/// its load read; a board the load shows read only is refused.
+/// Small PNG of the board from its `channel/{id}` load; read-only refused.
 async fn preview(
     client: &Client,
     loading: Loading<'_>,
@@ -515,8 +513,7 @@ mod tests {
         acking([Some(empty_board(EditRight::Editable))])
     }
 
-    /// The replies of a dry run with a note: the account and the board of the
-    /// build; the note alone reads the board once.
+    /// Dry-run replies: account and build board; the note reads it once.
     fn note_replies() -> [HttpResponse; 2] {
         [json_reply(&json!({ "id": "me" })), channel()]
     }

@@ -52,8 +52,7 @@ use crate::{
 pub(in crate::command) type Guard =
     (&'static str, fn(String, &'static str) -> BoardChangeError);
 
-/// Refuses on `board` when the setting of `guard` stands above the role the
-/// caller's permits give there, as the web client does.
+/// Refuses on `board` when `guard` is above the caller's permit role.
 pub(in crate::command) async fn refuse_withheld(
     client: &Client,
     board: &str,
@@ -83,8 +82,7 @@ pub(in crate::command) struct BoardWrite<'a> {
     pub(in crate::command) mode: WriteMode,
 }
 
-/// Checks the guard, writes as the logged-in account through the cache of
-/// `loading` (sent, or only built), and reports each object with its link.
+/// Checks the guard, writes as the account (sent or only built), reports links.
 pub(in crate::command) async fn change_board(
     client: &Client,
     loading: Loading<'_>,
@@ -93,8 +91,7 @@ pub(in crate::command) async fn change_board(
     change_board_with(client, loading, write, None).await
 }
 
-/// As [`change_board`], given the `channel/{id}` reply of `write.board` when
-/// the caller read it. A guard asks for the reply once, and the write takes it.
+/// As [`change_board`], with `write.board`'s reply; a guard asks it once.
 pub(in crate::command) async fn change_board_with(
     client: &Client,
     loading: Loading<'_>,
@@ -196,8 +193,7 @@ pub struct ChangedBoard {
 }
 
 /// Load the board through `interpreter`, plan the request's operation on it
-/// and carry the plan out; `known` is the board's `channel/{id}` reply if the
-/// caller has it, and then none is asked.
+/// Carries the plan out; with `known`, the channel reply, none is asked.
 async fn write<I: WriteInterpreter + ?Sized>(
     client: &Client,
     interpreter: &I,
@@ -284,8 +280,7 @@ pub async fn write_cached<I: WriteInterpreter + ?Sized>(
     write_cached_known(client, interpreter, request, cache, None).await
 }
 
-/// As [`write_cached`], given the board's `channel/{id}` reply if the caller
-/// has it.
+/// As [`write_cached`], with the board's channel reply if held.
 async fn write_cached_known<I: WriteInterpreter + ?Sized>(
     client: &Client,
     interpreter: &I,

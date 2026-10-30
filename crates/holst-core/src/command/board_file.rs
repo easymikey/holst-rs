@@ -35,12 +35,10 @@ pub(in crate::command) struct BoardFile {
     pub(in crate::command) channel: Option<Value>,
 }
 
-/// Load the board fully through the cache of `loading` and take its whole
-/// state; only reads.
+/// Loads the whole board via `loading`'s cache; only reads.
 ///
 /// # Errors
-/// As [`crate::remote::socket::load::load_with`]: an incomplete board is never
-/// saved.
+/// As [`crate::remote::socket::load::load_with`]; never saves incomplete.
 pub(in crate::command) async fn export_with(
     client: &Client,
     loading: Loading<'_>,
@@ -67,8 +65,7 @@ pub(in crate::command) async fn export_with(
     })
 }
 
-/// Whole-board files are v2 only: a loaded version 3 document has the
-/// `objects_v3` root.
+/// Whole-board files are v2 only; a version 3 document has `objects_v3`.
 fn v2_only(document: &Doc) -> Result<()> {
     match objects_root(document) {
         OBJECTS => Ok(()),
@@ -156,12 +153,11 @@ pub(in crate::command) async fn replace_with(
 }
 
 /// Load the board, let `plan` change its document, and, unless dry, send what
-/// the change adds and await the ack. The format is checked on the
-/// `channel/{id}` reply `target` carries, else on one asked for.
+/// Adds the change, awaits the ack; format checked on `target`'s channel reply.
 ///
 /// # Errors
-/// Those of `plan`,
-/// [`crate::error::board_change::BoardChangeError::ReadOnly`], I/O.
+/// Those of `plan`, [`crate::error::board_change::BoardChangeError::ReadOnly`],
+/// I/O.
 pub(in crate::command) async fn write_with(
     client: &Client,
     loading: Loading<'_>,

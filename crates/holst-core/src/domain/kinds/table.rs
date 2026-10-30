@@ -46,8 +46,7 @@ fn keys(prefix: &str) -> Vec<String> {
     (1..=CELL_LIMIT).map(|n| format!("{prefix}{n}")).collect()
 }
 
-/// A new table of `rows` by `columns` as the web client's toolbar tool places
-/// it, with no cell objects; the corner is the caller's to set.
+/// Table of `rows` by `columns` as the web's tool places it; no cell objects.
 #[must_use]
 pub fn made(rows: u32, columns: u32) -> Made {
     let paint = |color| json!({ (COLOR): color, (OPACITY): 1 });
@@ -89,8 +88,7 @@ pub fn made(rows: u32, columns: u32) -> Made {
     }
 }
 
-/// The `rows` and `columns` of a table: the keys of its fields that hold an
-/// object under `row-` and `column-`.
+/// Row and column counts: fields keyed `row-` or `column-` that hold an object.
 pub(super) fn detail(table: &Object) -> Detail {
     let count = |prefix: &str| {
         table

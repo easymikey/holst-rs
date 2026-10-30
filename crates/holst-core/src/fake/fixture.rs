@@ -456,15 +456,13 @@ impl Fixture {
         self.page(url, PageOutcome::Fails)
     }
 
-    /// Makes the page service count `count` pages in the file stored as
-    /// `file_name`, `valid` or not.
+    /// Page service counts `count` pages of stored `file_name`, valid or not.
     #[must_use]
     pub fn page_count(self, file_name: &str, count: u32, valid: bool) -> Self {
         self.counted(file_name, CountOutcome::Pages { count, valid })
     }
 
-    /// Makes the page service refuse to convert the file stored as `file_name`
-    /// with `code` and `detail`.
+    /// Page service refuses to convert `file_name` with `code` and `detail`.
     #[must_use]
     pub fn unconvertible_file(self, file_name: &str, code: &str, detail: &str) -> Self {
         self.counted(

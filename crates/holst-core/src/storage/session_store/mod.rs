@@ -113,10 +113,8 @@ impl SessionLocation {
         resave_in(starting_at(&borrowed(&self.stores()), from), session)
     }
 
-    /// Remove the login from every store, or only from those still holding
-    /// `ended` when given (a login saved meanwhile stays); what each one
-    /// found. A lock that cannot be created does not stop the removal; one
-    /// that stays busy does.
+    /// Removes the login from stores still holding `ended`, or all of them.
+    /// A busy lock stops it; a login saved meanwhile stays.
     #[must_use]
     pub fn clear(
         &self,
@@ -388,8 +386,7 @@ fn remove_others(stores: &[&dyn SessionStore], at: usize) -> Option<Error> {
         })
 }
 
-/// Remove the login from every store, or from those still holding `ended`
-/// when given; what each one found.
+/// Removes the login from every store, or from those holding `ended`.
 #[must_use]
 pub fn clear_from(
     stores: &[&dyn SessionStore],

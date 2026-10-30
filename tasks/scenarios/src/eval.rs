@@ -1027,13 +1027,13 @@ fn task_15(ctx: &Ctx) -> Task {
             list(),
             write(json!({
                 "action": "edit", "board": ROADMAP, "object": [ctx.id(SHIP)],
-                "reaction": ["+1"]
+                "reaction": ["👍"]
             })),
         ],
         |seen| {
             let ship = seen.fixture(SHIP)?;
             ensure(
-                at(ship, "/listed/reactions/+1") == Some(&json!(1)),
+                at(ship, "/listed/reactions/👍") == Some(&json!(1)),
                 format!("no reaction on Ship: {ship}"),
             )?;
             seen.rest_unchanged(on_roadmap_touching(&[SHIP]))

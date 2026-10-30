@@ -1,6 +1,7 @@
 //! A running fake Holst and the surfaces that reach it.
 
 use std::{
+    fs::{self, File},
     path::{Path, PathBuf},
     process::Command,
     sync::{Arc, OnceLock},
@@ -248,12 +249,31 @@ fn binary_path(name: &str) -> Result<PathBuf, ScenarioError> {
             _ => folder.to_path_buf(),
         }
     });
-    BUILT.get_or_init(|| build(&profile)).clone()?;
+    BUILT.get_or_init(|| built_once(&profile)).clone()?;
     let path = profile.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
     if path.is_file() {
         Ok(path)
     } else {
         Err(ScenarioError::MissingBinary { path })
+    }
+}
+
+/// Builds once per nextest run: even a fresh build relinks the binaries.
+fn built_once(profile: &Path) -> Result<(), BuildError> {
+    match std::env::var("NEXTEST_RUN_ID") {
+        Ok(run) => {
+            let failed = |error: std::io::Error| BuildError::Spawn(Arc::new(error));
+            let lock =
+                File::create(profile.join("scenarios-build.lock")).map_err(failed)?;
+            lock.lock().map_err(failed)?;
+            let stamp = profile.join("scenarios-build.run");
+            if fs::read_to_string(&stamp).is_ok_and(|done| done == run) {
+                Ok(())
+            } else {
+                build(profile).and_then(|()| fs::write(&stamp, &run).map_err(failed))
+            }
+        }
+        Err(_) => build(profile),
     }
 }
 

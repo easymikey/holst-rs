@@ -39,8 +39,7 @@ pub(crate) fn refused(refusal: Option<&Unconfirmed>) -> Result<()> {
     refusal.map_or(Ok(()), |refusal| Err(Error::Unconfirmed(refusal.clone())))
 }
 
-/// Parses, makes one change and prints it. The plan of a change held for its
-/// confirmation is shown first; the refusal is the exit code.
+/// Makes one change and prints it; a held plan first, a refusal as exit code.
 pub(crate) async fn change<A: CommandArgs, R: Outcome>(
     arguments: Map<String, Value>,
     run: &RunSettings,
@@ -72,8 +71,7 @@ pub(crate) async fn run(
     rounds(name, arguments, &run, format, ROUNDS).await
 }
 
-/// Runs the command; a held one that a person may answer is asked, and
-/// repeated with the answer.
+/// Runs the command; a held one a person may answer is asked, then repeated.
 async fn rounds(
     name: CommandName,
     arguments: Map<String, Value>,

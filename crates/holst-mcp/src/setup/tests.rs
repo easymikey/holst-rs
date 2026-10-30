@@ -99,8 +99,7 @@ impl Rig {
         Ok(self.backend.load()?.map(|(session, _)| session))
     }
 
-    /// Runs the given steps on the script, with no client program on the
-    /// machine.
+    /// Runs the steps on the script with no client program on the machine.
     async fn steps_on(&self, script: Script, steps: Steps) -> Outcome {
         self.steps_for(script, steps, &Clients::Ask).await
     }

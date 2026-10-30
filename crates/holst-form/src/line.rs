@@ -140,8 +140,7 @@ pub enum Decoder {
 }
 
 impl Decoder {
-    /// The next state and the key to press; a key inside a sequence is
-    /// `Ignored`.
+    /// The next state and key to press; a key in a sequence is `Ignored`.
     #[must_use]
     pub fn feed(self, keystroke: Keystroke) -> (Self, Keystroke) {
         match (self, keystroke) {

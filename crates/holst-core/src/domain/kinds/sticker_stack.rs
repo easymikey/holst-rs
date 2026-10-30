@@ -27,8 +27,7 @@ pub const WIDTHS: [f64; 2] = [192.0, 384.0];
 /// The height of a stack at either width.
 pub const HEIGHT_OF: f64 = 192.0;
 
-/// A new stack of `size` titled `title`, as the web client places it, filled
-/// with `color`; the corner is the caller's to set.
+/// Stack of `size` titled `title`, `color` filled; the caller sets the corner.
 #[must_use]
 pub fn made(title: Option<&str>, size: Size, color: Option<&Color>) -> Made {
     Made {

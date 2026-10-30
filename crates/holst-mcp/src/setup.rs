@@ -257,8 +257,7 @@ fn parse_secret(text: &str) -> Result<SecretString, Reason> {
         .ok_or(EMPTY)
 }
 
-/// Asks for the code or password until Holst takes it, `ATTEMPTS` times at
-/// most.
+/// Asks for a code or password until Holst takes it, `ATTEMPTS` times at most.
 async fn ask_until_accepted<T: Terminal>(
     awaiting: &Awaiting,
     form: &Form<T>,

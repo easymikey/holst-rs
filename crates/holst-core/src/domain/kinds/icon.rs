@@ -72,8 +72,7 @@ pub fn is_icon(object: &Object) -> bool {
     object.kind.as_str() == STORED
 }
 
-/// Whether `name` is shaped like the manifest's names: lower-case letters and
-/// digits joined by dashes.
+/// Whether `name` is lower-case letters and digits joined by dashes.
 #[must_use]
 pub fn is_name(name: &str) -> bool {
     !name.is_empty()
@@ -143,8 +142,7 @@ impl Listed {
 }
 
 impl Manifest {
-    /// The manifest from its bytes, gzipped or plain; none when they are not a
-    /// non-empty list of entries.
+    /// Manifest from gzipped or plain bytes; none unless a non-empty list.
     #[must_use]
     pub fn parse(bytes: &[u8]) -> Option<Self> {
         let json = uncompressed(bytes).ok()?;
@@ -160,8 +158,7 @@ impl Manifest {
         self.0.iter().any(|listed| listed.name == name)
     }
 
-    /// Up to five names near `name`, nearest first: by the edit distance
-    /// between it and a name, a part of it or a search word.
+    /// Up to five nearest names by edit distance to a name, part or word.
     #[must_use]
     pub fn close(&self, name: &str) -> Vec<String> {
         let allowed = (name.chars().count() / 3).max(1);
@@ -222,8 +219,7 @@ pub fn named(made: &Made) -> Option<&str> {
         .flatten()
 }
 
-/// A new icon `side` wide in `weight`, filled with `color`, as the web client
-/// places one; the corner is the caller's to set.
+/// Icon `side` wide in `weight`, `color` filled; corner set by caller.
 #[must_use]
 pub fn made(name: &str, weight: Weight, color: Option<&Color>, side: f64) -> Made {
     Made {

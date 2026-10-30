@@ -99,8 +99,7 @@ pub struct ListedObject {
 }
 
 impl ListedObject {
-    /// The listing line, without the link: `name` writes an id, the text is
-    /// cut after `max_chars` characters.
+    /// Listing line without link; `name` writes an id; cut after `max_chars`.
     #[must_use]
     pub fn line(&self, name: impl Fn(&str) -> String, max_chars: usize) -> String {
         let object = &self.object;
@@ -182,8 +181,7 @@ impl ListedObject {
     }
 }
 
-/// The detail with the word that holds an object id (`on`) written as `name`
-/// writes an object.
+/// Detail with the word holding object id `on`, written as `name`.
 fn named(
     detail: &[(&'static str, serde_json::Value)],
     name: impl Fn(&str) -> String,
@@ -200,8 +198,7 @@ fn named(
         .collect()
 }
 
-/// A word of the kind's detail: `rows=2`; a text is on one line like the
-/// listed text, and quoted with a space; a list is its length.
+/// A detail word, `rows=2`: text on one line, quoted; a list is its length.
 fn detail_word((word, value): &(&'static str, serde_json::Value)) -> String {
     let shown = match value {
         serde_json::Value::String(text) => one_line(text).into_owned(),
@@ -472,8 +469,7 @@ mod tests {
         ]
     }
 
-    /// A board of `objects`, one tag, `t1`, named "Urgent", and two likes and
-    /// a fire on `s2`.
+    /// Board of `objects`: tag `t1` named "Urgent", likes and a fire on `s2`.
     fn board() -> Scripted {
         let doc = Doc::with_client_id(4);
         let (store, tags, reactions) = (

@@ -201,9 +201,7 @@ impl From<&ApiRequest> for PlannedRequest {
     }
 }
 
-/// A change under the confirmation rule: `Err` is the report of one that stays
-/// (held for its confirmation, or a dry run; a dry run needs none), with
-/// `plan`; `Ok` means carry it now.
+/// `Err` holds a staying change (held or dry run) with `plan`; `Ok` carries.
 pub(in crate::command) fn gate<P: 'static>(
     unconfirmed: Option<Unconfirmed>,
     (mode, confirm): (WriteMode, Confirmation),

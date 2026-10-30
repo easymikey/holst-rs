@@ -21,9 +21,7 @@ use crate::{
 
 pub const LOAD_CONCURRENCY: usize = 6;
 
-/// The index of one board through the cache of `loading`: a cached index the
-/// server announces nothing beyond, else read over its socket; nothing is
-/// written to the board.
+/// One board's index: cache if nothing newer is announced, else its socket.
 ///
 /// # Errors
 /// As [`crate::remote::socket::load::load`].

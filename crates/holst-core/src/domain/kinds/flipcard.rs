@@ -23,8 +23,7 @@ const BACK: &str = "back";
 pub(crate) const WIDE: f64 = 220.0;
 pub(crate) const HIGH: f64 = 320.0;
 
-/// A new card showing its front, as the web client places it, filled with
-/// `color`; the corner is the caller's to set.
+/// A card showing its front as the web places it; corner set by caller.
 #[must_use]
 pub fn made(front: &str, back: &str, color: Option<&Color>) -> Made {
     Made {

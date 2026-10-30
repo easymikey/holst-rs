@@ -124,8 +124,7 @@ pub(super) fn built(document: &Doc, change: &BoardChange) -> Result<ChangeUpdate
     built_with_ids(document, &SequentialIds::new("g"), change)
 }
 
-/// Builds `change` as `ME` at 2 ms drawing from `ids`, for tests that read the
-/// ids back.
+/// Builds `change` as `ME` at 2 ms from `ids`, for tests reading ids back.
 pub(super) fn built_with_ids(
     document: &Doc,
     ids: &SequentialIds,

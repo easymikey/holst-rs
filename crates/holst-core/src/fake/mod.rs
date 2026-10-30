@@ -75,11 +75,8 @@ type Shared = Arc<Mutex<State>>;
 const PROBE: Duration = Duration::from_millis(250);
 const PROBES: usize = 120;
 
-/// Returns once a probe connects to the listener, trying anew when one hangs.
-///
-/// A loaded host sometimes holds back every new loopback connect for several
-/// seconds and the client's connect then runs into its own timeout; the
-/// probes take that wait, so a client of the fake connects at once.
+/// Returns once a probe connects, retrying hung ones; a loaded host stalls
+/// loopback connects for seconds, so the probes absorb that wait.
 async fn reachable(address: SocketAddr) {
     let mut left = PROBES;
     // imperative: each probe waits for the socket
@@ -291,8 +288,8 @@ impl Fake {
         self.locked().files.uploads()
     }
 
-    /// Returns the page runs the page service was asked to convert, in order:
-    /// the stored file name, the first page and the last.
+    /// Returns the page runs converted, in order: file name, first and last
+    /// page.
     #[must_use]
     pub fn page_runs(&self) -> Vec<(String, u32, u32)> {
         self.locked().files.page_runs()

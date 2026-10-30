@@ -39,30 +39,22 @@ pub trait Terminal {
     fn width(&self) -> Option<usize>;
 
     /// Write text as is (it may hold escapes) and flush.
-    ///
     /// # Errors
-    ///
     /// The terminal could not be read or written.
     fn write(&self, text: &str) -> io::Result<()>;
 
     /// The next keystroke ([`TerminalKind::Live`] only).
-    ///
     /// # Errors
-    ///
     /// The terminal could not be read or written.
     fn keystroke(&self) -> io::Result<Keystroke>;
 
     /// The next line of stdin without its line ending; `None` at the end.
-    ///
     /// # Errors
-    ///
     /// The terminal could not be read or written.
     fn line(&self) -> io::Result<Option<String>>;
 
     /// Run `work` with the echo off; it comes back however `work` ends.
-    ///
     /// # Errors
-    ///
     /// The terminal could not be read or written.
     fn hidden<R>(&self, work: impl FnOnce(&Self) -> R) -> io::Result<R>;
 

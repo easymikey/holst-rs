@@ -486,9 +486,11 @@ fn boxed(
 }
 
 fn kind_card(object: &Object, local: Rectangle) -> String {
+    let kind_name = (object.kind != ObjectKind::Task).then(|| object.kind.as_str());
     let label = Some(object.text.as_str())
         .filter(|text| !text.is_empty())
-        .unwrap_or_else(|| object.kind.as_str());
+        .or(kind_name)
+        .unwrap_or_default();
     let shown = Object {
         text: label.to_owned(),
         ..object.clone()
@@ -520,8 +522,7 @@ fn table_outline(fields: &Value, local: Rectangle) -> String {
         .collect()
 }
 
-/// The columns, swimlanes and their titles of a kanban; its cards are objects
-/// of their own, drawn over it.
+/// Columns, swimlanes and their titles of a kanban; cards are objects over it.
 fn kanban(layout: &Kanban, local: Rectangle) -> String {
     let line = |x1: f64, y1: f64, x2: f64, y2: f64| {
         format!(
@@ -914,8 +915,8 @@ mod tests {
         draw_rectangle(&scene, area, PixelsPerUnit::ONE, &images).svg
     }
 
-    /// Table `619d8599` of the live board as the web wrote it: rows and columns
-    /// 1..2 x 1..3, a 2x2 block merged from 1,1, and cells at 1,1, 2,1 and 2,3.
+    /// Table `619d8599` as the web wrote it: a 2x3 grid, a 2x2 block merged
+    /// from 1,1, and cells at 1,1, 2,1 and 2,3.
     fn merged_table(block: &Value) -> Vec<Value> {
         let cell = |id: &str, row: u32, column: u32, text: &str| {
             json!({"id": id, "type": "table-cell", "parentId": "t", "rowId": row,
@@ -949,8 +950,7 @@ mod tests {
         assert_eq!(drawn(&merged_table(&text)), drawn(&merged_table(&numbers)));
     }
 
-    /// Kanban `8eb2447d` of the live board: three columns, one swimlane, a
-    /// card.
+    /// Live kanban `8eb2447d`: three columns, one swimlane, one card.
     fn kanban_with_card() -> Vec<Value> {
         vec![
             json!({"id": "k", "type": "kanban", "position": {"x": 459, "y": 916},
@@ -967,6 +967,13 @@ mod tests {
     #[test]
     fn a_kanban_is_drawn_with_its_columns_and_its_cards_in_their_cells() {
         insta::assert_snapshot!(drawn(&kanban_with_card()));
+    }
+
+    #[test]
+    fn a_task_card_without_a_title_draws_no_text() {
+        let card = json!({"id": "card", "type": "task-card", "position": {"x": 0, "y": 0},
+            "width": 338, "height": 120});
+        assert!(!drawn(&[card]).contains("<text"));
     }
 
     #[test]

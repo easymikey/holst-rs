@@ -176,6 +176,29 @@ async fn a_mind_map_root_and_its_child_are_added_and_listed(
 
 #[rstest]
 #[tokio::test]
+async fn a_whole_mind_map_is_added_in_one_write(
+    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+) -> Result<(), ScenarioError> {
+    let holst = given()
+        .saved_login()
+        .workspace("Team")
+        .board("Plans", "Team", None)
+        .start()
+        .await?;
+    let call = ObjectCall::add("mind-map").items(vec![
+        json!({ "text": "Plan" }),
+        json!({ "parent": "#1", "text": "Build" }),
+        json!({ "parent": "#1", "text": "Test" }),
+        json!({ "parent": "#2", "text": "Ship" }),
+    ]);
+    then(&holst.on(surface).object("Plans", call).await?).succeeded();
+    let observation = holst.on(surface).objects("Plans").await?;
+    then(&observation).lists_inside_a_parent(&["Build", "Test", "Ship"]);
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
 async fn a_document_is_added_with_its_color_token_and_listed(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {

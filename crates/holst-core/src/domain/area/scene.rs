@@ -69,8 +69,7 @@ impl<'a> Scene<'a> {
             .or_else(|| self.own_rectangle(object))
     }
 
-    /// The layout of a kanban: its columns, swimlanes and the place of each
-    /// card.
+    /// A kanban's layout: its columns, swimlanes and each card's place.
     pub(crate) fn kanban(&self, object: &Object) -> Option<Kanban> {
         Some(object)
             .filter(|object| is_kanban(object))
@@ -84,8 +83,7 @@ impl<'a> Scene<'a> {
         Rectangle::new(kanban.x + at.x, kanban.y + at.y, at.width, at.height).sane()
     }
 
-    /// Whether a merged block led by another cell holds the table cell, which
-    /// is then not drawn.
+    /// Whether another cell's merge covers this cell, so it is not drawn.
     pub(crate) fn is_merged_away(&self, cell: &Object) -> bool {
         self.get(cell.parent.as_deref().unwrap_or_default())
             .map(|table| Grid::of(&table.fields))
@@ -169,8 +167,7 @@ impl<'a> Scene<'a> {
         Some(StoredSize::new(local.width, local.height))
     }
 
-    /// The place of the cell inside its table; a merged block's leader takes
-    /// the whole block.
+    /// A cell's place in its table; a block's leader takes the whole block.
     fn cell_box(cell: &Object, table: &Object) -> Option<Rectangle> {
         let grid = Grid::of(&table.fields);
         let (row, column) = grid.place(cell)?;
@@ -307,8 +304,7 @@ impl<'a> Scene<'a> {
         }
     }
 
-    /// What an object covers as the web client counts it: its own box turned
-    /// about its corner, an arrow's route, the box of a group's members.
+    /// Covered area per the web client: rotated box, arrow route, group's box.
     // BUNDLE: main.a33651a4.js 168787-168789 (`getRectBounds`).
     pub(in crate::domain) fn bounds(
         &self,
@@ -433,8 +429,7 @@ impl<'a> Scene<'a> {
         chosen.or_else(|| self.rectangle_link_target(rectangle))
     }
 
-    /// `shown` and everything standing in one of them, nested parents
-    /// included, in board order.
+    /// `shown` and objects inside them, with nested parents, in board order.
     #[must_use]
     pub fn with_descendants(&self, shown: &[&'a Object]) -> Vec<&'a Object> {
         let held: HashSet<&str> =
@@ -570,8 +565,7 @@ pub(crate) fn table_size(fields: &Value) -> StoredSize {
     Grid::of(fields).size()
 }
 
-/// A row or column number as text, whether the board stores it as text or as
-/// a number.
+/// A row or column number, as the board stores it: text or a number.
 pub(crate) fn track_word(value: Option<&Value>) -> Option<String> {
     match value? {
         Value::String(text) => Some(text.clone()),

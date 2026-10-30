@@ -19,8 +19,7 @@ pub trait Prompt: Sized {
     #[must_use]
     fn press(self, key: Keystroke) -> Step<Self, Self::Answer>;
 
-    /// The rows under the label while the prompt is active; no escapes for
-    /// moves.
+    /// Rows under the label while the prompt is active; no escapes for moves.
     #[must_use]
     fn view(&self, coloring: Coloring, width: Option<usize>) -> Vec<String>;
 
@@ -28,8 +27,7 @@ pub trait Prompt: Sized {
     #[must_use]
     fn summary(&self) -> String;
 
-    /// The rows a terminal without keys shows under the label; none for a
-    /// yes or no.
+    /// Rows a keyless terminal shows under the label; none for a yes or no.
     #[must_use]
     fn listing(&self) -> Vec<String>;
 

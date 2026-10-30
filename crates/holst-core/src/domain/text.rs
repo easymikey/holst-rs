@@ -22,7 +22,7 @@ where
     format!("{count} {noun}{s}")
 }
 
-/// `text` cut after `max_chars` characters, with `…` when something was cut.
+/// `text` cut after `max_chars` characters, `…` added when cut.
 ///
 /// ```
 /// use holst_core::domain::text::shortened;
@@ -229,7 +229,7 @@ pub fn is_blank(value: &Value) -> bool {
     }
 }
 
-/// A file size as a person reads it: bytes, then KiB, MiB, GiB with a tenth.
+/// File size as a person reads it: bytes, then KiB, MiB, GiB to a tenth.
 ///
 /// ```
 /// use holst_core::domain::text::size_text;

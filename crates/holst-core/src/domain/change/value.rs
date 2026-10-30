@@ -157,8 +157,7 @@ pub struct StoreEntry {
 }
 
 impl NewObject {
-    /// The same object moved by `dx`, `dy`; an arrow has no corner to move, a
-    /// stroke moves every point.
+    /// Moves by `dx`, `dy`; an arrow has no corner, a stroke moves every point.
     ///
     /// # Errors
     /// [`crate::error::input::InputError::NotFinite`] when the corner

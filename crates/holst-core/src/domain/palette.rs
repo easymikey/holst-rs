@@ -142,10 +142,31 @@ impl FromStr for Color {
 
     fn from_str(raw: &str) -> Result<Self> {
         let token = raw.trim().to_ascii_lowercase();
-        hex(&token).map(|_| Self(token)).ok_or_else(|| {
-            Error::BoardChange(BoardChangeError::NotColor { raw: raw.into() })
-        })
+        hex(&token).ok_or_else(|| {
+            Error::BoardChange(BoardChangeError::NotColor {
+                raw: raw.into(),
+                expected: expected(&token),
+            })
+        })?;
+        Ok(Self(token))
     }
+}
+
+/// What a refused token should have been: the tokens of its family when its
+/// name is a color's.
+fn expected(token: &str) -> String {
+    let name = token.trim_end_matches(|c: char| c.is_ascii_digit());
+    SHADES
+        .binary_search_by(|(known, _)| known.cmp(&name))
+        .ok()
+        .map_or_else(
+            || "a name and a shade 1-12, e.g. yellow4".to_owned(),
+            |_| {
+                let family: Vec<String> =
+                    (1..=12).map(|shade| format!("{name}{shade}")).collect();
+                format!("one of {}", family.join(", "))
+            },
+        )
 }
 
 impl fmt::Display for Color {
@@ -198,6 +219,20 @@ mod tests {
         ];
         assert!(unknown.iter().all(|token| hex(token).is_none()));
         assert!("Gray12".parse::<Color>().is_ok());
+    }
+
+    #[test]
+    fn a_family_name_without_a_shade_lists_its_tokens() {
+        let refused = ["red", "Red13", "black4"]
+            .map(|raw| raw.parse::<Color>().err().map(|err| err.to_string()));
+        assert_eq!(
+            refused,
+            [
+                Some("\"red\" is not a palette color: expected one of red1, red2, red3, red4, red5, red6, red7, red8, red9, red10, red11, red12".to_owned()),
+                Some("\"Red13\" is not a palette color: expected one of red1, red2, red3, red4, red5, red6, red7, red8, red9, red10, red11, red12".to_owned()),
+                Some("\"black4\" is not a palette color: expected a name and a shade 1-12, e.g. yellow4".to_owned()),
+            ]
+        );
     }
 
     #[test]

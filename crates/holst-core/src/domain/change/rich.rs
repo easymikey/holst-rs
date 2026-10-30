@@ -123,8 +123,7 @@ fn marks_of(run: &Run, linked: bool) -> Attrs {
         .collect()
 }
 
-/// The content of `from` appended under `to`, marks and elements as they are,
-/// each element with a fresh `key`.
+/// Appends `from` under `to` as is, each element with a fresh `key`.
 pub(super) fn copy_into(
     transaction: &mut TransactionMut<'_>,
     (from, to): (&XmlTextRef, &XmlTextRef),

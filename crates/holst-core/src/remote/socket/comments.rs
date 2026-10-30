@@ -34,7 +34,7 @@ pub struct CommentRoom {
 /// Load the threads of `board` over the real socket and keep it open.
 ///
 /// # Errors
-/// As [`open_with`]: the whole room is read, every chunk of the initial state
+/// As `open_with`: the whole room is read, every chunk of the initial state
 /// applied.
 pub async fn open(client: &Client, board: &str) -> Result<CommentRoom> {
     open_with(client, &TungsteniteConnector, &room(board))

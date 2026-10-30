@@ -22,8 +22,7 @@ pub(super) fn check(kind: &ObjectKind, field: &'static str) -> Result<()> {
     only(kind, &ObjectKind::Flipcard, field)
 }
 
-/// The other side up, the width and height swapped, the centre kept (the web
-/// client turns the card about its centre, `R2#68`).
+/// Other side up, width and height swapped, centre kept (`R2#68`).
 pub(super) fn flip(fields: &Value) -> Written {
     let number = |name: &str, fallback: f64| {
         fields.get(name).and_then(Value::as_f64).unwrap_or(fallback)

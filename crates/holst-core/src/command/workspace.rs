@@ -287,8 +287,7 @@ pub struct WorkspaceChange {
 }
 
 impl WorkspaceChange {
-    /// The change in one lower-case phrase; `name` writes the id of a sent
-    /// change.
+    /// The change as a lower-case phrase; `name` writes a sent change's id.
     #[must_use]
     pub fn phrase(&self, name: impl Fn(&str) -> String) -> String {
         let id = self.id.as_deref().map(name).unwrap_or_default();

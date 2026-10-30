@@ -49,10 +49,7 @@ const ROW_PAGES: u32 = 8;
 /// BUNDLE: the gap is 64 at the file's scale (209881).
 const GAP: f64 = 64.0;
 
-/// Puts one file object per page of the file the call names on the board,
-/// below it, after the page service has converted the pages. A page file
-/// nobody has counted is counted first, by the page service, even in a dry run
-/// (a read).
+/// One file object per page, below the file; uncounted pages counted first.
 ///
 /// # Errors
 /// More than one object or any other field beside `--extract`, an object that
@@ -162,8 +159,7 @@ fn one_object(args: &EditArgs) -> Result<String> {
     }
 }
 
-/// The file `reference` names, its stored name and the page count it holds,
-/// when it holds one; a page file nobody has counted has none.
+/// File `reference` with its stored name and page count, if it has one.
 fn source<'a>(
     scene: &Scene<'a>,
     reference: &str,
@@ -202,8 +198,7 @@ fn source<'a>(
     }
 }
 
-/// The pages the page service counts in the file `name`, as the web asks when
-/// a file has no `pagesInfo` (`preparePagePreview`, main.a33651a4.js 209861).
+/// Counts pages of `name` as the web does (main.a33651a4.js 209861).
 ///
 /// # Errors
 /// The request, or a file the service finds no pages in.
@@ -228,9 +223,8 @@ fn unreadable() -> Error {
     )
 }
 
-/// The pages `list` names, as the menu reads them: `all`, or items split by
-/// commas, a page or a range, each page held to `1..=count`, a reversed range
-/// turned, the order given kept. (main.a33651a4.js 116672-116690, 116826)
+/// Pages `list` names: `all`, or commas of pages and ranges, each held to
+/// `1..=count`; reversed ranges turned, order kept (main.a33651a4.js 116826).
 ///
 /// # Errors
 /// An item that is not a page or a range, no page, more than 50 pages.
@@ -284,11 +278,8 @@ fn runs_of(pages: &[u32]) -> Vec<(u32, u32)> {
         .collect()
 }
 
-/// A copy of `file` for each page, 8 to a row, the first row below the file.
-/// `counted` is the page info the service gave a file that held none: the
-/// copies hold it, as the web's state of the file did.
-/// A copy stands for its source under the page's name: `Pasted` gives each its
-/// own id.
+/// A copy of `file` per page, 8 to a row below; `counted` page info is copied.
+/// A copy stands for its source under the page's name; `Pasted` gives own ids.
 fn copies(
     scene: &Scene<'_>,
     file: &Object,

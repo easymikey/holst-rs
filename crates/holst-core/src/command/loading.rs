@@ -46,8 +46,7 @@ pub(in crate::command) fn cache_use(
     }
 }
 
-/// The cache of the logged-in account; offline, the account must be known
-/// without asking.
+/// The logged-in account's cache; offline, it must already be known.
 ///
 /// # Errors
 /// Offline, an account that is not known.

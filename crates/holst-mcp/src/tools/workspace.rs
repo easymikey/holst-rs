@@ -80,8 +80,8 @@ impl McpServer {
         }
     }
 
-    /// `@N` in the workspace, board, folder, template, category, user and
-    /// cursor the model gives,
+    /// `@N` in the workspace, board, folder, template, category, user, object
+    /// and cursor the model gives,
     /// as the other tools do.
     pub(super) fn expanded_references(
         &self,
@@ -92,7 +92,7 @@ impl McpServer {
             .map(|(key, value)| match (key.as_str(), value) {
                 (
                     "workspace" | "board" | "folder" | "into" | "template" | "user"
-                    | "cursor" | "category",
+                    | "cursor" | "category" | "object",
                     Value::String(text),
                 ) => {
                     let reference = self.expand(text.trim())?;

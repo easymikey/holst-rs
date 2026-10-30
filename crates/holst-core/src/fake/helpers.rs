@@ -15,9 +15,7 @@ pub fn candidates(names: &[&str]) -> Candidates {
 }
 
 /// Fails the test, naming the `rule`, when `offenders` is not empty.
-///
-/// # Panics
-/// When `offenders` is not empty.
+/// Panics in the same case.
 pub fn assert_none(rule: &str, offenders: &[String]) {
     assert!(
         offenders.is_empty(),

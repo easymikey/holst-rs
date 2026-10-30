@@ -36,8 +36,7 @@ use crate::{
     protocol::document::{DOCUMENT_ID, ID, PARENT_ID, POSITION},
 };
 
-/// What `made` stores in its own map beside the header, the ids of its texts
-/// and its parent: `position` and the fields it names.
+/// Fields `made` keeps beside its header: `position` and the named ones.
 pub(super) fn own_fields(made: &Made) -> Vec<(String, Value)> {
     std::iter::once((POSITION.to_owned(), json!(made.at)))
         .chain(

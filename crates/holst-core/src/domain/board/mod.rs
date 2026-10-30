@@ -157,9 +157,7 @@ impl ObjectKind {
         }
     }
 
-    /// The word a person reads and types (`text`, `document`, `flipcard`,
-    /// `wheel`, `task`, `mind-map`, `icon`); a kind without a word keeps its
-    /// stored name.
+    /// The typed word (`text`, `task`, `mind-map`); else the stored name.
     ///
     /// ```
     /// use holst_core::domain::board::ObjectKind;
@@ -476,8 +474,7 @@ pub(crate) const KANBAN_COLUMNS: &str = "snapColumns";
 /// As [`KANBAN_COLUMNS`], for the swimlanes.
 pub(crate) const KANBAN_SWIMLANES: &str = "snapSwimlanes";
 
-/// The kanban with its columns and swimlanes beside its fields; any other
-/// object as it is.
+/// The kanban with its columns and swimlanes; any other object as it is.
 fn with_kanban_cells(document: &Doc, mut object: Object) -> Object {
     let listed = |cells: Vec<(String, String)>| {
         Value::Array(
@@ -507,8 +504,7 @@ fn with_kanban_cells(document: &Doc, mut object: Object) -> Object {
     object
 }
 
-/// The root that holds a document's objects: `objects_v3` if the document has
-/// it, else `objects`. Looks on a read transaction, so it creates no root.
+/// `objects_v3` if the document has it, else `objects`; creates no root.
 pub(crate) fn objects_root(document: &Doc) -> &'static str {
     document
         .transact()
@@ -678,8 +674,7 @@ fn arrow_text(texts: &Value) -> String {
     labels(texts, slate_text).join("\n")
 }
 
-/// The non-empty labels of an arrow, each rendered from its editor value or
-/// else its plain text.
+/// Non-empty arrow labels, each from its editor value or else plain text.
 fn labels(texts: &Value, render: fn(&Value) -> String) -> Vec<String> {
     texts
         .as_array()

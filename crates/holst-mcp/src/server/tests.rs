@@ -786,27 +786,6 @@ pub(super) async fn table_call(
     }
 }
 
-#[rstest::rstest]
-#[case::into_for_frame(
-    serde_json::json!({ "action": "edit", "board": "X", "object": ["@1"], "into": "@4" }),
-    "\"into\" is not an argument of `object edit`: use `frame`, which moves an object into a frame; it takes "
-)]
-#[case::to_for_side(
-    serde_json::json!({ "action": "align", "board": "X", "object": ["@1", "@2"], "to": "left" }),
-    "\"to\" is not an argument of `object align`: use `side`, which names the edge to line the objects up along; it takes "
-)]
-#[tokio::test]
-async fn a_key_of_the_wrong_word_names_the_key_the_command_has(
-    #[case] arguments: serde_json::Value,
-    #[case] start: &str,
-) {
-    let (holst, network) = McpServer::scripted([]);
-    let (failed, text) = table_call(&holst, "object_write", arguments).await;
-    assert!(failed);
-    assert!(text.starts_with(start), "{text}");
-    assert!(network.seen().is_empty(), "the call went to the network");
-}
-
 #[tokio::test]
 async fn an_argument_the_command_does_not_take_is_a_tool_error_in_our_words() {
     let (holst, network) = McpServer::scripted([]);

@@ -42,8 +42,8 @@ async fn respond(mut stream: TcpStream, state: Shared) {
     }
 }
 
-/// Answers the requests of one connection until the client hangs up, so a
-/// client that pools connections opens few of them.
+/// Answers requests on one connection until hang-up, so pooling clients open
+/// few.
 async fn serve(stream: &mut TcpStream, state: &Shared) -> io::Result<()> {
     let mut open = true;
     // imperative: a keep-alive connection ends with an error at the hang-up

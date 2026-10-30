@@ -7,7 +7,7 @@ use super::Detail;
 use crate::{
     domain::{
         area::scene::{Scene, text_scale},
-        board::{Object, ObjectKind},
+        board::{Object, ObjectKind, object_of},
         change::value::Made,
         geometry::{Point, Rectangle, Size},
         palette::Color,
@@ -63,10 +63,9 @@ pub fn is_node(object: &Object) -> bool {
     object.kind.as_str() == NODE
 }
 
-/// A new node with `text`, as the web client makes one. A root has the corner
-/// of the caller's to set; a child is placed beside its parent after the
-/// children it has and takes the outline and color of the parent, `color`
-/// aside.
+/// A node with `text` as the web makes one; a root's corner is the caller's.
+/// A child sits beside its parent after its children, with the parent's
+/// outline and color, but its own `color`.
 ///
 /// # Errors
 /// [`crate::error::input::InputError::NotFinite`] when the corner overflows.
@@ -107,8 +106,26 @@ pub fn made(
     })
 }
 
-/// Where a child goes: `MAJOR_GAP` beyond the edge of its parent, and past the
-/// children the parent has on that side.
+/// A new node as `#N` (`slot` from 0), for children of the same write.
+#[must_use]
+pub fn stood(made: &Made, slot: usize) -> Option<Object> {
+    let mut stored = json!({
+        "id": format!("#{}", slot + 1),
+        "type": NODE,
+        "position": made.at,
+        "parentId": made.parent,
+    });
+    stored.as_object_mut().into_iter().for_each(|map| {
+        map.extend(
+            made.fields
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), value.clone())),
+        );
+    });
+    object_of(stored)
+}
+
+/// A child's corner: `MAJOR_GAP` past the parent and its siblings on that side.
 fn corner(under: &Under<'_>) -> Result<Point> {
     let Under {
         scene,

@@ -56,8 +56,7 @@ fn is_not_found(error: &Error) -> bool {
     )
 }
 
-/// The current user's workspaces: id and name. The kept list is used without a
-/// request; otherwise `current_user` is asked and its workspaces are kept.
+/// Workspaces (id, name): the kept list, else `current_user` asked and kept.
 ///
 /// # Errors
 /// Errors of the `current_user` request.
@@ -65,8 +64,7 @@ pub async fn workspaces(client: &Client) -> Result<Vec<Workspace>> {
     listing(client).await.map(|listing| listing.workspaces)
 }
 
-/// A workspace by id or part of its name; without one — the only workspace. A
-/// reference the kept list does not know is looked for again in a fresh list.
+/// Workspace by id or name part (none: the only one); a miss is re-listed.
 ///
 /// # Errors
 /// As [`workspaces`] and [`crate::domain::lookup::choice::workspace`].
@@ -168,8 +166,7 @@ pub async fn tree(client: &Client, workspace: &str, fresh: Fresh) -> Result<Name
     tree_holding(client, workspace, fresh, |_| true).await
 }
 
-/// As [`tree`]; a kept tree that `hit` says lacks what is wanted is asked once
-/// instead, as a node made elsewhere may be missing from it.
+/// As [`tree`]; a kept tree lacking `hit`'s node is asked again (new nodes).
 ///
 /// # Errors
 /// Errors of the tree request.
@@ -206,8 +203,7 @@ pub async fn trees(
     indexes(client, workspaces, IndexedNodes::Live, fresh).await
 }
 
-/// Indexes of live trees or trashes of workspaces, in parallel, in order. A
-/// trash is never kept, so it is always asked.
+/// Live trees or trashes of workspaces, in order; trashes are never kept.
 pub async fn indexes(
     client: &Client,
     workspaces: Vec<Workspace>,
@@ -257,8 +253,7 @@ async fn read_all(
     read
 }
 
-/// Forgets the kept tree of one workspace, or of every workspace of the
-/// account; the workspace list stays.
+/// Forgets the kept tree of one workspace or all; the workspace list stays.
 pub fn forget_trees(client: &Client, workspace: Option<&str>) {
     match workspace {
         Some(workspace) => client.forget_tree(workspace),
@@ -480,8 +475,7 @@ impl NameSearch<'_> {
         self.in_workspaces(client, vec![target]).await
     }
 
-    /// Over all workspaces; a name the kept list does not give is looked for
-    /// again when a fresh list differs.
+    /// Over all workspaces; a name the kept list lacks is looked for afresh.
     async fn everywhere(&self, client: &Client) -> Result<Resolved> {
         let Listing { workspaces, kept } = listing(client).await?;
         match self.in_workspaces(client, workspaces.clone()).await {
@@ -521,8 +515,7 @@ impl NameSearch<'_> {
         }
     }
 
-    /// The trees of `targets`, those in `asked` from a request. A change takes
-    /// the kept trees as they are; `again` decides which are too old.
+    /// Trees of `targets`; a change takes kept trees, `again` picks stale ones.
     async fn read(
         &self,
         client: &Client,
@@ -560,9 +553,7 @@ impl NameSearch<'_> {
         })
     }
 
-    /// The workspaces whose kept trees are asked again: all of them when the
-    /// name is not found; for a change, the ones holding a match that are too
-    /// old.
+    /// Workspaces to ask again: all if a name is missing, else stale matches.
     fn again(&self, client: &Client, read: &Read) -> Vec<String> {
         let choice = choose(&read.indexes, &read.unread, self.query());
         let now = client.unix_millis();

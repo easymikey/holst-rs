@@ -129,8 +129,7 @@ impl MediaLook {
     }
 }
 
-/// The mask of `cropTransform`; `custom` for a cut that has none, nothing for
-/// the whole picture.
+/// Mask of `cropTransform`: `custom` for a cut without one, none if whole.
 fn crop(fields: &Value) -> Option<&'static str> {
     let stored = fields.get(CROP_TRANSFORM)?.as_array()?;
     let whole = stored

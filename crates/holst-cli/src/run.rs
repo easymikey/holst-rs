@@ -35,8 +35,7 @@ pub(crate) enum Prompting {
 }
 
 impl Prompting {
-    /// `streams` are stdin, stdout and stderr; `disabled` is `HOLST_NO_PROMPT`
-    /// set to a non-empty value.
+    /// Streams: stdin, stdout, stderr; `disabled` if `HOLST_NO_PROMPT` is set.
     #[must_use]
     pub(crate) const fn of(
         streams: [StreamKind; 3],
@@ -95,8 +94,7 @@ impl RunSettings {
         }
     }
 
-    /// The settings of a command of `risk`: a write looks names up in trees
-    /// read within the hour.
+    /// `risk` settings; a write looks names up in trees read within the hour.
     #[must_use]
     pub(crate) fn for_risk(self, risk: CommandRisk) -> Self {
         Self { risk, ..self }

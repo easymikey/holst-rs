@@ -17,6 +17,10 @@ use serde_json::{Map, Value, json};
 use crate::tools::output::Output;
 
 const CONFIRM: &str = "confirm";
+const DRY_RUN: &str = "dry_run";
+
+/// Hidden names: (alias, the key a command takes in its place).
+const ALIASES: [(&str, &str); 2] = [("into", "frame"), ("to", "side")];
 
 /// Why a call to a table tool names no command, in words for the model.
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
@@ -36,6 +40,12 @@ pub(crate) enum CallError {
         tool: String,
         action: String,
         other: String,
+    },
+
+    #[error("`{alias}` is another name for `{key}`: give one of them, not both")]
+    BothNames {
+        alias: &'static str,
+        key: &'static str,
     },
 }
 
@@ -63,7 +73,8 @@ impl TableTool {
             [only] if only.command().verb.is_none() => Ok(*only),
             _ => self.named(arguments),
         }?;
-        drop_idle_confirm(name.command(), arguments);
+        rename_aliases(name.command(), arguments)?;
+        drop_idle_switches(name.command(), arguments);
         Ok(name)
     }
 
@@ -204,18 +215,51 @@ impl TableTool {
     }
 }
 
-/// A change that holds nothing takes `confirm: true` and does what it does
-/// without.
-fn drop_idle_confirm(command: &Command, arguments: &mut Map<String, Value>) {
-    let holds = command
-        .arguments_on(Surface::Mcp)
-        .any(|argument| argument.name == CONFIRM);
-    if command.risk != CommandRisk::Read
-        && !holds
-        && matches!(arguments.get(CONFIRM), Some(Value::Bool(_)))
-    {
-        arguments.remove(CONFIRM);
-    }
+/// An alias stands for its key in a command that takes the key and not the
+/// alias; both in one call are refused.
+fn rename_aliases(
+    command: &Command,
+    arguments: &mut Map<String, Value>,
+) -> Result<(), CallError> {
+    let takes = |name: &str| {
+        command
+            .arguments_on(Surface::Mcp)
+            .any(|each| each.name == name)
+    };
+    ALIASES
+        .iter()
+        .filter(|(alias, key)| !takes(alias) && takes(key))
+        .try_for_each(|&(alias, key)| match arguments.remove(alias) {
+            None | Some(Value::Null) => Ok(()),
+            Some(_) if arguments.contains_key(key) => {
+                Err(CallError::BothNames { alias, key })
+            }
+            Some(value) => {
+                arguments.insert(key.to_owned(), value);
+                Ok(())
+            }
+        })
+}
+
+/// A change that holds nothing takes `confirm: true`, and a command that
+/// sends nothing takes `dry_run`; each does what it does without.
+fn drop_idle_switches(command: &Command, arguments: &mut Map<String, Value>) {
+    let holds = |name: &str| {
+        command
+            .arguments_on(Surface::Mcp)
+            .any(|each| each.name == name)
+    };
+    let idle: Vec<&str> = [
+        (CONFIRM, command.risk != CommandRisk::Read),
+        (DRY_RUN, true),
+    ]
+    .into_iter()
+    .filter(|&(name, applies)| {
+        applies && !holds(name) && matches!(arguments.get(name), Some(Value::Bool(_)))
+    })
+    .map(|(name, _)| name)
+    .collect();
+    arguments.retain(|name, _| !idle.contains(&name.as_str()));
 }
 
 fn required_by_all(commands: &[&Command], argument: &Argument) -> bool {
@@ -429,6 +473,56 @@ mod tests {
                 Some(Ok(CommandName::Object(ObjectVerb::Ls))),
                 json!({ "board": "X" })
             )
+        );
+    }
+
+    #[rstest]
+    #[case::add("add", json!({ "into": "Q3" }), json!({ "frame": "Q3" }))]
+    #[case::edit("edit", json!({ "into": "@4" }), json!({ "frame": "@4" }))]
+    #[case::align("align", json!({ "to": "left" }), json!({ "side": "left" }))]
+    #[case::cp_keeps_its_own("cp", json!({ "into": "B" }), json!({ "into": "B" }))]
+    #[case::a_null_alias("edit", json!({ "into": null, "frame": "Q" }), json!({ "frame": "Q" }))]
+    fn an_alias_stands_for_the_key_the_action_takes(
+        #[case] action: &str,
+        #[case] given: Value,
+        #[case] taken: Value,
+    ) {
+        let mut arguments = given.as_object().cloned().unwrap_or_default();
+        arguments.insert("action".to_owned(), json!(action));
+        let (picked, arguments) = pick_on("object_write", &Value::Object(arguments));
+        assert_eq!(
+            (picked.is_some_and(|picked| picked.is_ok()), arguments),
+            (true, taken)
+        );
+    }
+
+    #[test]
+    fn an_alias_with_its_key_is_refused() {
+        let arguments = json!({ "action": "add", "into": "Q3", "frame": "Q4" });
+        assert_eq!(
+            pick_on("object_write", &arguments).0,
+            Some(Err(CallError::BothNames {
+                alias: "into",
+                key: "frame"
+            }))
+        );
+    }
+
+    #[test]
+    fn dry_run_is_dropped_where_nothing_is_sent() {
+        let arguments = json!({ "action": "get", "dry_run": true, "board": "X" });
+        assert_eq!(
+            pick_on("object_write", &arguments).1,
+            json!({ "board": "X" })
+        );
+    }
+
+    #[test]
+    fn dry_run_stays_where_it_is_held() {
+        let arguments = json!({ "action": "edit", "dry_run": true });
+        assert_eq!(
+            pick_on("object_write", &arguments).1,
+            json!({ "dry_run": true })
         );
     }
 

@@ -212,8 +212,8 @@ pub struct AddFields {
     pub back: Option<String>,
     #[argument(
         value_name = "object",
-        help = "The mind-map node the new node hangs from: id, link, @N or the first 8 characters of its id; a new map without it",
-        tool_doc = "Parent node; a new map without.",
+        help = "The mind-map node the new node hangs from: id, link, @N or the first 8 characters of its id; with --items also #N, an earlier item; a new map without it",
+        tool_doc = "Parent node or #N; a new map without.",
         kinds = [mind_map]
     )]
     pub parent: Option<String>,

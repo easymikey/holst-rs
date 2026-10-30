@@ -101,8 +101,7 @@ pub async fn load(
     Ok((loaded, source))
 }
 
-/// As [`load`], with the `channel/{id}` reply the format check read; none
-/// when no check ran (offline).
+/// As [`load`], with the format check's channel reply; none when offline.
 ///
 /// # Errors
 /// As [`load`].
@@ -141,12 +140,10 @@ async fn format(client: &Client, board: &str) -> Result<BoardFormat> {
     Ok(serde_json::from_value(channel_reply(client, board).await?)?)
 }
 
-/// The root of the document that holds the objects when the board is stored
-/// in a format this program reads and writes; the board server is not asked.
+/// Objects-document root for a format this program reads; no socket call.
 ///
 /// # Errors
-/// The API's refusal of the board, or
-/// [`BoardSocketError::UnsupportedFormat`].
+/// The API's refusal, or [`BoardSocketError::UnsupportedFormat`].
 pub async fn supported(client: &Client, board: &str) -> Result<&'static str> {
     format(client, board).await?.supported()
 }
@@ -514,8 +511,7 @@ pub async fn index(
     Ok((right, index))
 }
 
-/// As [`index`], with the `channel/{id}` reply the load read for the format
-/// check; none when the index came from the cache without a load.
+/// As [`index`], with the format check's channel reply; none if cached.
 ///
 /// # Errors
 /// As [`load`].

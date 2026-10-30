@@ -41,9 +41,8 @@ pub fn is_kanban(object: &Object) -> bool {
     object.kind.as_str() == STORED
 }
 
-/// A new kanban of the column and swimlane titles given, else the defaults,
-/// with the first empty task card in the first cell; each id comes from
-/// `new_id`, the corner is the caller's to set.
+/// Kanban of the given column and swimlane titles, else defaults, with an
+/// empty first card in the first cell; ids from `new_id`, corner set by caller.
 #[must_use]
 pub fn made(
     columns: &[String],

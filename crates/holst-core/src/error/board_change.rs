@@ -286,10 +286,8 @@ pub enum BoardChangeError {
     #[error("\"{raw}\" is not a size: expected WIDTH,HEIGHT, e.g. 192,192")]
     NotSize { raw: String },
 
-    #[error(
-        "\"{raw}\" is not a palette color: expected a name and a shade 1-12, e.g. yellow4"
-    )]
-    NotColor { raw: String },
+    #[error("\"{raw}\" is not a palette color: expected {expected}")]
+    NotColor { raw: String, expected: String },
 
     #[error("\"{raw}\" is not {expected}")]
     NotArrowLook { raw: String, expected: &'static str },
@@ -586,7 +584,13 @@ pub(super) mod tests {
                 None,
             ),
             (BoardChangeError::NotSize { raw: text() }, None),
-            (BoardChangeError::NotColor { raw: text() }, None),
+            (
+                BoardChangeError::NotColor {
+                    raw: text(),
+                    expected: text(),
+                },
+                None,
+            ),
             (
                 BoardChangeError::NotArrowLook {
                     raw: text(),

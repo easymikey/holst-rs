@@ -85,8 +85,7 @@ pub(crate) fn fixture_document(board: &str, objects: &[FixtureObject]) -> Doc {
     document
 }
 
-/// As [`fixture_document`], for a board stored in format version 3: its objects
-/// live under `objects_v3`, which an empty board has as well.
+/// As [`fixture_document`] for v3: objects under `objects_v3`, even if empty.
 pub(crate) fn fixture_document_v3(board: &str, objects: &[FixtureObject]) -> Doc {
     let document = Doc::new();
     document.get_or_insert_map(OBJECTS_V3);

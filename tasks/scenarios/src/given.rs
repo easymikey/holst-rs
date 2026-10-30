@@ -405,8 +405,7 @@ impl Given {
         }
     }
 
-    /// Makes the page service count `count` pages in the file stored as
-    /// `file_name`.
+    /// Makes the page service count `count` pages in `file_name`.
     #[must_use]
     pub fn page_count(self, file_name: &str, count: u32) -> Self {
         Self {

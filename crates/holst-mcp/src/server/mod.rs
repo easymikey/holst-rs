@@ -225,8 +225,7 @@ impl McpServer {
         }
     }
 
-    /// A 401 on the first request applied nothing: if the store holds another
-    /// login by now, the call is run again with it.
+    /// A 401 applied nothing; if the store now holds another login, retry it.
     async fn command_with_new_login(
         &self,
         command: CommandName,

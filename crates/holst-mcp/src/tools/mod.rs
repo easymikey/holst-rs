@@ -54,8 +54,7 @@ impl McpServer {
         }
     }
 
-    /// Parses, runs `make` (a dry run reads only, a send drops what the server
-    /// remembers) and replies `text`, or the refusal that names `confirm`.
+    /// Runs `make` (dry run reads, send writes); replies `text` or the refusal.
     pub(super) async fn change<A: Changes, R: Outcome>(
         &self,
         arguments: Map<String, Value>,

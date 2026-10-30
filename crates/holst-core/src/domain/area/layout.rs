@@ -129,8 +129,7 @@ impl Grid {
         })
     }
 
-    /// The place a cell takes inside the table; a block's leader takes the
-    /// whole block.
+    /// A cell's place in the table; a block's leader takes the whole block.
     pub(crate) fn rectangle(&self, row: usize, column: usize) -> Rectangle {
         let (rows, columns) = self
             .merges
@@ -278,8 +277,7 @@ fn card_height(card: &Object) -> f64 {
     card.height.unwrap_or(CARD_HEIGHT)
 }
 
-/// The height of each swimlane: its tallest cell under the strip with its
-/// title.
+/// A swimlane's height: its tallest cell under the strip with its title.
 fn lane_heights(by_cell: &Cells<'_>, lanes: usize, columns: usize) -> Vec<f64> {
     (0..lanes)
         .map(|lane| {
@@ -331,8 +329,7 @@ fn facing(forward: bool, from: (f64, f64), to: (f64, f64)) -> (f64, f64) {
     }
 }
 
-/// The strip between a mind-map node and the node it hangs from, as a curve
-/// from the nearest side of one to the nearest side of the other.
+/// A mind-map connector: a curve from the nearest side of each node.
 pub(crate) fn connector(from: &Rectangle, to: &Rectangle) -> [(f64, f64); 4] {
     let centre = |r: &Rectangle| (r.x + r.width / 2.0, r.y + r.height / 2.0);
     let ((from_x, from_y), (to_x, to_y)) = (centre(from), centre(to));

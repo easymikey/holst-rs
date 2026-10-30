@@ -27,8 +27,7 @@ const SPIN_TIME: &str = "spinTime";
 const DRAWN: f64 = 240.0;
 const DEFAULT_SCALE: f64 = 0.5;
 
-/// A new die showing 1, as the web client places it, filled with `color`; the
-/// corner is the caller's to set.
+/// A die showing 1 as the web places it, `color` filled; corner set by caller.
 #[must_use]
 pub fn made(faces: u32, color: Option<&Color>) -> Made {
     Made {

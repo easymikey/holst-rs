@@ -54,8 +54,8 @@ pub fn is_stamp(object: &Object) -> bool {
     object.kind.as_str() == STORED
 }
 
-/// A new loose stamp as the web client places one, tilted by the `draw` in
-/// 0..1; the corner is the caller's to set.
+/// Loose stamp as the web places one, tilted by `draw` (0..1); corner set by
+/// caller.
 #[must_use]
 pub fn made(key: &str, draw: f64) -> Made {
     Made {
@@ -76,8 +76,7 @@ pub fn made(key: &str, draw: f64) -> Made {
     }
 }
 
-/// `made` stuck to `target`: at `at` from the target's corner, else with its
-/// middle on the target's middle.
+/// `made` stuck to `target` at `at` from its corner, else centred on it.
 ///
 /// # Errors
 /// [`crate::error::input::InputError::NotFinite`] when the corner overflows.
@@ -117,9 +116,7 @@ pub fn stuck(mut made: Made, target: &Target<'_>, at: Option<Point>) -> Result<M
     Ok(made)
 }
 
-/// How the web client keeps a coordinate of the middle of the stamp against an
-/// edge pair of its object: as a share of the side while inside, else as the
-/// distance from the near edge.
+/// Web keeps a stamp's middle as a side share inside, else near-edge distance.
 fn constrained(
     middle: f64,
     corner: f64,

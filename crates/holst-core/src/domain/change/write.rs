@@ -442,9 +442,7 @@ fn layer(
     }
 }
 
-/// BUNDLE: a new frame put into a frame takes the parent frame's `zIndex`;
-/// a move writes `parentId` only (main.a33651a4.js 214844-214853,
-/// 214876-214890).
+/// BUNDLE: a frame added to a frame takes its `zIndex`; a move sets `parentId`.
 fn frame_layer(states: &HashMap<String, Value>, parent: Option<&str>) -> Option<f64> {
     let parent =
         parent.filter(|parent| kind_of(states, parent) == ObjectKind::Frame)?;
@@ -606,9 +604,8 @@ fn file_fields<'a>(
     )
 }
 
-/// A stroke as the web client's pen stores one: `path` the points relative to
-/// the first, each rounded to a tenth, `pivot` the least of them and `position`
-/// the first point moved by it (main.a33651a4.js 132115-132135, 209610-209633).
+/// A web pen stroke: `path` relative to the first point, rounded to tenths.
+/// `pivot` is the least point and `position` the first point moved by it.
 fn drawing_fields<'a>(
     points: &[Point],
     color: u32,
@@ -1294,8 +1291,7 @@ fn packed(color: &Color) -> u32 {
         .unwrap_or_default()
 }
 
-/// The field a colour is stored in and its value: a document keeps the token
-/// alone, the rest a token with an opacity.
+/// Field for a colour: a document stores its token, others token and opacity.
 fn color_change(
     kind: &ObjectKind,
     color: &Color,
@@ -1331,9 +1327,7 @@ fn color_change(
     }
 }
 
-/// The text of a kind where the web stores it: a frame's label, a stack's
-/// title, a stamp's `data`, a code block's root text, or the document the
-/// kind keeps its words in.
+/// Text of a kind as the web keeps it: label, title, stamp `data` or document.
 fn text_changes(
     transaction: &mut TransactionMut<'_>,
     scope: &WriteTransaction<'_>,
@@ -1383,8 +1377,7 @@ fn text_changes(
     }
 }
 
-/// The root text `code-mirror-<documentId>` replaced; a block with no
-/// document gets one.
+/// Root text `code-mirror-<documentId>` replaced; no document means a new one.
 fn code_text(
     transaction: &mut TransactionMut<'_>,
     scope: &WriteTransaction<'_>,
@@ -1471,8 +1464,8 @@ pub(super) fn stored_now<T: ReadTxn>(
     stored_json(&fields)
 }
 
-/// `changes` with the `updated` stamp, but for a change of `parentId` alone
-/// (`isOnlyParentIdUpdate`, main.a33651a4.js 148403-148412).
+/// `changes` with `updated`, unless only `parentId` changes
+/// (`isOnlyParentIdUpdate`).
 fn stamped(
     changes: Vec<(&'static str, Value)>,
     scope: &WriteTransaction<'_>,
@@ -1575,8 +1568,7 @@ pub(crate) fn object_map<T: ReadTxn>(
     }
 }
 
-/// Replaces the text of the document that `field` of the object names; a new
-/// document, named in the result, when it has none.
+/// Replaces the text of the named document; a new document is named if none.
 pub(super) fn write_text(
     transaction: &mut TransactionMut<'_>,
     scope: &WriteTransaction<'_>,
@@ -1695,9 +1687,7 @@ pub(super) fn moving_with(
     held.iter().cloned().chain(arrows).chain(stamps).collect()
 }
 
-/// BUNDLE: `rz.eG(v, 2)` (main.a33651a4.js 215634-215645), which `updateMany`
-/// applies to `position`, `width` and `height` (129756-129766): the magnitude
-/// rounded to 3 places half up in decimal, then cut to 2 towards
+/// BUNDLE: the web's `rz.eG(v, 2)`: half up at 3 places, then cut to 2 toward
 /// zero. So `.005` and `.006` go down and `20.456` is `20.45`.
 pub(super) fn web_round(value: f64) -> f64 {
     let moved = |number: f64, places: i32| {

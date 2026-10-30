@@ -105,14 +105,11 @@ impl Outcome for Tagged {
     }
 }
 
-/// Renames, recolors or removes a tag of a board. A removal stays unsent
-/// without the confirmation.
+/// Renames, recolors or removes a tag; a removal waits for confirmation.
 ///
 /// # Errors
-/// Nothing to change, a removal beside a name or color, a color that is not a
-/// palette token, a tag that is not found, a title another tag has, a board
-/// that is not found or not editable, and errors of the requests and of the
-/// write.
+/// Nothing to change; removal with a name or color; bad palette; missing tag;
+/// title taken; board not found or not editable; request or write errors.
 pub async fn tag(
     client: &Client,
     cache: &CacheSettings,

@@ -356,8 +356,7 @@ impl Holst {
             })
     }
 
-    /// Returns every object of this `kind` that the fake holds on `board`, as
-    /// the document keeps them.
+    /// Returns every object of `kind` the fake holds on `board`, as stored.
     ///
     /// # Errors
     /// [`ScenarioError::NoBoard`] when the fake holds no such board.

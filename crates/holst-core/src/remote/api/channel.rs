@@ -167,8 +167,8 @@ impl CreateChannel {
     ///
     /// # Errors
     ///
-    /// [`crate::error::input::InputError::UnknownKind`] when the kind is
-    /// neither board nor folder.
+    /// The error of [`NodeKind::creatable`] when the kind is neither board nor
+    /// folder.
     pub fn new(
         new: &NewNode,
         author_id: &str,

@@ -212,13 +212,11 @@ pub struct LoggedIn<S> {
     pub replaced: ReplacedLogin,
 }
 
-/// Check the new login, hand its session to `save`, then end the `previous`
-/// session on the server. A previous session that cannot be ended is only
-/// reported as [`ReplacedLogin::Kept`].
+/// Checks the login, hands its session to `save`, then ends `previous`.
+/// If that cannot end, it is [`ReplacedLogin::Kept`].
 ///
 /// # Errors
-/// [`Stopped::Check`] when the account cannot be read; [`Stopped::Save`] when
-/// `save` fails.
+/// [`Stopped::Check`]: account unreadable; [`Stopped::Save`]: save failed.
 pub async fn finish<S, E>(
     client: Client,
     previous: Option<Client>,

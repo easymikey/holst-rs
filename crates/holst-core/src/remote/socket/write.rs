@@ -114,7 +114,7 @@ pub(crate) fn writer_document(client: &Client, state: Option<&[u8]>) -> Result<D
     Ok(doc)
 }
 
-/// Load the board into `seed` (see [`writer_document`]) and keep the socket
+/// Load the board into `seed` (see `writer_document`) and keep the socket
 /// open.
 ///
 /// # Errors
@@ -408,11 +408,8 @@ pub trait WriteInterpreter: Sync {
     /// What stays open between the load and the plan.
     type Connection: Send;
 
-    /// Loads `board` into `seed` (see
-    /// [`writer_document`](fn@crate::remote::socket::write::writer_document)).
-    ///
-    /// # Errors
-    /// As [`load_with`](fn@crate::remote::socket::load::load_with).
+    /// Loads `board` into `seed` (see `writer_document`).
+    /// Errors as [`load_with`](fn@crate::remote::socket::load::load_with).
     fn open<'a>(
         &'a self,
         client: &'a Client,
@@ -421,10 +418,7 @@ pub trait WriteInterpreter: Sync {
     ) -> BoxFuture<'a, Result<OpenedBoard<Self::Connection>>>;
 
     /// Carries out `plan`: accepted once it went out, built while it stays.
-    ///
-    /// # Errors
-    /// As [`send`](fn@crate::remote::socket::write::ConnectedBoard::send) and
-    /// [`accepted`](fn@crate::remote::socket::write::SentUpdate::accepted).
+    /// Errors: as [`ConnectedBoard::send`] and [`SentUpdate::accepted`].
     fn carry<'a>(
         &'a self,
         client: &'a Client,

@@ -138,8 +138,7 @@ pub(crate) async fn run(
     }
 }
 
-/// Prints a removal or an edit that may wait: the trash warning, then the
-/// result itself, then its warnings.
+/// Prints a removal or waiting edit: trash warning, result, then its warnings.
 fn removed(format: OutputFormat, removed: &Removed) -> Result<()> {
     output::board::warn_if_trashed(&removed.report);
     output::print(format, &removed.report.to_string(), removed)?;

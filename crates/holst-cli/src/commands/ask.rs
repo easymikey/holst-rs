@@ -121,8 +121,7 @@ fn slot_of(arguments: &Map<String, Value>, reference: &str) -> Option<Slot> {
     <[Slot; 1]>::try_from(slots).ok().map(|[only]| only)
 }
 
-/// Asks to pick among `first` and the candidates, when the list is whole and
-/// each candidate has an id.
+/// Asks to pick among `first` and candidates, when the list is whole, with ids.
 fn choose(
     slot: Slot,
     label: String,
@@ -142,8 +141,7 @@ fn choose(
         })
 }
 
-/// The candidate by its place and name; the id, when it adds anything, is the
-/// hint.
+/// The candidate by place and name; the id is a hint when it adds to that.
 fn shown(candidate: &Candidate) -> Choice {
     let place: String = candidate
         .workspace
@@ -185,8 +183,7 @@ pub(crate) fn answered(
     arguments
 }
 
-/// Shows the question and reads the answer. A No is the refusal the run ended
-/// with, already shown.
+/// Shows the question and reads the answer; a No is the shown refusal.
 pub(crate) fn put<T: Terminal>(form: &Form<T>, question: Question) -> Result<Answer> {
     match question {
         Question::Confirm(needs) => form

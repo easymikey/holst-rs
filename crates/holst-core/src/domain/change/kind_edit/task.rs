@@ -130,8 +130,8 @@ pub(super) fn check(
         })
 }
 
-/// The status asked for among the built-in ones and the board's, the built-in
-/// ones stored first; none gives `null`.
+/// Status named among the built-in and the board's, built-ins stored first;
+/// none gives `null`.
 fn status_field(
     setting: &Setting<String>,
     transaction: &mut TransactionMut<'_>,
@@ -155,8 +155,7 @@ fn status_field(
     }
 }
 
-/// The stored schedule with the days set on its ends, their times and the
-/// time zone kept; no end left gives `null`.
+/// Stored schedule, end days set, times and time zone kept; none is `null`.
 fn schedule_field(fields: &Value, start: Option<&Day>, due: Option<&Day>) -> Value {
     let stored = fields
         .get(SCHEDULE)
@@ -192,8 +191,7 @@ fn schedule_field(fields: &Value, start: Option<&Day>, due: Option<&Day>) -> Val
             )
         })
 }
-/// The card's `displayOptions` with `fillBackground` set for the new color,
-/// its other options kept.
+/// `displayOptions` with `fillBackground` set to the new color, rest kept.
 fn display_options(fields: &Value, rgb: u32) -> Value {
     let kept = fields
         .get(DISPLAY_OPTIONS)
@@ -207,8 +205,7 @@ fn display_options(fields: &Value, rgb: u32) -> Value {
     )
 }
 
-/// The description rewritten, in a new document when the card has none; taking
-/// it away empties a document there is and makes none.
+/// Rewrites the description, in a new document if none; no text clears it.
 fn description_fields(
     setting: &Setting<String>,
     (transaction, scope): (&mut TransactionMut<'_>, &WriteTransaction<'_>),
@@ -236,9 +233,8 @@ fn description_fields(
     .unwrap_or_default()
 }
 
-/// The assignee ids of a task card, which its info entry holds in a list of
-/// its own, replaced in place (order kept, duplicates dropped) so the entry's
-/// other lists stay.
+/// Replaces a task card's assignee ids in the info list in place, keeping
+/// order and dropping duplicates; the entry's other lists stay.
 fn card_assignees(
     transaction: &mut TransactionMut<'_>,
     fields: &Value,

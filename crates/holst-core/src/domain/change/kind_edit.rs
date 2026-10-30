@@ -106,8 +106,7 @@ impl KindEdit {
         }
     }
 
-    /// Writes the edit: the fields to set on the object and the other objects
-    /// it touched.
+    /// The fields to set on the object, and the other objects it touched.
     ///
     /// # Errors
     /// When the document cannot take the write.

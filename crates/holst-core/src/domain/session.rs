@@ -56,8 +56,7 @@ impl Session {
         }
     }
 
-    /// This login on `base`; one saved without a server (by 0.2.0) belongs to
-    /// the production one.
+    /// Login on `base`; one saved before servers (0.2.0) is production's.
     ///
     /// # Errors
     /// [`LoginError::OtherServer`] when it was saved for another server.
@@ -392,8 +391,8 @@ impl SessionState {
         }
     }
 
-    /// A token arrived (login finished) on `base`. The new session is rotated
-    /// and keeps only the cookies held now (after a refusal, those set since).
+    /// Token arrived on `base`; keeps cookies held now (after refusal, since
+    /// set).
     #[must_use]
     pub fn log_in(self, token: SecretString, base: &BaseUrl) -> Self {
         let cookies = match self {

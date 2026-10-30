@@ -120,8 +120,7 @@ pub fn look_up_parent(
     }
 }
 
-/// Whether the live tree `index` has the folder `reference` names (the root
-/// always).
+/// Whether live tree `index` has folder `reference`; the root always does.
 fn has_parent(
     index: &NameIndex,
     workspace: &WorkspaceId,
@@ -220,8 +219,7 @@ pub struct LocatedNode {
     index: NameIndex,
 }
 
-/// The node `id` in the live tree of its workspace. A kept tree that lacks the
-/// node, or the folder `into` names, is read again once.
+/// Node `id` in its workspace; a kept tree lacking it or `into` is re-read.
 ///
 /// # Errors
 /// A [`LookupError`] when the node is in no live tree, or in the trash;

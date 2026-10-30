@@ -42,8 +42,7 @@ pub(super) fn check_faces(kind: &ObjectKind) -> Result<()> {
     only(kind, &ObjectKind::Dice, FACES)
 }
 
-/// Rolls the die or spins the wheel `id`, drawing from a fresh id of the
-/// context so a test fixes the outcome.
+/// Rolls the die or spins wheel `id`, drawing a fresh id from the context.
 pub(super) fn roll(
     scope: &WriteTransaction<'_>,
     id: &str,
@@ -92,8 +91,7 @@ pub(super) fn faces(faces: u32, die: &Value) -> Written {
     }
 }
 
-/// The ids a spin starts from out of play (the last winner too when choices go
-/// once chosen), and the choices still in play.
+/// Spin start ids (plus last winner if once-only) and the choices in play.
 fn in_play(wheel: &Value) -> (Vec<String>, Vec<String>) {
     let strings = |key: &str, name: Option<&str>| -> Vec<String> {
         wheel
@@ -125,8 +123,7 @@ fn in_play(wheel: &Value) -> (Vec<String>, Vec<String>) {
     (out, live)
 }
 
-/// The wheel stopped at a choice drawn from those in play, turned on from
-/// where it stood.
+/// Stops the wheel on a random choice in play, turning from where it stood.
 fn spin(
     wheel: &Value,
     (pick, turns): (u32, u32),

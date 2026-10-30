@@ -153,16 +153,16 @@ impl Client {
         &self.shared.icons
     }
 
-    /// The same client, on every clone, keeping the workspace list of its
-    /// account in `cache`; the first cache stays.
+    /// The same client on every clone; the first `cache` keeps the workspace
+    /// list.
     #[must_use]
     pub fn with_account_cache(self, cache: Arc<dyn AccountCache>) -> Self {
         drop(self.shared.account_cache.set(cache));
         self
     }
 
-    /// The same client, marked as running a change: a name that picks a board
-    /// to write is looked up in trees read within the last hour.
+    /// The same client as a change run: names match trees read in the last
+    /// hour.
     #[must_use]
     pub fn for_change(self) -> Self {
         Self {
@@ -265,8 +265,8 @@ impl Client {
         self.transition(|state| state.learn_account(account));
     }
 
-    /// The workspace list kept for the login's account; `None` when none is
-    /// kept, the login has no account id or there is no account cache.
+    /// Kept workspace list of the account; `None` without an id, cache or
+    /// entry.
     #[must_use]
     pub fn known_workspaces(&self) -> Option<Vec<Workspace>> {
         let cache = self.shared.account_cache.get()?;
@@ -280,16 +280,16 @@ impl Client {
         });
     }
 
-    /// The tree kept for a workspace of the login's account; `None` when none
-    /// is kept, the login has no account id or there is no account cache.
+    /// Kept tree of a workspace of the account; `None` without an id, cache or
+    /// entry.
     #[must_use]
     pub fn known_tree(&self, workspace: &str) -> Option<CachedTree> {
         let cache = self.shared.account_cache.get()?;
         cache.tree(&self.account_id()?, workspace)
     }
 
-    /// Keeps a workspace's tree reply, asked at Unix milliseconds `started`; a
-    /// failure is logged.
+    /// Keeps a workspace's tree reply, read at Unix ms `started`; failure
+    /// logged.
     pub fn learn_tree(&self, workspace: &str, text: &str, started: u64) {
         self.in_account_cache(|cache, account| {
             cache.keep_tree(account, workspace, text, started)

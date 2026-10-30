@@ -241,8 +241,7 @@ fn kept_in_frame(
     })
 }
 
-/// The tag ids of a task card, which its info entry holds in a list of its
-/// own, replaced in place so the entry's other lists stay.
+/// A card's tag ids, replaced in its info entry's list; other lists kept.
 fn card_tags(
     transaction: &mut TransactionMut<'_>,
     states: &HashMap<String, Value>,

@@ -684,13 +684,10 @@ pub async fn resolve(client: &Client, args: &ResolveArgs) -> Result<CommentRepor
     .await
 }
 
-/// Deletes a thread with its replies, or with `reply` only one reply of the
-/// user's own; it stays unsent without its confirmation.
+/// Deletes a thread, or own reply via `reply`; unsent without confirmation.
 ///
 /// # Errors
-/// A board or thread that is not found, a `reply` that is not a reply of the
-/// thread or was written by someone else, a board that is read-only for the
-/// user, and errors of the requests.
+/// Missing board or thread; a `reply` not in it or not theirs; read-only board.
 pub async fn rm(client: &Client, args: &RemoveArgs) -> Result<CommentReport> {
     let open = opened(client, &args.board, args.workspace.as_deref()).await?;
     let found = found(&open.threads, &args.thread)?.clone();
@@ -795,9 +792,8 @@ fn replied<'a>(thread: &'a Thread, reference: &str) -> Result<&'a ThreadMessage>
 /// Colours a thread, moves it, or both in one write.
 ///
 /// # Errors
-/// Nothing to change, `at` and `object` given together, an `at` that is not
-/// two numbers, a board, thread or object that is not found, a board that is
-/// read-only for the user, and errors of the requests.
+/// Nothing to change, `at` with `object`, bad `at`, missing board or thread,
+/// a read-only board, and request errors.
 pub async fn edit(
     client: &Client,
     cache: &CacheSettings,

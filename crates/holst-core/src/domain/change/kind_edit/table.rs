@@ -252,8 +252,7 @@ fn blocks(fields: &Value) -> Vec<Block> {
         .collect()
 }
 
-/// The track number a block starts at and how many tracks of that kind it
-/// covers.
+/// Track a block starts at, and how many tracks of its kind it covers.
 const fn reach_on(block: &Block, track: Track) -> (&String, usize) {
     match track {
         Track::Row => (&block.leader.0, block.reach.0),
@@ -261,8 +260,7 @@ const fn reach_on(block: &Block, track: Track) -> (&String, usize) {
     }
 }
 
-/// The merged blocks that cover the track `number`, with how many tracks of
-/// that kind each covers.
+/// Merged blocks covering track `number`, each with its track count.
 fn merged_over(fields: &Value, track: Track, number: &str) -> Vec<(String, usize)> {
     let order: Vec<String> = tracks(fields, track)
         .into_iter()
@@ -374,8 +372,8 @@ fn unmerging(fields: &Value, (row, column): (u32, u32)) -> Result<()> {
         .ok_or_else(|| refuse(TableRefusal::NotMerged { row, column }))
 }
 
-/// The index that puts a style above every other the table, its tracks and
-/// its cells hold (main.a33651a4.js 220625).
+/// Index above every style of the table, its tracks and cells
+/// (main.a33651a4.js 220625).
 pub(in crate::domain::change) fn next_index(
     states: &HashMap<String, Value>,
     table: &str,
@@ -506,8 +504,7 @@ pub(super) fn write(
     }
 }
 
-/// The text of the cell at a row and a column, in the cell that is there or a
-/// new one.
+/// Text of the cell at a row and column, in the cell there or a new one.
 fn cell(
     transaction: &mut TransactionMut<'_>,
     scope: &WriteTransaction<'_>,
@@ -563,8 +560,7 @@ fn track_value(word: &str) -> Value {
         .map_or_else(|_| json!(word), |number| json!(number))
 }
 
-/// `styles` and, once there are any, the styles the cell leaves unset as
-/// `null` with an index of their own, as the web client creates a styled cell.
+/// With styles, unset ones are `null` with an own index, as the web client.
 fn all_styles(
     scope: &WriteTransaction<'_>,
     table: &str,
@@ -614,8 +610,7 @@ fn create(
     made::write(transaction, scope, &made, &placement).map(|written| written.changed)
 }
 
-/// The `zH` of the web client: an index between the neighbours, or a step
-/// past the one there is.
+/// The web client's `zH`: an index between neighbours, or one step past.
 fn index_between(before: Option<f64>, after: Option<f64>, spread: f64) -> f64 {
     match (before, after) {
         (Some(low), Some(high)) => low + (high - low) * (0.1 + 0.8 * spread),
@@ -683,8 +678,7 @@ fn insert(
     })
 }
 
-/// The track, the merged blocks over it and the cells in it gone; a removed
-/// cell that held text says so.
+/// Removes the track, its blocks and cells; says when text was removed.
 fn delete(
     transaction: &mut TransactionMut<'_>,
     scope: &WriteTransaction<'_>,
@@ -832,9 +826,8 @@ fn set_up(
     }
 }
 
-/// The block joined: its top left cell holds the text and styles of the first
-/// cell with text, as the web client moves them (main.a33651a4.js
-/// 221136-221150).
+/// Joins a block: top left takes text and styles of the first cell with text,
+/// as the web client does (main.a33651a4.js 221136-221150).
 fn merge(
     transaction: &mut TransactionMut<'_>,
     scope: &WriteTransaction<'_>,
@@ -899,8 +892,8 @@ fn merge(
     })
 }
 
-/// The block split: the cells it covered are emptied and take the leader's
-/// styles, as the web client does (main.a33651a4.js 221084-221110).
+/// Splits a block: covered cells are emptied and take the leader's styles,
+/// as the web client does (main.a33651a4.js 221084-221110).
 fn unmerge(
     transaction: &mut TransactionMut<'_>,
     scope: &WriteTransaction<'_>,
@@ -934,9 +927,8 @@ fn unmerge(
     })
 }
 
-/// The texts of the cells emptied, what they hold and what the cells they
-/// lead cover hold removed (main.a33651a4.js 221470-221487); a cell that had
-/// text says so.
+/// Removes the texts of cells emptied and of cells their leaders cover;
+/// a cell with text says so (main.a33651a4.js 221470-221487).
 fn clear(
     transaction: &mut TransactionMut<'_>,
     scope: &WriteTransaction<'_>,
@@ -996,9 +988,8 @@ fn clear(
     })
 }
 
-/// The colour on the table when every cell is chosen, on the rows or columns
-/// when whole ones are, else on the cells, made first if they are not there
-/// (main.a33651a4.js 220650-220695).
+/// Colours the table if every cell is chosen, else whole rows, columns or cells
+/// (main.a33651a4.js 220650-220695); missing cells are made first.
 fn fill(
     transaction: &mut TransactionMut<'_>,
     scope: &WriteTransaction<'_>,

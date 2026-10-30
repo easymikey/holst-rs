@@ -19,11 +19,10 @@ pub enum SessionCheck {
     Unknown(Error),
 }
 
-/// The user the client's login belongs to; the login keeps who they are and the
-/// account cache keeps their workspaces.
+/// The login's user; the login keeps who they are, the cache their workspaces.
 ///
 /// # Errors
-/// [`Client::send_json`] errors or
+/// [`Client::send_json`] errors, or
 /// [`crate::error::http::HttpError::MissingField`] (no user id).
 pub async fn account(client: &Client) -> Result<Account> {
     learn(client, &api::user::current(client).await?)

@@ -47,8 +47,7 @@ pub struct Listing {
 }
 
 impl Listing {
-    /// Each node with the workspace to head it, when several workspaces are
-    /// listed and the node starts a new one.
+    /// Each node with its workspace heading, if several and it starts one.
     pub fn sections(
         &self,
     ) -> impl Iterator<Item = (Option<&ListedWorkspace>, &ListedNode)> + Clone {

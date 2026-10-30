@@ -753,8 +753,7 @@ mod tests {
         Ok(())
     }
 
-    /// The board's reply when it keeps removal to co-owners and the caller
-    /// holds the permit of an editor.
+    /// Reply when removal is kept to co-owners; the caller is an editor.
     fn withholding() -> HttpResponse {
         json_reply(&json!({
             "id": BOARD, "name": "Plan", "workspace_id": WORKSPACE,

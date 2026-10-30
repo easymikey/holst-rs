@@ -28,8 +28,8 @@ const SELECTED: &str = "selectedItemId";
 const DRAWN: f64 = 360.0;
 const DEFAULT_SCALE: f64 = 1.5;
 
-/// A new wheel of custom choices with none selected, as the web client places
-/// it; each choice gets an id from `new_id`, the corner is the caller's to set.
+/// Wheel of `choices`, none selected, as the web places it; corner set by
+/// caller.
 #[must_use]
 pub fn made(choices: &[String], mut new_id: impl FnMut() -> String) -> Made {
     let items: Vec<Value> = choices
@@ -59,8 +59,7 @@ pub fn made(choices: &[String], mut new_id: impl FnMut() -> String) -> Made {
     }
 }
 
-/// The `choices`, as the labels, and the label `selected`, `none` before a
-/// spin.
+/// The `choices` as labels, and the `selected` label, `none` before a spin.
 pub(super) fn detail(wheel: &Object) -> Detail {
     let items = wheel
         .fields

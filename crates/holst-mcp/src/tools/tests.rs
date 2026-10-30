@@ -105,6 +105,24 @@ async fn object_call(verb: ObjectVerb, arguments: serde_json::Value) -> Shown {
 }
 
 #[tokio::test]
+async fn a_comment_edit_expands_the_object_alias_and_keeps_the_thread_number() {
+    const OBJECT: &str = "20000000-0000-4000-8000-000040960004";
+    let (holst, _) = McpServer::scripted([]);
+    let object = holst.state.alias(OBJECT);
+    let arguments = serde_json::json!({
+        "board": BOARD, "thread": "@1", "object": object, "color": "red6"
+    });
+    let expanded =
+        holst.expanded_references(arguments.as_object().cloned().unwrap_or_default());
+    assert_eq!(
+        expanded.ok().map(serde_json::Value::Object),
+        Some(serde_json::json!({
+            "board": BOARD, "thread": "@1", "object": OBJECT, "color": "red6"
+        }))
+    );
+}
+
+#[tokio::test]
 async fn more_than_a_hundred_items_are_refused_before_any_request() {
     let items: Vec<_> = (0..101).map(|n| serde_json::json!({ "text": n })).collect();
     let shown = object_call(

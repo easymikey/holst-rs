@@ -125,8 +125,7 @@ struct Found {
     reply: Value,
 }
 
-/// Finds the board, builds the one request that changes it and carries it, with
-/// no confirmation to ask for.
+/// Finds the board, builds the one changing request, sends it unconfirmed.
 async fn plain(
     client: &Client,
     (reference, workspace): (&str, Option<&str>),

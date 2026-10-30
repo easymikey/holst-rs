@@ -197,8 +197,7 @@ const MANIFEST_TIMEOUT: Duration = Duration::from_secs(20);
 /// The most bytes the icon manifest may have.
 const MANIFEST_LIMIT: usize = 8 * 1024 * 1024;
 
-/// The icon manifest the web client reads: the gzipped form, else the plain
-/// one; none when neither can be read.
+/// Manifest the web client reads, gzipped or plain; none if neither reads.
 async fn icon_manifest(client: &Client) -> Option<icon::Manifest> {
     let address = format!("{}{}", client.base_url().storage(), icon::MANIFEST_PATH);
     let limited = client
@@ -220,8 +219,8 @@ async fn icon_manifest(client: &Client) -> Option<icon::Manifest> {
     .await
 }
 
-/// Checks the icon names against the manifest, read once per client and only
-/// when an item is an icon; a manifest that cannot be read is a warning.
+/// Checks icon names against the manifest, read once per client and only
+/// when an item is an icon; an unreadable manifest is a warning.
 async fn icons_checked(client: &Client, items: &[Item]) -> Result<Vec<String>> {
     let names: Vec<&str> = items
         .iter()
@@ -348,9 +347,7 @@ pub(super) async fn uploaded(
     Ok(file.upload(name))
 }
 
-/// What was fetched, with the status each task names settled among the
-/// built-in ones and those the board stores, by id or by title, and the cell
-/// each names in a kanban of the board.
+/// Fetched items: task statuses by id or title, and kanban cells each names.
 fn with_tasks(
     items: &[Item],
     got: Vec<Fetched>,
@@ -393,8 +390,7 @@ fn with_tasks(
         })
 }
 
-/// The cell `ask` names in a kanban of the board; a card put there goes after
-/// the last one, those of `done` included.
+/// Kanban cell `ask` names; a new card goes last, after `done` cards too.
 fn cell_of(
     ask: &Ask,
     scene: &Scene<'_>,
@@ -452,8 +448,7 @@ fn cell_of(
     })
 }
 
-/// The id of the kanban cell `given` titles among `cells`, ignoring case; the
-/// first when none is given.
+/// Id of the cell `given` titles, ignoring case; the first if none is given.
 fn titled(
     name: &'static str,
     given: Option<&str>,
@@ -806,9 +801,8 @@ impl Reader<'_> {
             })
     }
 
-    /// Refuses the first key a mind-map node's parent or direction breaks:
-    /// those of another kind, a corner or frame beside a parent, a direction
-    /// without one.
+    /// Refuses the first key a parent or direction breaks: another kind, a
+    /// corner or frame by a parent, a direction without one.
     fn refuse_node_keys(
         &self,
         kind: AddKind,
@@ -1006,9 +1000,8 @@ impl Reader<'_> {
         Ok(())
     }
 
-    /// A stroke through the points the call gives, with the pen's or the
-    /// highlighter's defaults; the color is a palette token written as its
-    /// RGB number.
+    /// Stroke through the points, with pen or highlighter defaults; the color
+    /// is a palette token written as its RGB number.
     fn drawing(&self, fields: &AddFields, color: Option<&Color>) -> Result<What> {
         let points = fields
             .point
@@ -1083,8 +1076,7 @@ impl Reader<'_> {
         }
     }
 
-    /// The stamp asked for, or the default, from the ones the web client
-    /// offers.
+    /// The stamp asked for or the default, from those the web client offers.
     fn reaction_key<'k>(&self, given: &'k [String]) -> Result<&'k str> {
         match given {
             [] => Ok(reaction_stamp::DEFAULT_KEY),
@@ -1094,8 +1086,7 @@ impl Reader<'_> {
         }
     }
 
-    /// An icon named by the text, in a square size and one of the colors the
-    /// web client's picker offers.
+    /// Icon named by the text, in a square size and a web client picker color.
     fn icon(
         &self,
         fields: &AddFields,
@@ -1188,8 +1179,8 @@ impl Reader<'_> {
         })
     }
 
-    /// A task titled by the text, with the days, color and status the call
-    /// gives; a start after the due day is refused.
+    /// Task titled by the text, with the given days, color and status;
+    /// a start after the due day is refused.
     fn task(&self, fields: &AddFields, at: Option<Point>) -> Result<What> {
         let title = fields.text.as_deref().ok_or_else(|| self.missing("text"))?;
         let day = |name: &'static str, given: Option<&str>| {
@@ -1392,8 +1383,8 @@ impl Reader<'_> {
     }
 }
 
-/// The name and the bytes of the local file `path`; `refused` says what a
-/// path with no file name should have been.
+/// Name and bytes of the local file `path`; `refused` says what a path with
+/// no file name should have been.
 fn read_local(
     path: &str,
     refused: impl FnOnce() -> Error,
@@ -1405,8 +1396,8 @@ fn read_local(
     Ok((name, file::read(path)?))
 }
 
-/// The local picture at `path` and its pixels; `refused` is given what a path
-/// should have been when it is no file or no PNG, JPEG, GIF or WebP picture.
+/// The local picture at `path` and its pixels; `refused` is what a path should
+/// have been when it is no file or no PNG, JPEG, GIF or WebP picture.
 pub(super) fn local_picture(
     path: &str,
     refused: impl Fn(&str) -> Error,
@@ -1483,8 +1474,7 @@ fn one_of(words: &[&str]) -> String {
     })
 }
 
-/// Whether the kind has a size of its own, which a call cannot change.
-/// Whether the kind takes no text.
+/// Whether the kind has its own size calls cannot change, and takes no text.
 const fn textless(kind: AddKind) -> bool {
     matches!(
         kind,
@@ -1605,24 +1595,40 @@ fn linked_frame<'a>(scene: &Scene<'a>, link: &str) -> Option<&'a Object> {
     })
 }
 
-/// A new mind-map node with its text, hung from `parent` if there is one; the
-/// corner of a root is left to the caller.
+/// New mind-map node with its text, hung from `parent`: a board node, `#N`,
+/// or one of the `earlier` nodes of this write; a root's corner is left out.
 fn hung_node(
     scene: &Scene<'_>,
     branch: &Branch,
     color: Option<&Color>,
+    earlier: &[Object],
 ) -> Result<Made> {
-    let hung = branch
-        .parent
-        .as_deref()
-        .map(|reference| parent_node(scene, reference))
-        .transpose()?;
-    let under = hung.map(|node| Under {
-        scene,
-        parent: node,
-        direction: branch.direction,
-    });
-    mind_map::made(&branch.text, color, under.as_ref())
+    match branch.parent.as_deref() {
+        Some(slot) if slot.starts_with('#') => {
+            let objects: Vec<Object> =
+                scene.objects().iter().chain(earlier).cloned().collect();
+            let joined = Scene::new(&objects);
+            let under = Under {
+                scene: &joined,
+                parent: node_of(&joined, slot)?,
+                direction: branch.direction,
+            };
+            mind_map::made(&branch.text, color, Some(&under))
+        }
+        Some(_) | None => {
+            let hung = branch
+                .parent
+                .as_deref()
+                .map(|reference| parent_node(scene, reference))
+                .transpose()?;
+            let under = hung.map(|node| Under {
+                scene,
+                parent: node,
+                direction: branch.direction,
+            });
+            mind_map::made(&branch.text, color, under.as_ref())
+        }
+    }
 }
 
 /// The mind-map node `reference` names on the board.
@@ -1631,8 +1637,12 @@ fn parent_node<'a>(scene: &Scene<'a>, reference: &str) -> Result<&'a Object> {
         scene.objects().iter().map(|object| object.id.as_str()),
         reference,
     )?;
+    node_of(scene, &id)
+}
+
+fn node_of<'a>(scene: &Scene<'a>, id: &str) -> Result<&'a Object> {
     scene
-        .get(&id)
+        .get(id)
         .filter(|object| mind_map::is_node(object))
         .ok_or_else(|| not_value(COMMAND, "parent", "a mind-map node"))
 }
@@ -1648,8 +1658,7 @@ fn stuck_stamp(
     reaction_stamp::stuck(made.clone(), &target, at).map(NewObject::Made)
 }
 
-/// The object `reference` names, which the web client sticks a stamp to, with
-/// its box.
+/// Object `reference` names; the web client sticks a stamp to it, with its box.
 fn stuck_target<'a>(scene: &Scene<'a>, reference: &str) -> Result<Target<'a>> {
     let id = find_id(
         scene.objects().iter().map(|object| object.id.as_str()),
@@ -1680,6 +1689,7 @@ fn stuck_target<'a>(scene: &Scene<'a>, reference: &str) -> Result<Target<'a>> {
 /// The new objects in order: a corner is found for those without one, among
 /// the objects there and the ones before in the list. A frame `#N` is the
 /// N-th item, a frame made in the same list, and is kept as `#N`.
+#[expect(clippy::too_many_lines, reason = "one arm per kind of item")]
 fn entries(
     items: &[Item],
     got: &[Fetched],
@@ -1689,6 +1699,8 @@ fn entries(
     let mut placed: Vec<Rectangle> = Vec::new();
     // The board rectangle of each item that is a frame, by slot.
     let mut frames: Vec<Option<Rectangle>> = Vec::new();
+    // The mind-map nodes made so far, which `#N` parents hang from.
+    let mut nodes: Vec<Object> = Vec::new();
     items
         .iter()
         .enumerate()
@@ -1773,15 +1785,19 @@ fn entries(
                 },
                 What::Stuck { made, on, at } => stuck_stamp(scene, made, on, *at)?,
                 What::Drawing(stroke) => stroke.clone(),
-                What::Made { made, at } => put(made.clone(), *at, &mut spot)?,
+                What::Made { made, at } => {
+                    put(made.clone(), *at, &mut spot).map(NewObject::Made)?
+                }
                 What::Task { made, at, .. } => {
-                    put(settled(made, got.get(place)), *at, &mut spot)?
+                    put(settled(made, got.get(place)), *at, &mut spot)
+                        .map(NewObject::Made)?
                 }
-                What::Node { branch, at } => {
-                    let node = hung_node(scene, branch, item.color.as_ref())?;
-                    let fixed = branch.parent.as_ref().map(|_| node.at).or(*at);
-                    put(node, fixed, &mut spot)?
-                }
+                What::Node { branch, at } => grown(
+                    scene,
+                    (branch, *at, item.color.as_ref()),
+                    (place, &mut nodes),
+                    &mut spot,
+                )?,
             };
             frames.push(made_frame(item, &placed));
             Ok(entry_in(item, new, (named, linked)))
@@ -1789,20 +1805,33 @@ fn entries(
         .collect()
 }
 
-/// `made` at the corner `at` or a free one that `spot` finds; one held by a
-/// kanban stays at its origin.
+/// A mind-map node made, and kept in `nodes` for the `#N` children to come.
+fn grown(
+    scene: &Scene<'_>,
+    (branch, at, color): (&Branch, Option<Point>, Option<&Color>),
+    (place, nodes): (usize, &mut Vec<Object>),
+    spot: &mut impl FnMut(Option<Point>, Option<Size>, &ObjectKind) -> Result<Point>,
+) -> Result<NewObject> {
+    let node = hung_node(scene, branch, color, nodes)?;
+    let fixed = branch.parent.as_ref().map(|_| node.at).or(at);
+    let made = put(node, fixed, spot)?;
+    nodes.extend(mind_map::stood(&made, place));
+    Ok(NewObject::Made(made))
+}
+
+/// `made` at `at` or a free `spot`; a kanban-held one stays at its origin.
 fn put(
     made: Made,
     at: Option<Point>,
     spot: &mut impl FnMut(Option<Point>, Option<Size>, &ObjectKind) -> Result<Point>,
-) -> Result<NewObject> {
-    Ok(NewObject::Made(match made.parent {
+) -> Result<Made> {
+    Ok(match made.parent {
         Some(_) => made,
         None => Made {
             at: spot(at, made.size, &made.kind)?,
             ..made
         },
-    }))
+    })
 }
 
 /// The task with the status its call named, settled, if it named one.
@@ -1821,8 +1850,7 @@ fn settled(made: &Made, got: Option<&Fetched>) -> Made {
     }
 }
 
-/// The new object as an entry, in the frame it names or, but for an arrow,
-/// the linked one; `#N` is kept as given.
+/// New object as an entry in its frame, or the linked frame for arrows.
 fn entry_in(
     item: &Item,
     new: NewObject,
@@ -2529,8 +2557,7 @@ mod tests {
         document
     }
 
-    /// The status of the task `given` makes on a board that stores `stored`,
-    /// or the error text.
+    /// Status `given` makes on a board storing `stored`; or the error text.
     fn status_of(given: &str, stored: &[(&str, &str)]) -> Result<Value> {
         let args = args(json!({
             "kind": "task", "text": "Ship", "status": given, "at": "10,20",
@@ -2616,8 +2643,8 @@ mod tests {
         Ok(())
     }
 
-    /// The board of a kanban `k1` with the columns To do (`c1`) and Done
-    /// (`c2`), one swimlane Untitled (`l1`) and a card `t0` in Done.
+    /// Board of kanban `k1` with columns To do (`c1`) and Done (`c2`), one
+    /// swimlane Untitled (`l1`) and card `t0` in Done.
     fn kanban_board() -> (Doc, Vec<Object>) {
         let document = Doc::new();
         let infos = document.get_or_insert_map("kanban-infoStore");
@@ -2672,8 +2699,7 @@ mod tests {
         )
     }
 
-    /// For each task of `items` on the kanban board: its holder, column,
-    /// swimlane and index; or the error text.
+    /// Per task of `items`: holder, column, swimlane, index; or the error text.
     fn carded(items: &Value) -> Result<Value> {
         let (board, objects) = kanban_board();
         let scene = Scene::new(&objects);
@@ -3008,6 +3034,43 @@ mod tests {
                 Some(json!({"parent": "m1", "fields": {
                     "nodeType": 2, "nodeColor": {"color": "blue4", "opacity": 1}}})),
             ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_mind_map_parent_hash_n_is_an_earlier_node_of_the_same_write() -> Result<()> {
+        let board = mind_map_board(&[]);
+        let map =
+            |items: Value| -> Result<Vec<crate::domain::change::value::NewEntry>> {
+                let args = args(json!({ "items": items }))?;
+                entries(&read(&args)?, &[], &Scene::new(&board), None)
+            };
+        let found: Vec<_> = map(json!([
+            {"kind": "mind-map", "text": "Plan", "at": "2000,2000"},
+            {"kind": "mind-map", "text": "Build", "parent": "#1"},
+            {"kind": "mind-map", "text": "Test", "parent": "#1"},
+            {"kind": "mind-map", "text": "Ship", "parent": "#2", "direction": "down"},
+        ]))?
+        .into_iter()
+        .filter_map(|entry| made_of(entry.new))
+        .map(|made| (made.at.x(), made.at.y(), made.parent))
+        .collect();
+        let later = map(json!([
+            {"kind": "mind-map", "text": "Build", "parent": "#2"},
+            {"kind": "mind-map", "text": "Plan"},
+        ]));
+        assert_eq!(
+            (found, later.is_err()),
+            (
+                vec![
+                    (2000.0, 2000.0, None),
+                    (2260.0, 2000.0, Some("#1".to_owned())),
+                    (2260.0, 2116.0, Some("#1".to_owned())),
+                    (2260.0, 2200.0, Some("#2".to_owned())),
+                ],
+                true
+            )
         );
         Ok(())
     }

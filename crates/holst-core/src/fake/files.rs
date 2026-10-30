@@ -32,8 +32,7 @@ pub struct Upload {
     pub board: Option<String>,
 }
 
-/// The header of a PNG of `width` by `height` pixels, which is all the CLI
-/// and the tool read of it.
+/// PNG header of `width` by `height` pixels; the CLI and tool read no more.
 #[must_use]
 pub fn png(width: u32, height: u32) -> Vec<u8> {
     [
@@ -240,9 +239,8 @@ impl Files {
         }
     }
 
-    /// Converts the pages the body `{"params": {"start", "end"}}` names of the
-    /// file `name`, which the service does for a file it counts; the run is
-    /// kept. The query is not read: the web sends none.
+    /// Converts the pages that the body `{"params": {"start", "end"}}` names.
+    /// Only a counted file converts; the run is kept, the web sends no query.
     fn converted(&mut self, name: &str, body: &str) -> Response {
         let reply = match self.known(name) {
             None => coded(404, "file_not_found", "no such file"),

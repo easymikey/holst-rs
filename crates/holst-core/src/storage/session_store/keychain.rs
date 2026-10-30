@@ -43,8 +43,7 @@ pub(super) fn keychain_error(err: keyring::Error) -> Error {
     classify(err, missing)
 }
 
-/// The cached opening failure cannot be moved out, so its message is carried
-/// over.
+/// A cached opening failure cannot move out, so its message is copied.
 pub(super) fn init_error(init: &keyring::Error) -> Error {
     let cause = platform_cause(init).to_string();
     classify(

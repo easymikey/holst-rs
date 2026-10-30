@@ -85,8 +85,8 @@ pub const COLORS: [(&str, u32); 10] = [
 
 const DEFAULT_COLOR: u32 = 0xb3_b4b4;
 
-/// Whether a card of this color is filled with it, as the card's own reader
-/// decides when it stores no choice.
+/// Whether a card of this color fills; the card's reader decides with no
+/// choice.
 #[must_use]
 pub fn fills(rgb: u32) -> bool {
     rgb != DEFAULT_COLOR
@@ -128,9 +128,8 @@ impl FromStr for Day {
     }
 }
 
-/// A new task of `title` as the web client's toolbar tool places it, with its
-/// info entry `info` and the built-in statuses the board may lack; the corner
-/// is the caller's to set.
+/// A new task of `title` as the web's toolbar places it, with its info entry
+/// `info` and the built-in statuses the board may lack; corner set by caller.
 #[must_use]
 pub fn made(
     title: &str,
@@ -249,8 +248,7 @@ pub fn statuses_in<T: ReadTxn>(txn: &T, store: &MapRef) -> Vec<(String, String)>
         .collect()
 }
 
-/// The id of the status `given` names: a built-in or stored id, else a title
-/// of either, ignoring case.
+/// Status id for `given`: a built-in or stored id, or a title in any case.
 #[must_use]
 pub fn status_id(given: &str, custom: &[(String, String)]) -> Option<String> {
     let known = || {
@@ -266,8 +264,7 @@ pub fn status_id(given: &str, custom: &[(String, String)]) -> Option<String> {
         .map(|(id, _)| id.to_owned())
 }
 
-/// The title as the text; the status, the start and due days and the number
-/// of assignees as words.
+/// Title as text; status, start and due days, and assignee count as words.
 pub(super) fn detail(document: &Doc, card: &Object) -> Detail {
     let cell = kanban::cell_words(document, card);
     let documents = document.get_or_insert_map(DOCUMENTS);

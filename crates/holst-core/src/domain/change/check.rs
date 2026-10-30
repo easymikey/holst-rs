@@ -501,8 +501,7 @@ fn flaggable(states: &HashMap<String, Value>, named: &[String]) -> Result<Vec<St
     })
 }
 
-/// The ids named, once each; `rule` judges each with the reference that named
-/// it.
+/// Each named id once; `rule` judges it with the reference that named it.
 fn check_each(
     states: &HashMap<String, Value>,
     named: &[String],
@@ -1832,9 +1831,8 @@ fn unfit_field(
     }
 }
 
-/// Whether the width is one the web client offers a shape or an image (a whole
-/// 0 to 10; both use the toolbar class of module 75436) or an arrow (its nine
-/// widths).
+/// Width the web client offers: 0 to 10 for shapes and images (module 75436),
+/// nine for arrows.
 fn stroke_width_fits(kind: &ObjectKind, width: f64) -> Result<()> {
     let raw = format!("{width}");
     let refused = |field, expected| {

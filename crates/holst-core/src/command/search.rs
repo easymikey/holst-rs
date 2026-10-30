@@ -286,9 +286,8 @@ impl Reads for Requests<'_> {
     }
 }
 
-/// Searches the names, the text on the boards, or both, and merges the matches
-/// best first. Boards are read through the account's cache as `cache` and the
-/// `--refresh` and `--offline` of `args` say.
+/// Searches names, board text or both, best first; `--refresh` and `--offline`
+/// of `args` apply.
 ///
 /// # Errors
 /// An argument that does not fit the mode, a workspace or board that is not
@@ -319,8 +318,7 @@ async fn searched(
     search_with(client, args, &Requests { client, loading }).await
 }
 
-/// Offline only the text of a board named by id or link can be searched: the
-/// names and the boards of a workspace come from requests.
+/// Offline, only a board by id or link is searched; the rest need requests.
 fn offline_board(cache_use: CacheUse, args: &SearchArgs) -> Result<()> {
     match (cache_use, args.board.as_deref().and_then(BoardId::find_in)) {
         (CacheUse::Offline, None) => Err(not_value(

@@ -121,8 +121,7 @@ pub(super) fn check(
     }
 }
 
-/// The id of the cell `given` titles among `cells`, ignoring case; without a
-/// title the one `kept` names, else the first.
+/// Cell `given` titles (ignoring case), else `kept`, else the first.
 fn picked(
     (name, expected): (&'static str, &'static str),
     given: Option<&str>,
@@ -146,8 +145,7 @@ fn picked(
         .ok_or_else(|| refused(name, given.unwrap_or_default().to_owned(), expected))
 }
 
-/// The card put last in the cell of `kanban`: its holder and cell, the place
-/// in the cell and the scale and width of the kanban's cards.
+/// Card put last in `kanban`'s cell: holder, place, card scale and width.
 fn into_fields(
     transaction: &TransactionMut<'_>,
     states: &HashMap<String, Value>,
@@ -210,8 +208,8 @@ fn scale_of(kanban: &Value) -> f64 {
     kanban.get(SCALE).and_then(Value::as_f64).unwrap_or(1.0)
 }
 
-/// The card taken out of its kanban, where its column is drawn: the kanban's
-/// corner moved right by the columns before it, in the kanban's own parent.
+/// Card out of its kanban: the kanban's corner moved right by earlier columns,
+/// in the kanban's parent.
 fn out_fields(
     transaction: &TransactionMut<'_>,
     states: &HashMap<String, Value>,
@@ -311,8 +309,7 @@ mod tests {
         }
     }
 
-    /// A kanban at 100,50 with the default cells and its first card, and two
-    /// cards on the board, at 10,20 and 30,40.
+    /// A kanban at 100,50 with default cells; cards at 10,20 and 30,40.
     fn board() -> Result<Doc> {
         let document = Doc::new();
         let mut issued = 0_u32;

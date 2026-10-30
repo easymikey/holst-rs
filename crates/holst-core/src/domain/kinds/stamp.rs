@@ -18,8 +18,7 @@ const TEXT_STAMP: &str = "textStamp";
 /// What the web client places a stamp as, in board units.
 const SIDE: f64 = 60.0;
 
-/// A new text stamp as the web client places it; the corner is the caller's to
-/// set.
+/// A new text stamp as the web places it; corner set by caller.
 #[must_use]
 pub fn made(text: &str) -> Made {
     Made {

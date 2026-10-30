@@ -49,8 +49,7 @@ pub fn unless_confirmed(
     }
 }
 
-/// The kind word of the first object touched and how many objects are removed
-/// after it, when it is a frame, a group or a kanban.
+/// Kind word and count of removals after a first frame, group or kanban.
 fn frame_content_count(touched: &[ChangedObject]) -> Option<(&str, usize)> {
     let more = touched
         .iter()
@@ -68,8 +67,7 @@ fn holds_content(kind: &ObjectKind) -> bool {
         || kind.as_str() == kanban::STORED
 }
 
-/// The refusal to remove a frame, group or kanban together with its objects
-/// unasked; none when `touched` takes no other object along with one.
+/// Refuses a frame, group or kanban removal with objects, unasked; else none.
 #[must_use]
 pub fn frame_content_unconfirmed(touched: &[ChangedObject]) -> Option<Unconfirmed> {
     frame_content_count(touched).map(|(kind, more)| Unconfirmed {
@@ -81,8 +79,7 @@ pub fn frame_content_unconfirmed(touched: &[ChangedObject]) -> Option<Unconfirme
     })
 }
 
-/// The refusal to remove table cells that held text unasked (a removed cell
-/// names `text` among its fields when it did); none without such a cell.
+/// Refuses cell removal unasked when a cell's fields name `text`; else none.
 #[must_use]
 pub fn cell_text_unconfirmed(touched: &[ChangedObject]) -> Option<Unconfirmed> {
     let cells = touched

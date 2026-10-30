@@ -66,8 +66,7 @@ const WIDTH_OF: f64 = 500.0;
 pub(crate) const LANGUAGE: &str = "lang";
 pub(crate) const THEME: &str = "theme";
 
-/// A new code block of `text`, as the web client's paste leaves it; the
-/// corner is the caller's to set.
+/// Code block of `text` as the web's paste leaves it; corner set by caller.
 #[must_use]
 pub fn made(text: &str, language: Option<Language>, theme: Theme) -> Made {
     let code = dedent(text);
@@ -96,8 +95,8 @@ pub fn made(text: &str, language: Option<Language>, theme: Theme) -> Made {
     }
 }
 
-/// `text` with Unix line breaks, without the blank lines around it and the tabs
-/// then spaces every line starts with.
+/// `text` with Unix breaks, blank edge lines and leading tabs or spaces
+/// removed.
 fn dedent(text: &str) -> String {
     let unix = text.replace("\r\n", "\n");
     let lines: Vec<&str> = unix.split('\n').collect();

@@ -930,8 +930,7 @@ async fn a_crop_beside_a_size_is_refused(
     Ok(())
 }
 
-/// A board with an image, a file and a sticker, and a picture and a text on
-/// disk.
+/// A board with an image, file and sticker, plus a picture and text on disk.
 fn with_a_new_picture() -> Given {
     with_an_image_a_file_and_a_sticker()
         .local_file("dog.png", &png(32, 16))
@@ -1159,8 +1158,7 @@ async fn a_dry_run_of_showing_pages_asks_nothing(
     Ok(())
 }
 
-/// A board with a pdf of `pages` pages counted at 100,200; the page service
-/// is told nothing yet.
+/// A board with a pdf of `pages` pages, counted 100,200; nothing told yet.
 fn with_a_pdf_of(pages: u32) -> Given {
     given().saved_login().workspace("Team").board_with_objects(
         "Plans",
