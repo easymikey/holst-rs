@@ -21,7 +21,13 @@ use crate::{
         input::InputError,
     },
     protocol::sharing::{self, HeldRole, SharingPatch, WireRole},
-    remote::{api, client::Client},
+    remote::{
+        api::{
+            self,
+            access::{OwnershipTransfer, RoleGrant},
+        },
+        client::Client,
+    },
 };
 
 /// A right on a board, on the one scale every command uses.
@@ -424,15 +430,6 @@ impl Shared {
                 ChangeReport::Sent => None,
             })
     }
-
-    /// The refusal of a change held for its confirmation.
-    #[must_use]
-    pub fn refusal(&self) -> Option<&Unconfirmed> {
-        match &self.outcome {
-            Settled::Carried(report) => report.refusal(),
-            Settled::NotHeld { .. } => None,
-        }
-    }
 }
 
 /// Gives a user a right on a board; a right held is replaced.
@@ -444,8 +441,11 @@ pub async fn grant(client: &Client, args: &GrantArgs) -> Result<Shared> {
     let right = args.right.among(GRANTABLE, "board grant", "right")?;
     let board = board(client, &args.board, args.workspace.as_deref()).await?;
     let user = user(client, &board, &args.user, "board grant").await?;
-    let request =
-        api::access::set_member_right_request(&board.id, &user.id, right.wire())?;
+    let request = api::access::set_member_right_request(&role_grant(
+        &board.id,
+        &user.id,
+        right.wire(),
+    ))?;
     let unconfirmed = unconfirmed(format!(
         "giving {} the right {right} on {}",
         user.shown(),
@@ -475,7 +475,9 @@ pub async fn revoke(client: &Client, args: &RevokeArgs) -> Result<Shared> {
     let user = user(client, &board, &args.user, "board revoke").await?;
     let holders = api::channel::users(client, &board.id).await?;
     if holds_right(holders, &user.id)? {
-        let request = api::access::set_member_right_request(&board.id, &user.id, None)?;
+        let request = api::access::set_member_right_request(&role_grant(
+            &board.id, &user.id, None,
+        ))?;
         let unconfirmed = unconfirmed(format!(
             "taking away the right of {} on {}",
             user.shown(),
@@ -515,8 +517,11 @@ pub async fn transfer(client: &Client, args: &TransferArgs) -> Result<Shared> {
     } else {
         SubtreeTransfer::Keep
     };
-    let request =
-        api::access::transfer_ownership_request(&board.id, &user.id, subtree)?;
+    let transfer = OwnershipTransfer {
+        new_owner_user_id: user.id.clone(),
+        transfer_owned_subtree: subtree.is_transferred(),
+    };
+    let request = api::access::transfer_ownership_request(&board.id, &transfer)?;
     let unconfirmed = Unconfirmed {
         change: format!(
             "transferring ownership of {} to {}",
@@ -553,10 +558,16 @@ pub async fn share(client: &Client, args: &ShareArgs) -> Result<Shared> {
         requests.extend(keep_caller(client, &board, members).await?);
     }
     if let Some(patch) = access {
-        requests.push(api::access::set_channel_access_request(&board.id, patch)?);
+        requests.push(api::access::set_channel_access_request(
+            &board.id,
+            &patch.checked()?,
+        )?);
     }
     if let Some(patch) = sharing {
-        requests.push(api::access::set_sharing_settings_request(&board.id, patch)?);
+        requests.push(api::access::set_sharing_settings_request(
+            &board.id,
+            &patch.checked()?,
+        )?);
     }
     let unconfirmed = unconfirmed(format!(
         "changing the sharing settings of {}",
@@ -599,11 +610,11 @@ async fn keep_caller(
         let drops = drops_access(client, board, &me).await?;
         drops
             .then(|| {
-                api::access::set_member_right_request(
+                api::access::set_member_right_request(&role_grant(
                     &board.id,
                     &me,
                     Right::Full.wire(),
-                )
+                ))
             })
             .transpose()
     } else {
@@ -655,6 +666,15 @@ async fn folder_owns(client: &Client, board: &Board, user: &str) -> Result<bool>
         })
     } else {
         Ok(false)
+    }
+}
+
+/// The body that gives `user` the role `role` on `board`, or takes it away.
+fn role_grant(board: &str, user: &str, role: Option<&str>) -> RoleGrant {
+    RoleGrant {
+        channel_id: board.to_owned(),
+        user_id: user.to_owned(),
+        role: role.map(str::to_owned),
     }
 }
 

@@ -21,6 +21,7 @@ pub(crate) const WIDTH: &str = "width";
 pub(crate) const HEIGHT: &str = "height";
 pub(crate) const Z_INDEX: &str = "zIndex";
 pub(crate) const CREATED: &str = "created";
+pub(crate) const UPDATED: &str = "updated";
 // PROTOCOL: `created.a` is an index into `usersIds`.
 pub(crate) const AUTHOR_INDEX: &str = "a";
 pub(crate) const PARENT_ID: &str = "parentId";

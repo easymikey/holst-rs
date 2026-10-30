@@ -1206,14 +1206,13 @@ dependencies = [
  "derive_more",
  "expectrl",
  "holst-core",
+ "holst-form",
  "insta",
- "libc",
  "proptest",
  "rstest",
  "secrecy",
  "serde",
  "serde_json",
- "signal-hook-registry",
  "thiserror",
  "tokio",
  "unicode-segmentation",
@@ -1263,6 +1262,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "holst-form"
+version = "0.2.0"
+dependencies = [
+ "console",
+ "derive_more",
+ "libc",
+ "proptest",
+ "rstest",
+ "signal-hook-registry",
+ "thiserror",
+ "tokio",
+ "unicode-segmentation",
+ "zeroize",
+]
+
+[[package]]
 name = "holst-macros"
 version = "0.2.0"
 dependencies = [
@@ -1278,14 +1293,15 @@ version = "0.2.0"
 dependencies = [
  "arc-swap",
  "base64 0.23.1",
+ "futures-util",
  "getrandom 0.4.3",
  "holst-core",
+ "holst-form",
  "http-body-util",
  "hyper",
  "hyper-util",
  "insta",
  "itertools",
- "libc",
  "reqwest 0.12.28",
  "rmcp",
  "rstest",

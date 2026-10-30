@@ -22,6 +22,21 @@ where
     format!("{count} {noun}{s}")
 }
 
+/// `text` cut after `max_chars` characters, with `…` when something was cut.
+///
+/// ```
+/// use holst_core::domain::text::shortened;
+/// assert_eq!(shortened("hello", 5), "hello");
+/// assert_eq!(shortened("héllo!", 5), "héllo…");
+/// ```
+#[must_use]
+pub fn shortened(text: &str, max_chars: usize) -> String {
+    text.char_indices().nth(max_chars).map_or_else(
+        || text.to_owned(),
+        |(cut, _)| format!("{}…", text.get(..cut).unwrap_or(text)),
+    )
+}
+
 /// Items joined by `separator`, written lazily; can be displayed repeatedly.
 ///
 /// ```

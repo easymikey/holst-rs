@@ -4,46 +4,35 @@ use console::measure_text_width;
 use unicode_segmentation::UnicodeSegmentation as _;
 
 use crate::{
-    error::InvalidAnswer,
-    form::line::{QuestionKind, TypedAnswer},
-    output::coloring::Coloring,
+    coloring::Coloring,
+    error::Reason,
+    line::{QuestionKind, TypedAnswer},
 };
 
 const CLEAR: &str = "\x1b[2K";
 const UP: &str = "\x1b[1A";
 const DOWN: &str = "\x1b[1B";
 const CLEAR_BELOW: &str = "\x1b[J";
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "prompts hide the cursor from the next batch on")
-)]
-pub(crate) const HIDE_CURSOR: &str = "\x1b[?25l";
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "prompts show the cursor again from the next batch on"
-    )
-)]
-pub(crate) const SHOW_CURSOR: &str = "\x1b[?25h";
+pub const HIDE_CURSOR: &str = "\x1b[?25l";
+pub const SHOW_CURSOR: &str = "\x1b[?25h";
 const MASK: &str = "▪";
 const ELLIPSIS: &str = "…";
 const GUTTER: usize = 3;
 const SPINNER_GLYPHS: [&str; 4] = ["◒", "◐", "◓", "◑"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum QuestionFooter {
+pub enum QuestionFooter {
     Plain,
-    Warn(InvalidAnswer),
+    Warn(Reason),
 }
 
 #[must_use]
-pub(crate) fn clear_line() -> String {
+pub fn clear_line() -> String {
     format!("\r{CLEAR}")
 }
 
 #[must_use]
-pub(crate) fn intro(coloring: Coloring, title: &str) -> String {
+pub fn intro(coloring: Coloring, title: &str) -> String {
     format!(
         "{}  {}\n{}\n",
         coloring.dim("┌"),
@@ -53,13 +42,13 @@ pub(crate) fn intro(coloring: Coloring, title: &str) -> String {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DrawnInput {
+pub struct DrawnInput {
     text: String,
     caret: usize,
 }
 
 #[must_use]
-pub(crate) fn active(
+pub fn active(
     coloring: Coloring,
     label: &str,
     drawn: &DrawnInput,
@@ -82,7 +71,7 @@ pub(crate) fn active(
 }
 
 #[must_use]
-pub(crate) fn update(coloring: Coloring, drawn: &DrawnInput) -> String {
+pub fn update(coloring: Coloring, drawn: &DrawnInput) -> String {
     format!(
         "\r{CLEAR}{}\r\x1b[{}C",
         input(coloring, drawn),
@@ -96,7 +85,7 @@ fn input(coloring: Coloring, drawn: &DrawnInput) -> String {
 
 /// Draws `rows` over the `previous` rows above; each row ends its line.
 #[must_use]
-pub(crate) fn repaint(previous: usize, rows: &[String]) -> String {
+pub fn repaint(previous: usize, rows: &[String]) -> String {
     let up = match previous {
         0 => String::new(),
         lines => format!("\x1b[{lines}A"),
@@ -106,12 +95,12 @@ pub(crate) fn repaint(previous: usize, rows: &[String]) -> String {
 }
 
 #[must_use]
-pub(crate) fn erase_active() -> String {
+pub fn erase_active() -> String {
     format!("{DOWN}\r{CLEAR}{UP}\r{CLEAR}{UP}\r{CLEAR}")
 }
 
 #[must_use]
-pub(crate) fn draw_input(
+pub fn draw_input(
     coloring: Coloring,
     answer: &TypedAnswer,
     width: Option<usize>,
@@ -219,7 +208,7 @@ fn fitting_forward(units: &[DrawnGrapheme<'_>], start: usize, budget: usize) -> 
 }
 
 #[must_use]
-pub(crate) fn masked(kind: QuestionKind, text: &str) -> String {
+pub fn masked(kind: QuestionKind, text: &str) -> String {
     match kind {
         QuestionKind::LoginCode | QuestionKind::Password => {
             MASK.repeat(text.graphemes(true).count())
@@ -229,7 +218,7 @@ pub(crate) fn masked(kind: QuestionKind, text: &str) -> String {
 }
 
 #[must_use]
-pub(crate) fn answered(coloring: Coloring, label: &str, value: &str) -> String {
+pub fn answered(coloring: Coloring, label: &str, value: &str) -> String {
     let value = match value {
         "" => String::new(),
         value => format!("{}  {}\n", coloring.dim("│"), coloring.dim(value)),
@@ -242,14 +231,14 @@ pub(crate) fn answered(coloring: Coloring, label: &str, value: &str) -> String {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum NoteTone {
+pub enum NoteTone {
     Plain,
     Faint,
     Warn,
 }
 
 #[must_use]
-pub(crate) fn boxed(
+pub fn boxed(
     coloring: Coloring,
     title: &str,
     lines: &[(NoteTone, String)],
@@ -324,7 +313,7 @@ fn clip(text: &str, room: Option<usize>) -> String {
 }
 
 #[must_use]
-pub(crate) fn cancelled(coloring: Coloring, label: &str, shown: &str) -> String {
+pub fn cancelled(coloring: Coloring, label: &str, shown: &str) -> String {
     let answer = match shown {
         "" => String::new(),
         shown => format!("{}  {}\n", coloring.dim("│"), coloring.struck(shown)),
@@ -337,12 +326,12 @@ pub(crate) fn cancelled(coloring: Coloring, label: &str, shown: &str) -> String 
 }
 
 #[must_use]
-pub(crate) fn waiting(coloring: Coloring, label: &str) -> String {
+pub fn waiting(coloring: Coloring, label: &str) -> String {
     format!("{}  {label}…\n", coloring.magenta("◒"))
 }
 
 #[must_use]
-pub(crate) fn spinning(coloring: Coloring, label: &str, step: usize) -> String {
+pub fn spinning(coloring: Coloring, label: &str, step: usize) -> String {
     let symbol = SPINNER_GLYPHS
         .get(step % SPINNER_GLYPHS.len())
         .copied()
@@ -351,21 +340,17 @@ pub(crate) fn spinning(coloring: Coloring, label: &str, step: usize) -> String {
 }
 
 #[must_use]
-pub(crate) fn done_waiting() -> String {
+pub fn done_waiting() -> String {
     format!("{UP}\r{CLEAR}")
 }
 
 #[must_use]
-pub(crate) fn outro(coloring: Coloring, message: &str) -> String {
+pub fn outro(coloring: Coloring, message: &str) -> String {
     format!("{}  {}\n\n", coloring.dim("└"), coloring.code(message))
 }
 
 #[must_use]
-pub(crate) fn error_outro(
-    coloring: Coloring,
-    error: &str,
-    causes: &[String],
-) -> String {
+pub fn error_outro(coloring: Coloring, error: &str, causes: &[String]) -> String {
     let causes: String = causes
         .iter()
         .map(|detail| format!("   {detail}\n"))
@@ -384,31 +369,29 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        error::InvalidAnswer,
-        form::{
-            draw::{
-                CLEAR,
-                DOWN,
-                DrawnInput,
-                ELLIPSIS,
-                GUTTER,
-                NoteTone,
-                QuestionFooter,
-                UP,
-                active,
-                answered,
-                boxed,
-                cancelled,
-                draw_input,
-                erase_active,
-                error_outro,
-                masked,
-                spinning,
-                update,
-            },
-            line::{EditorStep, Keystroke, QuestionKind, TypedAnswer},
+        coloring::Coloring,
+        draw::{
+            CLEAR,
+            DOWN,
+            DrawnInput,
+            ELLIPSIS,
+            GUTTER,
+            NoteTone,
+            QuestionFooter,
+            UP,
+            active,
+            answered,
+            boxed,
+            cancelled,
+            draw_input,
+            erase_active,
+            error_outro,
+            masked,
+            spinning,
+            update,
         },
-        output::coloring::Coloring,
+        error::Reason,
+        line::{EditorStep, Keystroke, QuestionKind, TypedAnswer},
     };
 
     const PLAIN: Coloring = Coloring::Plain;
@@ -551,7 +534,7 @@ mod tests {
             PLAIN,
             "Email",
             &x,
-            QuestionFooter::Warn(InvalidAnswer::NotEmail),
+            QuestionFooter::Warn(Reason("enter an address like you@example.com")),
         );
         assert!(block.contains("└  ▲ enter an address like you@example.com"));
         assert!(block.starts_with("◆  Email\n│  x\n"));

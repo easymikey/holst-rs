@@ -3,15 +3,11 @@
 use holst_core::{
     command::{
         change::ChangeReport,
-        table::CommandArgs,
         template::{
             Changed,
-            CreateArgs,
-            EditArgs,
             ListedTemplate,
             Listing,
             LsArgs,
-            RemoveArgs,
             ShowArgs,
             TemplateVerb,
             create,
@@ -25,17 +21,11 @@ use holst_core::{
         template::{Template, TemplateCategory},
         text::{EMPTY, printable},
     },
-    effect::board_write::WriteMode,
-    remote::client::Client,
 };
 use rmcp::model::CallToolResult;
 use serde_json::{Map, Value};
 
-use crate::{
-    login::HandedClient,
-    server::McpServer,
-    tools::{said, workspace::joined_by_dots},
-};
+use crate::{server::McpServer, tools::workspace::joined_by_dots};
 
 /// The templates a listing shows; the rest is cut.
 const LIST_LIMIT: usize = 100;
@@ -77,38 +67,18 @@ impl McpServer {
                 .await
             }
             TemplateVerb::Create => {
-                let mode = |args: &CreateArgs| args.dry_run;
-                self.template_changing(arguments, mode, create).await
+                self.change(arguments, create, Self::template_changed_text)
+                    .await
             }
             TemplateVerb::Edit => {
-                let mode = |args: &EditArgs| args.dry_run;
-                self.template_changing(arguments, mode, edit).await
+                self.change(arguments, edit, Self::template_changed_text)
+                    .await
             }
             TemplateVerb::Rm => {
-                let mode = |args: &RemoveArgs| args.dry_run;
-                self.template_changing(arguments, mode, rm).await
+                self.change(arguments, rm, Self::template_changed_text)
+                    .await
             }
         }
-    }
-
-    /// Runs a change: a dry run reads only, and a held one is refused with
-    /// the words that name `confirm`.
-    async fn template_changing<A: CommandArgs>(
-        &self,
-        arguments: Map<String, Value>,
-        mode: impl Fn(&A) -> WriteMode,
-        make: impl AsyncFn(&Client, &A) -> holst_core::Result<Changed>,
-    ) -> CallToolResult {
-        self.parsed(arguments, async |args: A| {
-            let call = async |client: HandedClient| {
-                let changed = make(&client, &args).await?;
-                said(changed.outcome.refusal(), || {
-                    self.template_changed_text(&changed)
-                })
-            };
-            self.by_mode(mode(&args), call).await
-        })
-        .await
     }
 
     fn template_listing_text(&self, listing: &Listing) -> String {

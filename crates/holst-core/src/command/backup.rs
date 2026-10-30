@@ -134,7 +134,7 @@ pub struct RestoreArgs {
     pub workspace: Option<String>,
     #[argument(
         letter = 'y',
-        help = "Confirm a risky change; without it only the dry run is shown (exit code 77)"
+        help = "Confirm a risky change; a terminal asks instead; without one only the dry run is shown (exit code 77)"
     )]
     pub confirm: Confirmation,
     #[argument(letter = 'n', help = "Show what would change; change nothing")]
@@ -439,6 +439,7 @@ pub async fn download(
 async fn fetch(client: &Client, key: &str, provider: &str) -> Result<Backup> {
     api::backup::download(client, key, provider)
         .await
+        .and_then(Backup::try_from)
         .map_err(|error| match error {
             // An HTML 404 is a wrong address, not a missing backup.
             Error::Http(HttpError::Status {

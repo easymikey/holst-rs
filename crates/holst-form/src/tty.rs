@@ -1,7 +1,7 @@
 //! The settings of stdin's terminal, restored however the program ends.
 
 use std::{
-    io,
+    io::{self, Write as _},
     sync::{Mutex, MutexGuard, PoisonError, TryLockError},
     time::Duration,
 };
@@ -10,7 +10,7 @@ static TERMINAL: Mutex<()> = Mutex::new(());
 
 const SEIZE_STEP: Duration = Duration::from_millis(5);
 
-pub(crate) fn exclusive<R>(work: impl FnOnce() -> R) -> R {
+pub fn exclusive<R>(work: impl FnOnce() -> R) -> R {
     let _held = TERMINAL.lock().unwrap_or_else(PoisonError::into_inner);
     work()
 }
@@ -20,7 +20,7 @@ pub(crate) fn exclusive<R>(work: impl FnOnce() -> R) -> R {
     clippy::disallowed_methods,
     reason = "called from the signal thread, outside the async runtime: the wait blocks the thread"
 )]
-pub(crate) fn seize(patience: Duration) -> Option<MutexGuard<'static, ()>> {
+pub fn seize(patience: Duration) -> Option<MutexGuard<'static, ()>> {
     let tries = patience.as_millis() / SEIZE_STEP.as_millis();
     (0..=tries).find_map(|_| match TERMINAL.try_lock() {
         Ok(held) => Some(held),
@@ -32,26 +32,28 @@ pub(crate) fn seize(patience: Duration) -> Option<MutexGuard<'static, ()>> {
     })
 }
 
-pub(crate) fn remember() {
+pub fn remember() {
     imp::remember();
 }
 
-pub(crate) fn restore() {
-    imp::restore();
+/// Puts the settings back; the warning says why they were not.
+#[must_use]
+pub fn restore() -> Option<String> {
+    imp::restore()
 }
 
-pub(crate) fn discard_typeahead() {
+pub fn discard_typeahead() {
     imp::discard_typeahead();
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TerminalQuiet {
+pub enum TerminalQuiet {
     Echo,
     Keys,
 }
 
 #[must_use = "the terminal is back to normal as soon as the guard is dropped"]
-pub(crate) struct QuietedTerminal(imp::TerminalSettings);
+pub struct QuietedTerminal(imp::TerminalSettings);
 
 impl std::fmt::Debug for QuietedTerminal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -59,7 +61,10 @@ impl std::fmt::Debug for QuietedTerminal {
     }
 }
 
-pub(crate) fn quiet(quiet: TerminalQuiet) -> io::Result<QuietedTerminal> {
+/// # Errors
+///
+/// The settings of stdin's terminal could not be read or changed.
+pub fn quiet(quiet: TerminalQuiet) -> io::Result<QuietedTerminal> {
     exclusive(|| imp::quiet(quiet)).map(QuietedTerminal)
 }
 
@@ -68,8 +73,19 @@ impl Drop for QuietedTerminal {
     fn drop(&mut self) {
         // Deliver what was written first: a later Ctrl-C would flush it.
         imp::discard_input();
-        exclusive(|| imp::put_back(self.0));
+        warn(exclusive(|| imp::put_back(self.0)));
     }
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a drop has no caller to return the warning to: stderr is the only place left"
+)]
+fn warn(warning: Option<String>) {
+    // A stderr that cannot be written has nowhere to report to.
+    warning
+        .map_or(Ok(()), |text| writeln!(io::stderr().lock(), "{text}"))
+        .unwrap_or_default();
 }
 
 #[cfg(unix)]
@@ -108,11 +124,9 @@ mod imp {
         }
     }
 
-    pub(super) fn restore() {
+    pub(super) fn restore() -> Option<String> {
         discard_input();
-        if let Some(settings) = ORIGINAL.get() {
-            put_back(*settings);
-        }
+        ORIGINAL.get().and_then(|settings| put_back(*settings))
     }
 
     pub(super) fn discard_input() {
@@ -120,23 +134,19 @@ mod imp {
         unsafe { libc::tcdrain(libc::STDERR_FILENO) };
     }
 
-    pub(super) fn put_back(settings: TerminalSettings) {
-        write_settings(&settings)
-            .inspect_err(|error| {
-                crate::output::stderr_line(format_args!(
-                    "warning: the terminal settings were not put back: {error}"
-                ));
-            })
-            .unwrap_or_default();
+    pub(super) fn put_back(settings: TerminalSettings) -> Option<String> {
+        write_settings(&settings).err().map(|error| {
+            format!("warning: the terminal settings were not put back: {error}")
+        })
     }
 
     pub(super) fn quiet(
-        quiet: crate::terminal::tty::TerminalQuiet,
+        quiet: crate::tty::TerminalQuiet,
     ) -> io::Result<TerminalSettings> {
         // NOFLSH: a Ctrl-C must not flush what the form already wrote.
         let (off, on) = match quiet {
-            crate::terminal::tty::TerminalQuiet::Echo => (libc::ECHO, libc::NOFLSH),
-            crate::terminal::tty::TerminalQuiet::Keys => {
+            crate::tty::TerminalQuiet::Echo => (libc::ECHO, libc::NOFLSH),
+            crate::tty::TerminalQuiet::Keys => {
                 (libc::ECHO | libc::ISIG | libc::ICANON | libc::IEXTEN, 0)
             }
         };
@@ -165,13 +175,15 @@ mod imp {
 
     pub(super) fn remember() {}
 
-    pub(super) fn restore() {}
+    pub(super) fn restore() -> Option<String> {
+        None
+    }
 
-    pub(super) fn put_back(_: TerminalSettings) {}
+    pub(super) fn put_back(_: TerminalSettings) -> Option<String> {
+        None
+    }
 
-    pub(super) fn quiet(
-        _: crate::terminal::tty::TerminalQuiet,
-    ) -> io::Result<TerminalSettings> {
+    pub(super) fn quiet(_: crate::tty::TerminalQuiet) -> io::Result<TerminalSettings> {
         Err(io::Error::from(io::ErrorKind::Unsupported))
     }
 

@@ -15,12 +15,15 @@ use crate::{
     },
     domain::{
         board::EditRight,
-        change::{receipt::BoardStatus, value::BoardChange},
+        change::{
+            receipt::{BoardStatus, Delivery},
+            value::BoardChange,
+        },
         id_source::SequentialIds,
     },
     effect::{
         board_write::WriteInterpreter,
-        board_write_plan::{AcceptedUpdate, WrittenChange},
+        board_write_plan::WrittenChange,
         cache::CachePort as _,
         clock::FixedClock,
         confirmation::{ALWAYS, ReleaseCheck},
@@ -37,6 +40,7 @@ use crate::{
         hud::{DocumentResponse, SocketFrame, SocketMessage as HudMessage},
     },
     remote::{
+        api::hud::UPLOAD_PATH,
         client::{Client, fake},
         socket::{
             fake::{
@@ -54,7 +58,7 @@ use crate::{
                 signed_in,
             },
             recorder::WriteRecorder,
-            write::{UPLOAD_PATH, WriteOver, upload_error},
+            write::{WriteOver, upload_error},
         },
     },
     storage::cache::memory::MemoryCache,
@@ -224,7 +228,7 @@ async fn a_dry_run_sends_nothing_but_the_request() -> Result<()> {
     let socket = acking([Some(empty_board(EditRight::Editable))]);
     let written =
         written_by(&client, &WriteOver::reporter(&socket), &note("hi")).await?;
-    assert_eq!(written.accepted, None);
+    assert_eq!(written.delivery, Delivery::Built);
     let id = written
         .change
         .objects
@@ -268,7 +272,7 @@ async fn a_held_back_change_is_built_but_not_sent() -> Result<()> {
         },
     )
     .await?;
-    assert_eq!(changed.written.accepted, None);
+    assert_eq!(changed.written.delivery, Delivery::Built);
     assert_eq!(changed.written.change.objects.len(), 1);
     assert_eq!(sent(&socket), [hud::request_document(BOARD, "tok")]);
     Ok(())
@@ -293,12 +297,7 @@ async fn a_write_succeeds_only_on_its_own_ack() -> Result<()> {
             hud::OutgoingUpdate::Inline(written.change.update.clone())
         ))
     );
-    assert_eq!(
-        written.accepted,
-        Some(AcceptedUpdate {
-            id: written.update_id
-        })
-    );
+    assert_eq!(written.delivery, Delivery::Accepted);
     Ok(())
 }
 
@@ -320,7 +319,7 @@ async fn frames_of_other_documents_do_not_break_the_wait_for_the_ack() -> Result
     ]);
     let socket = acking([Some(empty_board(EditRight::Editable)), other]);
     let written = written_by(&client, &WriteOver::sender(&socket), &note("hi")).await?;
-    assert!(written.accepted.is_some());
+    assert_eq!(written.delivery, Delivery::Accepted);
     Ok(())
 }
 
@@ -413,7 +412,7 @@ async fn a_write_updates_the_cache_after_the_ack() -> Result<()> {
         Some(&memory),
     )
     .await?;
-    assert!(written.change.written.accepted.is_some());
+    assert_eq!(written.change.written.delivery, Delivery::Accepted);
     let state = memory.load_document(BOARD).unwrap_or_default();
     let doc = crate::domain::board_file::document::decoded(&state)?;
     let texts: Vec<String> = crate::domain::board::objects(&doc)
@@ -465,7 +464,7 @@ async fn a_write_from_a_copy_ahead_of_the_server_heals() -> Result<()> {
         Some(&memory),
     )
     .await?;
-    assert!(written.change.written.accepted.is_some());
+    assert_eq!(written.change.written.delivery, Delivery::Accepted);
     let kept = cached_ids(&memory)?;
     assert!(kept.contains(&"restored".to_owned()), "{kept:?}");
     assert!(!kept.contains(&"mine".to_owned()), "a write kept the copy");

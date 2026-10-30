@@ -6,13 +6,13 @@ use std::{
     io,
 };
 
-use crate::form::{
+use crate::{
     line::Keystroke,
     terminal::{Terminal, TerminalKind},
 };
 
 #[derive(Debug)]
-pub(crate) struct Script {
+pub struct Script {
     kind: TerminalKind,
     width: Option<usize>,
     keystrokes: RefCell<VecDeque<Keystroke>>,
@@ -34,7 +34,7 @@ enum CtrlC {
 
 impl Script {
     #[must_use]
-    pub(crate) fn new(
+    pub fn new(
         kind: TerminalKind,
         strokes: impl IntoIterator<Item = Keystroke>,
         lines: impl IntoIterator<Item = &'static str>,
@@ -54,7 +54,7 @@ impl Script {
     }
 
     #[must_use]
-    pub(crate) fn interrupted_before(self) -> Self {
+    pub fn interrupted_before(self) -> Self {
         Self {
             ctrl_c: CtrlC::Before,
             ..self
@@ -62,12 +62,12 @@ impl Script {
     }
 
     #[must_use]
-    pub(crate) fn was_quieted(&self) -> bool {
+    pub fn was_quieted(&self) -> bool {
         self.quieted.get()
     }
 
     #[must_use]
-    pub(crate) fn pressing_ctrl_c(self) -> Self {
+    pub fn pressing_ctrl_c(self) -> Self {
         Self {
             ctrl_c: CtrlC::AtOnce,
             ..self
@@ -75,12 +75,12 @@ impl Script {
     }
 
     #[must_use]
-    pub(crate) fn discards(&self) -> usize {
+    pub fn discards(&self) -> usize {
         self.discarded.get()
     }
 
     #[must_use]
-    pub(crate) fn without_hidden_echo(self) -> Self {
+    pub fn without_hidden_echo(self) -> Self {
         Self {
             echo_works: false,
             ..self
@@ -88,12 +88,12 @@ impl Script {
     }
 
     #[must_use]
-    pub(crate) fn written(&self) -> String {
+    pub fn written(&self) -> String {
         self.written.borrow().clone()
     }
 
     #[must_use]
-    pub(crate) fn hidden_reads(&self) -> usize {
+    pub fn hidden_reads(&self) -> usize {
         self.hidden.get()
     }
 }
@@ -157,13 +157,15 @@ impl Terminal for Script {
     fn interrupt(&self) -> impl Future<Output = ()> {
         let never = (self.ctrl_c == CtrlC::Never).then(std::future::pending::<()>);
         async move {
-            crate::terminal::awaiting::optional(never).await;
+            if let Some(pending) = never {
+                pending.await;
+            }
         }
     }
 }
 
 #[must_use]
-pub(crate) fn screen(raw: &str) -> String {
+pub fn screen(raw: &str) -> String {
     let end = raw.chars().fold(Screen::default(), Screen::feed);
     end.lines
         .iter()
@@ -175,7 +177,7 @@ pub(crate) fn screen(raw: &str) -> String {
 }
 
 #[must_use]
-pub(crate) fn without_escapes(raw: &str) -> String {
+pub fn without_escapes(raw: &str) -> String {
     raw.chars()
         .scan(false, |in_escape, c| {
             let (next, keep) = match (*in_escape, c) {
@@ -301,7 +303,7 @@ fn edited(
 
 #[cfg(test)]
 mod tests {
-    use crate::form::fake::screen;
+    use crate::fake::screen;
 
     #[test]
     fn screen_follows_cursor_moves_and_clears() {

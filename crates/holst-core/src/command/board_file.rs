@@ -8,11 +8,7 @@ use crate::{
         board_file::document::{ImportPlan, Overwrite},
         change::receipt::{Delivery, UpdateReceipt},
     },
-    effect::{
-        board_write::WriteMode,
-        board_write_plan::AcceptedUpdate,
-        socket::SocketConnector,
-    },
+    effect::{board_write::WriteMode, socket::SocketConnector},
     error::{Error, Result, board_change::BoardChangeError},
     remote::client::Client,
 };
@@ -51,7 +47,7 @@ pub async fn export_with(
 pub struct ImportedBoardFile {
     pub plan: ImportPlan,
     pub update_id: u64,
-    pub accepted: Option<AcceptedUpdate>,
+    pub delivery: Delivery,
 }
 
 impl ImportedBoardFile {
@@ -61,10 +57,7 @@ impl ImportedBoardFile {
         UpdateReceipt {
             bytes: self.plan.update.len(),
             id: self.update_id,
-            delivery: match self.accepted {
-                Some(_) => Delivery::Accepted,
-                None => Delivery::Built,
-            },
+            delivery: self.delivery,
         }
     }
 }
@@ -144,21 +137,22 @@ pub async fn write_with(
         Err(Error::BoardChange(BoardChangeError::ReadOnly))
     }?;
     let update_id = crate::domain::change::build::update_id(&client.new_id());
-    let accepted = match mode {
-        WriteMode::DryRun => None,
-        WriteMode::Send => Some(
+    let delivery = match mode {
+        WriteMode::DryRun => Delivery::Built,
+        WriteMode::Send => {
             crate::remote::socket::write::sent(
                 connected,
                 client,
                 plan.update.clone(),
                 update_id,
             )
-            .await?,
-        ),
+            .await?;
+            Delivery::Accepted
+        }
     };
     Ok(ImportedBoardFile {
         plan,
         update_id,
-        accepted,
+        delivery,
     })
 }

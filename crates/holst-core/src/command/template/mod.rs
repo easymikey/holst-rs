@@ -220,7 +220,7 @@ pub struct EditArgs {
     pub body: TextOrFile,
     #[argument(
         letter = 'y',
-        help = "Confirm a risky change; without it only the dry run is shown (exit code 77)"
+        help = "Confirm a risky change; a terminal asks instead; without one only the dry run is shown (exit code 77)"
     )]
     pub confirm: Confirmation,
     #[argument(letter = 'n', help = "Show what would change; change nothing")]
@@ -243,7 +243,7 @@ pub struct RemoveArgs {
     pub template: String,
     #[argument(
         letter = 'y',
-        help = "Confirm a risky change; without it only the dry run is shown (exit code 77)"
+        help = "Confirm a risky change; a terminal asks instead; without one only the dry run is shown (exit code 77)"
     )]
     pub confirm: Confirmation,
     #[argument(letter = 'n', help = "Show what would change; change nothing")]
@@ -407,12 +407,10 @@ pub async fn edit(client: &Client, args: &EditArgs) -> Result<Changed> {
     carry(
         client,
         Plan {
-            request: api::template::update_request(&id, &template)?,
-            action: Action::Edit,
             name: current.name,
-            id: Some(id),
-            objects: None,
+            id: Some(id.clone()),
             unconfirmed: Some(unconfirmed),
+            ..Plan::new(api::template::update_request(&id, &template)?, Action::Edit)
         },
         (args.dry_run, args.confirm),
     )
@@ -436,12 +434,10 @@ pub async fn rm(client: &Client, args: &RemoveArgs) -> Result<Changed> {
     carry(
         client,
         Plan {
-            request: api::template::delete_request(&id)?,
-            action: Action::Delete,
             name: current.name,
-            id: Some(id),
-            objects: None,
+            id: Some(id.clone()),
             unconfirmed: Some(unconfirmed),
+            ..Plan::new(api::template::delete_request(&id)?, Action::Delete)
         },
         (args.dry_run, args.confirm),
     )
@@ -527,6 +523,19 @@ struct Plan {
     name: Option<String>,
     objects: Option<usize>,
     unconfirmed: Option<Unconfirmed>,
+}
+
+impl Plan {
+    fn new(request: ApiRequest, action: Action) -> Self {
+        Self {
+            request,
+            action,
+            id: None,
+            name: None,
+            objects: None,
+            unconfirmed: None,
+        }
+    }
 }
 
 /// Sends the plan, reports it for a dry run, or holds it for want of its

@@ -1,24 +1,14 @@
 //! The `comment` tool: list, start, reply, resolve, delete, mark read.
 
 use holst_core::{
-    command::comment::{
-        self,
-        AddArgs,
-        CommentReport,
-        CommentVerb,
-        LsArgs,
-        ReadArgs,
-        RemoveArgs,
-        ReplyArgs,
-        ResolveArgs,
-    },
+    command::comment::{self, AddArgs, CommentReport, CommentVerb, LsArgs},
     domain::text::EMPTY,
-    effect::board_write::WriteMode,
+    remote::client::Client,
 };
 use rmcp::model::CallToolResult;
 use serde_json::{Map, Value};
 
-use crate::{login::HandedClient, server::McpServer, tools::said};
+use crate::server::McpServer;
 
 impl McpServer {
     pub(super) async fn comment_command(
@@ -53,70 +43,26 @@ impl McpServer {
                 .await
             }
             CommentVerb::Add => {
-                self.parsed(arguments, async |args: AddArgs| {
-                    self.sent(args.dry_run, async |client| {
-                        comment::add(&client, &self.cache, &args).await
-                    })
-                    .await
-                })
-                .await
+                let add = async |client: &Client, args: &AddArgs| {
+                    comment::add(client, &self.cache, args).await
+                };
+                self.change(arguments, add, Self::phrased).await
             }
             CommentVerb::Reply => {
-                self.parsed(arguments, async |args: ReplyArgs| {
-                    self.sent(args.dry_run, async |client| {
-                        comment::reply(&client, &args).await
-                    })
-                    .await
-                })
-                .await
+                self.change(arguments, comment::reply, Self::phrased).await
             }
             CommentVerb::Resolve => {
-                self.parsed(arguments, async |args: ResolveArgs| {
-                    self.sent(args.dry_run, async |client| {
-                        comment::resolve(&client, &args).await
-                    })
+                self.change(arguments, comment::resolve, Self::phrased)
                     .await
-                })
-                .await
             }
             CommentVerb::Read => {
-                self.parsed(arguments, async |args: ReadArgs| {
-                    self.sent(args.dry_run, async |client| {
-                        comment::read(&client, &args).await
-                    })
-                    .await
-                })
-                .await
+                self.change(arguments, comment::read, Self::phrased).await
             }
-            CommentVerb::Rm => {
-                self.parsed(arguments, async |args: RemoveArgs| {
-                    self.remove_thread(&args).await
-                })
-                .await
-            }
+            CommentVerb::Rm => self.change(arguments, comment::rm, Self::phrased).await,
         }
     }
 
-    /// Runs a change that needs no confirmation: a dry run only reads.
-    async fn sent(
-        &self,
-        dry_run: WriteMode,
-        change: impl AsyncFnOnce(HandedClient) -> holst_core::Result<CommentReport>,
-    ) -> CallToolResult {
-        let call =
-            async |client: HandedClient| Ok(changed_text(&change(client).await?));
-        self.by_mode(dry_run, call).await
+    fn phrased(_: &Self, changed: &CommentReport) -> String {
+        changed.phrase() + "\n"
     }
-
-    async fn remove_thread(&self, args: &RemoveArgs) -> CallToolResult {
-        let call = async |client: HandedClient| {
-            let change = comment::rm(&client, args).await?;
-            said(change.outcome.refusal(), || changed_text(&change))
-        };
-        self.by_mode(args.dry_run, call).await
-    }
-}
-
-fn changed_text(changed: &CommentReport) -> String {
-    changed.phrase() + "\n"
 }

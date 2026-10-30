@@ -2,6 +2,8 @@
 
 use holst_core::{
     command::{
+        board::show::account_cache,
+        board_load::CacheUse,
         search::{self, Found, NameMatch, SearchHit, TextMatch},
         table,
     },
@@ -13,7 +15,7 @@ use serde_json::{Map, Value};
 use crate::{
     error::Result,
     output::{self, DiagnosticLabel, OutputFormat, coloring::Coloring},
-    run::{RunSettings, board::account_cache, run_signed_in},
+    run::{RunSettings, run_signed_in},
 };
 
 pub(crate) async fn run(
@@ -23,8 +25,8 @@ pub(crate) async fn run(
 ) -> Result<()> {
     let args = table::parse(arguments)?;
     run_signed_in(run, async |client| {
-        let cache = account_cache(client, run.cache())
-            .await
+        let cache = account_cache(client, run.cache(), CacheUse::Use)
+            .await?
             .map(Cache::into_shared);
         let found = search::search(client, &args, cache).await?;
         match format {

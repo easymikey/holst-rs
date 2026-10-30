@@ -521,11 +521,21 @@ impl Then<'_> {
     /// # Panics
     /// When there is none, or it differs.
     pub fn lists_object_turned(&self, text: &str, degrees: &str) {
+        self.lists_with(text, "turned", degrees, |row| row.rotation.as_deref());
+    }
+
+    fn lists_with(
+        &self,
+        text: &str,
+        what: &str,
+        value: &str,
+        field: impl Fn(&ListedObject) -> Option<&str>,
+    ) {
         assert!(
             self.objects()
                 .iter()
-                .any(|row| row.text == text && row.rotation.as_deref() == Some(degrees)),
-            "expected {text:?} turned {degrees}, got {:?}",
+                .any(|row| row.text == text && field(row) == Some(value)),
+            "expected {text:?} {what} {value:?}, got {:?}",
             self.observation
         );
     }
@@ -582,13 +592,7 @@ impl Then<'_> {
     /// # Panics
     /// When there is none, or it differs.
     pub fn lists_object_sized(&self, text: &str, size: &str) {
-        assert!(
-            self.objects()
-                .iter()
-                .any(|row| row.text == text && row.size.as_deref() == Some(size)),
-            "expected {text:?} sized {size}, got {:?}",
-            self.observation
-        );
+        self.lists_with(text, "sized", size, |row| row.size.as_deref());
     }
 
     /// Expects the object with this text to have this color.
@@ -596,13 +600,7 @@ impl Then<'_> {
     /// # Panics
     /// When there is none, or it differs.
     pub fn lists_object_coloured(&self, text: &str, color: &str) {
-        assert!(
-            self.objects()
-                .iter()
-                .any(|row| row.text == text && row.color.as_deref() == Some(color)),
-            "expected {text:?} coloured {color}, got {:?}",
-            self.observation
-        );
+        self.lists_with(text, "coloured", color, |row| row.color.as_deref());
     }
 
     /// Expects the object with this text to show exactly these marks and
@@ -627,13 +625,7 @@ impl Then<'_> {
     /// # Panics
     /// When there is none, or it differs.
     pub fn lists_shape_looking(&self, text: &str, look: &str) {
-        assert!(
-            self.objects()
-                .iter()
-                .any(|row| row.text == text && row.look.as_deref() == Some(look)),
-            "expected {text:?} looking {look:?}, got {:?}",
-            self.observation
-        );
+        self.lists_with(text, "looking", look, |row| row.look.as_deref());
     }
 
     /// Expects an arrow listing this line, heads and stroke, in the words of
@@ -759,8 +751,15 @@ impl Then<'_> {
     /// # Panics
     /// When the observation differs.
     pub fn finds_text(&self, expected: &[(&str, &str, &str)]) {
-        let shown: Vec<(&str, &str, &str)> = self
-            .matches()
+        assert_eq!(
+            self.text_hits(),
+            expected,
+            "expected the texts {expected:?}"
+        );
+    }
+
+    fn text_hits(&self) -> Vec<(&str, &str, &str)> {
+        self.matches()
             .iter()
             .filter_map(|found| match found {
                 ListedMatch::Text(hit) => {
@@ -768,8 +767,7 @@ impl Then<'_> {
                 }
                 ListedMatch::Name(_) => None,
             })
-            .collect();
-        assert_eq!(shown, expected, "expected the texts {expected:?}");
+            .collect()
     }
 
     /// Expects exactly these names (kind, name) among the matches, in any
@@ -813,16 +811,7 @@ impl Then<'_> {
     /// # Panics
     /// When the observation differs.
     pub fn finds_texts(&self, expected: &[(&str, &str, &str)]) {
-        let mut shown: Vec<(&str, &str, &str)> = self
-            .matches()
-            .iter()
-            .filter_map(|found| match found {
-                ListedMatch::Text(hit) => {
-                    Some((hit.board.as_str(), hit.kind.as_str(), hit.text.as_str()))
-                }
-                ListedMatch::Name(_) => None,
-            })
-            .collect();
+        let mut shown = self.text_hits();
         let mut wanted = expected.to_vec();
         shown.sort_unstable();
         wanted.sort_unstable();

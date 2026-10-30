@@ -52,16 +52,6 @@ impl Surface {
         }
     }
 
-    /// Returns the signal of a file that is not what it should be: exit code
-    /// 65 on the CLI, an error reply from the tool.
-    #[must_use]
-    pub const fn bad_data(self) -> ErrorExit {
-        match self {
-            Surface::Cli => ErrorExit::ExitCode(65),
-            Surface::Mcp => ErrorExit::ToolError,
-        }
-    }
-
     /// Returns the signal of a server that refuses or cannot serve the request,
     /// as a board in a format this version cannot use: exit code 69 on the CLI,
     /// an error reply from the tool.

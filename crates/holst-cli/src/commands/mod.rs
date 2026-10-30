@@ -16,8 +16,12 @@ pub(crate) mod workspace;
 use std::io::Read;
 
 use holst_core::{
-    command::table::{CommandName, ValueKind},
+    command::{
+        change::Outcome,
+        table::{self, CommandArgs, CommandName, ValueKind},
+    },
     error::confirmation::Unconfirmed,
+    remote::client::Client,
 };
 use serde_json::{Map, Value};
 
@@ -25,7 +29,7 @@ use crate::{
     error::{Error, Result},
     form::{Form, terminal::Console},
     output::OutputFormat,
-    run::{Prompting, RunSettings},
+    run::{Prompting, RunSettings, run_signed_in},
 };
 
 /// How many times a run may be repeated after an answer.
@@ -34,6 +38,24 @@ const ROUNDS: usize = 3;
 /// Turns the refusal of a held change into the exit code.
 pub(crate) fn refused(refusal: Option<&Unconfirmed>) -> Result<()> {
     refusal.map_or(Ok(()), |refusal| Err(Error::Unconfirmed(refusal.clone())))
+}
+
+/// Parses, makes one change and prints it. The plan of a change held for its
+/// confirmation is shown first; the refusal is the exit code.
+pub(crate) async fn change<A: CommandArgs, R: Outcome>(
+    arguments: Map<String, Value>,
+    run: &RunSettings,
+    format: OutputFormat,
+    make: impl AsyncFn(&Client, &A) -> holst_core::Result<R>,
+    render: impl Fn(OutputFormat, &R) -> Result<()>,
+) -> Result<()> {
+    let args = table::parse::<A>(arguments)?;
+    run_signed_in(run, async |client| {
+        let done = make(client, &args).await?;
+        render(format, &done)?;
+        refused(done.refusal())
+    })
+    .await
 }
 
 #[expect(
@@ -76,11 +98,11 @@ fn asked(
     arguments: &Map<String, Value>,
     run: &RunSettings,
 ) -> Result<Option<Map<String, Value>>> {
-    match (run.prompting(), ask::question(error)) {
+    match (run.prompting(), ask::question(error, arguments)) {
         (Prompting::Keys | Prompting::Lines, Some(question)) => {
             let form = Form::bare(Console::detect(run.terminal_type()));
-            ask::put(&form, &question)
-                .map(|()| Some(ask::answered(arguments.clone(), &question)))
+            ask::put(&form, question)
+                .map(|answer| Some(ask::answered(arguments.clone(), answer)))
         }
         (Prompting::Off, _) | (_, None) => Ok(None),
     }

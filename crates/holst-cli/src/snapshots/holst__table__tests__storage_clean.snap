@@ -12,7 +12,7 @@ USAGE
 FLAGS
       --cache     Also remove the board cache
       --all       Also remove the board cache and the saved login here, as `holst auth logout --local-only`
-  -y, --yes       Confirm a risky change; without it only the dry run is shown (exit code 77)
+  -y, --yes       Confirm a risky change; a terminal asks instead; without one only the dry run is shown (exit code 77)
   -n, --dry-run   Show what would change; change nothing
 
 INHERITED FLAGS

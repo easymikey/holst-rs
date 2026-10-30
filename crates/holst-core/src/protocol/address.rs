@@ -78,28 +78,6 @@ impl BaseUrl {
             Err(Error::BoardSocket(BoardSocketError::ForeignLink { host }))
         }
     }
-
-    /// `…/gapi/backup/download?key=…&server_provider_type=…`; both required.
-    ///
-    /// # Errors
-    ///
-    /// [`crate::error::input::InputError::BaseNotUrl`] when the path does not
-    /// join onto the base.
-    pub fn backup_download(&self, key: &str, provider: &str) -> Result<Url> {
-        self.url
-            .join("/gapi/backup/download")
-            .map_err(|_| {
-                Error::Input(InputError::BaseNotUrl {
-                    base: self.raw.clone(),
-                })
-            })
-            .map(|mut url| {
-                url.query_pairs_mut()
-                    .append_pair("key", key)
-                    .append_pair("server_provider_type", provider);
-                url
-            })
-    }
 }
 
 #[cfg(test)]
@@ -159,17 +137,5 @@ mod tests {
         assert!(ok("https://cdns-edge.app.holst.so/gapi/hud/download/b/s"));
         assert!(!ok("https://evil.test/x"));
         assert!(!ok("http://cdns-edge.app.holst.so/x"));
-    }
-
-    #[test]
-    fn backup_url_carries_key_and_provider() {
-        let url = base("https://app.holst.so")
-            .and_then(|base| base.backup_download("a b", "hud").ok());
-        assert_eq!(
-            url.as_ref().map(Url::as_str),
-            Some(
-                "https://app.holst.so/gapi/backup/download?key=a+b&server_provider_type=hud"
-            )
-        );
     }
 }

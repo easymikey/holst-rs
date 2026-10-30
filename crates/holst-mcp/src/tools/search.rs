@@ -32,7 +32,6 @@ use crate::{
     error::{Error, Result},
     login::HandedClient,
     server::McpServer,
-    tools::input::lower_uuid,
 };
 
 /// The most the lines of matches take in a reply, in bytes; the rest is cut.
@@ -84,29 +83,12 @@ impl McpServer {
     }
 
     async fn found(&self, client: &HandedClient, args: SearchArgs) -> Result<String> {
-        let args = self.with_ids(args)?;
         let reads = Kept {
             holst: self,
             client,
         };
         let found = search::search_with(client, &args, &reads).await?;
         Ok(self.found_text(&found))
-    }
-
-    /// Takes the `@N` of a workspace or a board for its id.
-    fn with_ids(&self, args: SearchArgs) -> Result<SearchArgs> {
-        let expand = |reference: Option<String>| {
-            reference
-                .as_deref()
-                .map(|reference| self.expand(reference.trim()))
-                .transpose()
-                .map(|reference| reference.map(lower_uuid))
-        };
-        Ok(SearchArgs {
-            workspace: expand(args.workspace)?,
-            board: expand(args.board)?,
-            ..args
-        })
     }
 
     /// One line per match, best first, each with its `@N`.

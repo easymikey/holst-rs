@@ -509,6 +509,27 @@ pub struct ChangedObject {
 }
 
 impl ChangedObject {
+    /// A new object, with no fields to name.
+    #[must_use]
+    pub fn created(id: String, kind: ObjectKind) -> Self {
+        Self {
+            id,
+            kind,
+            change: ObjectChangeKind::Created,
+            fields: Vec::new(),
+            link: None,
+        }
+    }
+
+    /// A deleted object, with no fields to name.
+    #[must_use]
+    pub fn removed(id: String, kind: ObjectKind) -> Self {
+        Self {
+            change: ObjectChangeKind::Removed,
+            ..Self::created(id, kind)
+        }
+    }
+
     /// `self` with the link `link` gives its id, unless it is removed.
     #[must_use]
     pub fn with_link(&self, link: impl Fn(&str) -> String) -> Self {

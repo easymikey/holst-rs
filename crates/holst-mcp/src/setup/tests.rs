@@ -1,4 +1,4 @@
-//! The setup dialog against the fake Holst server, through in-memory lines.
+//! The setup dialog against the fake Holst server, through a scripted terminal.
 
 #![expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
 #![expect(
@@ -14,14 +14,21 @@ use holst_core::{
     effect::settings::Settings,
     fake::{Fake, Fixture},
 };
+use holst_form::{
+    error::FormError,
+    fake::Script,
+    form::Form,
+    line::Keystroke,
+    terminal::TerminalKind,
+};
 
 use crate::{
     login::store::{Backend as _, SystemBackend},
     setup::{
+        Clients,
         Secret,
         SetupError,
         Steps,
-        Talk,
         connect::tests::Machine,
         set_up,
         stale_warning,
@@ -76,46 +83,58 @@ async fn rig(test: &str) -> Result<Rig, Trouble> {
     })
 }
 
+type Outcome = (Result<(), SetupError>, String, Vec<String>);
+
 impl Rig {
     fn saved(&self) -> Result<Option<Session>, Trouble> {
         Ok(self.backend.load()?.map(|(session, _)| session))
     }
 
-    /// Runs the given steps on `typed`, with no client program on the machine.
-    async fn steps(
-        &self,
-        typed: &str,
-        steps: Steps,
-    ) -> (Result<(), SetupError>, String, Vec<String>) {
-        let mut talk = Talk::new(typed.as_bytes(), Vec::new(), false);
+    /// Runs the given steps on the script, with no client program on the
+    /// machine.
+    async fn steps_on(&self, script: Script, steps: Steps) -> Outcome {
+        let form = Form::bare(script);
         let machine = Machine::with(&[]);
-        let outcome =
-            set_up(&self.backend, &mut talk, &machine, "/opt/holst-mcp", steps).await;
-        (
-            outcome,
-            String::from_utf8_lossy(&talk.out).into_owned(),
-            machine.calls.take(),
+        let outcome = set_up(
+            &self.backend,
+            &form,
+            &machine,
+            "/opt/holst-mcp",
+            steps,
+            &Clients::Ask,
         )
+        .await;
+        (outcome, form.terminal().written(), machine.calls.take())
     }
 
-    /// Runs the dialog on `typed`; returns the outcome and the terminal text.
-    async fn setup(&self, typed: &str) -> (Result<(), SetupError>, String) {
+    /// Runs the steps on answers typed as lines (a terminal without keys).
+    async fn steps(&self, typed: &[&'static str], steps: Steps) -> Outcome {
+        let script = Script::new(TerminalKind::Dumb, [], typed.iter().copied());
+        self.steps_on(script, steps).await
+    }
+
+    /// Runs the login on `typed`; returns the outcome and the terminal text.
+    async fn setup(&self, typed: &[&'static str]) -> (Result<(), SetupError>, String) {
         let (outcome, shown, _) = self.steps(typed, Steps::LoginOnly).await;
         (outcome, shown)
     }
 }
 
-const LOGGED_IN: &str = "Logged in as ada@example.com. The MCP server picks the login up on its next call.\n";
+const EMAIL: &str = "ada@example.com";
+const LOGGED_IN: &str = "Logged in";
 
 #[tokio::test]
 async fn a_right_code_saves_the_login_the_server_reads() -> Result<(), Trouble> {
     let rig = rig("success").await?;
-    let (outcome, shown) = rig.setup("ada@example.com\n123456\n").await;
+    let (outcome, shown) = rig.setup(&[EMAIL, "123456"]).await;
     outcome?;
-    assert_eq!(
-        shown,
-        format!("Email: A code was sent to ada@example.com.\nCode: {LOGGED_IN}")
+    assert!(shown.contains("A code was sent to"), "{shown}");
+    assert!(shown.contains(LOGGED_IN), "{shown}");
+    assert!(
+        shown.contains("picks the login up on its next call"),
+        "{shown}"
     );
+    assert!(!shown.contains("123456"), "{shown}");
     assert!(rig.saved()?.is_some());
     Ok(())
 }
@@ -124,19 +143,29 @@ async fn a_right_code_saves_the_login_the_server_reads() -> Result<(), Trouble> 
 async fn a_wrong_code_asks_again_and_a_later_right_one_saves() -> Result<(), Trouble> {
     let rig = rig("again").await?;
     let (outcome, shown) = rig
-        .setup("not an address\nada@example.com\n000000\n111111\n123456\n")
+        .setup(&["not an address", EMAIL, "000000", "111111", "123456"])
         .await;
     outcome?;
-    assert_eq!(
-        shown,
-        format!(
-            "Email: That does not look like an email address.\n\
-             Email: A code was sent to ada@example.com.\n\
-             Code: That code was not accepted. Try again.\n\
-             Code: That code was not accepted. Try again.\n\
-             Code: {LOGGED_IN}"
-        )
+    assert!(
+        shown.contains("enter an address like you@example.com"),
+        "{shown}"
     );
+    assert_eq!(
+        shown.matches("that code did not match").count(),
+        2,
+        "{shown}"
+    );
+    assert!(shown.contains(LOGGED_IN), "{shown}");
+    assert!(rig.saved()?.is_some());
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_empty_code_is_asked_again_without_a_try() -> Result<(), Trouble> {
+    let rig = rig("empty").await?;
+    let (outcome, shown) = rig.setup(&[EMAIL, "", "123456"]).await;
+    outcome?;
+    assert_eq!(shown.matches("this cannot be empty").count(), 1, "{shown}");
     assert!(rig.saved()?.is_some());
     Ok(())
 }
@@ -145,11 +174,12 @@ async fn a_wrong_code_asks_again_and_a_later_right_one_saves() -> Result<(), Tro
 async fn three_wrong_codes_fail_and_save_nothing() -> Result<(), Trouble> {
     let rig = rig("refused").await?;
     let (outcome, shown) = rig
-        .setup("ada@example.com\n000000\n111111\n222222\n123456\n")
+        .setup(&[EMAIL, "000000", "111111", "222222", "123456"])
         .await;
     assert!(matches!(outcome, Err(SetupError::Refused(Secret::Code))));
-    assert!(
-        shown.ends_with("Code: That code was not accepted.\n"),
+    assert_eq!(
+        shown.matches("that code did not match").count(),
+        2,
         "{shown}"
     );
     assert_eq!(rig.saved()?, None);
@@ -159,39 +189,56 @@ async fn three_wrong_codes_fail_and_save_nothing() -> Result<(), Trouble> {
 #[tokio::test]
 async fn an_existing_login_stays_unless_the_answer_is_yes() -> Result<(), Trouble> {
     let rig = rig("existing").await?;
-    rig.setup("ada@example.com\n123456\n").await.0?;
+    rig.setup(&[EMAIL, "123456"]).await.0?;
     let before = rig.saved()?;
-    let (no, asked) = rig.setup("n\n").await;
+    let (no, asked) = rig.setup(&["n"]).await;
     no?;
-    assert!(asked.contains("Log in again? [y/N]: "), "{asked}");
+    assert!(asked.contains("Log in again?"), "{asked}");
     assert!(!asked.contains("Email"), "{asked}");
     assert_eq!(rig.saved()?, before);
-    let (blank, left_blank) = rig.setup("\n").await;
+    let (blank, left_blank) = rig.setup(&[""]).await;
     blank?;
     assert!(!left_blank.contains("Email"), "{left_blank}");
-    let (yes, again) = rig.setup("y\nada@example.com\n123456\n").await;
+    let (yes, again) = rig.setup(&["y", EMAIL, "123456"]).await;
     yes?;
-    assert!(again.ends_with(LOGGED_IN), "{again}");
+    assert!(again.contains(LOGGED_IN), "{again}");
     Ok(())
 }
 
 #[tokio::test]
 async fn the_end_of_input_stops_the_dialog() -> Result<(), Trouble> {
     let rig = rig("eof").await?;
-    let (outcome, _) = rig.setup("ada@example.com\n").await;
-    assert!(matches!(outcome, Err(SetupError::EndOfInput)));
+    let (outcome, _) = rig.setup(&[EMAIL]).await;
+    assert!(matches!(
+        outcome,
+        Err(SetupError::Form(FormError::Cancelled))
+    ));
     assert_eq!(rig.saved()?, None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn typed_keys_never_show_the_code() -> Result<(), Trouble> {
+    let rig = rig("keys").await?;
+    let keys = [EMAIL, "123456"]
+        .into_iter()
+        .flat_map(|text| text.chars().map(Keystroke::Char).chain([Keystroke::Enter]));
+    let (outcome, shown, _) = rig
+        .steps_on(Script::new(TerminalKind::Live, keys, []), Steps::LoginOnly)
+        .await;
+    outcome?;
+    assert!(!shown.contains("123456"), "{shown:?}");
+    assert!(shown.contains("▪▪▪▪▪▪"), "{shown:?}");
+    assert!(rig.saved()?.is_some());
     Ok(())
 }
 
 #[tokio::test]
 async fn no_connect_logs_in_and_leaves_the_clients_alone() -> Result<(), Trouble> {
     let rig = rig("no-connect").await?;
-    let (outcome, shown, asked) = rig
-        .steps("ada@example.com\n123456\n", Steps::LoginOnly)
-        .await;
+    let (outcome, shown, asked) = rig.steps(&[EMAIL, "123456"], Steps::LoginOnly).await;
     outcome?;
-    assert!(shown.ends_with(LOGGED_IN), "{shown}");
+    assert!(shown.contains(LOGGED_IN), "{shown}");
     assert!(asked.is_empty(), "{asked:?}");
     Ok(())
 }
@@ -199,10 +246,10 @@ async fn no_connect_logs_in_and_leaves_the_clients_alone() -> Result<(), Trouble
 #[tokio::test]
 async fn connect_only_skips_the_login() -> Result<(), Trouble> {
     let rig = rig("connect-only").await?;
-    let (outcome, shown, asked) = rig.steps("", Steps::ConnectOnly).await;
+    let (outcome, shown, asked) = rig.steps(&[], Steps::ConnectOnly).await;
     outcome?;
     assert!(
-        shown.starts_with("Other clients: add the server by hand."),
+        shown.contains("Other clients: add the server by hand."),
         "{shown}"
     );
     assert_eq!(asked, ["claude mcp get holst-rs", "codex mcp get holst-rs"]);
@@ -213,8 +260,7 @@ async fn connect_only_skips_the_login() -> Result<(), Trouble> {
 #[tokio::test]
 async fn both_steps_log_in_then_connect() -> Result<(), Trouble> {
     let rig = rig("both").await?;
-    let (outcome, shown, asked) =
-        rig.steps("ada@example.com\n123456\n", Steps::Both).await;
+    let (outcome, shown, asked) = rig.steps(&[EMAIL, "123456"], Steps::Both).await;
     outcome?;
     assert!(shown.contains(LOGGED_IN), "{shown}");
     assert!(shown.contains("\"mcpServers\""), "{shown}");
@@ -234,7 +280,7 @@ fn a_stale_copy_is_warned_about_with_its_hint() {
     );
     let warning = stale_warning(&stale);
     assert!(
-        warning.starts_with("Warning: an older login may be left in the keychain"),
+        warning.starts_with("an older login may be left in the keychain"),
         "{warning}"
     );
     assert!(
@@ -246,12 +292,12 @@ fn a_stale_copy_is_warned_about_with_its_hint() {
 #[tokio::test]
 async fn a_second_setup_ends_the_first_server_session() -> Result<(), Trouble> {
     let rig = rig("relogin").await?;
-    rig.setup("ada@example.com\n123456\n").await.0?;
+    rig.setup(&[EMAIL, "123456"]).await.0?;
     let old = rig
         .saved()?
         .ok_or(holst_core::error::login::LoginError::NoSavedLogin)
         .map_err(holst_core::Error::from)?;
-    rig.setup("y\nada@example.com\n123456\n").await.0?;
+    rig.setup(&["y", EMAIL, "123456"]).await.0?;
     let client = rig.backend.connect(old)?;
     let check = holst_core::command::account::check(&client).await;
     assert!(

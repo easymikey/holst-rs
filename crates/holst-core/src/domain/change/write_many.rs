@@ -7,18 +7,11 @@ use std::{
 
 use itertools::Itertools as _;
 use serde_json::{Value, json};
-use yrs::{
-    Any,
-    Map as _,
-    MapPrelim,
-    TransactionMut,
-    XmlTextPrelim,
-    types::ToJson as _,
-};
+use yrs::{Map as _, TransactionMut, XmlTextPrelim, types::ToJson as _};
 
 use crate::{
     domain::{
-        board::{Object, ObjectKind, any, json as stored_json},
+        board::{Object, ObjectKind, insert_map, json as stored_json},
         change::{
             check::{
                 CheckedEdit,
@@ -30,7 +23,7 @@ use crate::{
                 rectangle_of,
             },
             stacking,
-            value::{ChangedObject, ObjectChangeKind, ObjectPatch, Pasted, Reparent},
+            value::{ChangedObject, ObjectPatch, Pasted, Reparent},
             write::{
                 Alongside,
                 Edge,
@@ -40,6 +33,7 @@ use crate::{
                 beyond,
                 edit,
                 fill_text,
+                new_header,
                 shifted,
                 stored_now,
             },
@@ -50,7 +44,6 @@ use crate::{
     error::{Error, Result, board_change::BoardChangeError},
     protocol::document::{
         COLOR,
-        CREATED,
         DOCUMENT_ID,
         END,
         ID,
@@ -60,7 +53,6 @@ use crate::{
         START,
         TAG_IDS,
         TITLE,
-        Z_INDEX,
     },
 };
 
@@ -267,13 +259,8 @@ fn new_tag(
 ) -> Result<String> {
     let id = scope.context.ids.new_id();
     let pairs = [(ID, id.as_str()), (TITLE, title), (COLOR, NEW_TAG_COLOR)]
-        .into_iter()
-        .map(|(name, value)| any(&json!(value)).map(|value| (name.to_owned(), value)))
-        .collect::<Result<Vec<(String, Any)>>>()?;
-    scope
-        .roots
-        .tags
-        .insert(transaction, id.as_str(), MapPrelim::from_iter(pairs));
+        .map(|(name, value)| (name.to_owned(), json!(value)));
+    insert_map(transaction, &scope.roots.tags, id.as_str(), pairs)?;
     Ok(id)
 }
 
@@ -326,20 +313,9 @@ impl Pasting<'_> {
             .as_object()
             .into_iter()
             .flatten()
-            .map(|(name, value)| any(value).map(|value| (name.clone(), value)))
-            .collect::<Result<Vec<(String, Any)>>>()?;
-        self.scope.roots.objects.insert(
-            transaction,
-            id.as_str(),
-            MapPrelim::from_iter(pairs),
-        );
-        let made = ChangedObject {
-            id: id.clone(),
-            kind: object.kind.clone(),
-            change: ObjectChangeKind::Created,
-            fields: Vec::new(),
-            link: None,
-        };
+            .map(|(name, value)| (name.clone(), value.clone()));
+        insert_map(transaction, &self.scope.roots.objects, id.as_str(), pairs)?;
+        let made = ChangedObject::created(id.clone(), object.kind.clone());
         Ok(running.after(vec![(id.clone(), stored)], vec![made]))
     }
 
@@ -360,12 +336,13 @@ impl Pasting<'_> {
         } else {
             Edge::Front
         };
-        let own = [
-            (ID.to_owned(), json!(id)),
-            (Z_INDEX.to_owned(), json!(beyond(states, id, stacking))),
-            (CREATED.to_owned(), self.scope.stamp.json()),
-            ("updated".to_owned(), Value::Null),
-        ];
+        let own = new_header(
+            id,
+            &object.kind,
+            beyond(states, id, stacking),
+            self.scope.stamp,
+        )
+        .map(|(name, value)| (name.to_owned(), value));
         let parent = self
             .parent(object, &placed, states)
             .map(|parent| (PARENT_ID.to_owned(), json!(parent)));

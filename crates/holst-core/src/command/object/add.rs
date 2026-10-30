@@ -117,6 +117,14 @@ async fn added(
     if hides {
         refuse_hiding(client, &board).await?;
     }
+    let objects = board_objects(&loaded.document);
+    let scene = Scene::new(&objects);
+    // Before any upload: a frame named twice is refused with nothing sent.
+    items
+        .iter()
+        .filter_map(|item| item.frame.as_deref())
+        .filter(|name| !name.starts_with('#'))
+        .try_for_each(|name| scene.frame(name).map(|_| ()))?;
     let got = fetched(
         client,
         &board,
@@ -124,8 +132,6 @@ async fn added(
         items,
     )
     .await?;
-    let objects = board_objects(&loaded.document);
-    let scene = Scene::new(&objects);
     let change = BoardChange::AddAll(entries(
         items,
         &got,
@@ -967,6 +973,7 @@ mod tests {
 
     use super::{Fetched, add, added, entries, fetched, linked_frame, read_items};
     use crate::{
+        Error,
         Result,
         command::{
             board::show::Loading,
@@ -982,6 +989,7 @@ mod tests {
             response::LinkPreview,
         },
         effect::{http::HttpResponse, settings::CacheSettings},
+        error::lookup::{LookupError, LookupMiss},
         protocol::hud::{DocumentResponse, UpdatePayload},
         remote::{
             client::{
@@ -1224,13 +1232,17 @@ mod tests {
     }
 
     fn document_with(right: EditRight) -> Scripted {
+        document_of(objects(), right)
+    }
+
+    fn document_of(fields_of: Vec<Value>, right: EditRight) -> Scripted {
         let doc = Doc::with_client_id(4);
         let store = doc.get_or_insert_map("objects");
         {
             // imperative: yrs inserts through one `&mut` transaction
             let mut txn = doc.transact_mut();
             // imperative: yrs inserts through one `&mut` transaction
-            for fields in objects() {
+            for fields in fields_of {
                 let id = fields.get("id").and_then(Value::as_str).unwrap_or_default();
                 let any = Any::from_json(&fields.to_string()).unwrap_or(Any::Null);
                 store.insert(&mut txn, id, any);
@@ -1425,6 +1437,48 @@ mod tests {
                 mime: "application/pdf".to_owned(),
                 bytes: 5,
             })]
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn frames_named_alike_are_refused_before_any_upload() -> Result<()> {
+        let (fake, client) = serving(vec![reply(200, &[], r#"{"name":"u-2.pdf"}"#)])?;
+        let path = local("plan.pdf", b"%PDF-")?;
+        let arguments = args(json!({"kind": "file", "path": path, "frame": "Q3"}))?;
+        let twin = json!({"id": "f2", "type": "frame", "position": {"x": 900, "y": 0},
+            "width": 800, "height": 600, "labelText": "Q3"});
+        let refused = added(
+            &client,
+            Loading {
+                connector: &document_of(
+                    objects().into_iter().chain([twin]).collect(),
+                    EditRight::Editable,
+                ),
+                cache: None,
+                cache_use: CacheUse::Use,
+            },
+            &arguments,
+            &read_items(&arguments)?,
+        )
+        .await;
+        let uploads = fake
+            .requests()
+            .iter()
+            .filter(|request| request.url.path().contains("upload"))
+            .count();
+        assert_eq!(
+            (
+                matches!(
+                    refused,
+                    Err(Error::Lookup(LookupError {
+                        miss: LookupMiss::Ambiguous { .. },
+                        ..
+                    }))
+                ),
+                uploads
+            ),
+            (true, 0)
         );
         Ok(())
     }

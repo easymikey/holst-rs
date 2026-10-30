@@ -883,7 +883,7 @@ pub struct RemoveArgs {
     pub workspace: Option<String>,
     #[argument(
         letter = 'y',
-        help = "Confirm a risky change; without it only the dry run is shown (exit code 77)"
+        help = "Confirm a risky change; a terminal asks instead; without one only the dry run is shown (exit code 77)"
     )]
     pub confirm: Confirmation,
     #[argument(letter = 'n', help = "Show what would change; change nothing")]

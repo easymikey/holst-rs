@@ -29,7 +29,7 @@ fn the_exit_codes_command_prints_the_table() -> TestResult {
 #[test]
 fn mistakes_in_api_arguments_are_explained() -> TestResult {
     let base = fake::start()?.base_url().to_owned();
-    let cases: [(&[&str], i32, &[&str]); 5] = [
+    let cases: [(&[&str], i32, &[&str]); 6] = [
         (
             &["api", "GET", "gapi/current_user"],
             64,
@@ -38,10 +38,10 @@ fn mistakes_in_api_arguments_are_explained() -> TestResult {
         (
             &["api", "FETCH", "/gapi/current_user"],
             64,
-            &["FETCH", "[possible values: GET, POST, PUT, PATCH, DELETE]"],
+            &["FETCH", "[possible values: GET, POST, PATCH, DELETE]"],
         ),
         (
-            &["api", "GET", "/gapi/x", "-q", "novalue"],
+            &["api", "GET", "/gapi/current_user", "-q", "novalue"],
             64,
             &["expected key=value, got \"novalue\""],
         ),
@@ -49,7 +49,7 @@ fn mistakes_in_api_arguments_are_explained() -> TestResult {
             &[
                 "api",
                 "POST",
-                "/gapi/x",
+                "/gapi/channel/create",
                 "--body",
                 "@/nonexistent/holst-body.json",
             ],
@@ -59,12 +59,20 @@ fn mistakes_in_api_arguments_are_explained() -> TestResult {
                 "\n  cause: ",
             ],
         ),
+        // Refused before any request: the revoked login is never tried.
+        (
+            &["api", "GET", "/gapi/x"],
+            64,
+            &[
+                "error: holst api sends only the calls holst knows; GET /gapi/x is not one of them",
+            ],
+        ),
         // Held before any request: the revoked login is never tried.
         (
-            &["api", "DELETE", "/gapi/x"],
+            &["api", "DELETE", "/gapi/favorite_channel/delete"],
             77,
             &[
-                "error: sending DELETE /gapi/x cannot be undone; confirm with --yes",
+                "error: sending DELETE /gapi/favorite_channel/delete cannot be undone; confirm with --yes",
                 "hint: check the target, then run the command again with `--yes`",
             ],
         ),
@@ -109,18 +117,16 @@ fn a_dry_run_shows_the_request_and_sends_nothing() -> TestResult {
 
 #[test]
 fn empty_reply_to_a_change_says_done() -> TestResult {
-    let base = fake::start()?.base_url().to_owned();
+    let fake = fake::start()?;
+    let base = fake.base_url().to_owned();
+    let body = format!(
+        r#"{{"channelId":"{}"}}"#,
+        fake.id_of("Plans").unwrap_or_default()
+    );
     let out = holst(
         &base,
-        Some(REVOKED),
-        &[
-            "api",
-            "POST",
-            "/gapi/send_temporary_password",
-            "--yes",
-            "--body",
-            "{}",
-        ],
+        Some(&accepted()),
+        &["api", "POST", "/gapi/recent/set", "--yes", "--body", &body],
         "",
     )?;
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
@@ -145,18 +151,16 @@ fn a_get_prints_what_the_server_answered() -> TestResult {
 
 #[test]
 fn a_post_with_the_short_yes_is_sent() -> TestResult {
-    let base = fake::start()?.base_url().to_owned();
+    let fake = fake::start()?;
+    let base = fake.base_url().to_owned();
+    let body = format!(
+        r#"{{"channelId":"{}"}}"#,
+        fake.id_of("Plans").unwrap_or_default()
+    );
     let out = holst(
         &base,
-        Some(REVOKED),
-        &[
-            "api",
-            "POST",
-            "/gapi/send_temporary_password",
-            "-y",
-            "--body",
-            "{}",
-        ],
+        Some(&accepted()),
+        &["api", "POST", "/gapi/recent/set", "-y", "--body", &body],
         "",
     )?;
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
@@ -166,24 +170,19 @@ fn a_post_with_the_short_yes_is_sent() -> TestResult {
 
 #[test]
 fn a_post_without_yes_shows_the_plan_and_asks_for_it() -> TestResult {
+    const BODY: &str = r#"{"channelId":"00000000-0000-4000-8000-0000000000a3"}"#;
     let base = fake::start()?.base_url().to_owned();
     let out = holst(
         &base,
         Some(REVOKED),
-        &[
-            "api",
-            "POST",
-            "/gapi/send_temporary_password",
-            "--body",
-            "{}",
-        ],
+        &["api", "POST", "/gapi/recent/set", "--body", BODY],
         "",
     )?;
     let text = stderr(&out);
     assert_eq!(out.status.code(), Some(77), "{text}");
     assert_eq!(
         String::from_utf8_lossy(&out.stdout),
-        "POST /gapi/send_temporary_password\n{}\n"
+        format!("POST /gapi/recent/set\n{BODY}\n")
     );
     assert!(text.contains("cannot be undone"), "{text}");
     assert!(text.contains("--yes"), "{text}");

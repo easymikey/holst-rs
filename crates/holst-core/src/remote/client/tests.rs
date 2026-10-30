@@ -598,7 +598,10 @@ async fn a_limited_client_keeps_its_transport() -> Result<()> {
     let client = new_client(Some(bare("tok")), "http://127.0.0.1:1".parse()?)?
         .with_transport(Arc::clone(&fake))
         .with_response_limit(Duration::from_secs(1), 16)?;
-    assert_eq!(client.download("/x").await?, b"bytes");
+    assert_eq!(
+        client.send_bytes(raw(HttpMethod::Get, "/x", None)).await?,
+        b"bytes"
+    );
     assert_eq!(paths(&fake), ["GET /x"]);
     Ok(())
 }
@@ -612,7 +615,10 @@ async fn a_limited_fake_refuses_a_body_over_the_limit() -> Result<()> {
     let client = new_client(Some(bare("tok")), "http://127.0.0.1:1".parse()?)?
         .with_transport(Arc::clone(&fake))
         .with_response_limit(Duration::from_secs(1), 9)?;
-    let err = client.download("/x").await.err();
+    let err = client
+        .send_bytes(raw(HttpMethod::Get, "/x", None))
+        .await
+        .err();
     assert!(
         matches!(
             err,
@@ -620,6 +626,12 @@ async fn a_limited_fake_refuses_a_body_over_the_limit() -> Result<()> {
         ),
         "{err:?}"
     );
-    assert_eq!(client.download("/x").await?.len(), 9);
+    assert_eq!(
+        client
+            .send_bytes(raw(HttpMethod::Get, "/x", None))
+            .await?
+            .len(),
+        9
+    );
     Ok(())
 }

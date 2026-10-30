@@ -241,7 +241,8 @@ async fn bare_token_is_explained_and_stops() -> TestResult {
 async fn dot_segments_are_refused_before_request(#[case] id: &str) -> TestResult {
     let mock = common::script(vec![(200, "", "{}")]).await?;
     let err =
-        holst_core::remote::api::channel::delete_request(id, DeleteMode::Trash).err();
+        holst_core::remote::api::channel::delete_request(id, &DeleteMode::Trash.into())
+            .err();
     assert!(
         matches!(err, Some(Error::Input(InputError::NotPathSegment { .. }))),
         "{err:?}"
@@ -288,7 +289,9 @@ async fn download_carries_session_cookie() -> TestResult {
     client
         .send_json(raw(HttpMethod::Get, "/gapi/x", None))
         .await?;
-    let bytes = client.download("/gapi/backup/download").await?;
+    let bytes = client
+        .send_bytes(raw(HttpMethod::Get, "/gapi/backup/download", None))
+        .await?;
 
     assert_eq!(
         String::from_utf8_lossy(&bytes),

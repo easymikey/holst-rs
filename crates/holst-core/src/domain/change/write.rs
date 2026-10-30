@@ -5,9 +5,7 @@ use std::collections::{BTreeSet, HashMap};
 use itertools::Itertools as _;
 use serde_json::{Value, json};
 use yrs::{
-    Any,
     Map as _,
-    MapPrelim,
     MapRef,
     Out,
     ReadTxn,
@@ -22,7 +20,15 @@ use yrs::{
 use crate::{
     domain::{
         area::scene::{Scene, drawn_scale, table_size, text_scale},
-        board::{ObjectKind, any, json as stored_json, object_with_text},
+        board::{
+            Object,
+            ObjectKind,
+            any,
+            document_root,
+            insert_map,
+            json as stored_json,
+            object_with_text,
+        },
         change::{
             build::author_number,
             check::{
@@ -115,6 +121,7 @@ use crate::{
         TEXT_COLOR,
         TEXT_SCALE,
         TYPE,
+        UPDATED,
         WIDTH,
         X,
         Y,
@@ -270,26 +277,12 @@ fn id_of(reference: &str, made: &[ChangedObject]) -> String {
 
 /// `new` with an arrow's `#N` ends turned into the ids of the entries made.
 fn with_ids(new: &NewObject, made: &[ChangedObject]) -> NewObject {
-    match new {
-        NewObject::Arrow {
-            from,
-            to,
-            color,
-            look,
-        } => NewObject::Arrow {
-            from: id_of(from, made),
-            to: id_of(to, made),
-            color: color.clone(),
-            look: look.clone(),
-        },
-        NewObject::Sticker { .. }
-        | NewObject::Text { .. }
-        | NewObject::Shape { .. }
-        | NewObject::Frame { .. }
-        | NewObject::Link { .. }
-        | NewObject::Image { .. }
-        | NewObject::File { .. } => new.clone(),
+    let mut new = new.clone();
+    if let NewObject::Arrow { from, to, .. } = &mut new {
+        *from = id_of(from, made);
+        *to = id_of(to, made);
     }
+    new
 }
 
 fn add(
@@ -327,32 +320,35 @@ fn add(
             document
         })
         .map_or(json!({}), |document| json!({ (DOCUMENT_ID): document }));
-    let common = json!({
-        (ID): id, (TYPE): kind.as_str(), (Z_INDEX): layer(states, new, &id),
-        (CREATED): stamp.json(), "updated": null,
-    });
-    let pairs: Vec<(String, Value)> = [common, fields, document, parent]
+    let header = new_header(&id, &kind, layer(states, new, &id), stamp)
+        .into_iter()
+        .map(|(name, value)| (name.to_owned(), value));
+    let rest = [fields, document, parent]
         .into_iter()
         .filter_map(|part| part.as_object().cloned())
-        .flatten()
-        .collect();
-    let all = pairs
-        .iter()
-        .map(|(name, value)| any(value).map(|value| (name.clone(), value)))
-        .collect::<Result<Vec<(String, Any)>>>()?;
-    roots
-        .objects
-        .insert(transaction, id.as_str(), MapPrelim::from_iter(all));
+        .flatten();
+    let pairs: Vec<(String, Value)> = header.chain(rest).collect();
+    insert_map(transaction, &roots.objects, id.as_str(), pairs.clone())?;
     Ok(Made {
-        changed: ChangedObject {
-            id,
-            kind,
-            change: ObjectChangeKind::Created,
-            fields: Vec::new(),
-            link: None,
-        },
+        changed: ChangedObject::created(id, kind),
         fields: Value::Object(pairs.into_iter().collect()),
     })
+}
+
+/// The fields every new object starts with.
+pub(super) fn new_header(
+    id: &str,
+    kind: &ObjectKind,
+    layer: f64,
+    stamp: AuthorStamp,
+) -> [(&'static str, Value); 5] {
+    [
+        (ID, json!(id)),
+        (TYPE, json!(kind.as_str())),
+        (Z_INDEX, json!(layer)),
+        (CREATED, stamp.json()),
+        (UPDATED, Value::Null),
+    ]
 }
 
 /// An end of the stack.
@@ -376,15 +372,10 @@ pub(super) fn beyond(states: &HashMap<String, Value>, id: &str, stacking: Edge) 
 }
 
 fn layer(states: &HashMap<String, Value>, new: &NewObject, id: &str) -> f64 {
-    let stacking = match new {
-        NewObject::Frame { .. } => Edge::Back,
-        NewObject::Sticker { .. }
-        | NewObject::Text { .. }
-        | NewObject::Shape { .. }
-        | NewObject::Arrow { .. }
-        | NewObject::Link { .. }
-        | NewObject::Image { .. }
-        | NewObject::File { .. } => Edge::Front,
+    let stacking = if matches!(new, NewObject::Frame { .. }) {
+        Edge::Back
+    } else {
+        Edge::Front
     };
     beyond(states, id, stacking)
 }
@@ -935,12 +926,9 @@ fn turn_changes(
         .get(ROTATION)
         .and_then(Value::as_f64)
         .unwrap_or_default();
-    let object = object_with_text(fields.clone(), transaction, &scope.roots.documents);
-    let drawn = object.as_ref().and_then(|object| {
-        Scene::new(std::slice::from_ref(object)).rectangle_of(object)
-    });
+    let shown = drawn(transaction, scope, fields).map(|(_, rectangle)| rectangle);
     let (width, height) = patch.size.map_or_else(
-        || drawn.map_or((0.0, 0.0), |rectangle| (rectangle.width, rectangle.height)),
+        || shown.map_or((0.0, 0.0), |rectangle| (rectangle.width, rectangle.height)),
         |size| (size.width(), size.height()),
     );
     let corner = patch
@@ -1004,10 +992,7 @@ fn rewrite_document(
         .or_else(|| fields.get(DOCUMENT_ID))
         .and_then(Value::as_str);
     let root = document.and_then(|document| {
-        match scope.roots.documents.get(transaction, document) {
-            Some(Out::YXmlText(root)) => Some(root),
-            _ => None,
-        }
+        document_root(transaction, &scope.roots.documents, document)
     });
     if let Some(root) = &root {
         restyle(transaction, root, &patch.look);
@@ -1073,19 +1058,28 @@ fn size_changes(
 /// 1 (main.a33651a4.js 110870-110877, 114993-115002, 117329-117337,
 /// 118604-118625, 120086-120100, 121781-121789, 123507-123515). A drawing's
 /// scale is rounded to 3 places (109798).
+/// The object with its text and the rectangle it is drawn in.
+fn drawn(
+    transaction: &TransactionMut<'_>,
+    scope: &WriteTransaction<'_>,
+    fields: &Value,
+) -> Option<(Object, Rectangle)> {
+    let object = object_with_text(fields.clone(), transaction, &scope.roots.documents)?;
+    let rectangle = Scene::new(std::slice::from_ref(&object)).rectangle_of(&object)?;
+    Some((object, rectangle))
+}
+
 fn rescaled(
     transaction: &TransactionMut<'_>,
     scope: &WriteTransaction<'_>,
     fields: &Value,
     (wanted, side): (f64, fn(&Rectangle) -> f64),
 ) -> Vec<(&'static str, Value)> {
-    let object = object_with_text(fields.clone(), transaction, &scope.roots.documents);
-    let base = object.as_ref().and_then(|object| {
-        let drawn = Scene::new(std::slice::from_ref(object)).rectangle_of(object)?;
-        Some((
-            side(&drawn) / drawn_scale(object),
+    let base = drawn(transaction, scope, fields).map(|(object, rectangle)| {
+        (
+            side(&rectangle) / drawn_scale(&object),
             object.kind == ObjectKind::Drawing,
-        ))
+        )
     });
     let scale = base
         .map(|(base, rounded)| {
@@ -1110,14 +1104,8 @@ fn scaled_size(
     fields: &Value,
     size: Size,
 ) -> Vec<(&'static str, Value)> {
-    let object = object_with_text(fields.clone(), transaction, &scope.roots.documents);
-    let scale = object.as_ref().map_or(1.0, text_scale);
-    let base = object
-        .as_ref()
-        .and_then(|object| {
-            Scene::new(std::slice::from_ref(object)).rectangle_of(object)
-        })
-        .map(|rectangle| rectangle.height / scale)
+    let base = drawn(transaction, scope, fields)
+        .map(|(object, rectangle)| rectangle.height / text_scale(&object))
         .filter(|height| *height > 0.0)
         .unwrap_or(STICKER_SIDE);
     let grown = size.height() / base;
@@ -1307,14 +1295,10 @@ fn write_text(
 ) -> Vec<(&'static str, Value)> {
     let documents = &scope.roots.documents;
     let context = scope.context;
-    let current =
-        fields
-            .get(DOCUMENT_ID)
-            .and_then(Value::as_str)
-            .and_then(|document| match documents.get(transaction, document) {
-                Some(Out::YXmlText(root)) => Some(root),
-                _ => None,
-            });
+    let current = fields
+        .get(DOCUMENT_ID)
+        .and_then(Value::as_str)
+        .and_then(|document| document_root(transaction, documents, document));
     let cleared = current.inspect(|root| {
         let len = root.len(transaction);
         root.remove_range(transaction, 0, len);
@@ -1485,13 +1469,7 @@ fn remove_all(
         .iter()
         .map(|id| {
             roots.objects.remove(transaction, id);
-            ChangedObject {
-                kind: kind_of(states, id),
-                id: id.clone(),
-                change: ObjectChangeKind::Removed,
-                fields: Vec::new(),
-                link: None,
-            }
+            ChangedObject::removed(id.clone(), kind_of(states, id))
         })
         .collect();
     let removed: Vec<&str> = gone.iter().map(String::as_str).collect();

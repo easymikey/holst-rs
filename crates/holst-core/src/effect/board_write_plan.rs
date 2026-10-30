@@ -15,12 +15,6 @@ use crate::{
     error::{Error, Result, board_change::BoardChangeError},
 };
 
-/// An update the server confirmed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AcceptedUpdate {
-    pub id: u64,
-}
-
 /// A change built on a loaded board and not yet sent.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WritePlan {
@@ -95,13 +89,13 @@ pub fn plan(input: &LoadedChange<'_>) -> Result<WritePlan> {
 }
 
 impl WritePlan {
-    /// The write this plan became: confirmed by `accepted`, or never sent.
+    /// The write this plan became: confirmed by `delivery`, or never sent.
     #[must_use]
-    pub fn written(self, accepted: Option<AcceptedUpdate>) -> WrittenChange {
+    pub fn written(self, delivery: Delivery) -> WrittenChange {
         WrittenChange {
             change: self.change,
             update_id: self.update_id,
-            accepted,
+            delivery,
             placement: self.placement,
         }
     }
@@ -112,7 +106,7 @@ impl WritePlan {
 pub struct WrittenChange {
     pub change: ChangeUpdate,
     pub update_id: u64,
-    pub accepted: Option<AcceptedUpdate>,
+    pub delivery: Delivery,
     pub placement: BoardStatus,
 }
 
@@ -123,10 +117,7 @@ impl WrittenChange {
         UpdateReceipt {
             bytes: self.change.update.len(),
             id: self.update_id,
-            delivery: match self.accepted {
-                Some(_) => Delivery::Accepted,
-                None => Delivery::Built,
-            },
+            delivery: self.delivery,
         }
     }
 

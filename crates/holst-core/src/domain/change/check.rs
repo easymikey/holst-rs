@@ -443,28 +443,33 @@ fn refusal_to_lock(states: &HashMap<String, Value>, id: &str) -> Option<LockRefu
 
 /// The ids of the frames and tables named, once each, that are not locked.
 fn flaggable(states: &HashMap<String, Value>, named: &[String]) -> Result<Vec<String>> {
-    let found = resolve(states, named)?;
-    found
-        .iter()
-        .unique_by(|(_, id)| id)
-        .map(|(reference, id)| {
-            let refusal =
-                if matches!(kind_of(states, id), ObjectKind::Frame | ObjectKind::Table)
-                {
-                    locked(states, id).then_some(LockRefusal::Held)
-                } else {
-                    Some(LockRefusal::NotFrameOrTable)
-                };
-            refusal.map_or_else(
-                || Ok(id.clone()),
-                |why| {
-                    Err(Error::BoardChange(BoardChangeError::NotLockable {
-                        reference: (*reference).clone(),
-                        why,
-                    }))
-                },
-            )
+    check_each(states, named, |reference, id| {
+        let refusal =
+            if matches!(kind_of(states, id), ObjectKind::Frame | ObjectKind::Table) {
+                locked(states, id).then_some(LockRefusal::Held)
+            } else {
+                Some(LockRefusal::NotFrameOrTable)
+            };
+        refusal.map_or(Ok(()), |why| {
+            Err(Error::BoardChange(BoardChangeError::NotLockable {
+                reference: reference.to_owned(),
+                why,
+            }))
         })
+    })
+}
+
+/// The ids named, once each; `rule` judges each with the reference that named
+/// it.
+fn check_each(
+    states: &HashMap<String, Value>,
+    named: &[String],
+    rule: impl Fn(&str, &str) -> Result<()>,
+) -> Result<Vec<String>> {
+    resolve(states, named)?
+        .into_iter()
+        .unique_by(|(_, id)| id.clone())
+        .map(|(reference, id)| rule(reference, &id).map(|()| id))
         .collect()
 }
 
@@ -483,20 +488,13 @@ fn unlockable(
     states: &HashMap<String, Value>,
     named: &[String],
 ) -> Result<Vec<String>> {
-    let found = resolve(states, named)?;
-    found
-        .iter()
-        .unique_by(|(_, id)| id)
-        .map(|(reference, id)| {
-            if locked_itself(states, id) {
-                Ok(id.clone())
-            } else {
-                Err(Error::BoardChange(BoardChangeError::NotLocked {
-                    reference: (*reference).clone(),
-                }))
-            }
+    check_each(states, named, |reference, id| {
+        locked_itself(states, id).then_some(()).ok_or_else(|| {
+            Error::BoardChange(BoardChangeError::NotLocked {
+                reference: reference.to_owned(),
+            })
         })
-        .collect()
+    })
 }
 
 fn all_locked(states: &HashMap<String, Value>) -> Result<Vec<String>> {
@@ -561,20 +559,15 @@ fn ungroupable(
     states: &HashMap<String, Value>,
     named: &[String],
 ) -> Result<Vec<String>> {
-    let found = resolve(states, named)?;
-    found
-        .iter()
-        .unique_by(|(_, id)| id)
-        .map(|(reference, id)| {
-            if kind_of(states, id) == ObjectKind::Group {
-                unlocked(states, id, reference).map(|()| id.clone())
-            } else {
-                Err(Error::BoardChange(BoardChangeError::NotGroup {
-                    reference: (*reference).clone(),
-                }))
-            }
-        })
-        .collect()
+    check_each(states, named, |reference, id| {
+        if kind_of(states, id) == ObjectKind::Group {
+            unlocked(states, id, reference)
+        } else {
+            Err(Error::BoardChange(BoardChangeError::NotGroup {
+                reference: reference.to_owned(),
+            }))
+        }
+    })
 }
 
 /// Whether the web client keeps `id` as it is: a locked frame or table, a cell
@@ -1011,49 +1004,25 @@ fn checked_in(
 fn check_new(
     new: &NewObject,
     states: &HashMap<String, Value>,
-    parent: Option<String>,
+    mut parent: Option<String>,
     earlier: &[(NewObject, Placement)],
 ) -> Result<(NewObject, Placement)> {
+    let mut new = new.clone();
     // An arrow is kept with the ids its ends were found by.
-    let new = match new {
-        NewObject::Arrow {
-            from,
-            to,
-            color,
-            look,
-        } => {
-            look.outline
-                .stroke_width
-                .map_or(Ok(()), |width| stroke_width_fits(&ObjectKind::Arrow, width))?;
-            NewObject::Arrow {
-                from: end_of(states, earlier, from)?,
-                to: end_of(states, earlier, to)?,
-                color: color.clone(),
-                look: look.clone(),
-            }
-        }
-        NewObject::Sticker { .. }
-        | NewObject::Text { .. }
-        | NewObject::Shape { .. }
-        | NewObject::Frame { .. }
-        | NewObject::Link { .. }
-        | NewObject::Image { .. }
-        | NewObject::File { .. } => new.clone(),
-    };
-    let parent = parent.or_else(|| match &new {
-        NewObject::Arrow { from, to, .. } => common_frame(
-            states,
-            &chain(states, earlier, from),
-            &chain(states, earlier, to),
-        ),
-        NewObject::Sticker { .. }
-        | NewObject::Text { .. }
-        | NewObject::Shape { .. }
-        | NewObject::Frame { .. }
-        | NewObject::Link { .. }
-        | NewObject::Image { .. }
-        | NewObject::File { .. } => None,
-    });
+    if let NewObject::Arrow { from, to, look, .. } = &mut new {
+        look.outline
+            .stroke_width
+            .map_or(Ok(()), |width| stroke_width_fits(&ObjectKind::Arrow, width))?;
+        *from = end_of(states, earlier, from)?;
+        *to = end_of(states, earlier, to)?;
+        parent = parent.or_else(|| {
+            common_frame(
+                states,
+                &chain(states, earlier, from),
+                &chain(states, earlier, to),
+            )
+        });
+    }
     sticker_size(&new).map(|()| {
         (
             new,
@@ -1210,18 +1179,13 @@ fn common_frame(
 }
 
 fn sticker_size(new: &NewObject) -> Result<()> {
-    match new {
-        NewObject::Sticker {
-            size: Some(size), ..
-        } => sticker_shape(*size),
-        NewObject::Sticker { size: None, .. }
-        | NewObject::Text { .. }
-        | NewObject::Shape { .. }
-        | NewObject::Frame { .. }
-        | NewObject::Arrow { .. }
-        | NewObject::Link { .. }
-        | NewObject::Image { .. }
-        | NewObject::File { .. } => Ok(()),
+    if let NewObject::Sticker {
+        size: Some(size), ..
+    } = new
+    {
+        sticker_shape(*size)
+    } else {
+        Ok(())
     }
 }
 

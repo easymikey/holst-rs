@@ -422,6 +422,7 @@ pub fn find_id<'a>(
             miss: lookup::LookupMiss::ambiguous(lookup::Candidates::capped(
                 many.iter().map(|id| lookup::Candidate {
                     name: (*id).to_owned(),
+                    id: Some((*id).to_owned()),
                     ..lookup::Candidate::default()
                 }),
                 5,

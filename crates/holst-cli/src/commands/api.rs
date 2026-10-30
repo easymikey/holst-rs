@@ -28,9 +28,7 @@ pub(crate) async fn run(
     let args: api::ApiArgs = table::parse(arguments)?;
     let kind = match args.method {
         Method::Get => ReplyKind::Read,
-        Method::Post | Method::Put | Method::Patch | Method::Delete => {
-            ReplyKind::Change
-        }
+        Method::Post | Method::Patch | Method::Delete => ReplyKind::Change,
     };
     run_signed_in(run, async |client| {
         let ApiReply { report, reply } = api::request(client, &args).await?;

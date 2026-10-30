@@ -3,13 +3,13 @@
 mod render;
 
 use holst_core::command::{
-    comment::{self, CommentReport, CommentVerb},
+    comment::{self, CommentVerb},
     table,
 };
 use serde_json::{Map, Value};
 
 use crate::{
-    commands::refused,
+    commands,
     error::Result,
     output::OutputFormat,
     run::{RunSettings, run_signed_in},
@@ -30,45 +30,29 @@ pub(crate) async fn run(
             .await
         }
         CommentVerb::Add => {
-            let args = table::parse(arguments)?;
-            run_signed_in(run, async |client| {
-                shown(format, &comment::add(client, run.cache(), &args).await?)
-            })
+            commands::change(
+                arguments,
+                run,
+                format,
+                async |client, args| comment::add(client, run.cache(), args).await,
+                render::change,
+            )
             .await
         }
         CommentVerb::Reply => {
-            let args = table::parse(arguments)?;
-            run_signed_in(run, async |client| {
-                shown(format, &comment::reply(client, &args).await?)
-            })
-            .await
+            commands::change(arguments, run, format, comment::reply, render::change)
+                .await
         }
         CommentVerb::Resolve => {
-            let args = table::parse(arguments)?;
-            run_signed_in(run, async |client| {
-                shown(format, &comment::resolve(client, &args).await?)
-            })
-            .await
+            commands::change(arguments, run, format, comment::resolve, render::change)
+                .await
         }
         CommentVerb::Rm => {
-            let args = table::parse(arguments)?;
-            run_signed_in(run, async |client| {
-                shown(format, &comment::rm(client, &args).await?)
-            })
-            .await
+            commands::change(arguments, run, format, comment::rm, render::change).await
         }
         CommentVerb::Read => {
-            let args = table::parse(arguments)?;
-            run_signed_in(run, async |client| {
-                shown(format, &comment::read(client, &args).await?)
-            })
-            .await
+            commands::change(arguments, run, format, comment::read, render::change)
+                .await
         }
     }
-}
-
-/// Prints the change; one held for its confirmation is the exit code after.
-fn shown(format: OutputFormat, changed: &CommentReport) -> Result<()> {
-    render::change(format, changed)?;
-    refused(changed.outcome.refusal())
 }

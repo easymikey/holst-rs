@@ -6,22 +6,8 @@ use holst_core::{
     command::{
         board::{
             BoardVerb,
-            CopyArgs,
-            CreateArgs,
             EditArgs,
-            FavoriteArgs,
-            GrantArgs,
-            LeaveArgs,
             LsArgs,
-            MoveArgs,
-            RemoveArgs,
-            RenameArgs,
-            RestoreArgs,
-            RevokeArgs,
-            ShareArgs,
-            TouchArgs,
-            TransferArgs,
-            UnfavoriteArgs,
             own,
             rights::{self, Settled, Shared},
             settings::{self, Edited},
@@ -29,23 +15,17 @@ use holst_core::{
             tree_change::{self, Changed},
         },
         change::ChangeReport,
-        table::{CommandArgs, CommandName, parse},
+        table::{CommandName, parse},
     },
     domain::{
         node::NodeKind,
         text::{EMPTY, joined, printable},
     },
-    effect::board_write::WriteMode,
-    remote::client::Client,
 };
 use rmcp::model::CallToolResult;
 use serde_json::{Map, Value};
 
-use crate::{
-    login::HandedClient,
-    server::McpServer,
-    tools::{files::LocalFile, said},
-};
+use crate::{login::HandedClient, server::McpServer, tools::files::checked_upload};
 
 /// The nodes a listing shows when the call gives no limit.
 const LIST_DEFAULT: u32 = 300;
@@ -78,44 +58,42 @@ impl McpServer {
         match verb {
             BoardVerb::Ls => self.list_boards(arguments).await,
             BoardVerb::Create => {
-                let dry = |args: &CreateArgs| args.dry_run;
-                self.apply(arguments, dry, tree_change::create).await
+                self.change(arguments, tree_change::create, Self::changed_text)
+                    .await
             }
             BoardVerb::Rename => {
-                let dry = |args: &RenameArgs| args.dry_run;
-                self.apply(arguments, dry, tree_change::rename).await
+                self.change(arguments, tree_change::rename, Self::changed_text)
+                    .await
             }
             BoardVerb::Mv => {
-                let dry = |args: &MoveArgs| args.dry_run;
-                self.apply(arguments, dry, tree_change::mv).await
+                self.change(arguments, tree_change::mv, Self::changed_text)
+                    .await
             }
             BoardVerb::Cp => {
-                let dry = |args: &CopyArgs| args.dry_run;
-                self.apply(arguments, dry, tree_change::cp).await
+                self.change(arguments, tree_change::cp, Self::changed_text)
+                    .await
             }
             BoardVerb::Rm => {
-                let dry = |args: &RemoveArgs| args.dry_run;
-                self.apply(arguments, dry, tree_change::rm).await
+                self.change(arguments, tree_change::rm, Self::changed_text)
+                    .await
             }
             BoardVerb::Restore => {
-                let dry = |args: &RestoreArgs| args.dry_run;
-                self.apply(arguments, dry, tree_change::restore).await
+                self.change(arguments, tree_change::restore, Self::changed_text)
+                    .await
             }
             BoardVerb::Favorite => {
-                let dry = |args: &FavoriteArgs| args.dry_run;
-                self.apply(arguments, dry, own::favorite).await
+                self.change(arguments, own::favorite, Self::changed_text)
+                    .await
             }
             BoardVerb::Unfavorite => {
-                let dry = |args: &UnfavoriteArgs| args.dry_run;
-                self.apply(arguments, dry, own::unfavorite).await
+                self.change(arguments, own::unfavorite, Self::changed_text)
+                    .await
             }
             BoardVerb::Touch => {
-                let dry = |args: &TouchArgs| args.dry_run;
-                self.apply(arguments, dry, own::touch).await
+                self.change(arguments, own::touch, Self::changed_text).await
             }
             BoardVerb::Leave => {
-                let dry = |args: &LeaveArgs| args.dry_run;
-                self.apply(arguments, dry, own::leave).await
+                self.change(arguments, own::leave, Self::changed_text).await
             }
             BoardVerb::Show => self.show_boards(arguments).await,
             BoardVerb::Snap => self.snap_board(arguments).await,
@@ -129,20 +107,20 @@ impl McpServer {
                 .await
             }
             BoardVerb::Grant => {
-                let dry = |args: &GrantArgs| args.dry_run;
-                self.apply_sharing(arguments, dry, rights::grant).await
+                self.change(arguments, rights::grant, Self::shared_text)
+                    .await
             }
             BoardVerb::Revoke => {
-                let dry = |args: &RevokeArgs| args.dry_run;
-                self.apply_sharing(arguments, dry, rights::revoke).await
+                self.change(arguments, rights::revoke, Self::shared_text)
+                    .await
             }
             BoardVerb::Share => {
-                let dry = |args: &ShareArgs| args.dry_run;
-                self.apply_sharing(arguments, dry, rights::share).await
+                self.change(arguments, rights::share, Self::shared_text)
+                    .await
             }
             BoardVerb::Transfer => {
-                let dry = |args: &TransferArgs| args.dry_run;
-                self.apply_sharing(arguments, dry, rights::transfer).await
+                self.change(arguments, rights::transfer, Self::shared_text)
+                    .await
             }
         }
     }
@@ -168,7 +146,7 @@ impl McpServer {
     async fn edit_board(&self, args: &EditArgs) -> CallToolResult {
         let cover = match args.cover.as_deref() {
             None | Some("reset") => Ok(()),
-            Some(file) => LocalFile::check(Path::new(file), &self.secrets),
+            Some(file) => checked_upload(Path::new(file), &self.secrets),
         };
         let call = async |client: HandedClient| {
             cover?;
@@ -178,52 +156,15 @@ impl McpServer {
         self.by_mode(args.dry_run, call).await
     }
 
-    async fn apply<A: CommandArgs>(
-        &self,
-        arguments: Map<String, Value>,
-        dry_run: impl Fn(&A) -> WriteMode,
-        change: impl AsyncFnOnce(&Client, &A) -> holst_core::Result<Changed>,
-    ) -> CallToolResult {
-        self.parsed(arguments, async |args: A| {
-            let call = async |client: HandedClient| {
-                let changed = change(&client, &args).await?;
-                said(changed.outcome.refusal(), || self.changed_text(&changed))
-            };
-            self.by_mode(dry_run(&args), call).await
-        })
-        .await
-    }
-
-    /// As [`Self::apply`], for a change of who may use a board.
-    async fn apply_sharing<A: CommandArgs>(
-        &self,
-        arguments: Map<String, Value>,
-        dry_run: impl Fn(&A) -> WriteMode,
-        change: impl AsyncFnOnce(&Client, &A) -> holst_core::Result<Shared>,
-    ) -> CallToolResult {
-        self.parsed(arguments, async |args: A| {
-            let call = async |client: HandedClient| {
-                let shared = change(&client, &args).await?;
-                said(shared.refusal(), || self.shared_text(&shared))
-            };
-            self.by_mode(dry_run(&args), call).await
-        })
-        .await
-    }
-
     fn tree_text(&self, listing: &Listing) -> String {
         if listing.nodes.is_empty() {
             format!("{EMPTY}\n")
         } else {
-            let several = listing.workspaces.len() > 1;
-            let before = std::iter::once(None)
-                .chain(listing.nodes.iter().map(|node| node.workspace.as_deref()));
-            let lines = listing.nodes.iter().zip(before).flat_map(|(node, before)| {
-                let heading = node
-                    .workspace
-                    .as_deref()
-                    .filter(|current| several && Some(*current) != before)
-                    .and_then(|current| self.heading(listing, current));
+            let lines = listing.sections().flat_map(|(heading, node)| {
+                let heading = heading.map(|workspace| {
+                    let alias = self.state.alias(&workspace.id);
+                    format!("{} {alias}\n", printable(&workspace.name))
+                });
                 heading.into_iter().chain([self.node_line(node)])
             });
             let more = listing.cursor.as_deref().map(|cursor| {
@@ -231,16 +172,6 @@ impl McpServer {
             });
             lines.chain(more).collect()
         }
-    }
-
-    fn heading(&self, listing: &Listing, id: &str) -> Option<String> {
-        listing
-            .workspaces
-            .iter()
-            .find(|workspace| workspace.id == id)
-            .map(|workspace| {
-                format!("{} {}\n", printable(&workspace.name), self.state.alias(id))
-            })
     }
 
     fn node_line(&self, node: &ListedNode) -> String {

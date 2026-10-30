@@ -35,46 +35,6 @@ pub(crate) fn render_json(reply: &impl serde::Serialize) -> Result<String, Error
     }
 }
 
-/// The `-o` of the command line, which the table leaves alone.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Output {
-    Text,
-    Json,
-}
-
-/// An `output` that is neither `text` nor `json`.
-pub(crate) struct BadOutput;
-
-impl Output {
-    pub(crate) const NAMES: [&str; 2] = ["text", "json"];
-
-    /// Takes `output` out of the arguments; `Err` carries the bad value's
-    /// absence of meaning.
-    pub(crate) fn take(arguments: &mut Map<String, Value>) -> Result<Self, BadOutput> {
-        let given = arguments.remove("output").filter(|value| !value.is_null());
-        match given.as_ref().map(Value::as_str) {
-            None | Some(Some("text")) => Ok(Output::Text),
-            Some(Some("json")) => Ok(Output::Json),
-            Some(Some(_) | None) => Err(BadOutput),
-        }
-    }
-
-    /// What a bad `output` should have been.
-    pub(crate) const EXPECTED: &str = "one of text, json";
-
-    /// The reply: `text` for the model, or `listing` as the CLI prints it.
-    pub(crate) fn reply(
-        self,
-        listing: &impl serde::Serialize,
-        text: impl FnOnce() -> String,
-    ) -> Result<String, Error> {
-        match self {
-            Output::Text => Ok(text()),
-            Output::Json => render_json(listing),
-        }
-    }
-}
-
 fn compact(mut value: Value, alias: &impl Fn(&str) -> String) -> String {
     prune(&mut value);
     alias_ids(&mut value, alias);

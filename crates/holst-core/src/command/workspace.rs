@@ -181,7 +181,7 @@ pub struct RenameArgs {
     pub name: String,
     #[argument(
         letter = 'y',
-        help = "Confirm a risky change; without it only the dry run is shown (exit code 77)"
+        help = "Confirm a risky change; a terminal asks instead; without one only the dry run is shown (exit code 77)"
     )]
     pub confirm: Confirmation,
     #[argument(letter = 'n', help = "Show what would change; change nothing")]
@@ -283,6 +283,25 @@ pub struct WorkspaceChange {
     pub was: Option<String>,
     #[serde(flatten)]
     pub report: ChangeReport,
+}
+
+impl WorkspaceChange {
+    /// The change in one lower-case phrase; `name` writes the id of a sent
+    /// change.
+    #[must_use]
+    pub fn phrase(&self, name: impl Fn(&str) -> String) -> String {
+        let id = self.id.as_deref().map(name).unwrap_or_default();
+        let was = self.was.as_deref().unwrap_or_default();
+        let new = &self.name;
+        match (self.change, &self.report) {
+            (ChangeKind::Create, ChangeReport::Sent) => format!("created {new}{id}"),
+            (ChangeKind::Create, _) => format!("would create {new}"),
+            (ChangeKind::Rename, ChangeReport::Sent) => {
+                format!("renamed {was} to {new}{id}")
+            }
+            (ChangeKind::Rename, _) => format!("would rename {was} to {new}{id}"),
+        }
+    }
 }
 
 /// Your workspaces (or the ones you can join with `joinable`).
@@ -547,7 +566,9 @@ pub async fn create(client: &Client, args: &CreateArgs) -> Result<WorkspaceChang
     let name = visible("workspace create", "name", &args.name)?;
     let (report, reply) = settle(
         client,
-        api::workspace::create_request(&name)?,
+        api::workspace::create_request(&api::workspace::WorkspaceName {
+            name: name.clone(),
+        })?,
         None,
         (args.dry_run, Confirmation::Given),
     )
@@ -581,7 +602,10 @@ pub async fn rename(client: &Client, args: &RenameArgs) -> Result<WorkspaceChang
     );
     let (report, _) = settle(
         client,
-        api::workspace::rename_request(&workspace.id, &name)?,
+        api::workspace::rename_request(
+            &workspace.id,
+            &api::workspace::WorkspaceName { name: name.clone() },
+        )?,
         Some(unconfirmed),
         (args.dry_run, args.confirm),
     )

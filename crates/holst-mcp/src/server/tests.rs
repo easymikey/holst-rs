@@ -281,8 +281,8 @@ async fn add_sticker(
             change::value::{BoardChange, NewEntry, NewObject},
             geometry::Point,
         },
-        effect::{board_write::WriteMode, confirmation::ALWAYS},
-        remote::socket::write::interpreter,
+        effect::confirmation::ALWAYS,
+        remote::socket::write::{WriteOver, connector},
     };
 
     let operation = BoardChange::AddAll(vec![NewEntry {
@@ -298,7 +298,7 @@ async fn add_sticker(
     let user = holst_core::command::account::account_id(&client.client).await?;
     write_cached(
         &client.client,
-        interpreter(WriteMode::Send),
+        &WriteOver::sender(connector()),
         WriteRequest {
             board,
             change: &operation,
@@ -699,7 +699,10 @@ async fn cancelled_write_still_drops_the_cache() -> Result<()> {
     // Dropped at statement end: cancels the write.
     let poll = std::pin::pin!(holst.write(async |client| {
         client
-            .send_json(holst_core::remote::api::channel::rename_request("b1", "x")?)
+            .send_json(holst_core::remote::api::channel::rename_request(
+                "b1",
+                &holst_core::remote::api::channel::Rename::new("x"),
+            )?)
             .await?;
         Ok("renamed".to_owned())
     }))

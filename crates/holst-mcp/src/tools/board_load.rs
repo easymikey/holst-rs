@@ -10,6 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use futures_util::future::OptionFuture;
 use holst_core::{
     command::{board_load, board_load::CacheUse},
     domain::{
@@ -23,7 +24,7 @@ use holst_core::{
 use yrs::{Doc, ReadTxn as _, Transact as _};
 
 use crate::{
-    login::{HandedClient, when},
+    login::HandedClient,
     memory::board_memory::{KeptBoard, KeptCopy},
     server::McpServer,
 };
@@ -168,7 +169,7 @@ async fn from_memory(
             },
         )
     });
-    when(following).await;
+    OptionFuture::from(following).await;
     Ok(ReloadedBoard {
         loaded,
         source: fetched,

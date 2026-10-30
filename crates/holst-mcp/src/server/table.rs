@@ -14,7 +14,7 @@ use holst_core::{
 use rmcp::model::{Tool, ToolAnnotations};
 use serde_json::{Map, Value, json};
 
-use crate::{reply::compact::Output, tools::admin::RawWrite};
+use crate::tools::{admin::RawWrite, output::Output};
 
 /// Why a call to a table tool names no command, in words for the model.
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
@@ -458,16 +458,10 @@ mod tests {
     ) -> Argument {
         Argument {
             name,
-            letter: None,
             kind,
             required,
-            positional: false,
-            value_name: "",
-            help: "",
-            tool_doc: None,
             surfaces,
-            subcommand: false,
-            kinds: &[],
+            ..Argument::BLANK
         }
     }
 

@@ -25,8 +25,6 @@ pub(crate) type LoginState = machine::LoginState<Client>;
 
 pub(crate) type LoginPlan = machine::LoginPlan<Client>;
 
-pub(crate) type LoginStep<'a> = machine::LoginStep<'a, Client>;
-
 pub(crate) type ReadyLogin = machine::ReadyLogin<Client>;
 
 impl LoginState {
@@ -108,13 +106,6 @@ impl HandedClient {
             generation,
             epoch: ready.epoch,
         }
-    }
-}
-
-pub(crate) async fn when<T>(work: Option<impl Future<Output = T>>) -> Option<T> {
-    match work {
-        Some(work) => Some(work.await),
-        None => None,
     }
 }
 

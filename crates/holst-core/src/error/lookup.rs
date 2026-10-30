@@ -97,7 +97,12 @@ impl fmt::Display for Candidate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let alias = self.alias.iter().map(|alias| format!("{alias} ")).join("");
         let slash = if self.folder { "/" } else { "" };
-        let id = self.id.iter().map(|id| format!(" ({id})")).join("");
+        let id = self
+            .id
+            .iter()
+            .filter(|id| **id != self.name)
+            .map(|id| format!(" ({id})"))
+            .join("");
         let place = self
             .workspace
             .iter()
@@ -374,29 +379,20 @@ mod tests {
     use rstest::rstest;
     use strum::IntoEnumIterator as _;
 
-    use crate::error::{
-        hint::Hint,
-        lookup::{
-            Candidate,
-            Candidates,
-            LookupError,
-            LookupKind,
-            LookupMiss,
-            SkipReason,
-            Skipped,
-            SkippedWorkspaces,
+    use crate::{
+        error::{
+            hint::Hint,
+            lookup::{
+                LookupError,
+                LookupKind,
+                LookupMiss,
+                SkipReason,
+                Skipped,
+                SkippedWorkspaces,
+            },
         },
+        fake::candidates,
     };
-
-    fn candidates(names: &[&str]) -> Candidates {
-        names
-            .iter()
-            .map(|name| Candidate {
-                name: (*name).to_owned(),
-                ..Candidate::default()
-            })
-            .collect()
-    }
 
     fn unread(workspace: &str, status: u16) -> SkippedWorkspaces {
         SkippedWorkspaces(vec![Skipped {

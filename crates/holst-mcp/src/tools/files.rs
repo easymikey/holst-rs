@@ -9,20 +9,15 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 
-#[derive(Debug)]
-pub(super) struct LocalFile;
-
-impl LocalFile {
-    pub(super) fn check(path: &Path, secrets: &SecretPaths) -> Result<()> {
-        let real = std::fs::canonicalize(path)
-            .map_err(|source| Error::Unreadable { source })?;
-        match (real.is_file(), secrets.holds(&real)) {
-            (false, _) => Err(Error::NotAFile),
-            (true, true) => Err(Error::Secret {
-                path: path.to_path_buf(),
-            }),
-            (true, false) => Ok(()),
-        }
+pub(super) fn checked_upload(path: &Path, secrets: &SecretPaths) -> Result<()> {
+    let real =
+        std::fs::canonicalize(path).map_err(|source| Error::Unreadable { source })?;
+    match (real.is_file(), secrets.holds(&real)) {
+        (false, _) => Err(Error::NotAFile),
+        (true, true) => Err(Error::Secret {
+            path: path.to_path_buf(),
+        }),
+        (true, false) => Ok(()),
     }
 }
 
@@ -134,7 +129,7 @@ mod tests {
 
     use crate::{
         error::{Error, Result},
-        tools::files::{LocalFile, SecretPaths, checked_download, out_file},
+        tools::files::{SecretPaths, checked_download, checked_upload, out_file},
     };
 
     fn scratch(tag: &str) -> PathBuf {
@@ -157,23 +152,14 @@ mod tests {
     fn upload_refuses_missing_files_and_plain_files_pass() -> Result<()> {
         let secrets = SecretPaths::default();
         assert!(matches!(
-            LocalFile::check(Path::new("/no/such/file"), &secrets),
+            checked_upload(Path::new("/no/such/file"), &secrets),
             Err(Error::Unreadable { .. })
         ));
         let tmp = scratch("upload");
         std::fs::write(&tmp, b"x")?;
-        let checked = LocalFile::check(&tmp, &secrets);
+        let checked = checked_upload(&tmp, &secrets);
         std::fs::remove_file(&tmp)?;
         assert!(checked.is_ok(), "{checked:?}");
-        Ok(())
-    }
-
-    #[test]
-    fn upload_refuses_keys_in_home() -> Result<()> {
-        let (home, key) = home_with("gnupg-home", ".gnupg/secret.key")?;
-        let checked = LocalFile::check(&key, &secrets_of(&home));
-        std::fs::remove_dir_all(&home)?;
-        assert!(matches!(checked, Err(Error::Secret { .. })), "{checked:?}");
         Ok(())
     }
 
@@ -182,7 +168,7 @@ mod tests {
         let (dir, session) = home_with("holst-home", "session")?;
         let location = holst_core::effect::settings::SessionLocation::Dir(dir.clone());
         let secrets = SecretPaths::new(location.file().as_deref(), None);
-        let checked = LocalFile::check(&session, &secrets);
+        let checked = checked_upload(&session, &secrets);
         std::fs::remove_dir_all(&dir)?;
         assert!(matches!(checked, Err(Error::Secret { .. })), "{checked:?}");
         Ok(())
@@ -197,9 +183,9 @@ mod tests {
         std::fs::write(&lock, b"x")?;
         let location = holst_core::effect::settings::SessionLocation::Dir(home.clone());
         let secrets = SecretPaths::new(location.file().as_deref(), Some(&home));
-        let upload_notes = LocalFile::check(&notes, &secrets);
-        let upload_session = LocalFile::check(&session, &secrets);
-        let upload_lock = LocalFile::check(&lock, &secrets);
+        let upload_notes = checked_upload(&notes, &secrets);
+        let upload_session = checked_upload(&session, &secrets);
+        let upload_lock = checked_upload(&lock, &secrets);
         let download_picture = out_file(&home, "a.png", &secrets);
         let download_login = out_file(&home, "session", &secrets);
         let download_lock = out_file(&home.join("LOCK"), "a.png", &secrets);
@@ -231,7 +217,7 @@ mod tests {
         let (home, key) = home_with("link-home", ".gnupg/secret.key")?;
         let link = home.join("innocent.txt");
         std::os::unix::fs::symlink(&key, &link)?;
-        let checked = LocalFile::check(&link, &secrets_of(&home));
+        let checked = checked_upload(&link, &secrets_of(&home));
         std::fs::remove_dir_all(&home)?;
         assert!(matches!(checked, Err(Error::Secret { .. })), "{checked:?}");
         Ok(())
@@ -310,6 +296,7 @@ mod tests {
     }
 
     #[rstest::rstest]
+    #[case::gnupg(".gnupg/secret.key")]
     #[case::aws(".aws/credentials")]
     #[case::netrc(".netrc")]
     #[case::docker(".docker/config.json")]
@@ -318,7 +305,7 @@ mod tests {
     fn upload_refuses_tool_logins_in_home(#[case] file: &str) -> Result<()> {
         let (home, secret) =
             home_with(&format!("logins{}", file.replace('/', "-")), file)?;
-        let checked = LocalFile::check(&secret, &secrets_of(&home));
+        let checked = checked_upload(&secret, &secrets_of(&home));
         std::fs::remove_dir_all(&home)?;
         assert!(matches!(checked, Err(Error::Secret { .. })), "{checked:?}");
         Ok(())
@@ -327,7 +314,7 @@ mod tests {
     #[test]
     fn directories_are_not_uploaded() {
         assert!(matches!(
-            LocalFile::check(&std::env::temp_dir(), &SecretPaths::default()),
+            checked_upload(&std::env::temp_dir(), &SecretPaths::default()),
             Err(Error::NotAFile)
         ));
     }

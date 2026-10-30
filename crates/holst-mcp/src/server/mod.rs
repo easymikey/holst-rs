@@ -10,6 +10,7 @@ use std::{
 };
 
 use arc_swap::ArcSwapOption;
+use futures_util::future::OptionFuture;
 use holst_core::{
     command::{lookup, lookup::IndexedNodes, table::CommandName},
     domain::{
@@ -52,13 +53,11 @@ use crate::{
         HandedClient,
         LoginPlan,
         LoginState,
-        LoginStep,
         ReadyLogin,
         SharedLogin,
         hand_out,
-        machine::Milliseconds,
+        machine::{LoginStep, Milliseconds},
         store::{Backend, SystemBackend},
-        when,
     },
     memory::{McpMemory, board_memory::DownloadTrust, invalidation::FullInvalidation},
     reply::{self},
@@ -286,10 +285,11 @@ impl McpServer {
         // A new client starts at zero; an old one must not have answered more.
         let carried = (seen.epoch() == before).then_some(answered);
         let nothing_done = seen.answered() == carried.unwrap_or_default();
-        let renewed = when((revoked && nothing_done).then(|| self.reload(&seen)))
-            .await
-            .and_then(Result::ok)
-            .filter(|fresh| Some(fresh.epoch) != before);
+        let renewed =
+            OptionFuture::from((revoked && nothing_done).then(|| self.reload(&seen)))
+                .await
+                .and_then(Result::ok)
+                .filter(|fresh| Some(fresh.epoch) != before);
         match renewed {
             Some(_) => Box::pin(self.command(command, arguments)).await,
             None => first,
@@ -316,12 +316,8 @@ impl McpServer {
         let generation = self.state.generation();
         let seen = self.login.state.load_full();
         match seen.next(self.login.now()) {
-            LoginStep::Use(ready) => Ok(HandedClient::new(ready, generation)),
-            LoginStep::Refuse => Err(holst_core::Error::Login(
-                holst_core::error::login::LoginError::SessionRevoked,
-            )
-            .into()),
             LoginStep::Reload => self.reload(&seen).await,
+            LoginStep::Use | LoginStep::Refuse => hand_out(&seen, generation),
         }
     }
 
@@ -408,7 +404,7 @@ impl McpServer {
                 .ok()
                 .map(|gate| self.store_rotated(gate, client, session))
         });
-        when(rotated).await;
+        OptionFuture::from(rotated).await;
     }
 
     async fn store_rotated(
@@ -424,7 +420,7 @@ impl McpServer {
         };
         let saving = target
             .map(|ready| self.save_rotated(client, ready.clone(), session.clone()));
-        when(saving).await.unwrap_or_else(|| {
+        OptionFuture::from(saving).await.unwrap_or_else(|| {
             tracing::debug!("rotated cookies stay in memory: the login was replaced");
             client.confirm_saved(&session);
         });
@@ -462,7 +458,7 @@ impl McpServer {
                 .filter(|newer| *newer != session)
                 .map(|newer| Box::pin(self.save_rotated(client, next, newer)))
         });
-        when(newer).await;
+        OptionFuture::from(newer).await;
     }
 
     pub(crate) async fn run<F>(&self, call: F) -> CallToolResult
@@ -567,7 +563,7 @@ impl ServerHandler for McpServer {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(
-                Implementation::new("holst-rs", env!("CARGO_PKG_VERSION"))
+                Implementation::new(crate::setup::SERVER, env!("CARGO_PKG_VERSION"))
                     .with_title("Holst (unofficial)"),
             )
             .with_instructions(INSTRUCTIONS)

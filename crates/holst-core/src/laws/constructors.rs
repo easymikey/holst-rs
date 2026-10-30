@@ -29,6 +29,7 @@ use crate::{
     },
     laws::{LAST_MS, board_name, config, json_value, uuid},
     protocol::upload::multipart_body,
+    remote::api::channel::CreateChannel,
 };
 
 proptest! {
@@ -83,8 +84,11 @@ proptest! {
                 .map_or(NewParent::Root, NewParent::Folder),
         };
         let stamp = CreationStamp::at(fresh.clone(), Timestamp::from_millis(ms));
-        let body = new.body("me", &stamp, None)?;
-        prop_assert_eq!(&body, &new.body("me", &stamp, None)?);
+        let make = || -> crate::Result<Value> {
+            Ok(serde_json::to_value(CreateChannel::new(&new, "me", &stamp, None)?)?)
+        };
+        let body = make()?;
+        prop_assert_eq!(&body, &make()?);
         let parent = folder.as_ref().unwrap_or(&workspace).to_ascii_lowercase();
         prop_assert_eq!(body.get("id"), Some(&json!(fresh)));
         prop_assert_eq!(body.get("name"), Some(&json!(name.trim())));

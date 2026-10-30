@@ -11,8 +11,10 @@ use serde_json::{Map, Value, json};
 use crate::{
     command::{
         auth::{LogoutMode, StatusArgs, StatusPart},
+        storage::CleanArgs,
         table::{
             Argument,
+            Changes as _,
             CommandArgs,
             CommandGroup,
             CommandName,
@@ -24,7 +26,9 @@ use crate::{
             parse,
         },
     },
+    effect::board_write::WriteMode,
     error::hint::Surface,
+    fake::assert_none,
 };
 
 const GLOBAL_NAMES: [&str; 5] = ["output", "verbose", "base_url", "home", "no_cache"];
@@ -215,6 +219,17 @@ fn left_out_switches_and_lists_are_filled() -> crate::Result<()> {
     );
     let status: StatusArgs = parse(Map::new())?;
     assert_eq!(status.with, Vec::<StatusPart>::new());
+    Ok(())
+}
+
+#[test]
+fn a_dry_run_field_gives_the_mode() -> crate::Result<()> {
+    let modes = [json!({}), json!({ "dry_run": true })]
+        .map(|given| parse::<CleanArgs>(arguments(&given)).map(|clean| clean.mode()));
+    assert_eq!(
+        modes.into_iter().collect::<crate::Result<Vec<_>>>()?,
+        [WriteMode::Send, WriteMode::DryRun]
+    );
     Ok(())
 }
 
@@ -434,15 +449,6 @@ fn takes(command: &super::Command, name: &str) -> bool {
         .arguments
         .iter()
         .any(|argument| argument.name == name)
-}
-
-fn assert_none(rule: &str, offenders: &[String]) {
-    assert!(
-        offenders.is_empty(),
-        "{rule}: {} offenders\n  {}",
-        offenders.len(),
-        offenders.join("\n  ")
-    );
 }
 
 #[test]

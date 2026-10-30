@@ -495,10 +495,10 @@ const SEARCH: GroupHelp = GroupHelp {
 const API: GroupHelp = GroupHelp {
     name: "api",
     alias: None,
-    about: "Send any request to the Holst API",
+    about: "Send a request the Holst API catalogue knows",
     section: RootSection::Advanced,
     tools: GroupTools::One {
-        description: "Any Holst API endpoint; only GET unless a human set HOLST_MCP_RAW_WRITE=1.",
+        description: "Known Holst API calls; only GET unless a human set HOLST_MCP_RAW_WRITE=1.",
     },
     flags: &[],
     arguments: None,
@@ -565,6 +565,11 @@ impl CommandName {
 /// The arguments of one command, on both surfaces.
 pub trait CommandArgs: DeserializeOwned {
     const COMMAND: Command;
+}
+
+/// The arguments of a command that can be a dry run: how it is asked to run.
+pub trait Changes: CommandArgs {
+    fn mode(&self) -> WriteMode;
 }
 
 /// A type a command argument can have.
@@ -698,19 +703,22 @@ pub trait ArgumentGroup {
     const ARGUMENTS: &'static [Argument];
 }
 
-const BLANK: Argument = Argument {
-    name: "",
-    letter: None,
-    kind: ValueKind::Switch,
-    required: false,
-    positional: false,
-    value_name: "",
-    help: "",
-    tool_doc: None,
-    surfaces: &[Surface::Cli, Surface::Mcp],
-    subcommand: false,
-    kinds: &[],
-};
+impl Argument {
+    /// An argument with nothing set: the base for `..Argument::BLANK`.
+    pub const BLANK: Self = Self {
+        name: "",
+        letter: None,
+        kind: ValueKind::Switch,
+        required: false,
+        positional: false,
+        value_name: "",
+        help: "",
+        tool_doc: None,
+        surfaces: &[Surface::Cli, Surface::Mcp],
+        subcommand: false,
+        kinds: &[],
+    };
+}
 
 /// How many arguments `parts` hold together: the length of [`joined`].
 #[must_use]
@@ -731,7 +739,7 @@ pub const fn joined_len(mut parts: &[&[Argument]]) -> usize {
     reason = "N is the sum of the lengths, so every index is in range"
 )]
 pub const fn joined<const N: usize>(mut parts: &[&[Argument]]) -> [Argument; N] {
-    let mut joined = [BLANK; N];
+    let mut joined = [Argument::BLANK; N];
     let mut filled = 0;
     // imperative: a const fn has no iterators
     while let [first, rest @ ..] = parts {

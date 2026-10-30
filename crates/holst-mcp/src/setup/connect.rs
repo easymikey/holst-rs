@@ -1,13 +1,14 @@
 //! The connect step of `holst-mcp setup`: the MCP clients get the server.
 
 use std::{
-    io::{self, BufRead, Write},
+    io,
     process::{Command, Stdio},
 };
 
+use holst_form::{error::FormError, form::Form, prompt::Choice, terminal::Terminal};
 use serde_json::json;
 
-use super::{SetupError, Talk};
+use super::SetupError;
 
 /// The name the server is registered under in every client.
 pub(crate) const SERVER: &str = "holst-rs";
@@ -44,13 +45,15 @@ impl Program for System {
 }
 
 /// The clients that have a command to register a server.
-#[derive(Debug, Clone, Copy)]
-enum Cli {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Cli {
     Claude,
     Codex,
 }
 
 impl Cli {
+    const ALL: [Cli; 2] = [Cli::Claude, Cli::Codex];
+
     const fn label(self) -> &'static str {
         match self {
             Cli::Claude => "Claude Code",
@@ -79,54 +82,121 @@ impl Cli {
     }
 }
 
-/// Offers each client found on `PATH`, then prints what to put in the others.
-pub(super) fn connect<R: BufRead, W: Write>(
-    programs: &impl Program,
-    talk: &mut Talk<R, W>,
-    binary: &str,
-) -> Result<(), SetupError> {
-    [Cli::Claude, Cli::Codex]
-        .into_iter()
-        .try_for_each(|cli| offer(programs, talk, binary, cli))?;
-    talk.say(&snippets(binary))
+/// Which clients to connect: ask for the ones found, or the ones named.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Clients {
+    Ask,
+    /// `--clients claude,codex`
+    Named(Vec<Cli>),
 }
 
-fn offer<R: BufRead, W: Write>(
-    programs: &impl Program,
-    talk: &mut Talk<R, W>,
-    binary: &str,
-    cli: Cli,
-) -> Result<(), SetupError> {
-    match programs.run(cli.program(), &["mcp", "get", SERVER]) {
-        Err(_) => Ok(()),
-        Ok(ran) if ran.success => talk.say(&format!(
-            "{} has a {SERVER} entry already; kept.",
-            cli.label()
-        )),
-        Ok(_) => {
-            let answer = talk.ask(&format!("Connect {}? [Y/n]", cli.label()))?;
-            match answer.trim().to_lowercase().as_str() {
-                "" | "y" | "yes" => add(programs, talk, binary, cli),
-                _ => Ok(()),
-            }
+impl Clients {
+    /// The clients of a comma-separated list of program names.
+    pub(crate) fn parse(list: &str) -> Result<Self, SetupError> {
+        list.split(',')
+            .map(|name| {
+                Cli::ALL
+                    .into_iter()
+                    .find(|cli| cli.program() == name)
+                    .ok_or_else(|| SetupError::UnknownClient(name.to_owned()))
+            })
+            .collect::<Result<_, _>>()
+            .map(Clients::Named)
+    }
+
+    fn names(&self, cli: Cli) -> bool {
+        match self {
+            Clients::Ask => true,
+            Clients::Named(named) => named.contains(&cli),
         }
     }
 }
 
-fn add<R: BufRead, W: Write>(
+/// Connects the clients asked for without an entry, then prints what to put in
+/// the others.
+pub(super) fn connect<T: Terminal>(
     programs: &impl Program,
-    talk: &mut Talk<R, W>,
+    form: &Form<T>,
+    binary: &str,
+    clients: &Clients,
+) -> Result<(), SetupError> {
+    let without = without_entry(programs, form, clients)?;
+    chosen(form, clients, &without)?
+        .into_iter()
+        .try_for_each(|cli| add(programs, form, binary, cli))?;
+    form.terminal()
+        .write(&format!("{}\n", snippets(binary)))
+        .map_err(|err| SetupError::Form(FormError::Terminal(err)))
+}
+
+/// The wanted clients that can take an entry; a named client off `PATH` stays,
+/// so that its failure is told.
+fn without_entry<T: Terminal>(
+    programs: &impl Program,
+    form: &Form<T>,
+    clients: &Clients,
+) -> Result<Vec<Cli>, SetupError> {
+    Ok(Cli::ALL
+        .into_iter()
+        .filter(|cli| clients.names(*cli))
+        .map(
+            |cli| match programs.run(cli.program(), &["mcp", "get", SERVER]) {
+                Err(_) if *clients == Clients::Ask => Ok(None),
+                Ok(ran) if ran.success => form
+                    .step(
+                        &format!("{} has a {SERVER} entry already; kept.", cli.label()),
+                        "",
+                    )
+                    .map(|()| None),
+                _ => Ok(Some(cli)),
+            },
+        )
+        .filter_map(Result::transpose)
+        .collect::<Result<_, FormError>>()?)
+}
+
+/// All of `without` when named, else the ones the person leaves picked.
+fn chosen<T: Terminal>(
+    form: &Form<T>,
+    clients: &Clients,
+    without: &[Cli],
+) -> Result<Vec<Cli>, SetupError> {
+    match (clients, without) {
+        (Clients::Named(_), _) | (Clients::Ask, []) => Ok(without.to_vec()),
+        (Clients::Ask, _) => {
+            let options = without
+                .iter()
+                .map(|cli| Choice {
+                    label: cli.label().to_owned(),
+                    hint: None,
+                })
+                .collect();
+            let places = form.multiselect(
+                "Connect which clients?",
+                options,
+                vec![true; without.len()],
+                false,
+            )?;
+            Ok(places
+                .into_iter()
+                .filter_map(|place| without.get(place).copied())
+                .collect())
+        }
+    }
+}
+
+fn add<T: Terminal>(
+    programs: &impl Program,
+    form: &Form<T>,
     binary: &str,
     cli: Cli,
 ) -> Result<(), SetupError> {
     let (label, program) = (cli.label(), cli.program());
-    match programs.run(program, &cli.add(binary)) {
-        Ok(ran) if ran.success => talk.say(&format!("Connected {label}.")),
-        Ok(ran) => {
-            talk.say(&format!("Could not connect {label}: {}", ran.stderr.trim()))
-        }
-        Err(err) => talk.say(&format!("Could not run {program}: {err}")),
-    }
+    Ok(match programs.run(program, &cli.add(binary)) {
+        Ok(ran) if ran.success => form.step(&format!("Connected {label}."), ""),
+        Ok(ran) => form.step(&format!("Could not connect {label}"), ran.stderr.trim()),
+        Err(err) => form.step(&format!("Could not run {program}"), &err.to_string()),
+    }?)
 }
 
 /// The entries for clients set up by hand; nothing is written for the person.

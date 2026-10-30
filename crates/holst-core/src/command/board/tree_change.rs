@@ -269,7 +269,8 @@ pub async fn rename(client: &Client, args: &RenameArgs) -> Result<Changed> {
     let before = NodeBrief::of(&api::channel::get(client, &id).await?)?
         .name()
         .to_owned();
-    let request = api::channel::rename_request(&id, name.as_str())?;
+    let request =
+        api::channel::rename_request(&id, &api::channel::Rename::new(name.as_str()))?;
     let node = ChangedNode {
         name: Some(name.to_string()),
         previous_name: Some(before).filter(|before| !before.is_empty()),
@@ -417,7 +418,7 @@ fn forever(
         ..node_of(Action::DeleteForever, Some(id.to_owned()), None)
     };
     Ok(Plan {
-        request: api::channel::delete_request(id, DeleteMode::Permanent)?,
+        request: api::channel::delete_request(id, &DeleteMode::Permanent.into())?,
         node,
         unconfirmed: Some(unconfirmed),
     })
@@ -476,7 +477,7 @@ pub async fn restore(client: &Client, args: &RestoreArgs) -> Result<Changed> {
             lookup::trashed(client, &workspace.id, &args.board, choice::listed).await?;
         (id, None)
     };
-    let request = api::channel::restore_request(&id)?;
+    let request = api::channel::restore_request(&id, &api::channel::Restore {})?;
     let node = ChangedNode {
         name,
         ..node_of(Action::Restore, Some(id), None)

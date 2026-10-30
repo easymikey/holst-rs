@@ -31,7 +31,7 @@ use crate::{
     reply::objects,
     server::McpServer,
     tools::{
-        files::{LocalFile, checked_download, checked_place},
+        files::{checked_download, checked_place, checked_upload},
         picture::inline_svg,
         said,
     },
@@ -128,7 +128,7 @@ impl McpServer {
         arguments: Map<String, Value>,
     ) -> CallToolResult {
         self.parsed(arguments, async |args: ImportArgs| {
-            match LocalFile::check(Path::new(&args.file), &self.secrets) {
+            match checked_upload(Path::new(&args.file), &self.secrets) {
                 Ok(()) => {
                     let call = async |client: HandedClient| {
                         let imported = file::import(&client, &args).await?;

@@ -1017,16 +1017,10 @@ mod tests {
     ) -> Argument {
         Argument {
             name,
-            letter: None,
             kind,
             required,
-            positional: false,
-            value_name: "",
-            help: "",
-            tool_doc: None,
             surfaces,
-            subcommand: false,
-            kinds: &[],
+            ..Argument::BLANK
         }
     }
 

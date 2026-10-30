@@ -97,6 +97,18 @@ async fn a_workspace_that_is_not_yours_is_refused_with_the_list() {
 }
 
 #[tokio::test]
+async fn an_upper_case_workspace_id_finds_the_workspace() -> Result<()> {
+    let id = uuid(1).to_ascii_uppercase();
+    let (hits, _) = run(
+        &mode_names(&json!({ "workspace": id })),
+        &[one_workspace(), easy_tree()],
+    )
+    .await?;
+    assert_eq!(hits.len(), 2, "{hits:?}");
+    Ok(())
+}
+
+#[tokio::test]
 async fn the_limit_keeps_the_best_and_zero_keeps_all() -> Result<()> {
     let replies = [one_workspace(), easy_tree()];
     let (one, _) = run(&mode_names(&json!({ "limit": 1 })), &replies).await?;

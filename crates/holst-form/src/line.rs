@@ -5,12 +5,12 @@
 use unicode_segmentation::UnicodeSegmentation as _;
 use zeroize::Zeroizing;
 
-use crate::form::prompt::Step;
+use crate::prompt::Step;
 
 const CAPACITY: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum QuestionKind {
+pub enum QuestionKind {
     Text,
     LoginCode,
     Password,
@@ -18,7 +18,7 @@ pub(crate) enum QuestionKind {
 
 impl QuestionKind {
     #[must_use]
-    pub(crate) const fn placeholder(self) -> &'static str {
+    pub const fn placeholder(self) -> &'static str {
         match self {
             QuestionKind::Text => "you@example.com",
             QuestionKind::LoginCode => "sent to your email",
@@ -36,7 +36,7 @@ impl QuestionKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Keystroke {
+pub enum Keystroke {
     Char(char),
     Enter,
     Backspace,
@@ -61,21 +61,21 @@ pub(crate) enum Keystroke {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum EscapeTail {
+pub enum EscapeTail {
     Done,
     Csi(Csi),
     Ss3,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct Csi {
+pub struct Csi {
     parameters: [u16; 2],
     at: usize,
 }
 
 impl Csi {
     #[must_use]
-    pub(crate) fn feed(self, c: char) -> Self {
+    pub fn feed(self, c: char) -> Self {
         match (c.to_digit(10), c) {
             (Some(digit), _) => Self {
                 parameters: with_digit(self.parameters, self.at, digit),
@@ -90,7 +90,7 @@ impl Csi {
     }
 
     #[must_use]
-    pub(crate) fn key(self, last: char) -> Keystroke {
+    pub fn key(self, last: char) -> Keystroke {
         let [first, modifier] = self.parameters;
         let by_word = matches!(modifier, 3 | 5 | 7 | 9);
         match (last, by_word, first) {
@@ -132,7 +132,7 @@ const fn ss3_key(last: char) -> Keystroke {
 
 /// Finishes the escape sequences the terminal splits into keystrokes.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) enum Decoder {
+pub enum Decoder {
     #[default]
     Plain,
     Csi(Csi),
@@ -143,7 +143,7 @@ impl Decoder {
     /// The next state and the key to press; a key inside a sequence is
     /// `Ignored`.
     #[must_use]
-    pub(crate) fn feed(self, keystroke: Keystroke) -> (Self, Keystroke) {
+    pub fn feed(self, keystroke: Keystroke) -> (Self, Keystroke) {
         match (self, keystroke) {
             (Self::Csi(csi), Keystroke::Char(c)) if csi_parameter(c) => {
                 (Self::Csi(csi.feed(c)), Keystroke::Ignored)
@@ -165,23 +165,23 @@ impl Decoder {
 }
 
 #[derive(Debug)]
-pub(crate) struct TypedAnswer {
+pub struct TypedAnswer {
     kind: QuestionKind,
     text: Zeroizing<String>,
     cursor: usize,
 }
 
-pub(crate) type EditorStep = Step<TypedAnswer, Zeroizing<String>>;
+pub type EditorStep = Step<TypedAnswer, Zeroizing<String>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Cancellation {
+pub enum Cancellation {
     Interrupt,
     Cancel,
 }
 
 impl TypedAnswer {
     #[must_use]
-    pub(crate) fn new(kind: QuestionKind) -> Self {
+    pub fn new(kind: QuestionKind) -> Self {
         Self {
             kind,
             text: Zeroizing::new(String::with_capacity(CAPACITY)),
@@ -190,12 +190,12 @@ impl TypedAnswer {
     }
 
     #[must_use]
-    pub(crate) const fn kind(&self) -> QuestionKind {
+    pub const fn kind(&self) -> QuestionKind {
         self.kind
     }
 
     #[must_use]
-    pub(crate) fn text(&self) -> &str {
+    pub fn text(&self) -> &str {
         &self.text
     }
 
@@ -206,19 +206,19 @@ impl TypedAnswer {
     }
 
     #[must_use]
-    pub(crate) fn graphemes(&self) -> usize {
+    pub fn graphemes(&self) -> usize {
         self.text.graphemes(true).count()
     }
 
     #[must_use]
-    pub(crate) fn graphemes_before(&self) -> usize {
+    pub fn graphemes_before(&self) -> usize {
         boundaries(&self.text)
             .take_while(|at| *at < self.cursor)
             .count()
     }
 
     #[must_use]
-    pub(crate) fn press(self, keystroke: Keystroke) -> EditorStep {
+    pub fn press(self, keystroke: Keystroke) -> EditorStep {
         let (text, at) = (&*self.text, self.cursor);
         match keystroke {
             Keystroke::Enter => EditorStep::Submit(self.answer()),
@@ -318,7 +318,8 @@ const fn csi_parameter(c: char) -> bool {
     matches!(c, ' '..='?')
 }
 
-pub(crate) const fn csi_final(c: char) -> bool {
+#[must_use]
+pub const fn csi_final(c: char) -> bool {
     matches!(c, '@'..='~')
 }
 

@@ -58,8 +58,6 @@ mod tests {
         error::{
             hint::{Hint, Surface},
             lookup::{
-                Candidate,
-                Candidates,
                 LookupError,
                 LookupKind,
                 LookupMiss,
@@ -68,6 +66,7 @@ mod tests {
                 SkippedWorkspaces,
             },
         },
+        fake::candidates,
     };
     use strum::IntoEnumIterator as _;
 
@@ -147,23 +146,13 @@ mod tests {
         assert_eq!(explain(&err), format!("the file cannot be read: {cause}"));
     }
 
-    fn handled(names: &[&str]) -> Candidates {
-        names
-            .iter()
-            .map(|name| Candidate {
-                name: (*name).to_owned(),
-                ..Candidate::default()
-            })
-            .collect()
-    }
-
     fn lookups() -> impl Iterator<Item = (LookupKind, Error)> {
         let outcomes = || {
             [
                 LookupMiss::not_found(),
-                LookupMiss::ambiguous(handled(&["@1 a", "@2 b"])),
+                LookupMiss::ambiguous(candidates(&["@1 a", "@2 b"])),
                 LookupMiss::Uncertain {
-                    candidates: handled(&["@1 a"]),
+                    candidates: candidates(&["@1 a"]),
                     unread: SkippedWorkspaces(vec![Skipped {
                         workspace: "team".into(),
                         reason: SkipReason::NotRead,

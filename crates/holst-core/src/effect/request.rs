@@ -44,7 +44,7 @@ impl Serialize for QueryParameter {
 /// ```
 /// use holst_core::{effect::http::HttpMethod, remote::api::channel};
 ///
-/// let request = channel::rename_request("b1", "Plans")?;
+/// let request = channel::rename_request("b1", &channel::Rename::new("Plans"))?;
 /// assert_eq!(
 ///     (request.method, request.path.as_str()),
 ///     (HttpMethod::Patch, "/gapi/channel/b1")

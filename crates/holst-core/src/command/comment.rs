@@ -21,7 +21,6 @@ use crate::{
             comment::{
                 CommentChange,
                 NewThreadMessage,
-                ReadMark,
                 Thread,
                 ThreadAnchor,
                 short_id,
@@ -29,7 +28,7 @@ use crate::{
             objects,
         },
         lookup::rules::find_id,
-        text::one_line,
+        text::{one_line, shortened},
     },
     effect::{board_write::WriteMode, settings::CacheSettings},
     error::{
@@ -47,7 +46,7 @@ use crate::{
         },
     },
     remote::{
-        api,
+        api::{self, comment::SetReadAt},
         client::Client,
         socket::comments::{CommentRoom, open},
     },
@@ -228,7 +227,7 @@ pub struct RemoveArgs {
     pub workspace: Option<String>,
     #[argument(
         letter = 'y',
-        help = "Confirm a risky change; without it only the dry run is shown (exit code 77)"
+        help = "Confirm a risky change; a terminal asks instead; without one only the dry run is shown (exit code 77)"
     )]
     pub confirm: Confirmation,
     #[argument(letter = 'n', help = "Show what would change; change nothing")]
@@ -321,6 +320,18 @@ pub struct CommentReport {
 }
 
 impl CommentReport {
+    /// A sent change of a thread, before the board and the outcome are known.
+    fn of(action: CommentAction, thread: String, message: Option<String>) -> Self {
+        Self {
+            action,
+            board: String::new(),
+            thread,
+            message,
+            read_at: None,
+            outcome: ChangeReport::Sent,
+        }
+    }
+
     /// The change in a few words: what it did, or what a dry run or a held
     /// change would do.
     #[must_use]
@@ -360,18 +371,11 @@ impl ListedThread {
     fn line(&self, number: u32) -> String {
         let thread = &self.thread;
         let state = if thread.resolved { "resolved" } else { "open" };
-        let first = thread
+        let start = thread
             .messages
             .first()
-            .map(|message| one_line(&message.text))
+            .map(|message| shortened(&one_line(&message.text), 60))
             .unwrap_or_default();
-        let mut chars = first.chars();
-        let head: String = chars.by_ref().take(60).collect();
-        let start = if chars.next().is_some() {
-            format!("{head}…")
-        } else {
-            head
-        };
         let replies = match thread.messages.len().saturating_sub(1) {
             0 => "no replies".to_owned(),
             1 => "1 reply".to_owned(),
@@ -430,10 +434,7 @@ pub async fn ls(client: &Client, args: &LsArgs) -> Result<ThreadList> {
         lookup::board_id(client, &args.board, args.workspace.as_deref()).await?;
     let (room, marks, user) = future::try_join3(
         open(client, &board),
-        async {
-            let reply = api::comment::thread_list(client, &board).await?;
-            Ok(serde_json::from_value::<Vec<ReadMark>>(reply)?)
-        },
+        api::comment::thread_list(client, &board),
         account_id(client),
     )
     .await?;
@@ -490,14 +491,7 @@ async fn started(
         client,
         open,
         change,
-        CommentReport {
-            action: CommentAction::Add,
-            board: String::new(),
-            thread,
-            message: Some(id),
-            read_at: None,
-            outcome: ChangeReport::Sent,
-        },
+        CommentReport::of(CommentAction::Add, thread, Some(id)),
         (args.dry_run, None, Confirmation::Missing),
     )
     .await
@@ -522,14 +516,7 @@ pub async fn reply(client: &Client, args: &ReplyArgs) -> Result<CommentReport> {
         client,
         open,
         change,
-        CommentReport {
-            action: CommentAction::Reply,
-            board: String::new(),
-            thread,
-            message: Some(id),
-            read_at: None,
-            outcome: ChangeReport::Sent,
-        },
+        CommentReport::of(CommentAction::Reply, thread, Some(id)),
         (args.dry_run, None, Confirmation::Missing),
     )
     .await
@@ -564,14 +551,7 @@ pub async fn resolve(client: &Client, args: &ResolveArgs) -> Result<CommentRepor
         client,
         open,
         change,
-        CommentReport {
-            action,
-            board: String::new(),
-            thread,
-            message: None,
-            read_at: None,
-            outcome: ChangeReport::Sent,
-        },
+        CommentReport::of(action, thread, None),
         (args.dry_run, None, Confirmation::Missing),
     )
     .await
@@ -607,14 +587,7 @@ pub async fn rm(client: &Client, args: &RemoveArgs) -> Result<CommentReport> {
         client,
         open,
         change,
-        CommentReport {
-            action: CommentAction::Delete,
-            board: String::new(),
-            thread,
-            message: None,
-            read_at: None,
-            outcome: ChangeReport::Sent,
-        },
+        CommentReport::of(CommentAction::Delete, thread, None),
         (args.dry_run, Some(unconfirmed), args.confirm),
     )
     .await
@@ -635,7 +608,12 @@ pub async fn read(client: &Client, args: &ReadArgs) -> Result<CommentReport> {
     let outcome = match args.dry_run {
         WriteMode::DryRun => ChangeReport::DryRun { request: plan },
         WriteMode::Send => {
-            api::comment::set_read_at_time(client, &open.board, &thread, &at).await?;
+            let read = SetReadAt {
+                channel_id: open.board.clone(),
+                thread_id: thread.clone(),
+                read_at: at.clone(),
+            };
+            api::comment::set_read_at_time(client, &read).await?;
             ChangeReport::Sent
         }
     };

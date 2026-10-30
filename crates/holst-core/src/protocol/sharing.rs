@@ -6,21 +6,22 @@ use serde_json::Value;
 use crate::error::{Error, input::InputError};
 
 /// A role on the wire: the server's word, or `null` for none.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum WireRole {
     None(()),
-    Held(&'static str),
+    Held(String),
 }
 
-impl From<Option<&'static str>> for WireRole {
-    fn from(role: Option<&'static str>) -> Self {
-        role.map_or(Self::None(()), Self::Held)
+impl From<Option<&str>> for WireRole {
+    fn from(role: Option<&str>) -> Self {
+        role.map_or(Self::None(()), |role| Self::Held(role.to_owned()))
     }
 }
 
-/// A patch of the sharing settings, under the server's names.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+/// A patch of the sharing settings, with the two nulls of every channel patch.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SharingPatch {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub public: Option<bool>,
@@ -40,15 +41,10 @@ pub struct SharingPatch {
     pub who_can_manage_frame_hide_content: Option<WireRole>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub share_as_template: Option<bool>,
-}
-
-/// A patch as sent: the set keys and the two nulls of every channel patch.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct SharingBody {
-    #[serde(flatten)]
-    patch: SharingPatch,
-    in_trash: (),
-    thumbnail_updated_at: (),
+    #[serde(default)]
+    pub in_trash: (),
+    #[serde(default)]
+    pub thumbnail_updated_at: (),
 }
 
 impl SharingPatch {
@@ -56,33 +52,11 @@ impl SharingPatch {
     ///
     /// # Errors
     /// [`InputError::EmptySharingPatch`] when no setting is set.
-    pub fn checked(self) -> Result<SharingBody, Error> {
-        if self == Self::default() {
-            Err(Error::Input(InputError::EmptySharingPatch))
-        } else {
-            Ok(SharingBody {
-                patch: self,
-                in_trash: (),
-                thumbnail_updated_at: (),
-            })
-        }
+    pub fn checked(self) -> Result<Self, Error> {
+        (self != Self::default())
+            .then_some(self)
+            .ok_or(Error::Input(InputError::EmptySharingPatch))
     }
-}
-
-/// `channel_user/set`: a user's role on a board; no role revokes it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct RoleGrant<'a> {
-    pub(crate) channel_id: &'a str,
-    pub(crate) user_id: &'a str,
-    pub(crate) role: Option<&'a str>,
-}
-
-/// `channel/{id}/transfer_ownership`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct OwnershipTransfer<'a> {
-    pub(crate) new_owner_user_id: &'a str,
-    pub(crate) transfer_owned_subtree: bool,
 }
 
 /// The role the web client shows for a holder's permits, the top one first.
@@ -148,13 +122,12 @@ pub(crate) fn folder_rights(reply: Value) -> serde_json::Result<Vec<Holder>> {
 #[cfg(test)]
 mod tests {
 
+    use rstest::rstest;
     use serde_json::json;
 
     use crate::protocol::sharing::{
         HeldRole,
         Holder,
-        OwnershipTransfer,
-        RoleGrant,
         SharingPatch,
         WireRole,
         folder_rights,
@@ -164,7 +137,7 @@ mod tests {
     #[test]
     fn each_setting_serializes_to_its_wire_key_and_value() {
         let wire = |patch: SharingPatch| serde_json::to_value(patch).ok();
-        let held = |role| Some(WireRole::Held(role));
+        let held = |role: &str| Some(WireRole::Held(role.to_owned()));
         let cases = [
             (
                 SharingPatch {
@@ -172,7 +145,7 @@ mod tests {
                     public_access: held("viewer"),
                     ..SharingPatch::default()
                 },
-                json!({ "public": true, "public_access": "viewer" }),
+                json!({ "public": true, "public_access": "viewer", "in_trash": null, "thumbnail_updated_at": null }),
             ),
             (
                 SharingPatch {
@@ -180,7 +153,7 @@ mod tests {
                     public_access: Some(None.into()),
                     ..SharingPatch::default()
                 },
-                json!({ "public": false, "public_access": null }),
+                json!({ "public": false, "public_access": null, "in_trash": null, "thumbnail_updated_at": null }),
             ),
             (
                 SharingPatch {
@@ -201,6 +174,8 @@ mod tests {
                     "who_can_manage_lock_content": "editor",
                     "who_can_manage_frame_hide_content": "editor",
                     "share_as_template": true,
+                    "in_trash": null,
+                    "thumbnail_updated_at": null,
                 }),
             ),
         ];
@@ -225,56 +200,16 @@ mod tests {
         assert!(set.checked().is_ok());
     }
 
-    #[test]
-    fn a_sent_patch_carries_the_two_nulls_of_every_channel_patch() {
-        let sent = SharingPatch {
-            public: Some(true),
-            ..SharingPatch::default()
-        }
-        .checked()
-        .ok()
-        .and_then(|body| serde_json::to_value(body).ok());
-        assert_eq!(
-            sent,
-            Some(json!({
-                "public": true,
-                "in_trash": null,
-                "thumbnail_updated_at": null,
-            }))
-        );
-    }
-
-    #[test]
-    fn role_grant_has_the_wire_names_and_a_null_role_revokes() {
-        let wire = |role| {
-            serde_json::to_value(RoleGrant {
-                channel_id: "c",
-                user_id: "u",
-                role,
-            })
-            .ok()
-        };
-        assert_eq!(
-            wire(Some("editor")),
-            Some(json!({ "channel_id": "c", "user_id": "u", "role": "editor" }))
-        );
-        assert_eq!(
-            wire(None),
-            Some(json!({ "channel_id": "c", "user_id": "u", "role": null }))
-        );
-    }
-
-    #[test]
-    fn ownership_transfer_has_the_wire_names() {
-        let wire = serde_json::to_value(OwnershipTransfer {
-            new_owner_user_id: "u",
-            transfer_owned_subtree: true,
-        })
-        .ok();
-        assert_eq!(
-            wire,
-            Some(json!({ "newOwnerUserId": "u", "transferOwnedSubtree": true }))
-        );
+    #[rstest]
+    #[case::keys_and_nulls(r#"{"public":true,"in_trash":null}"#, true)]
+    #[case::role_or_null(
+        r#"{"public_access":null,"who_can_copy_content":"viewer"}"#,
+        true
+    )]
+    #[case::unknown_key(r#"{"public":true,"colour":"red"}"#, false)]
+    #[case::wrong_type(r#"{"public":"yes"}"#, false)]
+    fn a_patch_is_read_as_its_keys(#[case] text: &str, #[case] fits: bool) {
+        assert_eq!(serde_json::from_str::<SharingPatch>(text).is_ok(), fits);
     }
 
     #[test]

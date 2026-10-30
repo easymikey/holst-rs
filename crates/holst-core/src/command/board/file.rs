@@ -384,7 +384,7 @@ async fn unmade(client: &Client, id: &str, error: Error) -> Error {
 
 async fn trashed(client: &Client, id: &str) -> Result<serde_json::Value> {
     client
-        .send_json(api::channel::delete_request(id, DeleteMode::Trash)?)
+        .send_json(api::channel::delete_request(id, &DeleteMode::Trash.into())?)
         .await
 }
 

@@ -19,11 +19,13 @@ path = "src/main.rs"
 [dependencies]
 itertools.workspace = true
 holst-core = { path = "../holst-core", version = "0.2.0", features = ["logging"] }
+holst-form = { path = "../holst-form", version = "0.2.0" }
+futures-util.workspace = true
 thiserror.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "fs", "sync", "net", "signal"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "fs", "sync", "net"] }
 rmcp = { version = "3.6", default-features = false, features = ["server", "transport-io", "transport-streamable-http-server"] }
 hyper = { version = "1", default-features = false, features = ["server", "http1"] }
 hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
@@ -35,14 +37,13 @@ arc-swap.workspace = true
 yrs.workspace = true
 base64 = { version = "0.23", default-features = false, features = ["alloc"] }
 
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
 [dev-dependencies]
 rstest = { version = "0.28", default-features = false }
 insta = { version = "1.49", features = ["json"] }
 reqwest.workspace = true
 strum.workspace = true
 holst-core = { path = "../holst-core", features = ["fake"] }
+holst-form = { path = "../holst-form", features = ["fake"] }
 rmcp = { version = "3.6", default-features = false, features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest"] }
 
 

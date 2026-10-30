@@ -16,6 +16,8 @@ use std::{
     process::ExitCode,
 };
 
+use holst_core::effect::settings::Settings;
+use holst_form::{detect::TerminalType, form::Form, terminal::Console};
 use rmcp::{ServiceExt as _, service::ServerInitializeError, transport::stdio};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -27,8 +29,16 @@ enum StartError {
     )]
     UnknownArg { arg: String },
 
-    #[error("unknown setup flag {flag}: setup takes --no-connect or --connect-only")]
+    #[error(
+        "unknown setup flag {flag}: setup takes --no-connect, --connect-only or --clients <list>"
+    )]
     SetupFlag { flag: String },
+
+    #[error("--clients needs a list such as claude,codex")]
+    ClientsList,
+
+    #[error("--clients names clients to connect, which --no-connect skips")]
+    ClientsWithoutConnect,
 
     #[error(
         "stdin is not a terminal: run holst-mcp setup in a terminal \
@@ -83,20 +93,43 @@ async fn main() -> ExitCode {
     outcome.map_or_else(|err| report(&err), |()| ExitCode::SUCCESS)
 }
 
-/// The steps the flags of `holst-mcp setup` ask for.
-fn setup_steps(flags: &[String]) -> Result<setup::Steps, StartError> {
-    let asked = flags
-        .iter()
-        .map(|flag| match flag.as_str() {
-            "--no-connect" => Ok(setup::Steps::LoginOnly),
-            "--connect-only" => Ok(setup::Steps::ConnectOnly),
-            _ => Err(StartError::SetupFlag { flag: flag.clone() }),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    match asked.as_slice() {
+/// The steps and the clients the flags of `holst-mcp setup` ask for.
+fn setup_options(
+    flags: &[String],
+) -> Result<(setup::Steps, setup::Clients), StartError> {
+    let (steps, clients, awaiting) = flags.iter().try_fold(
+        (Vec::new(), setup::Clients::Ask, false),
+        |(mut steps, clients, awaiting), flag| match (awaiting, flag.as_str()) {
+            (true, list) => Ok((
+                steps,
+                setup::Clients::parse(list).map_err(StartError::Setup)?,
+                false,
+            )),
+            (false, "--no-connect") => {
+                steps.push(setup::Steps::LoginOnly);
+                Ok((steps, clients, false))
+            }
+            (false, "--connect-only") => {
+                steps.push(setup::Steps::ConnectOnly);
+                Ok((steps, clients, false))
+            }
+            (false, "--clients") => Ok((steps, clients, true)),
+            (false, _) => Err(StartError::SetupFlag { flag: flag.clone() }),
+        },
+    )?;
+    awaiting
+        .then_some(())
+        .map_or(Ok(()), |()| Err(StartError::ClientsList))?;
+    let steps = match steps.as_slice() {
         [] => Ok(setup::Steps::Both),
         [one] => Ok(*one),
         _ => Err(StartError::OneFlag),
+    }?;
+    match (steps, &clients) {
+        (setup::Steps::LoginOnly, setup::Clients::Named(_)) => {
+            Err(StartError::ClientsWithoutConnect)
+        }
+        _ => Ok((steps, clients)),
     }
 }
 
@@ -115,8 +148,9 @@ fn usage(arg: &str) -> Result<String, StartError> {
         "--version" | "-V" => Ok(format!("holst-mcp {VERSION}")),
         "--help" | "-h" => Ok(format!(
             "holst-mcp {VERSION} — the Holst MCP server on stdio.\n\
-             Log in and connect Claude Code and Codex: holst-mcp setup [--no-connect | --connect-only]\n\
+             Log in and connect Claude Code and Codex: holst-mcp setup [--no-connect | --connect-only] [--clients claude,codex]\n\
              (in a terminal; in a container: docker exec -it <container> holst-mcp setup)\n\
+             \x20 --clients connects those clients without asking, for scripts\n\
              Other clients: setup prints the entry to put in their config\n\
              HTTP, for agents in containers: holst-mcp --http 127.0.0.1:<port> [--print-config]\n\
              \x20 serves http://<addr>/mcp for the bearer token of HOLST_MCP_TOKEN or <holst home>/mcp-token;\n\
@@ -133,8 +167,17 @@ fn usage(arg: &str) -> Result<String, StartError> {
     }
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "main.rs is the one place that reads the environment"
+)]
+fn read_settings() -> Result<(Settings, Option<holst_core::Error>), StartError> {
+    Settings::checked(|name| std::env::var_os(name)).map_err(StartError::Settings)
+}
+
 async fn serve() -> Result<(), StartError> {
-    let holst = start_server()?;
+    let (settings, refused) = read_settings()?;
+    let holst = start_server(settings, refused.as_ref());
     let service = holst
         .serve(stdio())
         .await
@@ -153,9 +196,7 @@ async fn serve() -> Result<(), StartError> {
 )]
 async fn serve_http(args: &[String]) -> Result<(), StartError> {
     let options = http::Options::parse(args)?;
-    let (settings, _) =
-        holst_core::effect::settings::Settings::checked(|name| std::env::var_os(name))
-            .map_err(StartError::Settings)?;
+    let (settings, refused) = read_settings()?;
     let file = settings
         .location
         .file()
@@ -169,7 +210,7 @@ async fn serve_http(args: &[String]) -> Result<(), StartError> {
         let snippets = http::config_snippets(options.addr, &token);
         write!(io::stdout().lock(), "{snippets}").map_err(StartError::Stdout)
     } else {
-        listen(options.addr, token).await
+        listen(options.addr, token, settings, refused.as_ref()).await
     }
 }
 
@@ -177,8 +218,13 @@ async fn serve_http(args: &[String]) -> Result<(), StartError> {
     clippy::disallowed_methods,
     reason = "the listening address goes to stderr, as stdout carries the protocol"
 )]
-async fn listen(addr: SocketAddr, token: http::Token) -> Result<(), StartError> {
-    let holst = start_server()?;
+async fn listen(
+    addr: SocketAddr,
+    token: http::Token,
+    settings: Settings,
+    refused: Option<&holst_core::Error>,
+) -> Result<(), StartError> {
+    let holst = start_server(settings, refused);
     let listener = http::bind(addr).await?;
     tracing::info!(tools = holst.tool_count(), %addr, "starting holst-mcp on HTTP");
     writeln!(io::stderr().lock(), "holst-mcp: serving http://{addr}/mcp")
@@ -190,13 +236,13 @@ async fn listen(addr: SocketAddr, token: http::Token) -> Result<(), StartError> 
     clippy::disallowed_methods,
     reason = "main.rs is the one place that reads the environment"
 )]
-fn start_server() -> Result<server::McpServer, StartError> {
-    let (settings, refused) =
-        holst_core::effect::settings::Settings::checked(|name| std::env::var_os(name))
-            .map_err(StartError::Settings)?;
+fn start_server(
+    settings: Settings,
+    refused: Option<&holst_core::Error>,
+) -> server::McpServer {
     init_tracing(&settings.log);
     // A bad cache variable leaves the board cache off; the server still starts.
-    refused.iter().for_each(warn_cache_off);
+    refused.into_iter().for_each(warn_cache_off);
     let raw_write = tools::admin::RawWrite::from_setting(
         std::env::var("HOLST_MCP_RAW_WRITE").ok().as_deref(),
     );
@@ -206,7 +252,7 @@ fn start_server() -> Result<server::McpServer, StartError> {
     );
     let mut holst = server::McpServer::new(settings, raw_write, secrets);
     holst.downloads = std::env::home_dir().map(|home| home.join("Downloads"));
-    Ok(holst)
+    holst
 }
 
 /// `holst-mcp setup`: the login the server uses, then the MCP clients.
@@ -215,13 +261,12 @@ fn start_server() -> Result<server::McpServer, StartError> {
     reason = "main.rs is the one place that reads the environment"
 )]
 async fn set_up(flags: &[String]) -> Result<(), StartError> {
-    let steps = setup_steps(flags)?;
-    let stdin = Some(io::stdin())
-        .filter(IsTerminal::is_terminal)
+    let (steps, clients) = setup_options(flags)?;
+    // A script names its clients; no terminal needed.
+    (io::stdin().is_terminal() || clients != setup::Clients::Ask)
+        .then_some(())
         .ok_or(StartError::NotTerminal)?;
-    let (settings, _) =
-        holst_core::effect::settings::Settings::checked(|name| std::env::var_os(name))
-            .map_err(StartError::Settings)?;
+    let (settings, _) = read_settings()?;
     init_tracing(&settings.log);
     let backend = login::store::SystemBackend::new(settings);
     let binary = steps
@@ -234,8 +279,14 @@ async fn set_up(flags: &[String]) -> Result<(), StartError> {
         })
         .transpose()?
         .unwrap_or_default();
-    let mut talk = setup::Talk::new(stdin.lock(), io::stderr().lock(), true);
-    setup::set_up(&backend, &mut talk, &setup::System, &binary, steps)
+    let dumb = std::env::var("TERM").is_ok_and(|name| name == "dumb");
+    holst_form::detect::mute_color_when(TerminalType::dumb_if(dumb));
+    let form = Form::intro(
+        Console::detect(TerminalType::dumb_if(dumb)),
+        "holst-mcp setup",
+    )
+    .map_err(|err| StartError::Setup(err.into()))?;
+    setup::set_up(&backend, &form, &setup::System, &binary, steps, &clients)
         .await
         .map_err(StartError::Setup)
 }
@@ -268,7 +319,12 @@ fn init_tracing(log: &holst_core::effect::settings::LogSettings) {
 
 #[cfg(test)]
 mod tests {
-    use crate::{VERSION, setup::Steps, setup_steps, usage};
+    use crate::{
+        VERSION,
+        setup::{Clients, Steps},
+        setup_options,
+        usage,
+    };
 
     fn flags(words: &[&str]) -> Vec<String> {
         words.iter().map(|word| (*word).to_owned()).collect()
@@ -276,30 +332,44 @@ mod tests {
 
     #[test]
     fn setup_flags_pick_the_steps() {
-        assert_eq!(setup_steps(&flags(&[])).ok(), Some(Steps::Both));
+        let steps = |words: &[&str]| setup_options(&flags(words)).ok().map(|(s, _)| s);
+        assert_eq!(steps(&[]), Some(Steps::Both));
+        assert_eq!(steps(&["--no-connect"]), Some(Steps::LoginOnly));
+        assert_eq!(steps(&["--connect-only"]), Some(Steps::ConnectOnly));
+    }
+
+    #[test]
+    fn the_clients_flag_names_the_clients() {
+        let clients =
+            |words: &[&str]| setup_options(&flags(words)).ok().map(|(_, c)| c);
+        assert_eq!(clients(&[]), Some(Clients::Ask));
         assert_eq!(
-            setup_steps(&flags(&["--no-connect"])).ok(),
-            Some(Steps::LoginOnly)
-        );
-        assert_eq!(
-            setup_steps(&flags(&["--connect-only"])).ok(),
-            Some(Steps::ConnectOnly)
+            clients(&["--connect-only", "--clients", "claude,codex"]),
+            Clients::parse("claude,codex").ok()
         );
     }
 
     #[test]
     fn setup_flags_reject_the_unknown_and_the_pair() {
         let shown =
-            |words: &[&str]| setup_steps(&flags(words)).err().map(|e| e.to_string());
+            |words: &[&str]| setup_options(&flags(words)).err().map(|e| e.to_string());
         assert_eq!(
             shown(&["--port"]).as_deref(),
             Some(
-                "unknown setup flag --port: setup takes --no-connect or --connect-only"
+                "unknown setup flag --port: setup takes --no-connect, --connect-only or --clients <list>"
             )
         );
         assert_eq!(
             shown(&["--no-connect", "--connect-only"]).as_deref(),
             Some("give setup one of --no-connect and --connect-only, once")
+        );
+        assert_eq!(
+            shown(&["--clients"]).as_deref(),
+            Some("--clients needs a list such as claude,codex")
+        );
+        assert_eq!(
+            shown(&["--no-connect", "--clients", "codex"]).as_deref(),
+            Some("--clients names clients to connect, which --no-connect skips")
         );
     }
 

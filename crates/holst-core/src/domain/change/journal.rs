@@ -4,10 +4,10 @@ use std::collections::{BTreeSet, HashMap};
 
 use itertools::Itertools as _;
 use serde_json::{Map as Fields, Value, json};
-use yrs::{Any, Map as _, MapPrelim, MapRef, TransactionMut};
+use yrs::{MapRef, TransactionMut};
 
 use crate::{
-    domain::{board::any, change::write::AuthorStamp},
+    domain::{board::insert_map, change::write::AuthorStamp},
     error::Result,
     protocol::document::TYPE,
 };
@@ -90,11 +90,5 @@ pub(super) fn write(
     journal: &MapRef,
     entry: RemovedObject,
 ) -> Result<()> {
-    let fields = entry
-        .fields
-        .into_iter()
-        .map(|(name, value)| any(&value).map(|value| (name, value)))
-        .collect::<Result<Vec<(String, Any)>>>()?;
-    journal.insert(transaction, entry.id.as_str(), MapPrelim::from_iter(fields));
-    Ok(())
+    insert_map(transaction, journal, entry.id.as_str(), entry.fields)
 }

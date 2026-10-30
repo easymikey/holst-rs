@@ -302,3 +302,28 @@ fn mistakes_are_compile_errors(#[case] item: Tokens, #[case] message: &str) {
     let error = expand(item).err().map(|error| error.to_string());
     assert_eq!(error.as_deref(), Some(message));
 }
+
+#[rstest]
+#[case::dry_run_field("Write", quote!(#[argument(help = "d")] dry_run: WriteMode,), true)]
+#[case::read_without_one("Read", quote!(), false)]
+fn changes_are_emitted_where_there_is_a_dry_run(
+    #[case] risk: &str,
+    #[case] field: Tokens,
+    #[case] emitted: bool,
+) {
+    let risk = quote::format_ident!("{risk}");
+    let out = expand(quote! {
+        #[holst_command(group = Board, verb = "move", risk = #risk, about = "a", help = "b")]
+        struct MoveArgs {
+            #[argument(help = "c")]
+            board: String,
+            #field
+        }
+    })
+    .map(|tokens| tokens.to_string())
+    .unwrap_or_default();
+    let wanted = text(&quote!(
+        impl crate::command::table::Changes for MoveArgs
+    ));
+    assert_eq!(out.contains(&wanted), emitted, "{out}");
+}

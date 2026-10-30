@@ -1,7 +1,12 @@
 use holst_macros::{get, patch, post};
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-use crate::{domain::tree::TreeFallback, error::Result, remote::client::Client};
+use crate::{
+    domain::tree::TreeFallback,
+    error::Result,
+    remote::{catalogue::Endpoint, client::Client},
+};
 
 fn logged<T>(parsed: T, fallback: Option<TreeFallback>) -> T {
     match fallback {
@@ -14,19 +19,19 @@ fn logged<T>(parsed: T, fallback: Option<TreeFallback>) -> T {
 }
 
 /// A workspace.
-#[get("workspace/{workspace_id}")]
+#[get("workspace/{workspace_id}", class = Read)]
 pub async fn get(client: &Client, workspace_id: &str) -> Result<Value>;
 
 /// The trash.
-#[get("workspace/{workspace_id}/trash")]
+#[get("workspace/{workspace_id}/trash", class = Read)]
 pub async fn trash(client: &Client, workspace_id: &str) -> Result<Value>;
 
 /// When members were last active.
-#[get("workspace_user/{workspace_id}/list_last_active_dates")]
+#[get("workspace_user/{workspace_id}/list_last_active_dates", class = Admin)]
 pub async fn last_active_dates(client: &Client, workspace_id: &str) -> Result<Value>;
 
 /// How many boards a user created in the workspace; `userId` is required.
-#[get("workspace/{workspace_id}/created_channels_count", query(userId = user_id))]
+#[get("workspace/{workspace_id}/created_channels_count", class = Read, query(userId = user_id))]
 pub async fn created_channels_count(
     client: &Client,
     workspace_id: &str,
@@ -34,23 +39,34 @@ pub async fn created_channels_count(
 ) -> Result<Value>;
 
 /// SSO settings.
-#[get("workspace/{workspace_id}/sso_settings")]
+#[get("workspace/{workspace_id}/sso_settings", class = Admin)]
 pub async fn sso_settings(client: &Client, workspace_id: &str) -> Result<Value>;
 
 /// Verified domains.
-#[get("workspace_domains/{workspace_id}/list")]
+#[get("workspace_domains/{workspace_id}/list", class = Admin)]
 pub async fn domains(client: &Client, workspace_id: &str) -> Result<Value>;
 
+/// The body of `workspace/{id}` (rename) and `workspace/create`.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceName {
+    pub name: String,
+}
+
 /// Rename a workspace. Not verified live.
-#[patch("workspace/{workspace_id}", body = json!({ "name": name }))]
-pub async fn rename(client: &Client, workspace_id: &str, name: &str) -> Result<Value>;
+#[patch("workspace/{workspace_id}", class = Admin)]
+pub async fn rename(
+    client: &Client,
+    workspace_id: &str,
+    #[body] body: &WorkspaceName,
+) -> Result<Value>;
 
 /// Create a workspace. Not verified live.
-#[post("workspace/create", body = json!({ "name": name }))]
-pub async fn create(client: &Client, name: &str) -> Result<Value>;
+#[post("workspace/create", class = Write)]
+pub async fn create(client: &Client, #[body] body: &WorkspaceName) -> Result<Value>;
 
 /// The tree reply as text, for the parsers that skip a `Value`.
-#[get("workspace/{workspace_id}/tree", response = text)]
+#[get("workspace/{workspace_id}/tree", class = Read, response = text)]
 pub async fn tree_text(client: &Client, workspace_id: &str) -> Result<String>;
 
 /// The trash as a search index; every node in it counts as trashed.
@@ -82,5 +98,18 @@ pub async fn tree_index(
 }
 
 /// The event log by `query` (needs a plan with audit). Not verified live.
-#[get("audit_events", query = query.iter())]
+#[get("audit_events", class = Admin, query = query.iter())]
 pub async fn audit_events(client: &Client, query: &[(&str, String)]) -> Result<Value>;
+
+pub(crate) const ENDPOINTS: &[Endpoint] = &[
+    GET,
+    TRASH,
+    LAST_ACTIVE_DATES,
+    CREATED_CHANNELS_COUNT,
+    SSO_SETTINGS,
+    DOMAINS,
+    RENAME,
+    CREATE,
+    TREE_TEXT,
+    AUDIT_EVENTS,
+];

@@ -9,6 +9,7 @@ use holst_core::{
         hint::{Advice, LOGIN, Surface},
     },
 };
+use holst_form::error::{FormError, Reason};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
@@ -74,7 +75,7 @@ pub(crate) enum Error {
     #[error("{question}: {reason}")]
     InvalidAnswer {
         question: &'static str,
-        reason: InvalidAnswer,
+        reason: Reason,
     },
 
     #[error("there is no account for {email}")]
@@ -122,17 +123,47 @@ pub(crate) enum Error {
 
 pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+impl From<FormError> for Error {
+    fn from(error: FormError) -> Self {
+        match error {
+            FormError::Interrupted => Error::Interrupted,
+            FormError::Cancelled => Error::Cancelled,
+            FormError::Terminal(error) => Error::Terminal(error),
+            FormError::ReadInput(error) => Error::ReadInput(error),
+            FormError::NoInput { what } => Error::NoInput { what },
+            FormError::EchoNotHidden(error) => Error::EchoNotHidden(error),
+            FormError::InvalidAnswer { question, reason } => {
+                Error::InvalidAnswer { question, reason }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum InvalidAnswer {
-    #[error("enter an address like you@example.com")]
     NotEmail,
-    #[error("this cannot be empty")]
     Empty,
-    #[error("that code did not match — check the latest email and type it again")]
     WrongCode,
-    #[error("that password did not match — try again")]
     WrongPassword,
 }
+
+impl InvalidAnswer {
+    #[must_use]
+    pub(crate) const fn reason(self) -> Reason {
+        match self {
+            InvalidAnswer::NotEmail => NOT_EMAIL,
+            InvalidAnswer::Empty => EMPTY,
+            InvalidAnswer::WrongCode => WRONG_CODE,
+            InvalidAnswer::WrongPassword => WRONG_PASSWORD,
+        }
+    }
+}
+
+const NOT_EMAIL: Reason = Reason("enter an address like you@example.com");
+const EMPTY: Reason = Reason("this cannot be empty");
+const WRONG_CODE: Reason =
+    Reason("that code did not match — check the latest email and type it again");
+const WRONG_PASSWORD: Reason = Reason("that password did not match — try again");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
 pub(crate) enum SecretKind {
@@ -228,23 +259,16 @@ impl Error {
 
 #[cfg(test)]
 mod tests {
-    use holst_core::error::{
-        confirmation::Unconfirmed,
-        lookup::{Candidate, Candidates, LookupError, LookupKind, LookupMiss},
+    use holst_core::{
+        error::{
+            confirmation::Unconfirmed,
+            lookup::{LookupError, LookupKind, LookupMiss},
+        },
+        fake::candidates,
     };
     use rstest::rstest;
 
     use crate::error::{Error, InvalidAnswer, SecretKind};
-
-    fn handled(names: &[&str]) -> Candidates {
-        names
-            .iter()
-            .map(|name| Candidate {
-                name: (*name).to_owned(),
-                ..Candidate::default()
-            })
-            .collect()
-    }
 
     fn lookup(what: LookupKind, outcome: LookupMiss) -> Error {
         Error::Holst(holst_core::Error::Lookup(LookupError {
@@ -268,7 +292,7 @@ mod tests {
     #[rstest]
     #[case::unauthorized(status(401), Some("holst auth login"))]
     #[case::ambiguous_board(
-        lookup(LookupKind::Board, LookupMiss::ambiguous(handled(&["a", "b"]))),
+        lookup(LookupKind::Board, LookupMiss::ambiguous(candidates(&["a", "b"]))),
         Some("--workspace")
     )]
     #[case::folder_not_found(
@@ -280,7 +304,7 @@ mod tests {
         Some("holst b ls --view trash")
     )]
     #[case::folder_ambiguous(
-        lookup(LookupKind::Folder, LookupMiss::ambiguous(handled(&["a", "b"]))),
+        lookup(LookupKind::Folder, LookupMiss::ambiguous(candidates(&["a", "b"]))),
         Some("one of the ids")
     )]
     #[case::unconfirmed(

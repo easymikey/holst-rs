@@ -132,7 +132,10 @@ pub(in crate::command) fn cache_use(
 
 /// The cache of the logged-in account; offline, the account must be known
 /// without asking.
-pub(in crate::command) async fn account_cache(
+///
+/// # Errors
+/// Offline, an account that is not known.
+pub async fn account_cache(
     client: &Client,
     settings: &CacheSettings,
     cache_use: CacheUse,

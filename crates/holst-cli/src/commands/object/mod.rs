@@ -3,25 +3,31 @@
 mod items;
 mod render;
 
-use holst_core::{
-    command::{
-        board::picture::Delivery,
-        object::{ObjectVerb, add, align, change, copy, get, group, list, lock},
-        table::{self, CommandArgs},
+use holst_core::command::{
+    board::picture::Delivery,
+    object::{
+        ObjectVerb,
+        add,
+        align,
+        change::{self, Removed},
+        copy,
+        get,
+        group,
+        list,
+        lock,
     },
-    domain::change::receipt::ChangeReport,
-    effect::settings::CacheSettings,
-    remote::client::Client,
+    table,
 };
 use serde_json::{Map, Value};
 
 use crate::{
-    commands::refused,
+    commands,
     error::Result,
     output::{self, OutputFormat, OutputTarget},
     run::{RunSettings, run_signed_in},
 };
 
+#[expect(clippy::too_many_lines, reason = "one arm per verb")]
 pub(crate) async fn run(
     verb: ObjectVerb,
     mut arguments: Map<String, Value>,
@@ -38,49 +44,104 @@ pub(crate) async fn run(
             })
             .await
         }
-        ObjectVerb::Add => changed(arguments, run, format, add::add).await,
-        ObjectVerb::Edit => changed(arguments, run, format, change::edit).await,
-        ObjectVerb::Cp => changed(arguments, run, format, copy::cp).await,
-        ObjectVerb::Group => changed(arguments, run, format, group::group).await,
-        ObjectVerb::Ungroup => changed(arguments, run, format, group::ungroup).await,
-        ObjectVerb::Lock => changed(arguments, run, format, lock::lock).await,
-        ObjectVerb::Unlock => changed(arguments, run, format, lock::unlock).await,
-        ObjectVerb::Align => changed(arguments, run, format, align::align).await,
-        ObjectVerb::Rm => remove(arguments, run, format).await,
+        ObjectVerb::Add => {
+            commands::change(
+                arguments,
+                run,
+                format,
+                async |client, args| add::add(client, run.cache(), args).await,
+                output::board::report,
+            )
+            .await
+        }
+        ObjectVerb::Edit => {
+            commands::change(
+                arguments,
+                run,
+                format,
+                async |client, args| change::edit(client, run.cache(), args).await,
+                output::board::report,
+            )
+            .await
+        }
+        ObjectVerb::Cp => {
+            commands::change(
+                arguments,
+                run,
+                format,
+                async |client, args| copy::cp(client, run.cache(), args).await,
+                output::board::report,
+            )
+            .await
+        }
+        ObjectVerb::Group => {
+            commands::change(
+                arguments,
+                run,
+                format,
+                async |client, args| group::group(client, run.cache(), args).await,
+                output::board::report,
+            )
+            .await
+        }
+        ObjectVerb::Ungroup => {
+            commands::change(
+                arguments,
+                run,
+                format,
+                async |client, args| group::ungroup(client, run.cache(), args).await,
+                output::board::report,
+            )
+            .await
+        }
+        ObjectVerb::Lock => {
+            commands::change(
+                arguments,
+                run,
+                format,
+                async |client, args| lock::lock(client, run.cache(), args).await,
+                output::board::report,
+            )
+            .await
+        }
+        ObjectVerb::Unlock => {
+            commands::change(
+                arguments,
+                run,
+                format,
+                async |client, args| lock::unlock(client, run.cache(), args).await,
+                output::board::report,
+            )
+            .await
+        }
+        ObjectVerb::Align => {
+            commands::change(
+                arguments,
+                run,
+                format,
+                async |client, args| align::align(client, run.cache(), args).await,
+                output::board::report,
+            )
+            .await
+        }
+        ObjectVerb::Rm => {
+            commands::change(
+                arguments,
+                run,
+                format,
+                async |client, args| change::rm(client, run.cache(), args).await,
+                removed,
+            )
+            .await
+        }
         ObjectVerb::Get => download(arguments, run, format).await,
     }
 }
 
-/// Makes one change of the objects and prints it.
-async fn changed<A: CommandArgs>(
-    arguments: Map<String, Value>,
-    run: &RunSettings,
-    format: OutputFormat,
-    make: impl AsyncFn(&Client, &CacheSettings, &A) -> holst_core::Result<ChangeReport>,
-) -> Result<()> {
-    let args = table::parse::<A>(arguments)?;
-    run_signed_in(run, async |client| {
-        let report = make(client, run.cache(), &args).await?;
-        output::board::report(format, &report)
-    })
-    .await
-}
-
-/// Removes objects and prints it. A removal held for its confirmation is shown
-/// first as a plan; the refusal is the exit code.
-async fn remove(
-    arguments: Map<String, Value>,
-    run: &RunSettings,
-    format: OutputFormat,
-) -> Result<()> {
-    let args = table::parse(arguments)?;
-    run_signed_in(run, async |client| {
-        let removed = change::rm(client, run.cache(), &args).await?;
-        output::board::warn_if_trashed(&removed.report);
-        output::print(format, &removed.report.to_string(), &removed)?;
-        refused(removed.refusal.as_ref())
-    })
-    .await
+/// Prints a removal: the trash warning, then the removal itself.
+fn removed(format: OutputFormat, removed: &Removed) -> Result<()> {
+    output::board::warn_if_trashed(&removed.report);
+    output::print(format, &removed.report.to_string(), removed)
 }
 
 /// Downloads the originals of objects; a file of `-` sends the bytes to stdout.

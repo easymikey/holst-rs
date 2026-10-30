@@ -1,9 +1,13 @@
 //! Addresses, ids and values the caller gave.
 
-use crate::error::{
-    Error,
-    hint::{Hint, Surface},
-    lookup::Candidates,
+use crate::{
+    effect::http::HttpMethod,
+    error::{
+        Error,
+        hint::{Hint, Surface},
+        lookup::Candidates,
+    },
+    remote::catalogue::Refusal,
 };
 
 /// A value that cannot be used as given; nothing was sent.
@@ -155,6 +159,27 @@ pub enum InputError {
     #[error("{} problems:{}", .errors.len(), listed(.errors))]
     Several { errors: Vec<Error> },
 
+    #[error(transparent)]
+    Refused(Refusal),
+
+    #[error("holst api does not send login calls: {method} {path}")]
+    LoginCall { method: HttpMethod, path: String },
+
+    #[error("{method} {template} needs the query {key}")]
+    MissingQuery {
+        method: HttpMethod,
+        template: &'static str,
+        key: &'static str,
+    },
+
+    #[error(
+        "{method} {template} changes access or workspace settings, which MCP does not send through `api`"
+    )]
+    AdminWrite {
+        method: HttpMethod,
+        template: &'static str,
+    },
+
     #[error("no workspaces found")]
     NoWorkspaces,
 
@@ -219,6 +244,10 @@ impl InputError {
             | InputError::NotArgumentValue { .. }
             | InputError::NotCommandArguments(_)
             | InputError::ImportBoardLeft { .. }
+            | InputError::Refused(_)
+            | InputError::LoginCall { .. }
+            | InputError::MissingQuery { .. }
+            | InputError::AdminWrite { .. }
             | InputError::NoWorkspaces => None,
         }
     }
@@ -228,6 +257,7 @@ impl InputError {
     pub const fn hint(&self) -> Option<Hint> {
         match self {
             InputError::WorkspaceNotChosen { .. } => Some(Hint::NarrowDown),
+            InputError::LoginCall { .. } => Some(Hint::LoginAgain),
             InputError::BaseNotOrigin { .. }
             | InputError::BaseNotUrl { .. }
             | InputError::BaseNotHttps { .. }
@@ -266,6 +296,10 @@ impl InputError {
             | InputError::NotArgumentValue { .. }
             | InputError::NotCommandArguments(_)
             | InputError::ImportBoardLeft { .. }
+            // The message names what the call takes or where to send it.
+            | InputError::Refused(_)
+            | InputError::MissingQuery { .. }
+            | InputError::AdminWrite { .. }
             // Each problem's own words say what to change.
             | InputError::Several { .. } => None,
         }
@@ -289,11 +323,15 @@ fn listed(problems: &[Error]) -> String {
 
 #[cfg(test)]
 pub(super) mod tests {
-    use crate::error::{
-        Error,
-        hint::{Hint, decided::assert_every_variant},
-        input::{InputError, InputErrorDiscriminants},
-        lookup::Candidates,
+    use crate::{
+        effect::http::HttpMethod,
+        error::{
+            Error,
+            hint::{Hint, decided::assert_every_variant},
+            input::{InputError, InputErrorDiscriminants},
+            lookup::Candidates,
+        },
+        remote::catalogue::Refusal,
     };
 
     #[expect(clippy::too_many_lines, reason = "one sample per variant")]
@@ -400,6 +438,35 @@ pub(super) mod tests {
                     workspaces: Candidates::default(),
                 },
                 Some(Hint::NarrowDown),
+            ),
+            (
+                InputError::Refused(Refusal::NoBody {
+                    method: HttpMethod::Post,
+                    template: "x",
+                }),
+                None,
+            ),
+            (
+                InputError::LoginCall {
+                    method: HttpMethod::Post,
+                    path: text(),
+                },
+                Some(Hint::LoginAgain),
+            ),
+            (
+                InputError::MissingQuery {
+                    method: HttpMethod::Get,
+                    template: "x",
+                    key: "k",
+                },
+                None,
+            ),
+            (
+                InputError::AdminWrite {
+                    method: HttpMethod::Patch,
+                    template: "x",
+                },
+                None,
             ),
         ]
     }

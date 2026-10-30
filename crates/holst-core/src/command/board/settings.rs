@@ -343,14 +343,17 @@ async fn cover_fixed(client: &Client, id: &str, cover: &CoverEdit) -> Result<()>
             uploaded: Some(name),
             ..
         } => {
-            api::channel::set_cover(client, id, name).await?;
+            api::channel::set_cover(client, id, &api::channel::SetCover::new(name))
+                .await?;
             Ok(())
         }
         CoverEdit::Auto {
             uploaded: Some(name),
         } => {
-            api::channel::reset_cover(client, id).await?;
-            api::channel::set_preview(client, id, name).await?;
+            api::channel::reset_cover(client, id, &api::channel::ResetCover::default())
+                .await?;
+            api::channel::set_preview(client, id, &api::channel::SetPreview::new(name))
+                .await?;
             Ok(())
         }
         CoverEdit::File { uploaded: None, .. } | CoverEdit::Auto { uploaded: None } => {

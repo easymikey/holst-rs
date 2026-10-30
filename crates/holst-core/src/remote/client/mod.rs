@@ -2,7 +2,6 @@
 
 pub(crate) mod exchange;
 #[cfg(test)] pub(crate) mod fake;
-pub mod interpreter;
 pub mod sign;
 #[cfg(test)] mod tests;
 
@@ -324,20 +323,17 @@ impl Client {
             .map(|reply| reply.map(|response| response.text()))
     }
 
-    /// Download bytes (a board snapshot), the address checked as in `send`.
+    /// [`Client::send_json`] with the reply body as bytes.
     ///
     /// # Errors
     /// As [`Client::send_json`], plus
     /// [`crate::error::http::HttpError::ResponseTooLarge`].
-    pub async fn download(&self, path: &str) -> Result<Vec<u8>> {
-        let request = ApiRequest {
-            method: HttpMethod::Get,
-            path: path.to_owned(),
-            query: Vec::new(),
-            body: None,
-            authorization: Authorization::Session,
-        };
-        self.respond(request).await.map(|response| response.body)
+    pub fn send_bytes(
+        &self,
+        request: ApiRequest,
+    ) -> impl Future<Output = Result<Vec<u8>>> + Send + '_ {
+        self.respond(request)
+            .map(|reply| reply.map(|response| response.body))
     }
 
     fn respond(&self, request: ApiRequest) -> BoxFuture<'_, Result<HttpResponse>> {

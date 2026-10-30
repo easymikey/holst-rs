@@ -8,6 +8,7 @@
 
 mod api;
 mod board;
+mod board_edit;
 #[path = "../support/mod.rs"] mod fake;
 mod login;
 mod session;

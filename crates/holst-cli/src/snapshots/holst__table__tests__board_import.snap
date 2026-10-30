@@ -17,7 +17,7 @@ FLAGS
       --name name       The new board's name; after the file by default
       --into board      Write into this board instead of making one: id, link or the whole name, never a part of it
       --merge           With --into, keep what is on the board and add the file's objects; refused otherwise
-  -y, --yes             Confirm a risky change; without it only the dry run is shown (exit code 77)
+  -y, --yes             Confirm a risky change; a terminal asks instead; without one only the dry run is shown (exit code 77)
   -n, --dry-run         Show what would change; change nothing
 
 INHERITED FLAGS

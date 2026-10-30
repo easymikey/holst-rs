@@ -21,6 +21,7 @@ use holst_core::{
     remote::client::Client,
     storage::session_store::{LoginSaveReport, SessionStoreKind},
 };
+use holst_form::error::Reason;
 use secrecy::SecretString;
 use serde_json::json;
 
@@ -34,7 +35,11 @@ use crate::{
         terminal::{Console, Terminal, TerminalKind},
     },
     output,
-    output::{OutputFormat, view::display_name},
+    output::{
+        OutputFormat,
+        coloring::Coloring,
+        view::{self, display_name},
+    },
     run::RunSettings,
 };
 
@@ -50,8 +55,27 @@ pub(crate) async fn login(
             finish(&form, &done, replaced, where_saved(&done, run).as_deref())?;
             logged_in(format, &done, replaced)
         }
-        Err(err) => form.cancel(&err).and(Err(err.shown())),
+        Err(err) => cancel(&form, &err).and(Err(err.shown())),
     }
+}
+
+fn cancel<T: Terminal>(form: &Form<T>, error: &Error) -> Result<()> {
+    let (message, causes) = Some(error)
+        .filter(|error| !matches!(error, Error::Interrupted | Error::Cancelled))
+        .map_or_else(
+            || (Error::Cancelled.to_string(), Vec::new()),
+            |error| {
+                (
+                    holst_core::domain::text::printable(&error.to_string())
+                        .into_owned(),
+                    view::form_cause_lines(
+                        error,
+                        Coloring::colored_if(form.terminal().has_color()),
+                    ),
+                )
+            },
+        );
+    form.cancel(&message, &causes).map_err(Error::from)
 }
 
 fn logged_in(format: OutputFormat, done: &Done, replaced: ReplacedLogin) -> Result<()> {
@@ -80,7 +104,7 @@ async fn log_in<T: Terminal>(
             .wait("Reading the saved login", async {
                 Ok::<_, Error>(run.load().await.ok().flatten())
             })
-            .await?
+            .await??
             .map(|(session, _)| session),
         SaveLogin::Skip => None,
     };
@@ -94,7 +118,7 @@ async fn log_in<T: Terminal>(
             run.save(session).await
         }),
     )
-    .await
+    .await?
 }
 
 fn finish<T: Terminal>(
@@ -104,7 +128,7 @@ fn finish<T: Terminal>(
     saved_to: Option<&str>,
 ) -> Result<()> {
     form.write_box("Logged in", &done.lines(replaced, saved_to))?;
-    form.outro("Done")
+    Ok(form.outro("Done")?)
 }
 
 fn where_saved(done: &Done, run: &RunSettings) -> Option<String> {
@@ -128,13 +152,15 @@ struct Done {
 const ATTEMPTS: u8 = 3;
 
 async fn prepare<T: Terminal>(login: EmailLogin, form: &Form<T>) -> Result<Awaiting> {
-    let methods = form.wait("Checking the address", login.methods()).await?;
+    let methods = form.wait("Checking the address", login.methods()).await??;
     let email = login.email().clone();
     match methods.route() {
         LoginRoute::NoAccount => Err(Error::NoAccount { email }),
         LoginRoute::SingleSignOn => Err(Error::SsoOnly { email }),
         LoginRoute::Password => Ok(login.with_password()),
-        LoginRoute::Code => form.wait("Sending the code", login.send_code()).await,
+        LoginRoute::Code => {
+            Ok(form.wait("Sending the code", login.send_code()).await??)
+        }
     }
 }
 
@@ -154,14 +180,20 @@ async fn ask_and_log_in<T: Terminal>(
     let secret = secret_kind(&awaiting);
     let Question { label, kind } = question(secret);
     let typed = refused.map_or_else(
-        || form.ask(label, kind, &parse_secret),
-        |invalid| form.ask_again(Question { label, kind }, &parse_secret, invalid),
+        || form.ask(label, kind, &reason_of(parse_secret)),
+        |invalid| {
+            form.ask_again(
+                Question { label, kind },
+                &reason_of(parse_secret),
+                invalid.reason(),
+            )
+        },
     )?;
     let logged_in = form
         .wait("Signing in", async {
             Ok::<_, Error>(awaiting.log_in(&typed).await)
         })
-        .await?;
+        .await??;
     let can_ask_again =
         attempts_left > 1 && form.terminal().kind() != TerminalKind::Redirected;
     match logged_in.map_err(|err| (err.is_wrong_secret(), err)) {
@@ -276,11 +308,18 @@ async fn log_in_by_email<T: Terminal>(
     given: Option<Email>,
 ) -> Result<Client> {
     let email = given.map_or_else(
-        || form.ask("Email", QuestionKind::Text, &parse_email),
+        || form.ask("Email", QuestionKind::Text, &reason_of(parse_email)),
         |email| form.step("Email", email.as_str()).map(|()| email),
     )?;
     let awaiting = prepare(EmailLogin::new(client, email), form).await?;
     ask_and_log_in(awaiting, form, None, ATTEMPTS).await
+}
+
+// The form shows the reason as text; the command keeps the enum.
+fn reason_of<V>(
+    parse: impl Fn(&str) -> Result<V, InvalidAnswer>,
+) -> impl Fn(&str) -> Result<V, Reason> {
+    move |text| parse(text).map_err(InvalidAnswer::reason)
 }
 
 fn parse_email(text: &str) -> Result<Email, InvalidAnswer> {

@@ -76,6 +76,7 @@ fn upload_query<'a>(
 /// Upload a file between `boundary` lines, stored under `key`.
 #[post(
         "upload_file",
+        unlisted,
         query = upload_query(bind, key, freshness),
         payload = multipart(part),
         response = typed

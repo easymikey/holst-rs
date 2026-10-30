@@ -41,8 +41,8 @@ pub(crate) enum LoginState<C: LoginClient> {
 }
 
 #[cfg_attr(test, derive(strum::IntoStaticStr), strum(serialize_all = "lowercase"))]
-pub(crate) enum LoginStep<'a, C: LoginClient> {
-    Use(&'a ReadyLogin<C>),
+pub(crate) enum LoginStep {
+    Use,
     Refuse,
     Reload,
 }
@@ -109,13 +109,13 @@ fn within(since: Milliseconds, checked_at: Milliseconds, window: Duration) -> bo
 
 impl<C: LoginClient> LoginState<C> {
     #[must_use]
-    pub(crate) fn next(&self, checked_at: Milliseconds) -> LoginStep<'_, C> {
+    pub(crate) fn next(&self, checked_at: Milliseconds) -> LoginStep {
         match self {
             LoginState::Ready(ready)
                 if ready.is_active()
                     && within(ready.checked_at, checked_at, RECHECK) =>
             {
-                LoginStep::Use(ready)
+                LoginStep::Use
             }
             LoginState::Revoked(revoked)
                 if within(revoked.checked_at, checked_at, REVOKED_RECHECK) =>
@@ -186,11 +186,10 @@ mod tests {
     use holst_core::domain::session::{Session, SessionStatus};
     use secrecy::SecretString;
 
-    use crate::login::machine::{LoginClient, Milliseconds, RevokedLogin};
+    use crate::login::machine::{LoginClient, LoginStep, Milliseconds, RevokedLogin};
 
     type LoginPlan = crate::login::machine::LoginPlan<Working>;
     type LoginState = crate::login::machine::LoginState<Working>;
-    type LoginStep<'a> = crate::login::machine::LoginStep<'a, Working>;
     type ReadyLogin = crate::login::machine::ReadyLogin<Working>;
 
     #[derive(Clone)]
@@ -230,7 +229,7 @@ mod tests {
         }
     }
 
-    fn name(next: &LoginStep<'_>) -> &'static str {
+    fn name(next: &LoginStep) -> &'static str {
         next.into()
     }
 

@@ -23,7 +23,6 @@ use crate::{
     },
     effect::{
         board_write::LoadSource,
-        server::HolstServer,
         socket::{BoardSocket, SocketConnector, SocketSession},
     },
     error::{Error, Result, board_socket::BoardSocketError},
@@ -127,7 +126,7 @@ pub async fn announced(
     connector: &dyn SocketConnector,
     board: &str,
 ) -> Result<(EditRight, Option<StateVector>)> {
-    let login = client.socket_session()?;
+    let login = client.session_for_socket()?;
     capped(announce(connector, &login, board)).await
 }
 
@@ -178,7 +177,7 @@ async fn received(socket: &mut dyn BoardSocket) -> Result<Vec<u8>> {
 }
 
 struct LoadRequest<'a> {
-    server: &'a dyn HolstServer,
+    client: &'a Client,
     connector: &'a dyn SocketConnector,
     session: &'a SocketSession,
     board: &'a str,
@@ -187,15 +186,15 @@ struct LoadRequest<'a> {
 }
 
 pub(crate) async fn connected(
-    client: &dyn HolstServer,
+    client: &Client,
     connector: &dyn SocketConnector,
     board: &str,
     doc: Doc,
 ) -> Result<(Box<dyn BoardSocket>, LoadedBoard, LoadSource)> {
-    let login = client.socket_session()?;
+    let login = client.session_for_socket()?;
     let seed = doc.transact().state_vector();
     let request = LoadRequest {
-        server: client,
+        client,
         connector,
         session: &login,
         board,
@@ -217,7 +216,7 @@ async fn load_frames(
     request: &LoadRequest<'_>,
 ) -> Result<(Box<dyn BoardSocket>, EditRight, LoadSource)> {
     let LoadRequest {
-        server: client,
+        client,
         connector,
         session: login,
         board,
@@ -324,7 +323,7 @@ fn covers(doc: &Doc, server: &StateVector) -> bool {
 }
 
 async fn download_links(
-    client: &dyn HolstServer,
+    client: &Client,
     doc: &Doc,
     updates: Vec<UnappliedUpdate>,
 ) -> Result<(Vec<Vec<u8>>, u64)> {
@@ -340,7 +339,7 @@ async fn download_links(
                     Ok(None)
                 }
                 (UpdatePayload::Link(link), false) => {
-                    client.download_link(&link).await.map(|bytes| {
+                    client.download_trusted_link(&link).await.map(|bytes| {
                         let size = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
                         Some((bytes, size))
                     })

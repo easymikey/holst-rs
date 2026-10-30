@@ -135,12 +135,9 @@ pub(super) async fn created(
     carry(
         client,
         Plan {
-            request: api::template::create_request(&template)?,
-            action: Action::Create,
-            id: None,
             name: Some(name.to_owned()),
             objects: Some(listed.objects.len()),
-            unconfirmed: None,
+            ..Plan::new(api::template::create_request(&template)?, Action::Create)
         },
         (args.dry_run, Confirmation::Missing),
     )

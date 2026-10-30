@@ -42,8 +42,12 @@ impl SystemBackend {
 
     /// A client with no login, to log in with.
     pub(crate) fn anonymous(&self) -> holst_core::Result<Client> {
+        self.client(None)
+    }
+
+    fn client(&self, session: Option<Session>) -> holst_core::Result<Client> {
         holst_core::command::login::connect(
-            None,
+            session,
             self.settings.base_url.clone(),
             holst_core::system::clock::SystemClock,
             holst_core::system::id::RandomIds,
@@ -65,11 +69,6 @@ impl Backend for SystemBackend {
     }
 
     fn connect(&self, session: Session) -> holst_core::Result<Client> {
-        holst_core::command::login::connect(
-            Some(session),
-            self.settings.base_url.clone(),
-            holst_core::system::clock::SystemClock,
-            holst_core::system::id::RandomIds,
-        )
+        self.client(Some(session))
     }
 }

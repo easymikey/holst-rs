@@ -46,6 +46,26 @@ pub struct Listing {
     pub cursor: Option<String>,
 }
 
+impl Listing {
+    /// Each node with the workspace to head it, when several workspaces are
+    /// listed and the node starts a new one.
+    pub fn sections(
+        &self,
+    ) -> impl Iterator<Item = (Option<&ListedWorkspace>, &ListedNode)> + Clone {
+        let several = self.workspaces.len() > 1;
+        let before = std::iter::once(None)
+            .chain(self.nodes.iter().map(|node| node.workspace.as_deref()));
+        self.nodes.iter().zip(before).map(move |(node, before)| {
+            let heading = node
+                .workspace
+                .as_deref()
+                .filter(|current| several && Some(*current) != before)
+                .and_then(|current| self.workspaces.iter().find(|w| w.id == current));
+            (heading, node)
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ListedWorkspace {
     pub id: String,
@@ -334,22 +354,16 @@ async fn recent(client: &Client, args: &LsArgs) -> Result<Listing> {
         .map(|(workspace, index)| index.map(|index| (workspace, index)))
         .collect::<Result<Vec<_>>>()?;
     let nodes: Vec<ListedNode> = reply
-        .get("channels")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|entry| entry.get("channelId").and_then(Value::as_str))
-        .map(|id| recent_node(&trees, id))
+        .channels
+        .iter()
+        .map(|entry| recent_node(&trees, &entry.channel_id))
         .collect();
     Ok(Listing {
         view: ListView::Recent,
         workspaces: workspaces.into_iter().map(ListedWorkspace::from).collect(),
         total: nodes.len(),
         nodes,
-        cursor: reply
-            .get("cursor")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
+        cursor: reply.cursor,
     })
 }
 

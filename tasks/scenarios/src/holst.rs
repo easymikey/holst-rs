@@ -306,26 +306,24 @@ impl On<'_> {
         tool: &'static str,
         arguments: Value,
     ) -> Result<Observation, ScenarioError> {
-        match self.surface {
+        let observation = match self.surface {
             Surface::Cli => {
-                let observation =
-                    cli::run(self.holst.command("holst")?, line, |stdout| {
-                        Ok(self.observed(&String::from_utf8_lossy(stdout)))
-                    })
-                    .await?;
-                self.holst.checked(observation)
+                cli::run(self.holst.command("holst")?, line, |stdout| {
+                    Ok(self.observed(&String::from_utf8_lossy(stdout)))
+                })
+                .await?
             }
             Surface::Mcp => {
-                let observation = mcp::call(
+                mcp::call(
                     self.holst.command("holst-mcp")?,
                     tool,
                     fields(arguments),
                     |reply| self.observed(&reply.text),
                 )
-                .await?;
-                self.holst.checked(observation)
+                .await?
             }
-        }
+        };
+        self.holst.checked(observation)
     }
 
     pub(crate) fn observed(&self, text: &str) -> Observation {

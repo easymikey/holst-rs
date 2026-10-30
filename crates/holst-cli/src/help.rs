@@ -137,6 +137,7 @@ pub(crate) fn root(groups: &[CommandGroup], root: &clap::Command) -> String {
             [
                 "Use `holst <command> <subcommand> -h` for more information about a command.",
                 "Learn about exit codes using `holst help exit-codes`.",
+                "On a terminal holst asks before a held change or on several matches; `HOLST_NO_PROMPT=1` turns that off.",
             ],
         )])
         .collect::<Vec<_>>()

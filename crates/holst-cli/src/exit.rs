@@ -256,6 +256,10 @@ fn input_code(error: &InputError) -> u8 {
         | InputError::NoArgument { .. }
         | InputError::NotArgumentValue { .. }
         | InputError::NotCommandArguments(_)
+        | InputError::Refused(_)
+        | InputError::LoginCall { .. }
+        | InputError::MissingQuery { .. }
+        | InputError::AdminWrite { .. }
         | InputError::ImportBoardLeft { .. } => EX_USAGE,
     }
 }
@@ -408,29 +412,22 @@ fn asset_code(error: &StoredFileError) -> u8 {
 mod tests {
     use std::io;
 
-    use holst_core::error::{
-        board_change::BoardChangeError,
-        board_socket::{BoardSocketError, SocketErrorCode},
-        confirmation::{ChangeRisk, Unconfirmed},
-        http::HttpError,
-        input::InputError,
-        local_data::{KeychainError, LocalDataError},
-        login::LoginError,
-        lookup::{Candidate, Candidates, LookupError, LookupKind, LookupMiss},
+    use holst_core::{
+        error::{
+            board_change::BoardChangeError,
+            board_socket::{BoardSocketError, SocketErrorCode},
+            confirmation::{ChangeRisk, Unconfirmed},
+            http::HttpError,
+            input::InputError,
+            local_data::{KeychainError, LocalDataError},
+            login::LoginError,
+            lookup::{LookupError, LookupKind, LookupMiss},
+        },
+        fake::candidates,
     };
     use rstest::rstest;
 
     use crate::{error::Error, exit::code};
-
-    fn handled(names: &[&str]) -> Candidates {
-        names
-            .iter()
-            .map(|name| Candidate {
-                name: (*name).to_owned(),
-                ..Candidate::default()
-            })
-            .collect()
-    }
 
     fn core(error: impl Into<holst_core::Error>) -> Error {
         Error::Holst(error.into())
@@ -472,7 +469,7 @@ mod tests {
     #[case::no_input_shown(Error::NoInput { what: "a code" }.shown(), 66)]
     #[case::terminal_binary(Error::BinaryToTerminal, 64)]
     #[case::unknown_kind(core(InputError::NotNodeKind { raw: "x".into() }), 64)]
-    #[case::ambiguous(missing(LookupMiss::ambiguous(handled(&["a", "b"]))), 64)]
+    #[case::ambiguous(missing(LookupMiss::ambiguous(candidates(&["a", "b"]))), 64)]
     #[case::not_email(core(LoginError::NotEmail { raw: "x".into() }), 65)]
     #[case::bad_request(status(400), 65)]
     #[case::index_corrupt(core(LocalDataError::IndexCorrupt { error: None }), 65)]
@@ -530,5 +527,15 @@ mod tests {
                 .any(|&(code, _)| code == expected),
             "{expected} is not in the EXIT CODES block of --help"
         );
+    }
+
+    #[rstest]
+    #[case::ctrl_c(holst_form::error::FormError::Interrupted, 130)]
+    #[case::escape(holst_form::error::FormError::Cancelled, 75)]
+    fn a_form_stop_keeps_its_exit_code(
+        #[case] stop: holst_form::error::FormError,
+        #[case] expected: u8,
+    ) {
+        assert_eq!(code(&Error::from(stop).shown()), expected);
     }
 }

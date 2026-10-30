@@ -23,7 +23,7 @@ LOCAL COMMANDS
   storage:     See and clean what holst keeps on this machine
 
 ADVANCED COMMANDS
-  api:         Send any request to the Holst API
+  api:         Send a request the Holst API catalogue knows
 
 FLAGS
   -o, --output format   Output format: text, json or pretty; text by default
@@ -44,3 +44,4 @@ EXAMPLES
 LEARN MORE
   Use `holst <command> <subcommand> -h` for more information about a command.
   Learn about exit codes using `holst help exit-codes`.
+  On a terminal holst asks before a held change or on several matches; `HOLST_NO_PROMPT=1` turns that off.

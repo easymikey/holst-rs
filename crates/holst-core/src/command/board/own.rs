@@ -18,7 +18,7 @@ use crate::{
     domain::node::{NodeBrief, NodeKind},
     effect::{board_write::WriteMode, request::ApiRequest},
     error::{Result, input::InputError},
-    remote::{api, client::Client},
+    remote::{api, api::recent::SetRecent, client::Client},
 };
 
 /// Adds a board to the favorites, at `--index` or at the end.
@@ -27,7 +27,10 @@ use crate::{
 /// A board that is not found, and errors of the requests.
 pub async fn favorite(client: &Client, args: &FavoriteArgs) -> Result<Changed> {
     let request = async |board: &Found| {
-        api::favorite::add_request(&board.id, args.index.unwrap_or(-1))
+        api::favorite::add_request(&api::favorite::AddFavorite {
+            channel_id: board.id.clone(),
+            index: args.index.unwrap_or(-1),
+        })
     };
     plain(
         client,
@@ -44,7 +47,11 @@ pub async fn favorite(client: &Client, args: &FavoriteArgs) -> Result<Changed> {
 /// # Errors
 /// A board that is not found, and errors of the requests.
 pub async fn unfavorite(client: &Client, args: &UnfavoriteArgs) -> Result<Changed> {
-    let request = async |board: &Found| api::favorite::remove_request(&board.id);
+    let request = async |board: &Found| {
+        api::favorite::remove_request(&api::favorite::RemoveFavorite {
+            channel_id: board.id.clone(),
+        })
+    };
     plain(
         client,
         (&args.board, args.workspace.as_deref()),
@@ -60,7 +67,11 @@ pub async fn unfavorite(client: &Client, args: &UnfavoriteArgs) -> Result<Change
 /// # Errors
 /// A board that is not found, and errors of the requests.
 pub async fn touch(client: &Client, args: &TouchArgs) -> Result<Changed> {
-    let request = async |board: &Found| api::recent::set_request(&board.id);
+    let request = async |board: &Found| {
+        api::recent::set_request(&SetRecent {
+            channel_id: board.id.parse()?,
+        })
+    };
     plain(
         client,
         (&args.board, args.workspace.as_deref()),

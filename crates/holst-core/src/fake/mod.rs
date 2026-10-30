@@ -5,6 +5,7 @@ mod board;
 mod comment;
 mod files;
 mod fixture;
+mod helpers;
 mod http;
 mod login;
 mod server;
@@ -38,6 +39,7 @@ pub use crate::fake::{
     comment::{FixtureThread, ThreadAnchor, ThreadMessage},
     files::Upload,
     fixture::{Fixture, FixtureError},
+    helpers::{assert_none, candidates},
     login::LOGIN_CODE,
     tree::ListedNode,
     workspace::WorkspaceRole,

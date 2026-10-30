@@ -8,6 +8,7 @@ use crate::{domain::login::Email, error::Result, remote::client::Client};
 #[post(
     "login/get_public_options",
     anonymous,
+    unlisted,
     body = json!({ "email": email.as_str() })
 )]
 pub async fn public_options(client: &Client, email: &Email) -> Result<Value>;
@@ -16,6 +17,7 @@ pub async fn public_options(client: &Client, email: &Email) -> Result<Value>;
 #[post(
     "send_temporary_password",
     anonymous,
+    unlisted,
     body = json!({ "email": email.as_str() })
 )]
 pub async fn send_temporary_password(client: &Client, email: &Email) -> Result<Value>;
@@ -24,6 +26,7 @@ pub async fn send_temporary_password(client: &Client, email: &Email) -> Result<V
 #[post(
     "login/with_email",
     anonymous,
+    unlisted,
     body = json!({ "email": email.as_str(), "password": password.expose_secret() })
 )]
 pub async fn with_email(
@@ -33,5 +36,5 @@ pub async fn with_email(
 ) -> Result<Value>;
 
 /// End the session on the server; the client still holds it.
-#[post("logout")]
+#[post("logout", unlisted)]
 pub async fn end_server_session(client: &Client) -> Result<Value>;

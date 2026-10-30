@@ -1,5 +1,5 @@
 ---
-source: crates/holst-core/src/protocol/channel.rs
+source: crates/holst-core/src/remote/api/tests.rs
 expression: body
 ---
 {
@@ -9,9 +9,9 @@ expression: body
   "in_trash": null,
   "name": "zz-test",
   "order_index": 1792577145.404,
-  "parent_channel_access": "inherit",
-  "parent_id": "00000000-0000-4000-8000-0000000000f9",
-  "parent_type": "channel",
+  "parent_channel_access": null,
+  "parent_id": "00000000-0000-4000-8000-000000000001",
+  "parent_type": "workspace",
   "permits": [
     "read",
     "read_comments"

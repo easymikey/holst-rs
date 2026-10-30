@@ -1,4 +1,3 @@
-pub(crate) mod board;
 pub(crate) mod local_data;
 
 use std::path::{Path, PathBuf};

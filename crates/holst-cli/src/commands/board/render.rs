@@ -60,15 +60,10 @@ fn listing_text(listing: &Listing, link: impl Fn(&str) -> String) -> String {
 }
 
 fn page_text(listing: &Listing, link: &impl Fn(&str) -> String) -> String {
-    let several = listing.workspaces.len() > 1;
-    let before = std::iter::once(None)
-        .chain(listing.nodes.iter().map(|node| node.workspace.as_deref()));
-    let lines = listing.nodes.iter().zip(before).flat_map(|(node, before)| {
-        let heading = node
-            .workspace
-            .as_deref()
-            .filter(|current| several && Some(*current) != before)
-            .and_then(|current| workspace_heading(listing, current));
+    let lines = listing.sections().flat_map(|(heading, node)| {
+        let heading = heading.map(|workspace| {
+            format!("{} ({})", printable(&workspace.name), workspace.id)
+        });
         heading.into_iter().chain([node_line(node, link)])
     });
     let more = listing
@@ -76,14 +71,6 @@ fn page_text(listing: &Listing, link: &impl Fn(&str) -> String) -> String {
         .as_deref()
         .map(|cursor| format!("more: --cursor {cursor}"));
     joined(lines.chain(more), "\n").to_string()
-}
-
-fn workspace_heading(listing: &Listing, id: &str) -> Option<String> {
-    listing
-        .workspaces
-        .iter()
-        .find(|workspace| workspace.id == id)
-        .map(|workspace| format!("{} ({})", printable(&workspace.name), workspace.id))
 }
 
 fn node_line(node: &ListedNode, link: &impl Fn(&str) -> String) -> String {

@@ -14,13 +14,14 @@ use yrs::{
 };
 
 use crate::{
-    domain::{board::EditRight, change::value::ChangedObject},
+    domain::{
+        board::EditRight,
+        change::{receipt::Delivery, value::ChangedObject},
+    },
     effect::{
         board_write::{LoadSource, OpenedBoard, WriteInterpreter, WriteMode},
-        board_write_plan::{AcceptedUpdate, Release, WritePlan},
-        http::{BoxFuture, HttpBody, HttpMethod},
-        request::{ApiRequest, Authorization, QueryParameter},
-        server::HolstServer,
+        board_write_plan::{Release, WritePlan},
+        http::BoxFuture,
         socket::{BoardSocket, SocketConnector},
     },
     error::{
@@ -41,8 +42,6 @@ use crate::{
 };
 
 pub const ACCEPT_TIMEOUT: Duration = Duration::from_secs(15);
-
-pub(crate) const UPLOAD_PATH: &str = "/gapi/hud/upload";
 
 /// A board loaded over a socket that stays open for one update.
 pub struct ConnectedBoard {
@@ -121,7 +120,7 @@ pub fn writer_document(client: &Client, state: Option<&[u8]>) -> Result<Doc> {
 /// # Errors
 /// As [`load_with`](fn@crate::remote::socket::load::load_with).
 pub async fn open_seeded(
-    client: &dyn HolstServer,
+    client: &Client,
     connector: &dyn SocketConnector,
     board: &str,
     seed: Doc,
@@ -179,7 +178,7 @@ impl ConnectedBoard {
     /// may be sent.
     pub async fn send(
         self,
-        client: &dyn HolstServer,
+        client: &Client,
         update: Vec<u8>,
         id: u64,
     ) -> Result<SentUpdate> {
@@ -245,33 +244,13 @@ fn with_objects(error: Error, objects: &[ChangedObject]) -> Error {
 }
 
 async fn upload(
-    client: &dyn HolstServer,
+    client: &Client,
     board: &str,
     id: u64,
     update: Vec<u8>,
 ) -> Result<hud::OutgoingUpdate> {
     let size = u64::try_from(update.len()).unwrap_or(u64::MAX);
-    client
-        .send(ApiRequest {
-            method: HttpMethod::Post,
-            path: UPLOAD_PATH.to_owned(),
-            query: vec![
-                QueryParameter {
-                    name: "documentName".to_owned(),
-                    value: board.to_owned(),
-                },
-                QueryParameter {
-                    name: "updateId".to_owned(),
-                    value: id.to_string(),
-                },
-            ],
-            body: Some(HttpBody {
-                bytes: update,
-                content_type: "application/octet-stream".to_owned(),
-            }),
-            authorization: Authorization::Session,
-        })
-        .await?;
+    crate::remote::api::hud::upload(client, board, id, update).await?;
     Ok(hud::OutgoingUpdate::Uploaded {
         size,
         link: hud::upload_link(board, id),
@@ -284,7 +263,7 @@ impl SentUpdate {
     /// # Errors
     /// [`crate::error::board_change::BoardChangeError::NotAccepted`] around a
     /// timeout, a close, a refusal or a bad frame.
-    pub async fn accepted(mut self) -> Result<AcceptedUpdate> {
+    pub async fn accepted(mut self) -> Result<()> {
         tokio::time::timeout(
             ACCEPT_TIMEOUT,
             ack(&mut *self.socket, &self.board, self.id),
@@ -297,7 +276,7 @@ impl SentUpdate {
         })
         .and_then(|accepted| accepted)
         .map_err(|cause| unconfirmed(self.id, cause))?;
-        Ok(AcceptedUpdate { id: self.id })
+        Ok(())
     }
 }
 
@@ -400,25 +379,8 @@ pub fn connector() -> &'static dyn SocketConnector {
     &TungsteniteConnector
 }
 
-/// The interpreter `mode` picks over the real network: a sender or a reporter.
-#[must_use]
-pub fn interpreter(
-    mode: WriteMode,
-) -> &'static dyn WriteInterpreter<Connection = ConnectedBoard> {
-    match mode {
-        WriteMode::Send => &WriteOver {
-            connector: &TungsteniteConnector,
-            mode: WriteMode::Send,
-        },
-        WriteMode::DryRun => &WriteOver {
-            connector: &TungsteniteConnector,
-            mode: WriteMode::DryRun,
-        },
-    }
-}
-
 async fn opened(
-    client: &dyn HolstServer,
+    client: &Client,
     connector: &dyn SocketConnector,
     board: &str,
     seed: Doc,
@@ -437,7 +399,7 @@ impl WriteInterpreter for WriteOver<'_> {
 
     fn open<'a>(
         &'a self,
-        client: &'a dyn HolstServer,
+        client: &'a Client,
         board: &'a str,
         seed: Doc,
     ) -> BoxFuture<'a, Result<OpenedBoard<ConnectedBoard>>> {
@@ -446,10 +408,10 @@ impl WriteInterpreter for WriteOver<'_> {
 
     fn carry<'a>(
         &'a self,
-        client: &'a dyn HolstServer,
+        client: &'a Client,
         connection: ConnectedBoard,
         plan: &'a WritePlan,
-    ) -> BoxFuture<'a, Result<Option<AcceptedUpdate>>> {
+    ) -> BoxFuture<'a, Result<Delivery>> {
         let sending = match self.mode {
             WriteMode::Send => matches!(plan.release, Release::Released).then(|| {
                 sent(
@@ -465,6 +427,7 @@ impl WriteInterpreter for WriteOver<'_> {
             future::OptionFuture::from(sending)
                 .await
                 .transpose()
+                .map(|sent| sent.map_or(Delivery::Built, |()| Delivery::Accepted))
                 .map_err(|error| with_objects(error, &plan.change.objects))
         })
     }
@@ -476,9 +439,9 @@ impl WriteInterpreter for WriteOver<'_> {
 /// As [`ConnectedBoard::send`] and [`SentUpdate::accepted`].
 pub async fn sent(
     board: ConnectedBoard,
-    client: &dyn HolstServer,
+    client: &Client,
     update: Vec<u8>,
     id: u64,
-) -> Result<AcceptedUpdate> {
+) -> Result<()> {
     board.send(client, update, id).await?.accepted().await
 }

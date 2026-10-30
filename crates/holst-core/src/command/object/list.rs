@@ -37,6 +37,7 @@ use crate::{
         limit::Limit,
         picture::BoardLength,
         rich_text::TextFormat,
+        text::{one_line, shortened},
         tree::name_index::build::normalized,
     },
     effect::settings::CacheSettings,
@@ -82,6 +83,73 @@ pub struct ListedObject {
     pub tags: Vec<String>,
     #[serde(flatten)]
     pub style: TextStyle,
+}
+
+impl ListedObject {
+    /// The listing line, without the link: `name` writes an id, the text is
+    /// cut after `max_chars` characters.
+    #[must_use]
+    pub fn line(&self, name: impl Fn(&str) -> String, max_chars: usize) -> String {
+        let object = &self.object;
+        let corner = format!("({:.0}, {:.0})", object.x, object.y);
+        let size = object
+            .width
+            .zip(object.height)
+            .map(|(width, height)| format!(" {width:.0}×{height:.0}"))
+            .unwrap_or_default();
+        let inside = object
+            .parent
+            .as_deref()
+            .map(|parent| format!(" in {}", name(parent)))
+            .unwrap_or_default();
+        let color = object
+            .color
+            .as_deref()
+            .map(|color| format!("  {color}"))
+            .unwrap_or_default();
+        let look = object
+            .look
+            .as_ref()
+            .map(|look| format!("  {}", look.words()))
+            .unwrap_or_default();
+        let style = self.style.line();
+        let ends = object
+            .ends
+            .as_ref()
+            .map(|ends| {
+                let end = |end: &Option<String>| {
+                    end.as_deref().map_or_else(|| "·".to_owned(), &name)
+                };
+                format!("  {} → {}", end(&ends.start), end(&ends.end))
+            })
+            .unwrap_or_default();
+        let tags = if self.tags.is_empty() {
+            String::new()
+        } else {
+            format!("  #{}", self.tags.join(" #"))
+        };
+        let padlock = if object.locked { "  locked" } else { "" };
+        let turn = if object.rotation == 0.0 {
+            String::new()
+        } else {
+            format!("  {}°", (object.rotation * 100.0).round() / 100.0)
+        };
+        let linked = object
+            .link_to
+            .as_deref()
+            .map_or_else(String::new, |link| format!("  link-to={link}"));
+        let text = shortened(&one_line(&object.text), max_chars);
+        let quoted = if text.is_empty() {
+            String::new()
+        } else {
+            format!("  \"{text}\"")
+        };
+        format!(
+            "{} {:<7} {corner}{size}{inside}{color}{look}{style}{ends}{padlock}{turn}{linked}{tags}{quoted}",
+            name(&object.id),
+            object.kind.short_name(),
+        )
+    }
 }
 
 /// The marks all of the text carries and the colors set on the object.

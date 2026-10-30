@@ -182,7 +182,11 @@ async fn api_get_of_the_token_list_hides_the_values() {
     let (holst, _) = McpServer::scripted([CannedResponse::ok(tokens)]);
     let shown = api_call(
         &holst,
-        serde_json::json!({ "method": "GET", "path": "/gapi/personal_access_token/list" }),
+        serde_json::json!({
+            "method": "GET",
+            "path": "/gapi/personal_access_token/list",
+            "query": { "statuses": "active" },
+        }),
     )
     .await;
     assert_eq!(
@@ -201,7 +205,7 @@ async fn api_expands_aliases_in_path_query_and_body() {
         &holst,
         serde_json::json!({
             "method": "GET",
-            "path": "/gapi/channel/list",
+            "path": "/gapi/channel_user/users",
             "query": { "channel_id": board },
         }),
     )
@@ -210,8 +214,8 @@ async fn api_expands_aliases_in_path_query_and_body() {
         &holst,
         serde_json::json!({
             "method": "POST",
-            "path": format!("/gapi/channel/{board}"),
-            "body": format!(r#"{{"channel_id":"{board}"}}"#),
+            "path": format!("/gapi/channel/{board}/move"),
+            "body": format!(r#"{{"newIndex":1.0,"newParentId":"{board}"}}"#),
             "confirm": true,
         }),
     )
@@ -222,8 +226,10 @@ async fn api_expands_aliases_in_path_query_and_body() {
             None,
             None,
             [
-                format!("GET /gapi/channel/list?channel_id={BOARD}"),
-                format!(r#"POST /gapi/channel/{BOARD} {{"channel_id":"{BOARD}"}}"#),
+                format!("GET /gapi/channel_user/users?channel_id={BOARD}"),
+                format!(
+                    r#"POST /gapi/channel/{BOARD}/move {{"newIndex":1.0,"newParentId":"{BOARD}"}}"#
+                ),
             ]
             .to_vec()
         )
@@ -243,7 +249,7 @@ async fn api_post_goes_out_only_confirmed_and_enabled(
     let holst = holst.with_raw_write(raw_write);
     let shown = api_call(
         &holst,
-        serde_json::json!({ "method": "POST", "path": "/gapi/x", "confirm": confirm }),
+        serde_json::json!({ "method": "POST", "path": "/gapi/channel/create", "confirm": confirm }),
     )
     .await;
     assert!(
@@ -258,7 +264,7 @@ async fn api_dry_run_sends_nothing() {
     let (holst, network) = McpServer::scripted([]);
     let shown = api_call(
         &holst,
-        serde_json::json!({ "method": "POST", "path": "/gapi/x", "dry_run": true }),
+        serde_json::json!({ "method": "POST", "path": "/gapi/channel/create", "dry_run": true }),
     )
     .await;
     assert_eq!(shown.failure(), None);

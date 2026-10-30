@@ -5,24 +5,22 @@ use std::{io, io::IsTerminal as _};
 use console::{Key, Term};
 
 use crate::{
-    form::line::{Csi, EscapeTail, Keystroke, csi_final},
-    terminal::{
-        detect::{StreamKind, TerminalType},
-        signals,
-        tty,
-    },
+    detect::{StreamKind, TerminalType},
+    line::{Csi, EscapeTail, Keystroke, csi_final},
+    signals,
+    tty,
 };
 
 const SIGNAL_GRACE: std::time::Duration = std::time::Duration::from_secs(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TerminalKind {
+pub enum TerminalKind {
     Live,
     Dumb,
     Redirected,
 }
 
-pub(crate) trait Terminal {
+pub trait Terminal {
     /// The terminal kept quiet for the whole form; dropping it restores it.
     type QuietTerminal: std::fmt::Debug;
 
@@ -41,15 +39,31 @@ pub(crate) trait Terminal {
     fn width(&self) -> Option<usize>;
 
     /// Write text as is (it may hold escapes) and flush.
+    ///
+    /// # Errors
+    ///
+    /// The terminal could not be read or written.
     fn write(&self, text: &str) -> io::Result<()>;
 
     /// The next keystroke ([`TerminalKind::Live`] only).
+    ///
+    /// # Errors
+    ///
+    /// The terminal could not be read or written.
     fn keystroke(&self) -> io::Result<Keystroke>;
 
     /// The next line of stdin without its line ending; `None` at the end.
+    ///
+    /// # Errors
+    ///
+    /// The terminal could not be read or written.
     fn line(&self) -> io::Result<Option<String>>;
 
     /// Run `work` with the echo off; it comes back however `work` ends.
+    ///
+    /// # Errors
+    ///
+    /// The terminal could not be read or written.
     fn hidden<R>(&self, work: impl FnOnce(&Self) -> R) -> io::Result<R>;
 
     /// Run a blocking read; a signal during it ends the process cleanly.
@@ -63,7 +77,7 @@ pub(crate) trait Terminal {
 }
 
 #[derive(Debug)]
-pub(crate) struct Console {
+pub struct Console {
     stderr: Term,
     kind: TerminalKind,
     color: bool,
@@ -73,9 +87,9 @@ impl Console {
     #[must_use]
     #[expect(
         clippy::disallowed_methods,
-        reason = "the form console is where the CLI asks whether stdin is a terminal"
+        reason = "the form console is the output door of the forms and asks whether stdin is a terminal"
     )]
-    pub(crate) fn detect(term_type: TerminalType) -> Self {
+    pub fn detect(term_type: TerminalType) -> Self {
         tty::remember();
         let stderr = Term::stderr();
         let kind = kind_of(
@@ -260,11 +274,9 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        form::{
-            line::{Csi, EscapeTail, Keystroke},
-            terminal::{TerminalKind, keystroke_of, kind_of},
-        },
-        terminal::detect::{StreamKind, TerminalType},
+        detect::{StreamKind, TerminalType},
+        line::{Csi, EscapeTail, Keystroke},
+        terminal::{TerminalKind, keystroke_of, kind_of},
     };
 
     #[rstest]

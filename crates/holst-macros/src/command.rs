@@ -456,7 +456,17 @@ impl CommandItem {
         } = self;
         let verb = optional(self.verb.as_ref());
         let arguments = arguments(&self.members);
+        let changes = self.has("dry_run").then(|| {
+            quote! {
+                impl crate::command::table::Changes for #name {
+                    fn mode(&self) -> crate::effect::board_write::WriteMode {
+                        self.dry_run
+                    }
+                }
+            }
+        });
         quote! {
+            #changes
             impl crate::command::table::CommandArgs for #name {
                 const COMMAND: crate::command::table::Command = crate::command::table::Command {
                     group: crate::command::table::CommandGroup::#group,

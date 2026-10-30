@@ -52,7 +52,12 @@ pub async fn plan_create(client: &Client, new: &NewNode) -> Result<ApiRequest> {
     let root_access = account
         .as_ref()
         .and_then(|account| root_access(account, new.workspace.as_str()));
-    api::channel::create_stamped_request(new, root_access, &author, &client.stamp())
+    api::channel::create_request(&api::channel::CreateChannel::new(
+        new,
+        &author,
+        &client.stamp(),
+        root_access,
+    )?)
 }
 
 /// The folder `reference` names in `workspace`; no reference, or `root`, is the
@@ -156,14 +161,14 @@ pub async fn plan_copy(
     };
     let target = copy_target(&source, copying.name, folder)
         .ok_or_else(|| missing_field("parent_id/parent_type"))?;
-    api::channel::duplicate_stamped_request(
+    api::channel::duplicate_request(&api::channel::Duplicate::new(
         &NodeCopy {
             source_id: id.as_str(),
             target: &target,
             permissions: copying.permissions,
         },
         &client.stamp(),
-    )
+    ))
 }
 
 pub(super) fn missing_field(field: &'static str) -> Error {
@@ -289,7 +294,7 @@ impl LocatedNode {
     /// # Errors
     /// Errors of building the request.
     pub fn plan_trash(&self) -> Result<ApiRequest> {
-        api::channel::delete_request(self.id.as_str(), DeleteMode::Trash)
+        api::channel::delete_request(self.id.as_str(), &DeleteMode::Trash.into())
     }
 
     /// The request that moves the node to `parent`.
@@ -299,8 +304,10 @@ impl LocatedNode {
     pub fn plan_move(&self, parent: &NewParent) -> Result<ApiRequest> {
         api::channel::move_to_request(
             self.id.as_str(),
-            &parent.parent_in(&self.workspace),
-            self.place_first_in(parent),
+            &api::channel::MoveTo::new(
+                &parent.parent_in(&self.workspace),
+                self.place_first_in(parent),
+            ),
         )
     }
 

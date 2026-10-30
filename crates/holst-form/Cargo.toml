@@ -1,0 +1,36 @@
+[package]
+name = "holst-form"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+authors.workspace = true
+keywords = ["holst", "terminal", "form", "prompt"]
+categories = ["command-line-interface"]
+description = "Terminal pieces of the Holst command-line tools: tty settings, detection, color and the signal counter"
+
+[dependencies]
+thiserror.workspace = true
+derive_more.workspace = true
+console = { version = "0.16", default-features = false, features = ["std", "unicode-width", "ansi-parsing"] }
+tokio = { workspace = true, features = ["signal", "macros", "time"] }
+unicode-segmentation.workspace = true
+zeroize.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+signal-hook-registry = "1.4"
+
+[dev-dependencies]
+rstest = { version = "0.28", default-features = false }
+proptest = { version = "1.11", default-features = false, features = ["std", "bit-set"] }
+tokio = { workspace = true, features = ["rt", "macros", "time", "test-util"] }
+
+[features]
+fake = []
+
+[lints]
+workspace = true

@@ -1,28 +1,22 @@
 //! The login form à la `@clack/prompts`; a secret shows only as `▪`.
 
-pub(crate) mod draw;
-#[cfg(test)] pub(crate) mod fake;
-pub(crate) mod line;
-pub(crate) mod prompt;
-pub(crate) mod terminal;
-
 use std::{convert::Infallible, ops::ControlFlow, time::Duration};
 
 use zeroize::Zeroizing;
 
-use self::{
-    draw::{NoteTone, QuestionFooter},
-    line::{Cancellation, Decoder, EditorStep, Keystroke, QuestionKind, TypedAnswer},
-    prompt::{Confirm, Prompt, Step},
-    terminal::{Terminal, TerminalKind},
-};
 use crate::{
-    error::{Error, InvalidAnswer, Result},
-    output::{coloring::Coloring, view},
-    terminal::signals,
+    coloring::Coloring,
+    draw::{self, NoteTone, QuestionFooter},
+    error::{FormError, Reason, Result},
+    line::{Cancellation, Decoder, EditorStep, Keystroke, QuestionKind, TypedAnswer},
+    prompt::{Choice, Confirm, MultiSelect, Prompt, Select, Step},
+    signals,
+    terminal::{Terminal, TerminalKind},
 };
 
 const SPIN_STEP: Duration = Duration::from_millis(80);
+/// How many options of a select or multi-select show at once.
+const CHOICE_ROWS: usize = 8;
 
 enum KeyReadEnd {
     Typed(Zeroizing<String>),
@@ -33,13 +27,13 @@ enum KeyReadEnd {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Question {
-    pub(crate) label: &'static str,
-    pub(crate) kind: QuestionKind,
+pub struct Question {
+    pub label: &'static str,
+    pub kind: QuestionKind,
 }
 
 #[derive(Debug)]
-pub(crate) struct Form<T: Terminal> {
+pub struct Form<T: Terminal> {
     terminal: T,
     coloring: Coloring,
     _quiet: T::QuietTerminal,
@@ -47,7 +41,7 @@ pub(crate) struct Form<T: Terminal> {
 
 impl<T: Terminal> Form<T> {
     /// A form without an intro line: one question inside a command.
-    pub(crate) fn bare(term: T) -> Self {
+    pub fn bare(term: T) -> Self {
         Self {
             _quiet: term.quiet(),
             coloring: Coloring::colored_if(term.has_color()),
@@ -55,7 +49,10 @@ impl<T: Terminal> Form<T> {
         }
     }
 
-    pub(crate) fn intro(term: T, title: &str) -> Result<Self> {
+    /// # Errors
+    ///
+    /// The terminal failed, or the person stopped the form.
+    pub fn intro(term: T, title: &str) -> Result<Self> {
         let form = Self::bare(term);
         form.write_live(&draw::clear_line())?;
         form.write(&draw::intro(form.coloring, title))
@@ -66,35 +63,41 @@ impl<T: Terminal> Form<T> {
         if self.terminal.interrupts() == 0 {
             Ok(())
         } else {
-            Err(Error::Interrupted)
+            Err(FormError::Interrupted)
         }
     }
 
     #[must_use]
-    pub(crate) const fn terminal(&self) -> &T {
+    pub const fn terminal(&self) -> &T {
         &self.terminal
     }
 
-    pub(crate) fn ask<V>(
+    /// # Errors
+    ///
+    /// The terminal failed, or the person stopped the form.
+    pub fn ask<V>(
         &self,
         label: &'static str,
         kind: QuestionKind,
-        parse: &impl Fn(&str) -> Result<V, InvalidAnswer>,
+        parse: &impl Fn(&str) -> std::result::Result<V, Reason>,
     ) -> Result<V> {
         self.ask_with(Question { label, kind }, parse, QuestionFooter::Plain)
     }
 
-    pub(crate) fn ask_again<V>(
+    /// # Errors
+    ///
+    /// The terminal failed, or the person stopped the form.
+    pub fn ask_again<V>(
         &self,
         question: Question,
-        parse: &impl Fn(&str) -> Result<V, InvalidAnswer>,
-        invalid: InvalidAnswer,
+        parse: &impl Fn(&str) -> std::result::Result<V, Reason>,
+        invalid: Reason,
     ) -> Result<V> {
         match self.terminal.kind() {
             TerminalKind::Live | TerminalKind::Dumb => {
                 self.ask_with(question, parse, QuestionFooter::Warn(invalid))
             }
-            TerminalKind::Redirected => Err(Error::InvalidAnswer {
+            TerminalKind::Redirected => Err(FormError::InvalidAnswer {
                 question: question.label,
                 reason: invalid,
             }),
@@ -104,7 +107,7 @@ impl<T: Terminal> Form<T> {
     fn ask_with<V>(
         &self,
         question: Question,
-        parse: &impl Fn(&str) -> Result<V, InvalidAnswer>,
+        parse: &impl Fn(&str) -> std::result::Result<V, Reason>,
         footer: QuestionFooter,
     ) -> Result<V> {
         let Question { label, kind } = question;
@@ -122,9 +125,47 @@ impl<T: Terminal> Form<T> {
     }
 
     /// Asks yes or no; Enter takes `default`.
-    pub(crate) fn confirm(&self, label: &str, default: bool) -> Result<bool> {
+    ///
+    /// # Errors
+    ///
+    /// The terminal failed, or the person stopped the form.
+    pub fn confirm(&self, label: &str, default: bool) -> Result<bool> {
         let yes = self.run(label, Confirm::new(default))?;
         self.step(label, &Confirm::new(yes).summary()).map(|()| yes)
+    }
+
+    /// Asks for one of `options`; the answer is its place.
+    ///
+    /// # Errors
+    ///
+    /// The terminal failed, or the person stopped the form.
+    pub fn select(&self, label: &str, options: Vec<Choice>) -> Result<usize> {
+        let labels: Vec<String> =
+            options.iter().map(|option| option.label.clone()).collect();
+        let prompt = Select::new(options, CHOICE_ROWS)
+            .ok_or(FormError::NoInput { what: "a choice" })?;
+        let at = self.run(label, prompt)?;
+        self.step(label, labels.get(at).map_or("", String::as_str))
+            .map(|()| at)
+    }
+
+    /// Asks for any of `options`; the answer is their places in option order.
+    ///
+    /// # Errors
+    ///
+    /// The terminal failed, or the person stopped the form.
+    pub fn multiselect(
+        &self,
+        label: &str,
+        options: Vec<Choice>,
+        picked: Vec<bool>,
+        required: bool,
+    ) -> Result<Vec<usize>> {
+        let prompt = MultiSelect::new(options, picked, required, CHOICE_ROWS)
+            .ok_or(FormError::NoInput { what: "a choice" })?;
+        let shown = prompt.clone();
+        let places = self.run(label, prompt)?;
+        self.step(label, &shown.labelled(&places)).map(|()| places)
     }
 
     fn run<P: Prompt>(&self, label: &str, prompt: P) -> Result<P::Answer> {
@@ -136,15 +177,20 @@ impl<T: Terminal> Form<T> {
             TerminalKind::Dumb => {
                 self.terminal.answering(|_| self.run_lines(label, prompt))
             }
-            TerminalKind::Redirected => Err(Error::NoInput { what: "an answer" }),
+            TerminalKind::Redirected => Err(FormError::NoInput { what: "an answer" }),
         }
     }
 
     fn run_keys<P: Prompt>(&self, label: &str, prompt: P) -> Result<P::Answer> {
         let done = self
             .terminal
-            .hidden(|_| self.press_keys(label, prompt))
-            .map_err(Error::Terminal)?;
+            .hidden(|_| {
+                self.write(draw::HIDE_CURSOR).and_then(|()| {
+                    let done = self.press_keys(label, prompt);
+                    self.write(draw::SHOW_CURSOR).and(done)
+                })
+            })
+            .map_err(FormError::Terminal)?;
         self.terminal.discard_typeahead();
         done
     }
@@ -161,7 +207,7 @@ impl<T: Terminal> Form<T> {
         let flow = std::iter::repeat_with(|| self.terminal.keystroke()).try_fold(
             (prompt, Decoder::default(), first.len()),
             |(prompt, decoder, drawn), keystroke| match keystroke {
-                Err(error) => ControlFlow::Break(Err(Error::Terminal(error))),
+                Err(error) => ControlFlow::Break(Err(FormError::Terminal(error))),
                 Ok(keystroke) => {
                     let (decoder, key) = decoder.feed(keystroke);
                     match prompt.press(key) {
@@ -195,25 +241,27 @@ impl<T: Terminal> Form<T> {
         match flow {
             ControlFlow::Break(done) => done,
             // Keystrokes never run out; if they did, nothing was submitted.
-            ControlFlow::Continue(_) => Err(Error::Cancelled),
+            ControlFlow::Continue(_) => Err(FormError::Cancelled),
         }
     }
 
-    /// A line answers with its first letter; anything else takes the default.
+    /// A typed line stands for keys, as the prompt reads it.
     fn run_lines<P: Prompt>(&self, label: &str, prompt: P) -> Result<P::Answer> {
+        let rows: String = prompt
+            .listing()
+            .iter()
+            .flat_map(|row| [row.as_str(), "\n"])
+            .collect();
         let line = self
             .terminal
-            .write(&format!("◆  {label}\n"))
+            .write(&format!("◆  {label}\n{rows}"))
             .and_then(|()| self.terminal.line())
             .inspect(|_| self.terminal.discard_typeahead())
-            .map_err(Error::ReadInput)?
-            .ok_or(Error::Cancelled)?;
-        let flow = line
-            .trim()
-            .chars()
-            .take(1)
-            .map(Keystroke::Char)
-            .chain([Keystroke::Enter])
+            .map_err(FormError::ReadInput)?
+            .ok_or(FormError::Cancelled)?;
+        let flow = prompt
+            .typed(&line)
+            .into_iter()
             .try_fold(prompt, |prompt, key| match prompt.press(key) {
                 Step::Editing(prompt) => ControlFlow::Continue(prompt),
                 Step::Submit(answer) => ControlFlow::Break(Ok(answer)),
@@ -221,19 +269,21 @@ impl<T: Terminal> Form<T> {
             });
         match flow {
             ControlFlow::Break(done) => done,
-            ControlFlow::Continue(_) => Err(Error::Cancelled),
+            ControlFlow::Continue(_) => Err(FormError::Cancelled),
         }
     }
 
-    pub(crate) fn step(&self, label: &str, value: &str) -> Result<()> {
+    /// # Errors
+    ///
+    /// The terminal failed, or the person stopped the form.
+    pub fn step(&self, label: &str, value: &str) -> Result<()> {
         self.write(&draw::answered(self.coloring, label, value))
     }
 
-    pub(crate) fn write_box(
-        &self,
-        title: &str,
-        lines: &[(NoteTone, String)],
-    ) -> Result<()> {
+    /// # Errors
+    ///
+    /// The terminal failed, or the person stopped the form.
+    pub fn write_box(&self, title: &str, lines: &[(NoteTone, String)]) -> Result<()> {
         self.write(&draw::boxed(
             self.coloring,
             title,
@@ -242,14 +292,14 @@ impl<T: Terminal> Form<T> {
         ))
     }
 
-    pub(crate) async fn wait<V, E>(
+    /// # Errors
+    ///
+    /// The terminal failed, or the person stopped the form.
+    pub async fn wait<W>(
         &self,
         label: &str,
-        work: impl Future<Output = Result<V, E>>,
-    ) -> Result<V>
-    where
-        Error: From<E>,
-    {
+        work: impl Future<Output = W>,
+    ) -> Result<W> {
         // Listen before the line shows, so an early Ctrl-C reaches this wait.
         let interrupt = self.terminal.interrupt();
         self.not_interrupted()?;
@@ -257,12 +307,12 @@ impl<T: Terminal> Form<T> {
         let out = signals::or_interrupted(
             async {
                 tokio::select! {
-                    out = work => out.map_err(Error::from),
+                    out = work => Ok(out),
                     never = self.spin(label) => match never {},
                 }
             },
             interrupt,
-            || Err(Error::Interrupted),
+            || Err(FormError::Interrupted),
         )
         .await;
         self.write_live(&draw::done_waiting())?;
@@ -299,22 +349,18 @@ impl<T: Terminal> Form<T> {
         }
     }
 
-    pub(crate) fn outro(&self, message: &str) -> Result<()> {
+    /// # Errors
+    ///
+    /// The terminal failed, or the person stopped the form.
+    pub fn outro(&self, message: &str) -> Result<()> {
         self.write(&draw::outro(self.coloring, message))
     }
 
-    pub(crate) fn cancel(&self, error: &Error) -> Result<()> {
-        let (message, causes) =
-            if matches!(error, Error::Interrupted | Error::Cancelled) {
-                (Error::Cancelled.to_string(), Vec::new())
-            } else {
-                (
-                    holst_core::domain::text::printable(&error.to_string())
-                        .into_owned(),
-                    view::form_cause_lines(error, self.coloring),
-                )
-            };
-        self.write(&draw::error_outro(self.coloring, &message, &causes))
+    /// # Errors
+    ///
+    /// The terminal failed, or the person stopped the form.
+    pub fn cancel(&self, message: &str, causes: &[String]) -> Result<()> {
+        self.write(&draw::error_outro(self.coloring, message, causes))
     }
 
     fn read(
@@ -368,7 +414,7 @@ impl<T: Terminal> Form<T> {
             (answer, Decoder::default()),
             |(answer, decoder), keystroke| {
                 let shown = draw::masked(answer.kind(), answer.text());
-                match keystroke.map_err(Error::Terminal).map(|keystroke| {
+                match keystroke.map_err(FormError::Terminal).map(|keystroke| {
                     let (decoder, key) = decoder.feed(keystroke);
                     (decoder, answer.press(key))
                 }) {
@@ -400,7 +446,7 @@ impl<T: Terminal> Form<T> {
         match flow {
             ControlFlow::Break(done) => done,
             // Keystrokes never run out; if they did, nothing was submitted.
-            ControlFlow::Continue(_) => Err(Error::Cancelled),
+            ControlFlow::Continue(_) => Err(FormError::Cancelled),
         }
     }
 
@@ -423,16 +469,16 @@ impl<T: Terminal> Form<T> {
                         .and_then(|()| term.line())
                         .inspect(|_| term.discard_typeahead())
                 })
-                .map_err(Error::EchoNotHidden)?,
+                .map_err(FormError::EchoNotHidden)?,
             QuestionKind::Text => self
                 .terminal
                 .write(&question)
                 .and_then(|()| self.terminal.line())
                 .inspect(|_| self.terminal.discard_typeahead()),
         };
-        line.map_err(Error::ReadInput)?
+        line.map_err(FormError::ReadInput)?
             .map(|text| clean_answer(kind, &text))
-            .ok_or(Error::Cancelled)
+            .ok_or(FormError::Cancelled)
     }
 
     fn read_piped(
@@ -442,9 +488,9 @@ impl<T: Terminal> Form<T> {
     ) -> Result<Zeroizing<String>> {
         self.terminal
             .line()
-            .map_err(Error::ReadInput)?
+            .map_err(FormError::ReadInput)?
             .map(|text| clean_answer(kind, &Zeroizing::new(text)))
-            .ok_or(Error::NoInput { what: label })
+            .ok_or(FormError::NoInput { what: label })
     }
 
     fn write_live(&self, text: &str) -> Result<()> {
@@ -455,14 +501,14 @@ impl<T: Terminal> Form<T> {
     }
 
     fn write(&self, text: &str) -> Result<()> {
-        self.terminal.write(text).map_err(Error::Terminal)
+        self.terminal.write(text).map_err(FormError::Terminal)
     }
 }
 
-fn stopped_by(quit: Cancellation) -> Error {
+fn stopped_by(quit: Cancellation) -> FormError {
     match quit {
-        Cancellation::Interrupt => Error::Interrupted,
-        Cancellation::Cancel => Error::Cancelled,
+        Cancellation::Interrupt => FormError::Interrupted,
+        Cancellation::Cancel => FormError::Cancelled,
     }
 }
 
@@ -493,33 +539,35 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        error::{Error, InvalidAnswer, Result},
-        form::{
-            Form,
-            Question,
-            fake::{Script, screen, without_escapes},
-            line::{Keystroke, QuestionKind},
-            terminal::TerminalKind,
-        },
+        error::{FormError, Reason, Result},
+        fake::{Script, screen, without_escapes},
+        form::{Form, Question},
+        line::{Keystroke, QuestionKind},
+        prompt::Choice,
+        terminal::TerminalKind,
     };
+
+    const EMPTY: Reason = Reason("this cannot be empty");
+    const NOT_EMAIL: Reason = Reason("enter an address like you@example.com");
+    const WRONG_CODE: Reason = Reason("that code did not match");
 
     fn chars(text: &'static str) -> impl Iterator<Item = Keystroke> {
         text.chars().map(Keystroke::Char)
     }
 
-    fn not_empty(text: &str) -> Result<String, InvalidAnswer> {
+    fn not_empty(text: &str) -> Result<String, Reason> {
         if text.is_empty() {
-            Err(InvalidAnswer::Empty)
+            Err(EMPTY)
         } else {
             Ok(text.to_owned())
         }
     }
 
-    fn email(text: &str) -> Result<String, InvalidAnswer> {
+    fn email(text: &str) -> Result<String, Reason> {
         if text.contains('@') {
             Ok(text.to_owned())
         } else {
-            Err(InvalidAnswer::NotEmail)
+            Err(NOT_EMAIL)
         }
     }
 
@@ -610,7 +658,7 @@ mod tests {
                 kind: QuestionKind::LoginCode,
             },
             &not_empty,
-            InvalidAnswer::WrongCode,
+            WRONG_CODE,
         )?;
         assert_eq!(again, "2");
         let raw = form.terminal().written();
@@ -620,8 +668,8 @@ mod tests {
 
     #[rstest]
     #[case::ctrl_c(Script::new(TerminalKind::Live, [Keystroke::Interrupt], []), QuestionKind::Text, "interrupted")]
-    #[case::esc(Script::new(TerminalKind::Live, [Keystroke::Cancel], []), QuestionKind::Text, "login cancelled")]
-    #[case::ctrl_d(Script::new(TerminalKind::Live, [Keystroke::EndOfInput], []), QuestionKind::Text, "login cancelled")]
+    #[case::esc(Script::new(TerminalKind::Live, [Keystroke::Cancel], []), QuestionKind::Text, "cancelled")]
+    #[case::ctrl_d(Script::new(TerminalKind::Live, [Keystroke::EndOfInput], []), QuestionKind::Text, "cancelled")]
     #[case::stdin_ended(Script::new(TerminalKind::Redirected, [], []), QuestionKind::Text, "no input: stdin ended")]
     #[case::piped_wrong_answer(Script::new(TerminalKind::Redirected, [], ["nope"]), QuestionKind::Text, "Email: enter an address")]
     #[case::echo_not_hidden(
@@ -658,7 +706,7 @@ mod tests {
     async fn waiting_line_is_drawn_and_removed_only_when_live() -> Result<()> {
         let live = form(Script::new(TerminalKind::Live, [], []))?;
         let piped = form(Script::new(TerminalKind::Redirected, [], []))?;
-        let work = || async { Ok::<_, Error>(7) };
+        let work = || async { 7 };
         assert_eq!(live.wait("Checking", work()).await?, 7);
         assert_eq!(piped.wait("Checking", work()).await?, 7);
         assert!(live.terminal().written().contains("◒  Checking…"));
@@ -671,18 +719,14 @@ mod tests {
     async fn ctrl_c_during_a_wait_closes_the_form() -> Result<()> {
         let form = form(Script::new(TerminalKind::Live, [], []).pressing_ctrl_c())?;
         let err = form
-            .wait("Signing in", std::future::pending::<Result<()>>())
+            .wait("Signing in", std::future::pending::<()>())
             .await
             .err();
-        assert!(matches!(err, Some(Error::Interrupted)), "{err:?}");
-        form.cancel(&Error::Interrupted)?;
+        assert!(matches!(err, Some(FormError::Interrupted)), "{err:?}");
+        form.cancel("login cancelled", &[])?;
         let shown = screen(&form.terminal().written());
         assert!(!shown.contains('◒'), "{shown}");
         assert!(shown.ends_with("└  login cancelled"), "{shown}");
-        assert_eq!(
-            crate::exit::code(&Error::Interrupted.shown()),
-            crate::exit::EXIT_INTERRUPTED
-        );
         Ok(())
     }
 
@@ -691,12 +735,10 @@ mod tests {
         let form = form(
             Script::new(TerminalKind::Live, chars("a@b.c"), []).interrupted_before(),
         )?;
-        let waited = form
-            .wait("Reading", std::future::ready(Ok::<_, Error>(1)))
-            .await;
-        assert!(matches!(waited, Err(Error::Interrupted)), "{waited:?}");
+        let waited = form.wait("Reading", std::future::ready(1)).await;
+        assert!(matches!(waited, Err(FormError::Interrupted)), "{waited:?}");
         let asked = form.ask("Email", QuestionKind::Text, &email);
-        assert!(matches!(asked, Err(Error::Interrupted)), "{asked:?}");
+        assert!(matches!(asked, Err(FormError::Interrupted)), "{asked:?}");
         let shown = screen(&form.terminal().written());
         assert!(!shown.contains("Reading"), "{shown}");
         assert!(!shown.contains("Email"), "{shown}");
@@ -721,7 +763,7 @@ mod tests {
     #[tokio::test]
     async fn finished_work_wins_over_ctrl_c() -> Result<()> {
         let form = form(Script::new(TerminalKind::Live, [], []).pressing_ctrl_c())?;
-        let work = async { Ok::<_, Error>(7) };
+        let work = async { 7 };
         assert_eq!(form.wait("Checking", work).await?, 7);
         Ok(())
     }
@@ -772,5 +814,197 @@ mod tests {
         assert!(written.ends_with("◇  Go?\n│  No\n│\n"), "{written:?}");
         assert_eq!(form.terminal().discards(), 1);
         Ok(())
+    }
+
+    fn plans() -> Vec<Choice> {
+        ["Plans A", "Plans B", "Plans C"]
+            .into_iter()
+            .map(|label| Choice {
+                label: label.to_owned(),
+                hint: None,
+            })
+            .collect()
+    }
+
+    fn chosen(result: &Result<usize>) -> &'static str {
+        match result {
+            Ok(0) => "first",
+            Ok(1) => "second",
+            Ok(_) => "later",
+            Err(FormError::Interrupted) => "interrupted",
+            Err(FormError::Cancelled) => "cancelled",
+            Err(FormError::NoInput { .. }) => "no input",
+            Err(_) => "other",
+        }
+    }
+
+    #[rstest]
+    #[case::down_enter(TerminalKind::Live, vec![Keystroke::Down, Keystroke::Enter], &[], "second")]
+    #[case::enter(TerminalKind::Live, vec![Keystroke::Enter], &[], "first")]
+    #[case::wraps_up(TerminalKind::Live, vec![Keystroke::Up, Keystroke::Up, Keystroke::Enter], &[], "second")]
+    #[case::ctrl_c(TerminalKind::Live, vec![Keystroke::Interrupt], &[], "interrupted")]
+    #[case::escape(TerminalKind::Live, vec![Keystroke::Cancel], &[], "cancelled")]
+    #[case::line_number(TerminalKind::Dumb, vec![], &["2"], "second")]
+    #[case::line_last(TerminalKind::Dumb, vec![], &["3"], "later")]
+    #[case::line_out_of_range(TerminalKind::Dumb, vec![], &["4"], "cancelled")]
+    #[case::line_words(TerminalKind::Dumb, vec![], &["B"], "cancelled")]
+    #[case::line_end_of_input(TerminalKind::Dumb, vec![], &[], "cancelled")]
+    #[case::piped(TerminalKind::Redirected, vec![], &["2"], "no input")]
+    fn a_select_answers_with_the_place_of_the_option(
+        #[case] kind: TerminalKind,
+        #[case] strokes: Vec<Keystroke>,
+        #[case] lines: &'static [&'static str],
+        #[case] expected: &str,
+    ) {
+        let form = Form::bare(Script::new(kind, strokes, lines.iter().copied()));
+        let result = form.select("Which?", plans());
+        assert_eq!(chosen(&result), expected, "{result:?}");
+    }
+
+    #[test]
+    fn no_options_make_no_question() {
+        let form = Form::bare(Script::new(TerminalKind::Live, [Keystroke::Enter], []));
+        assert_eq!(chosen(&form.select("Which?", Vec::new())), "no input");
+        assert_eq!(form.terminal().written(), "");
+    }
+
+    #[test]
+    fn a_line_select_lists_the_options_and_keeps_the_answer() -> Result<()> {
+        let form = Form::bare(Script::new(TerminalKind::Dumb, [], ["2"]));
+        assert_eq!(form.select("Which?", plans())?, 1);
+        assert_eq!(
+            form.terminal().written(),
+            "◆  Which?\n  1) Plans A\n  2) Plans B\n  3) Plans C\n◇  Which?\n│  Plans B\n│\n"
+        );
+        Ok(())
+    }
+
+    fn places(result: &Result<Vec<usize>>) -> String {
+        match result {
+            Ok(places) => format!("{places:?}"),
+            Err(FormError::Interrupted) => "interrupted".to_owned(),
+            Err(FormError::Cancelled) => "cancelled".to_owned(),
+            Err(FormError::NoInput { .. }) => "no input".to_owned(),
+            Err(_) => "other".to_owned(),
+        }
+    }
+
+    const SPACE: Keystroke = Keystroke::Char(' ');
+
+    #[rstest]
+    #[case::pick_beside_the_marked(TerminalKind::Live, vec![SPACE, Keystroke::Down, Keystroke::Down, SPACE, Keystroke::Enter], &[], "[0, 1, 2]")]
+    #[case::unpick_the_marked(TerminalKind::Live, vec![Keystroke::Down, SPACE, Keystroke::Enter], &[], "[]")]
+    #[case::start_picked(TerminalKind::Live, vec![Keystroke::Enter], &[], "[1]")]
+    #[case::all(TerminalKind::Live, vec![Keystroke::Char('a'), Keystroke::Enter], &[], "[0, 1, 2]")]
+    #[case::ctrl_c(TerminalKind::Live, vec![Keystroke::Interrupt], &[], "interrupted")]
+    #[case::escape(TerminalKind::Live, vec![Keystroke::Cancel], &[], "cancelled")]
+    #[case::line_numbers(TerminalKind::Dumb, vec![], &["1 3"], "[0, 2]")]
+    #[case::line_keeps_the_marked(TerminalKind::Dumb, vec![], &[""], "[1]")]
+    #[case::line_words(TerminalKind::Dumb, vec![], &["all"], "cancelled")]
+    #[case::line_end_of_input(TerminalKind::Dumb, vec![], &[], "cancelled")]
+    #[case::piped(TerminalKind::Redirected, vec![], &["1"], "no input")]
+    fn a_multiselect_answers_with_the_places_of_the_options(
+        #[case] kind: TerminalKind,
+        #[case] strokes: Vec<Keystroke>,
+        #[case] lines: &'static [&'static str],
+        #[case] expected: &str,
+    ) {
+        let form = Form::bare(Script::new(kind, strokes, lines.iter().copied()));
+        let result = form.multiselect("Which?", plans(), vec![false, true], false);
+        assert_eq!(places(&result), expected, "{result:?}");
+    }
+
+    #[test]
+    fn a_required_multiselect_warns_and_waits_for_a_pick() -> Result<()> {
+        let strokes = [Keystroke::Enter, SPACE, Keystroke::Enter];
+        let form = Form::bare(Script::new(TerminalKind::Live, strokes, []));
+        assert_eq!(form.multiselect("Which?", plans(), vec![], true)?, [0]);
+        let written = form.terminal().written();
+        assert_eq!(
+            written
+                .matches("Please select at least one option.")
+                .count(),
+            1
+        );
+        assert!(
+            written.ends_with("◇  Which?\n│  Plans A\n│\n"),
+            "{written:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_multiselect_repaints_the_active_rows_and_shows_the_summary() -> Result<()> {
+        let form = Form::bare(Script::new(
+            TerminalKind::Live,
+            [SPACE, Keystroke::Enter],
+            [],
+        ));
+        assert_eq!(form.multiselect("Which?", plans(), vec![], false)?, [0]);
+        let written = form.terminal().written();
+        let repaints = written.matches("\r\x1b[5A\x1b[J").count();
+        assert_eq!(repaints, 2, "{written:?}");
+        assert!(written.contains("│ ›◼ Plans A"), "{written:?}");
+        Ok(())
+    }
+
+    #[test]
+    fn nothing_picked_shows_none() -> Result<()> {
+        let form = Form::bare(Script::new(TerminalKind::Live, [Keystroke::Enter], []));
+        assert!(
+            form.multiselect("Which?", plans(), vec![], false)?
+                .is_empty()
+        );
+        assert!(
+            form.terminal()
+                .written()
+                .ends_with("◇  Which?\n│  none\n│\n")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn no_options_make_no_multiselect_question() {
+        let form = Form::bare(Script::new(TerminalKind::Live, [Keystroke::Enter], []));
+        let result = form.multiselect("Which?", Vec::new(), Vec::new(), false);
+        assert_eq!(places(&result), "no input");
+        assert_eq!(form.terminal().written(), "");
+    }
+
+    #[test]
+    fn a_line_multiselect_lists_the_options_with_marks() -> Result<()> {
+        let form = Form::bare(Script::new(TerminalKind::Dumb, [], ["2 3"]));
+        assert_eq!(
+            form.multiselect("Which?", plans(), vec![true], false)?,
+            [1, 2]
+        );
+        assert_eq!(
+            form.terminal().written(),
+            "◆  Which?\n  1) [x] Plans A\n  2) [ ] Plans B\n  3) [ ] Plans C\n  numbers to pick, e.g. 1 3; Enter keeps the marked\n◇  Which?\n│  Plans B, Plans C\n│\n"
+        );
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::picked(vec![Keystroke::Down, Keystroke::Enter])]
+    #[case::ctrl_c(vec![Keystroke::Interrupt])]
+    #[case::escape(vec![Keystroke::Cancel])]
+    fn the_cursor_is_hidden_while_a_select_is_open_and_back_after(
+        #[case] strokes: Vec<Keystroke>,
+    ) {
+        let form = Form::bare(Script::new(TerminalKind::Live, strokes, []));
+        let result = form.select("Which?", plans());
+        let written = form.terminal().written();
+        let at = |mark: &str| written.find(mark);
+        let first_row = at("Plans A");
+        assert_eq!(
+            (
+                at("\x1b[?25l") < first_row,
+                first_row < at("\x1b[?25h"),
+                written.matches("\x1b[?25h").count()
+            ),
+            (true, true, 1),
+            "{result:?} {written:?}"
+        );
     }
 }

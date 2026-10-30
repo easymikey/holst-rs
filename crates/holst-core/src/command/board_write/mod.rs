@@ -21,7 +21,7 @@ use crate::{
     domain::{
         board::EditRight,
         change::{
-            receipt::{BoardStatus, ChangeReport},
+            receipt::{BoardStatus, ChangeReport, Delivery},
             value::{BoardChange, ChangeSources, RemoveRight},
         },
         node::NodeBrief,
@@ -296,7 +296,7 @@ async fn cached_change(
     changed: BuiltChange,
     had_seed: Seeding,
 ) -> ChangedBoard {
-    let accepted = changed.written.accepted.is_some();
+    let accepted = changed.written.delivery == Delivery::Accepted;
     let whole =
         had_seed == Seeding::Unseeded || !matches!(changed.source, LoadSource::Skipped);
     let storing = cache.filter(|_| accepted).map(|cache| {

@@ -220,6 +220,32 @@ fn ambiguous_candidates<T>(lookup: &Result<T>) -> String {
     }
 }
 
+fn ambiguous_ids<T>(lookup: &Result<T>) -> Vec<Option<String>> {
+    match lookup {
+        Err(Error::Lookup(LookupError {
+            miss: lookup::LookupMiss::Ambiguous { candidates, .. },
+            ..
+        })) => candidates.listed.iter().map(|c| c.id.clone()).collect(),
+        Ok(_) | Err(_) => Vec::new(),
+    }
+}
+
+#[test]
+fn ambiguous_objects_carry_their_ids_and_show_them_once() {
+    let got = in_objects("10000000-1111");
+    assert_eq!(
+        ambiguous_ids(&got),
+        [
+            Some("10000000-1111-4000-8000-000000000003".to_owned()),
+            Some("10000000-1111-4000-8000-000000000004".to_owned()),
+        ]
+    );
+    assert_eq!(
+        ambiguous_candidates(&got),
+        "10000000-1111-4000-8000-000000000003, 10000000-1111-4000-8000-000000000004"
+    );
+}
+
 #[rstest]
 #[case::workspace_exact_id(in_workspaces, MatchRule::ExactId, "W2", one("w2"))]
 #[case::workspace_exact_name(in_workspaces, MatchRule::ExactName, "design", one("w3"))]

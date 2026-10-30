@@ -8,7 +8,6 @@ pub(crate) mod board_load;
 mod board_whole;
 mod comment;
 pub(crate) mod files;
-pub(crate) mod input;
 mod object;
 pub(crate) mod output;
 mod picture;
@@ -17,9 +16,13 @@ mod template;
 mod workspace;
 
 use holst_core::{
-    command::table::{CommandArgs, CommandName, parse},
+    command::{
+        change::Outcome,
+        table::{Changes, CommandArgs, CommandName, parse},
+    },
     effect::board_write::WriteMode,
     error::confirmation::Unconfirmed,
+    remote::client::Client,
 };
 use rmcp::model::CallToolResult;
 use serde_json::{Map, Value};
@@ -52,6 +55,24 @@ impl McpServer {
         }
     }
 
+    /// Parses, runs `make` (a dry run reads only, a send drops what the server
+    /// remembers) and replies `text`, or the refusal that names `confirm`.
+    pub(super) async fn change<A: Changes, R: Outcome>(
+        &self,
+        arguments: Map<String, Value>,
+        make: impl AsyncFnOnce(&Client, &A) -> holst_core::Result<R>,
+        text: impl FnOnce(&Self, &R) -> String,
+    ) -> CallToolResult {
+        self.parsed(arguments, async |args: A| {
+            let call = async |client: HandedClient| {
+                let done = make(&client, &args).await?;
+                said(done.refusal(), || text(self, &done))
+            };
+            self.by_mode(args.mode(), call).await
+        })
+        .await
+    }
+
     pub(super) async fn parsed<A: CommandArgs>(
         &self,
         arguments: Map<String, Value>,
@@ -70,7 +91,10 @@ impl McpServer {
     ) -> CallToolResult {
         match name {
             CommandName::Auth(verb) => self.auth(verb, arguments).await,
-            CommandName::Search => Box::pin(self.search(arguments)).await,
+            CommandName::Search => match self.expanded_references(arguments) {
+                Ok(arguments) => Box::pin(self.search(arguments)).await,
+                Err(err) => self.fail(&err),
+            },
             CommandName::Comment(verb) => {
                 Box::pin(self.comment_command(verb, arguments)).await
             }

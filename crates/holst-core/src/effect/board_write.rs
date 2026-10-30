@@ -2,13 +2,10 @@ use serde::Deserialize;
 use yrs::Doc;
 
 use crate::{
-    domain::board::EditRight,
-    effect::{
-        board_write_plan::{AcceptedUpdate, WritePlan},
-        http::BoxFuture,
-        server::HolstServer,
-    },
+    domain::{board::EditRight, change::receipt::Delivery},
+    effect::{board_write_plan::WritePlan, http::BoxFuture},
     error::Result,
+    remote::client::Client,
 };
 
 /// Whether the load downloaded a board link or the seed already covered it.
@@ -67,20 +64,20 @@ pub trait WriteInterpreter: Sync {
     /// As [`load_with`](fn@crate::remote::socket::load::load_with).
     fn open<'a>(
         &'a self,
-        server: &'a dyn HolstServer,
+        client: &'a Client,
         board: &'a str,
         seed: Doc,
     ) -> BoxFuture<'a, Result<OpenedBoard<Self::Connection>>>;
 
-    /// Carries out `plan`: the ack once it went out, `None` while it stays.
+    /// Carries out `plan`: accepted once it went out, built while it stays.
     ///
     /// # Errors
     /// As [`send`](fn@crate::remote::socket::write::ConnectedBoard::send) and
     /// [`accepted`](fn@crate::remote::socket::write::SentUpdate::accepted).
     fn carry<'a>(
         &'a self,
-        server: &'a dyn HolstServer,
+        client: &'a Client,
         connection: Self::Connection,
         plan: &'a WritePlan,
-    ) -> BoxFuture<'a, Result<Option<AcceptedUpdate>>>;
+    ) -> BoxFuture<'a, Result<Delivery>>;
 }

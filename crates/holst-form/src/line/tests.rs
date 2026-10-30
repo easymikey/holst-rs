@@ -1,7 +1,7 @@
 use rstest::rstest;
 use zeroize::Zeroizing;
 
-use crate::form::line::{
+use crate::line::{
     CAPACITY,
     Csi,
     Decoder,
@@ -338,7 +338,7 @@ mod laws {
     };
     use unicode_segmentation::UnicodeSegmentation as _;
 
-    use crate::form::line::{EditorStep, Keystroke, QuestionKind, TypedAnswer};
+    use crate::line::{EditorStep, Keystroke, QuestionKind, TypedAnswer};
 
     fn stroke() -> impl Strategy<Value = Keystroke> {
         prop_oneof![

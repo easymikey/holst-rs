@@ -525,3 +525,85 @@ fn n_declines_a_held_change_and_sends_nothing() -> TestResult {
     assert!(fake.id_of("Plans").is_some(), "the board was deleted");
     Ok(())
 }
+
+/// Two boards called `Roadmap`, in the folders `Alpha` and `Beta`.
+fn alike() -> holst_core::fake::Fixture {
+    holst_core::fake::Fixture::default()
+        .workspace("easy")
+        .folder("Alpha", "easy")
+        .folder("Beta", "easy")
+        .board("Roadmap", "easy", Some("Alpha"))
+        .board("Roadmap", "easy", Some("Beta"))
+}
+
+/// `board rm Roadmap` does not know which board and asks.
+fn ambiguous_removal(base: &str) -> Result<Form, TestError> {
+    let home = signed_home(base)?;
+    let form = Form::spawn(test_command(
+        env!("CARGO_BIN_EXE_holst"),
+        &["board", "rm", "Roadmap"],
+        base,
+        &home,
+    ))?;
+    form.wait_for("is \"Roadmap\"?")?;
+    Ok(form)
+}
+
+#[test]
+fn the_board_picked_among_two_alike_is_the_one_removed() -> TestResult {
+    let fake = holst_core::fake::Fake::start_blocking(alike())?;
+    let form = ambiguous_removal(fake.base_url())?;
+    form.press("\x1b[B")?;
+    form.press("\r")?;
+    let (code, seen) = form.finish()?;
+    let shown = printed(&seen);
+    let trashed: Vec<_> = fake
+        .trash_of("easy")
+        .into_iter()
+        .map(|node| node.parent)
+        .collect();
+    assert_eq!(code, Some(0), "{shown}");
+    assert_eq!(trashed, [Some("Beta".to_owned())], "{shown}");
+    assert_eq!(fake.tree_of("easy").len(), 3, "{shown}");
+    Ok(())
+}
+
+#[test]
+fn escape_on_the_choice_removes_nothing() -> TestResult {
+    let fake = holst_core::fake::Fake::start_blocking(alike())?;
+    let form = ambiguous_removal(fake.base_url())?;
+    form.press("\x1b")?;
+    let (code, seen) = form.finish()?;
+    let shown = printed(&seen);
+    assert_eq!(code, Some(75), "{shown}");
+    assert!(fake.trash_of("easy").is_empty(), "{shown}");
+    Ok(())
+}
+
+#[test]
+fn a_folder_picked_by_id_is_then_confirmed_and_removed() -> TestResult {
+    let fake = holst_core::fake::Fake::start_blocking(
+        holst_core::fake::Fixture::default()
+            .workspace("easy")
+            .folder("Plans A", "easy")
+            .folder("Plans B", "easy"),
+    )?;
+    let home = signed_home(fake.base_url())?;
+    let form = Form::spawn(test_command(
+        env!("CARGO_BIN_EXE_holst"),
+        &["board", "rm", "Plans"],
+        fake.base_url(),
+        &home,
+    ))?;
+    form.wait_for("is \"Plans\"?")?;
+    form.press("\x1b[B")?;
+    form.press("\r")?;
+    form.wait_for("cannot be undone? (y/N)")?;
+    form.press("y")?;
+    let (code, seen) = form.finish()?;
+    let shown = printed(&seen);
+    assert_eq!(code, Some(0), "{shown}");
+    assert!(fake.id_of("Plans B").is_none(), "{shown}");
+    assert!(fake.id_of("Plans A").is_some(), "{shown}");
+    Ok(())
+}

@@ -4,15 +4,14 @@ use futures_util::future;
 use yrs::{Doc, Transact as _, Update, updates::decoder::Decode as _};
 
 use crate::{
-    domain::board::EditRight,
+    domain::{board::EditRight, change::receipt::Delivery},
     effect::{
         board_write::{LoadSource, OpenedBoard, WriteInterpreter},
-        board_write_plan::{AcceptedUpdate, Release, WritePlan},
+        board_write_plan::{Release, WritePlan},
         http::BoxFuture,
-        server::HolstServer,
     },
     error::{Error, Result},
-    remote::socket::write::with_free_client_id,
+    remote::{client::Client, socket::write::with_free_client_id},
 };
 
 /// A board in memory for tests: records each plan, acks and keeps the released.
@@ -45,7 +44,7 @@ impl WriteInterpreter for WriteRecorder {
 
     fn open<'a>(
         &'a self,
-        _client: &'a dyn HolstServer,
+        _client: &'a Client,
         _board: &'a str,
         seed: Doc,
     ) -> BoxFuture<'a, Result<OpenedBoard<()>>> {
@@ -75,16 +74,18 @@ impl WriteInterpreter for WriteRecorder {
 
     fn carry<'a>(
         &'a self,
-        _client: &'a dyn HolstServer,
+        _client: &'a Client,
         (): (),
         plan: &'a WritePlan,
-    ) -> BoxFuture<'a, Result<Option<AcceptedUpdate>>> {
+    ) -> BoxFuture<'a, Result<Delivery>> {
         self.plans
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(plan.clone());
-        let accepted = (plan.release == Release::Released)
-            .then_some(AcceptedUpdate { id: plan.update_id });
-        Box::pin(future::ready(Ok(accepted)))
+        let delivery = match plan.release {
+            Release::Released => Delivery::Accepted,
+            Release::Held => Delivery::Built,
+        };
+        Box::pin(future::ready(Ok(delivery)))
     }
 }

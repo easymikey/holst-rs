@@ -26,12 +26,12 @@ use holst_core::{
             search::ObjectFilter,
         },
         change::{
-            receipt::BoardStatus,
+            receipt::{BoardStatus, Delivery},
             value::{ChangeUpdate, ChangedObject, ObjectChangeKind},
         },
         limit::Limit,
     },
-    effect::board_write_plan::{AcceptedUpdate, WrittenChange},
+    effect::board_write_plan::WrittenChange,
 };
 use rmcp::ServerHandler as _;
 use serde_json::{Value, json};
@@ -318,7 +318,7 @@ fn edit_reply(holst: &McpServer) -> String {
             kept: BTreeSet::new(),
         },
         update_id: 42,
-        accepted: Some(AcceptedUpdate { id: 42 }),
+        delivery: Delivery::Accepted,
         placement: BoardStatus::Live,
     };
     let board = "11111111-2222-4333-8444-555555555555";

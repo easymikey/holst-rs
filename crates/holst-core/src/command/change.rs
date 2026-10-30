@@ -6,7 +6,17 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::{
-    command::table::Confirmation,
+    command::{
+        board::{
+            rights::{Settled, Shared},
+            settings::Edited,
+            tree_change,
+        },
+        comment::CommentReport,
+        object::change::Removed,
+        table::Confirmation,
+        template,
+    },
     effect::{
         board_write::WriteMode,
         confirmation::unless_confirmed,
@@ -45,11 +55,70 @@ fn unplanned<P: 'static>(_: &P) -> bool {
 impl<P: 'static> ChangeReport<P> {
     /// The refusal of a change held for its confirmation.
     #[must_use]
+    #[expect(
+        clippy::same_name_method,
+        reason = "callers use this one until the runners take `Outcome` over"
+    )]
     pub const fn refusal(&self) -> Option<&Unconfirmed> {
         match self {
             Self::Held { refusal, .. } => Some(refusal),
             Self::Sent | Self::DryRun { .. } => None,
         }
+    }
+}
+
+/// What a shell needs of every change result: the refusal it is held for.
+pub trait Outcome {
+    fn refusal(&self) -> Option<&Unconfirmed>;
+}
+
+impl<P: 'static> Outcome for ChangeReport<P> {
+    fn refusal(&self) -> Option<&Unconfirmed> {
+        Self::refusal(self)
+    }
+}
+
+impl Outcome for crate::domain::change::receipt::ChangeReport {
+    fn refusal(&self) -> Option<&Unconfirmed> {
+        None
+    }
+}
+impl Outcome for Edited {
+    fn refusal(&self) -> Option<&Unconfirmed> {
+        self.outcome.refusal()
+    }
+}
+
+impl Outcome for tree_change::Changed {
+    fn refusal(&self) -> Option<&Unconfirmed> {
+        self.outcome.refusal()
+    }
+}
+
+impl Outcome for template::Changed {
+    fn refusal(&self) -> Option<&Unconfirmed> {
+        self.outcome.refusal()
+    }
+}
+
+impl Outcome for CommentReport {
+    fn refusal(&self) -> Option<&Unconfirmed> {
+        self.outcome.refusal()
+    }
+}
+
+impl Outcome for Shared {
+    fn refusal(&self) -> Option<&Unconfirmed> {
+        match &self.outcome {
+            Settled::Carried(report) => report.refusal(),
+            Settled::NotHeld { .. } => None,
+        }
+    }
+}
+
+impl Outcome for Removed {
+    fn refusal(&self) -> Option<&Unconfirmed> {
+        self.refusal.as_ref()
     }
 }
 
@@ -158,7 +227,7 @@ mod tests {
 
     use crate::{
         command::{
-            change::{ChangeReport, PlannedRequest, gate},
+            change::{ChangeReport, Outcome, PlannedRequest, gate},
             table::Confirmation,
         },
         effect::{
@@ -209,6 +278,20 @@ mod tests {
             gate(Some(risky()), (WriteMode::Send, Confirmation::Given), || ());
         let harmless = gate(None, (WriteMode::Send, Confirmation::Missing), || ());
         assert!(confirmed.is_ok() && harmless.is_ok());
+    }
+
+    #[test]
+    fn a_held_change_gives_its_refusal_and_a_dry_run_none() {
+        let held = ChangeReport::<()>::Held {
+            request: (),
+            needs: "deleting it cannot be undone".into(),
+            refusal: risky(),
+        };
+        let dry = ChangeReport::<()>::DryRun { request: () };
+        assert_eq!(
+            (Outcome::refusal(&held), Outcome::refusal(&dry)),
+            (Some(&risky()), None)
+        );
     }
 
     fn request(path: &str, authorization: Authorization) -> Result<ApiRequest> {

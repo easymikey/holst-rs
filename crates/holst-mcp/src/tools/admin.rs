@@ -2,7 +2,7 @@
 
 use holst_core::{
     command::{
-        api::{self as operation_api, ApiArgs},
+        api::{self as operation_api, ApiArgs, refuse_admin_write},
         change::ChangeReport,
         table::parse,
     },
@@ -63,12 +63,18 @@ impl McpServer {
                 ChangeReport::Held { refusal, .. } => Err(Error::Unconfirmed(refusal)),
             }
         };
-        match (method.is_read(), args.dry_run, self.raw_write) {
-            (true, ..) => self.run(call).await,
-            (false, WriteMode::Send, RawWrite::Denied) => {
+        match (
+            refuse_admin_write(args),
+            method.is_read(),
+            args.dry_run,
+            self.raw_write,
+        ) {
+            (Err(refusal), ..) => self.fail(&Error::from(refusal)),
+            (Ok(()), true, ..) => self.run(call).await,
+            (Ok(()), false, WriteMode::Send, RawWrite::Denied) => {
                 self.fail(&Error::RawWriteDisabled { method })
             }
-            (false, mode, _) => self.by_mode(mode, call).await,
+            (Ok(()), false, mode, _) => self.by_mode(mode, call).await,
         }
     }
 

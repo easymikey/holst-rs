@@ -1,39 +1,29 @@
 //! The `workspace` tool: list, details, event log, create, rename.
 
 use holst_core::{
-    command::{
-        change::ChangeReport,
-        workspace::{
-            ChangeKind,
-            CreateArgs,
-            EventLog,
-            ListArgs,
-            LogArgs,
-            PartRead,
-            RenameArgs,
-            ShowArgs,
-            WorkspaceBrief,
-            WorkspaceChange,
-            WorkspaceRow,
-            WorkspaceVerb,
-            create,
-            list,
-            log,
-            rename,
-            show,
-        },
+    command::workspace::{
+        CreateArgs,
+        EventLog,
+        ListArgs,
+        LogArgs,
+        PartRead,
+        RenameArgs,
+        ShowArgs,
+        WorkspaceBrief,
+        WorkspaceRow,
+        WorkspaceVerb,
+        create,
+        list,
+        log,
+        rename,
+        show,
     },
     domain::text::{EMPTY, printable},
 };
 use rmcp::model::CallToolResult;
 use serde_json::{Map, Value, json};
 
-use crate::{
-    error::Result,
-    login::HandedClient,
-    server::McpServer,
-    tools::{input::lower_uuid, said},
-};
+use crate::{error::Result, login::HandedClient, server::McpServer, tools::said};
 
 impl McpServer {
     pub(super) async fn workspace_command(
@@ -106,19 +96,20 @@ impl McpServer {
             .into_iter()
             .map(|(key, value)| match (key.as_str(), value) {
                 (
-                    "workspace" | "board" | "folder" | "into" | "template",
+                    "workspace" | "board" | "folder" | "into" | "template" | "user"
+                    | "cursor" | "category",
                     Value::String(text),
                 ) => {
-                    let id = lower_uuid(self.expand(text.trim())?);
-                    Ok((key, Value::String(id)))
+                    let reference = self.expand(text.trim())?;
+                    Ok((key, Value::String(reference)))
                 }
                 ("board", Value::Array(texts)) => {
                     let ids = texts
                         .into_iter()
                         .map(|each| match each {
-                            Value::String(text) => self
-                                .expand(text.trim())
-                                .map(|id| Value::String(lower_uuid(id))),
+                            Value::String(text) => {
+                                self.expand(text.trim()).map(Value::String)
+                            }
                             Value::Null
                             | Value::Bool(_)
                             | Value::Number(_)
@@ -128,10 +119,6 @@ impl McpServer {
                         .collect::<Result<Vec<_>>>()?;
                     Ok((key, Value::Array(ids)))
                 }
-                ("user" | "cursor" | "category", Value::String(text)) => {
-                    let reference = self.expand(text.trim())?;
-                    Ok((key, Value::String(reference)))
-                }
                 (_, value) => Ok((key, value)),
             })
             .collect()
@@ -139,7 +126,8 @@ impl McpServer {
 
     async fn create_workspace(&self, args: &CreateArgs) -> CallToolResult {
         let call = async |client: HandedClient| {
-            Ok(self.change_text(&create(&client, args).await?))
+            let change = create(&client, args).await?;
+            Ok(change.phrase(|id| format!(" {}", self.state.alias(id))) + "\n")
         };
         self.by_mode(args.dry_run, call).await
     }
@@ -147,7 +135,9 @@ impl McpServer {
     async fn rename_workspace(&self, args: &RenameArgs) -> CallToolResult {
         let call = async |client: HandedClient| {
             let change = rename(&client, args).await?;
-            said(change.report.refusal(), || self.change_text(&change))
+            said(change.report.refusal(), || {
+                change.phrase(|id| format!(" {}", self.state.alias(id))) + "\n"
+            })
         };
         self.by_mode(args.dry_run, call).await
     }
@@ -220,34 +210,6 @@ impl McpServer {
                 .to_owned()
         };
         format!("{events}\n{more}")
-    }
-
-    fn change_text(&self, change: &WorkspaceChange) -> String {
-        let id = change
-            .id
-            .as_deref()
-            .map(|id| format!(" {}", self.state.alias(id)))
-            .unwrap_or_default();
-        let was = change.was.as_deref().unwrap_or_default();
-        let name = &change.name;
-        match (change.change, &change.report) {
-            (ChangeKind::Create, ChangeReport::Sent) => format!("created {name}{id}\n"),
-            (
-                ChangeKind::Create,
-                ChangeReport::DryRun { .. } | ChangeReport::Held { .. },
-            ) => {
-                format!("would create {name}\n")
-            }
-            (ChangeKind::Rename, ChangeReport::Sent) => {
-                format!("renamed {was} to {name}{id}\n")
-            }
-            (
-                ChangeKind::Rename,
-                ChangeReport::DryRun { .. } | ChangeReport::Held { .. },
-            ) => {
-                format!("would rename {was} to {name}{id}\n")
-            }
-        }
     }
 }
 

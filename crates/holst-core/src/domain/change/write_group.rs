@@ -7,30 +7,27 @@ use std::{
 
 use itertools::Itertools as _;
 use serde_json::{Value, json};
-use yrs::{Any, Map as _, MapPrelim, TransactionMut};
+use yrs::{Map as _, TransactionMut};
 
 use crate::{
     domain::{
         area::scene::Scene,
-        board::{Object, ObjectKind, any, object_with_text},
+        board::{Object, ObjectKind, insert_map, object_with_text},
         change::{
             check::{Grouping, kind_of, parent_of, shows_content},
             journal,
-            value::{ChangedObject, ObjectChangeKind},
-            write::{WriteTransaction, changed},
+            value::ChangedObject,
+            write::{WriteTransaction, changed, new_header},
         },
         geometry::Rectangle,
     },
     error::Result,
     protocol::document::{
         ADDITIONAL_POSITION_INFO,
-        CREATED,
-        ID,
         IGNORE_Z_INDEX,
         LOCKED,
         PARENT_ID,
         POSITION,
-        TYPE,
         X,
         Y,
         Z_INDEX,
@@ -61,24 +58,17 @@ pub(super) fn group(
         .unwrap_or_default();
     let corner = corner_of(transaction, scope, members);
     let own = [
-        (ID, json!(id)),
-        (TYPE, json!(ObjectKind::Group.as_str())),
-        (Z_INDEX, json!(layer)),
-        (CREATED, stamp.json()),
-        ("updated", Value::Null),
         (POSITION, json!({ (X): corner.0, (Y): corner.1 })),
         (IGNORE_Z_INDEX, json!(true)),
     ];
     let locked = (grouping == Grouping::Locked).then_some((LOCKED, json!(true)));
-    let pairs = own
+    let pairs = new_header(&id, &ObjectKind::Group, layer, stamp)
         .into_iter()
+        .chain(own)
         .chain(locked)
         .chain(home_of(states, members))
-        .map(|(name, value)| any(&value).map(|value| (name.to_owned(), value)))
-        .collect::<Result<Vec<(String, Any)>>>()?;
-    roots
-        .objects
-        .insert(transaction, id.as_str(), MapPrelim::from_iter(pairs));
+        .map(|(name, value)| (name.to_owned(), value));
+    insert_map(transaction, &roots.objects, id.as_str(), pairs)?;
     let moved = members
         .iter()
         .map(|member| {
@@ -91,15 +81,9 @@ pub(super) fn group(
             )
         })
         .collect::<Result<Vec<_>>>()?;
-    Ok(iter::once(ChangedObject {
-        id,
-        kind: ObjectKind::Group,
-        change: ObjectChangeKind::Created,
-        fields: Vec::new(),
-        link: None,
-    })
-    .chain(moved)
-    .collect())
+    Ok(iter::once(ChangedObject::created(id, ObjectKind::Group))
+        .chain(moved)
+        .collect())
 }
 
 /// The corner of the box the members cover, as arranging measures it.
@@ -257,13 +241,7 @@ impl Dissolution {
             .iter()
             .map(|group| {
                 roots.objects.remove(transaction, group);
-                ChangedObject {
-                    id: group.clone(),
-                    kind: ObjectKind::Group,
-                    change: ObjectChangeKind::Removed,
-                    fields: Vec::new(),
-                    link: None,
-                }
+                ChangedObject::removed(group.clone(), ObjectKind::Group)
             })
             .collect();
         if !self.groups.is_empty() {

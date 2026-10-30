@@ -6,34 +6,23 @@ use holst_core::{
     command::{
         board::picture::Delivery,
         object::{
-            AddArgs,
-            AlignArgs,
-            CopyArgs,
-            EditArgs,
             GetArgs,
-            GroupArgs,
-            LockArgs,
             LsArgs,
             ObjectVerb,
             RemoveArgs,
-            UngroupArgs,
-            UnlockArgs,
             add,
             align,
             change::{self, Removed},
             copy,
             get::{self, Downloaded},
             group,
-            list::{self, ListedObject, Listing},
+            list::{self, Listing},
             lock,
         },
-        table::{CommandArgs, CommandName, parse},
+        table::{Changes, CommandName, parse},
     },
-    domain::{
-        change::receipt::ChangeReport,
-        text::{one_line, printable},
-    },
-    effect::{board_write::WriteMode, settings::CacheSettings},
+    domain::{change::receipt::ChangeReport, text::counted},
+    effect::settings::CacheSettings,
     remote::client::Client,
 };
 use rmcp::model::CallToolResult;
@@ -41,13 +30,12 @@ use serde_json::{Map, Value};
 
 use crate::{
     error::{Error, Result},
-    login::HandedClient,
     memory::alias::expand_json,
-    reply::{change::written, compact::Output},
+    reply::change::written,
     server::McpServer,
     tools::{
-        files::{LocalFile, checked_download},
-        said,
+        files::{checked_download, checked_upload},
+        output::Output,
     },
 };
 
@@ -121,7 +109,7 @@ impl McpServer {
         std::iter::once(arguments)
             .chain(items)
             .filter_map(|given| given.get("path").and_then(Value::as_str))
-            .try_for_each(|path| LocalFile::check(Path::new(path), &self.secrets))
+            .try_for_each(|path| checked_upload(Path::new(path), &self.secrets))
     }
 
     fn expand_references_of(&self, arguments: &mut Map<String, Value>) -> Result<()> {
@@ -138,39 +126,20 @@ impl McpServer {
     ) -> CallToolResult {
         match verb {
             ObjectVerb::Ls => self.list_objects(arguments).await,
-            ObjectVerb::Add => {
-                let dry = |args: &AddArgs| args.dry_run;
-                self.change_objects(arguments, dry, add::add).await
+            ObjectVerb::Add => self.change_objects(arguments, add::add).await,
+            ObjectVerb::Edit => self.change_objects(arguments, change::edit).await,
+            ObjectVerb::Cp => self.change_objects(arguments, copy::cp).await,
+            ObjectVerb::Group => self.change_objects(arguments, group::group).await,
+            ObjectVerb::Ungroup => self.change_objects(arguments, group::ungroup).await,
+            ObjectVerb::Lock => self.change_objects(arguments, lock::lock).await,
+            ObjectVerb::Unlock => self.change_objects(arguments, lock::unlock).await,
+            ObjectVerb::Align => self.change_objects(arguments, align::align).await,
+            ObjectVerb::Rm => {
+                let rm = async |client: &Client, args: &RemoveArgs| {
+                    change::rm(client, &self.cache, args).await
+                };
+                self.change(arguments, rm, Self::removed_text).await
             }
-            ObjectVerb::Edit => {
-                let dry = |args: &EditArgs| args.dry_run;
-                self.change_objects(arguments, dry, change::edit).await
-            }
-            ObjectVerb::Cp => {
-                let dry = |args: &CopyArgs| args.dry_run;
-                self.change_objects(arguments, dry, copy::cp).await
-            }
-            ObjectVerb::Group => {
-                let dry = |args: &GroupArgs| args.dry_run;
-                self.change_objects(arguments, dry, group::group).await
-            }
-            ObjectVerb::Ungroup => {
-                let dry = |args: &UngroupArgs| args.dry_run;
-                self.change_objects(arguments, dry, group::ungroup).await
-            }
-            ObjectVerb::Lock => {
-                let dry = |args: &LockArgs| args.dry_run;
-                self.change_objects(arguments, dry, lock::lock).await
-            }
-            ObjectVerb::Unlock => {
-                let dry = |args: &UnlockArgs| args.dry_run;
-                self.change_objects(arguments, dry, lock::unlock).await
-            }
-            ObjectVerb::Align => {
-                let dry = |args: &AlignArgs| args.dry_run;
-                self.change_objects(arguments, dry, align::align).await
-            }
-            ObjectVerb::Rm => self.remove_objects(arguments).await,
             ObjectVerb::Get => self.download_objects(arguments).await,
         }
     }
@@ -195,41 +164,18 @@ impl McpServer {
         }
     }
 
-    /// Reads the arguments of a change of objects and runs it: a dry run
-    /// reads only, a write drops what the server remembers.
-    async fn change_objects<A: CommandArgs>(
+    async fn change_objects<A: Changes>(
         &self,
         arguments: Map<String, Value>,
-        dry_run: impl Fn(&A) -> WriteMode,
-        change: impl AsyncFnOnce(
+        make: impl AsyncFnOnce(
             &Client,
             &CacheSettings,
             &A,
         ) -> holst_core::Result<ChangeReport>,
     ) -> CallToolResult {
-        self.parsed(arguments, async |args: A| {
-            let call = async |client: HandedClient| -> Result<String> {
-                let report = change(&client, &self.cache, &args).await?;
-                Ok(self.written_text(&report))
-            };
-            self.by_mode(dry_run(&args), call).await
-        })
-        .await
-    }
-
-    /// Several objects, or a frame with content, stay on the board without
-    /// `confirm`.
-    async fn remove_objects(&self, arguments: Map<String, Value>) -> CallToolResult {
-        self.parsed(arguments, async |args: RemoveArgs| {
-            let call = async |client: HandedClient| -> Result<String> {
-                let Removed {
-                    report, refusal, ..
-                } = change::rm(&client, &self.cache, &args).await?;
-                said(refusal.as_ref(), || self.written_text(&report))
-            };
-            self.by_mode(args.dry_run, call).await
-        })
-        .await
+        let make =
+            async |client: &Client, args: &A| make(client, &self.cache, args).await;
+        self.change(arguments, make, Self::written_text).await
     }
 
     async fn download_objects(&self, arguments: Map<String, Value>) -> CallToolResult {
@@ -274,6 +220,10 @@ impl McpServer {
         written(report, &|id| self.state.alias(id))
     }
 
+    fn removed_text(&self, removed: &Removed) -> String {
+        self.written_text(&removed.report)
+    }
+
     fn downloaded_text(&self, downloaded: &Downloaded) -> String {
         let saved =
             downloaded
@@ -297,15 +247,14 @@ impl McpServer {
     pub(crate) fn object_listing_text(&self, listing: &Listing) -> String {
         let rectangle = listing.rectangle.map(|rect| format!("rectangle {rect}\n"));
         let head = format!(
-            "{} objects · {} · {}\n",
-            listing.matched,
+            "{} · {} · {}\n",
+            counted(listing.matched, "object"),
             listing.edit_right.as_str(),
             listing.link
         );
-        let lines = listing
-            .objects
-            .iter()
-            .map(|listed| self.object_line(listed) + "\n");
+        let lines = listing.objects.iter().map(|listed| {
+            listed.line(|id| self.state.alias(id), TEXT_MAX_CHARS) + "\n"
+        });
         let more = listing.next.map(|next| {
             format!(
                 "… {}–{next} of {}; next: offset {next}\n",
@@ -319,69 +268,6 @@ impl McpServer {
             .chain(lines)
             .chain(more)
             .collect()
-    }
-
-    fn object_line(&self, listed: &ListedObject) -> String {
-        let object = &listed.object;
-        let alias = |id: &str| self.state.alias(id);
-        let corner = format!("({:.0}, {:.0})", object.x, object.y);
-        let size = object
-            .width
-            .zip(object.height)
-            .map(|(width, height)| format!(" {width:.0}×{height:.0}"))
-            .unwrap_or_default();
-        let inside = object
-            .parent
-            .as_deref()
-            .map(|parent| format!(" in {}", alias(parent)))
-            .unwrap_or_default();
-        let color = object
-            .color
-            .as_deref()
-            .map(|color| format!("  {color}"))
-            .unwrap_or_default();
-        let look = object
-            .look
-            .as_ref()
-            .map(|look| format!("  {}", look.words()))
-            .unwrap_or_default();
-        let style = listed.style.line();
-        let ends = object
-            .ends
-            .as_ref()
-            .map(|ends| {
-                let end = |end: &Option<String>| {
-                    end.as_deref().map_or_else(|| "·".to_owned(), alias)
-                };
-                format!("  {} → {}", end(&ends.start), end(&ends.end))
-            })
-            .unwrap_or_default();
-        let tags = if listed.tags.is_empty() {
-            String::new()
-        } else {
-            format!("  #{}", listed.tags.join(" #"))
-        };
-        let padlock = if object.locked { "  locked" } else { "" };
-        let turn = if object.rotation == 0.0 {
-            String::new()
-        } else {
-            format!("  {}°", (object.rotation * 100.0).round() / 100.0)
-        };
-        let linked = object
-            .link_to
-            .as_deref()
-            .map_or_else(String::new, |link| format!("  link-to={link}"));
-        let text = shorten(&one_line(&object.text));
-        let quoted = if text.is_empty() {
-            String::new()
-        } else {
-            format!("  \"{}\"", printable(&text))
-        };
-        format!(
-            "{} {:<7} {corner}{size}{inside}{color}{look}{style}{ends}{padlock}{turn}{linked}{tags}{quoted}",
-            alias(&object.id),
-            object.kind.short_name(),
-        )
     }
 }
 
@@ -397,26 +283,67 @@ fn listed_limit(given: Option<u32>, output: Output) -> u32 {
     }
 }
 
-fn shorten(text: &str) -> String {
-    text.char_indices().nth(TEXT_MAX_CHARS).map_or_else(
-        || text.to_owned(),
-        |(cut, _)| format!("{}…", text.get(..cut).unwrap_or(text)),
-    )
-}
-
 #[cfg(test)]
 mod tests {
-    use rstest::rstest;
-
-    use super::{
-        LIST_DEFAULT,
-        LIST_DEFAULT_JSON,
-        LIST_MAX,
-        TEXT_MAX_CHARS,
-        listed_limit,
-        shorten,
+    use holst_core::{
+        command::object::list::{ListedObject, Listing, TextStyle},
+        domain::board::{EditRight, Object, ObjectKind},
     };
-    use crate::reply::compact::Output;
+    use rstest::rstest;
+    use serde_json::Value;
+
+    use super::{LIST_DEFAULT, LIST_DEFAULT_JSON, LIST_MAX, listed_limit};
+    use crate::{server::McpServer, tools::output::Output};
+
+    fn one_object_listing(matched: usize) -> Listing {
+        let object = Object {
+            id: "a1".into(),
+            kind: ObjectKind::Sticker,
+            parent: None,
+            x: 100.0,
+            y: 50.0,
+            width: Some(192.0),
+            height: Some(192.0),
+            z_index: 0.0,
+            text: String::new(),
+            color: None,
+            look: None,
+            ends: None,
+            author: None,
+            locked: false,
+            rotation: 0.0,
+            link_to: None,
+            file: None,
+            fields: Value::Null,
+        };
+        Listing {
+            id: "b1".into(),
+            link: "L".into(),
+            edit_right: EditRight::Editable,
+            rectangle: None,
+            matched,
+            from: 0,
+            objects: vec![ListedObject {
+                link: "L/a1".into(),
+                object,
+                drawn: None,
+                file: None,
+                card: None,
+                tags: Vec::new(),
+                style: TextStyle::default(),
+            }],
+            next: None,
+        }
+    }
+
+    #[rstest]
+    #[case::one(1, "1 object · editable · L\n")]
+    #[case::two(2, "2 objects · editable · L\n")]
+    fn a_listing_head_counts_its_objects(#[case] matched: usize, #[case] head: &str) {
+        let text =
+            McpServer::offline().object_listing_text(&one_object_listing(matched));
+        assert!(text.starts_with(head), "{text}");
+    }
 
     #[rstest]
     #[case::none(None, Output::Text, LIST_DEFAULT)]
@@ -430,11 +357,5 @@ mod tests {
         #[case] shown: u32,
     ) {
         assert_eq!(listed_limit(given, output), shown);
-    }
-
-    #[test]
-    fn a_long_text_is_cut_with_an_ellipsis() {
-        let long = "x".repeat(TEXT_MAX_CHARS + 5);
-        assert_eq!(shorten(&long), format!("{}…", "x".repeat(TEXT_MAX_CHARS)));
     }
 }

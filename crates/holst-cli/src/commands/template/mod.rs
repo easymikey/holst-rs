@@ -2,17 +2,14 @@
 
 mod render;
 
-use holst_core::{
-    command::{
-        table::{self, CommandArgs},
-        template::{self, Changed, TemplateVerb},
-    },
-    remote::client::Client,
+use holst_core::command::{
+    table,
+    template::{self, TemplateVerb},
 };
 use serde_json::{Map, Value};
 
 use crate::{
-    commands::refused,
+    commands::change,
     error::Result,
     output::OutputFormat,
     run::{RunSettings, run_signed_in},
@@ -39,25 +36,14 @@ pub(crate) async fn run(
             })
             .await
         }
-        TemplateVerb::Create => change(arguments, run, format, template::create).await,
-        TemplateVerb::Edit => change(arguments, run, format, template::edit).await,
-        TemplateVerb::Rm => change(arguments, run, format, template::rm).await,
+        TemplateVerb::Create => {
+            change(arguments, run, format, template::create, render::changed).await
+        }
+        TemplateVerb::Edit => {
+            change(arguments, run, format, template::edit, render::changed).await
+        }
+        TemplateVerb::Rm => {
+            change(arguments, run, format, template::rm, render::changed).await
+        }
     }
-}
-
-/// Makes one change of a template and prints it. The plan of a change held for
-/// its confirmation is shown first; the refusal is the exit code.
-async fn change<A: CommandArgs>(
-    arguments: Map<String, Value>,
-    run: &RunSettings,
-    format: OutputFormat,
-    make: impl AsyncFn(&Client, &A) -> holst_core::Result<Changed>,
-) -> Result<()> {
-    let args = table::parse::<A>(arguments)?;
-    run_signed_in(run, async |client| {
-        let changed = make(client, &args).await?;
-        render::changed(format, &changed)?;
-        refused(changed.outcome.refusal())
-    })
-    .await
 }

@@ -12,12 +12,15 @@ use holst_core::{
         geometry::Point,
         session::Session,
     },
-    effect::{board_write::WriteMode, confirmation::ALWAYS},
+    effect::confirmation::ALWAYS,
     error::Error,
     fake::{ACCEPTED_COOKIES, ACCEPTED_TOKEN, Fake, Fixture, FixtureObject},
     remote::{
         client::Client,
-        socket::{load::load, write::interpreter},
+        socket::{
+            load::load,
+            write::{WriteOver, connector},
+        },
     },
     system::{clock::SystemClock, id::RandomIds},
 };
@@ -51,7 +54,7 @@ async fn change(
     let user = holst_core::command::account::account_id(client).await?;
     write_cached(
         client,
-        interpreter(WriteMode::Send),
+        &WriteOver::sender(connector()),
         WriteRequest {
             board,
             change: &change,

@@ -2,9 +2,10 @@
 
 use std::{
     convert::Infallible,
-    future::pending,
     sync::atomic::{AtomicBool, Ordering},
 };
+
+pub(crate) use holst_form::signals::note_arrivals;
 
 use crate::{
     error::{Error, Result},
@@ -45,40 +46,12 @@ impl From<Signal> for Error {
 
 #[must_use]
 fn farewell(signal: Signal) -> String {
+    let show = holst_form::draw::SHOW_CURSOR;
     match signal {
-        Signal::Interrupt => format!("\n└  {}", Error::Cancelled),
-        signal @ (Signal::Terminate | Signal::HangUp) => format!("\n└  {signal}"),
-    }
-}
-
-static ANSWERING: AtomicBool = AtomicBool::new(false);
-
-struct AnswerMark;
-
-impl AnswerMark {
-    fn start() -> Self {
-        ANSWERING.store(true, Ordering::SeqCst);
-        Self
-    }
-}
-
-// GUARD: clears the answering mark that `start` set.
-impl Drop for AnswerMark {
-    fn drop(&mut self) {
-        ANSWERING.store(false, Ordering::SeqCst);
-    }
-}
-
-pub(crate) fn answering<R>(work: impl FnOnce() -> R) -> R {
-    let _mark = AnswerMark::start();
-    work()
-}
-
-pub(crate) fn ctrl_c() -> impl Future<Output = ()> {
-    let listener = imp::ctrl_c_listener();
-    async move {
-        let deaf = imp::next(listener).await.err();
-        optional(deaf.map(|()| pending::<()>())).await;
+        Signal::Interrupt => format!("{show}\n└  {}", Error::Cancelled),
+        signal @ (Signal::Terminate | Signal::HangUp) => {
+            format!("{show}\n└  {signal}")
+        }
     }
 }
 
@@ -116,23 +89,6 @@ async fn deferred<S, Again: Future<Output = S>>(
         .unwrap_or(heard)
 }
 
-static ARRIVED: AtomicBool = AtomicBool::new(false);
-
-static INTERRUPTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-pub(crate) fn note_arrivals() {
-    imp::note_arrivals(&ARRIVED, &INTERRUPTS);
-}
-
-#[must_use]
-pub(crate) fn interrupts() -> u64 {
-    INTERRUPTS.load(Ordering::SeqCst)
-}
-
-pub(crate) fn has_signal_arrived() -> bool {
-    ARRIVED.swap(false, Ordering::SeqCst)
-}
-
 /// Watch signals on their own thread: the runtime thread blocks on questions.
 ///
 /// # Errors
@@ -152,7 +108,7 @@ async fn watch() {
 async fn first_ending(listeners: &mut imp::SignalListeners) -> Signal {
     let signal = listeners.next().await;
     // A working command stops itself, so it can save a refreshed login.
-    if ANSWERING.load(Ordering::SeqCst) {
+    if holst_form::signals::is_answering() {
         signal
     } else {
         Box::pin(first_ending(listeners)).await
@@ -169,17 +125,14 @@ const SEIZE_PATIENCE: std::time::Duration = std::time::Duration::from_millis(500
 fn leave(signal: Signal) -> Infallible {
     // Let a cut read put its settings back, then keep it from doing so.
     let _owned = tty::seize(SEIZE_PATIENCE);
-    tty::restore();
+    tty::restore().into_iter().for_each(output::stderr_line);
     output::stderr_line(farewell(signal));
     std::process::exit(i32::from(signal.exit_code()))
 }
 
 #[cfg(unix)]
 mod imp {
-    use std::{
-        future::pending,
-        sync::atomic::{AtomicBool, AtomicU64, Ordering},
-    };
+    use std::future::pending;
 
     use tokio::signal::unix::{Signal, SignalKind, signal};
 
@@ -213,42 +166,11 @@ mod imp {
         let got = optional(listener.map(Signal::recv)).await.flatten();
         optional(got.is_none().then(pending::<()>)).await;
     }
-
-    pub(super) fn ctrl_c_listener() -> Option<Signal> {
-        signal(SignalKind::interrupt()).ok()
-    }
-
-    pub(super) async fn next(listener: Option<Signal>) -> Result<(), ()> {
-        match listener {
-            Some(mut listener) => listener.recv().await.ok_or(()),
-            None => Err(()),
-        }
-    }
-
-    pub(super) fn note_arrivals(
-        arrived: &'static AtomicBool,
-        interrupts: &'static AtomicU64,
-    ) {
-        [libc::SIGINT, libc::SIGTERM, libc::SIGHUP]
-            .into_iter()
-            .map(|number| {
-                let step = u64::from(number == libc::SIGINT);
-                // SAFETY: the action only touches atomics, which is async-signal-safe.
-                unsafe {
-                    signal_hook_registry::register(number, move || {
-                        arrived.store(true, Ordering::SeqCst);
-                        interrupts.fetch_add(step, Ordering::SeqCst);
-                    })
-                }
-            })
-            // Without the flag a signal during a key read only reads as Ctrl-C.
-            .for_each(drop);
-    }
 }
 
 #[cfg(not(unix))]
 mod imp {
-    use std::{future::pending, sync::atomic::AtomicBool};
+    use std::future::pending;
 
     use tokio::signal::windows::{CtrlC, ctrl_c};
 
@@ -274,33 +196,8 @@ mod imp {
         }
     }
 
-    pub(super) fn ctrl_c_listener() -> Option<CtrlC> {
+    fn ctrl_c_listener() -> Option<CtrlC> {
         ctrl_c().ok()
-    }
-
-    pub(super) async fn next(listener: Option<CtrlC>) -> Result<(), ()> {
-        match listener {
-            Some(mut listener) => listener.recv().await.ok_or(()),
-            None => Err(()),
-        }
-    }
-
-    pub(super) fn note_arrivals(
-        _: &'static AtomicBool,
-        _: &'static std::sync::atomic::AtomicU64,
-    ) {
-    }
-}
-
-pub(crate) async fn or_interrupted<T>(
-    work: impl Future<Output = T>,
-    interrupt: impl Future<Output = ()>,
-    interrupted: impl FnOnce() -> T,
-) -> T {
-    tokio::select! {
-        biased;
-        out = work => out,
-        () = interrupt => interrupted(),
     }
 }
 
@@ -329,19 +226,17 @@ mod tests {
 
     use std::{
         future::{pending, ready},
-        sync::atomic::{AtomicBool, Ordering},
+        sync::atomic::AtomicBool,
     };
 
+    use holst_form::signals::or_interrupted;
     use rstest::rstest;
 
     use crate::terminal::signals::{
-        ANSWERING,
         INNER_GRACE,
         Signal,
-        answering,
         deferred,
         farewell,
-        or_interrupted,
         or_stopped,
     };
 
@@ -361,14 +256,11 @@ mod tests {
 
     #[test]
     fn farewell_closes_the_form() {
-        assert_eq!(farewell(Signal::Interrupt), "\n└  login cancelled");
-        assert_eq!(farewell(Signal::HangUp), "\n└  the terminal hung up");
-    }
-
-    #[test]
-    fn answering_is_marked_only_for_the_time_of_the_work() {
-        assert!(answering(|| ANSWERING.load(Ordering::SeqCst)));
-        assert!(!ANSWERING.load(Ordering::SeqCst));
+        assert_eq!(farewell(Signal::Interrupt), "\x1b[?25h\n└  login cancelled");
+        assert_eq!(
+            farewell(Signal::HangUp),
+            "\x1b[?25h\n└  the terminal hung up"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -394,12 +286,5 @@ mod tests {
         let waited =
             tokio::time::timeout(std::time::Duration::from_hours(1), silent).await;
         assert_eq!((second, alone, waited.is_err()), ("second", "first", true));
-    }
-
-    #[tokio::test]
-    async fn interruption_wins_only_over_unfinished_work() {
-        let done = or_interrupted(ready(1), ready(()), || 0).await;
-        let stopped = or_interrupted(pending::<i32>(), ready(()), || 0).await;
-        assert_eq!((done, stopped), (1, 0));
     }
 }

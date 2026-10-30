@@ -9,6 +9,7 @@ use holst_core::{
         WorkspaceStatus,
         status,
     },
+    domain::text::counted,
     error::hint::Surface,
 };
 use rmcp::model::CallToolResult;
@@ -116,17 +117,10 @@ impl McpServer {
         match &each.counts {
             Ok(counts) => format!(
                 "{name} · {}, {}\n",
-                plural(counts.boards, "board"),
-                plural(counts.folders, "folder")
+                counted(counts.boards, "board"),
+                counted(counts.folders, "folder")
             ),
             Err(err) => format!("{name} · not counted: {}\n", err.on(Surface::Mcp)),
         }
-    }
-}
-
-fn plural(count: usize, noun: &str) -> String {
-    match count {
-        1 => format!("1 {noun}"),
-        many => format!("{many} {noun}s"),
     }
 }

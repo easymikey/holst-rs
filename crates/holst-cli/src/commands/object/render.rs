@@ -3,12 +3,9 @@
 use holst_core::{
     command::{
         board::picture::Delivery,
-        object::{
-            get::Downloaded,
-            list::{ListedObject, Listing},
-        },
+        object::{get::Downloaded, list::Listing},
     },
-    domain::text::{counted, one_line},
+    domain::text::counted,
 };
 
 use crate::output::view::size_text;
@@ -29,7 +26,10 @@ pub(super) fn listing_text(listing: &Listing) -> String {
         counted(listing.matched, "object"),
         listing.edit_right.as_str()
     );
-    let lines = listing.objects.iter().map(object_line);
+    let lines = listing.objects.iter().map(|listed| {
+        let name = |id: &str| format!("@{}", short(id));
+        format!("{}  {}", listed.line(name, TEXT_MAX_CHARS), listed.link)
+    });
     let more = listing.next.map(|next| {
         format!(
             "… {}–{next} of {}; next: --offset {next}",
@@ -44,75 +44,6 @@ pub(super) fn listing_text(listing: &Listing) -> String {
         .chain(more)
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-fn object_line(listed: &ListedObject) -> String {
-    let object = &listed.object;
-    let corner = format!("({:.0}, {:.0})", object.x, object.y);
-    let size = object
-        .width
-        .zip(object.height)
-        .map(|(width, height)| format!(" {width:.0}×{height:.0}"))
-        .unwrap_or_default();
-    let inside = object
-        .parent
-        .as_deref()
-        .map(|parent| format!(" in @{}", short(parent)))
-        .unwrap_or_default();
-    let color = object
-        .color
-        .as_deref()
-        .map(|color| format!("  {color}"))
-        .unwrap_or_default();
-    let look = object
-        .look
-        .as_ref()
-        .map(|look| format!("  {}", look.words()))
-        .unwrap_or_default();
-    let style = listed.style.line();
-    let ends = object
-        .ends
-        .as_ref()
-        .map(|ends| {
-            let end =
-                |end: &Option<String>| end.as_deref().map_or("·", short).to_owned();
-            format!("  {} → {}", end(&ends.start), end(&ends.end))
-        })
-        .unwrap_or_default();
-    let tags = if listed.tags.is_empty() {
-        String::new()
-    } else {
-        format!("  #{}", listed.tags.join(" #"))
-    };
-    let padlock = if object.locked { "  locked" } else { "" };
-    let turn = if object.rotation == 0.0 {
-        String::new()
-    } else {
-        format!("  {}°", (object.rotation * 100.0).round() / 100.0)
-    };
-    let linked = object
-        .link_to
-        .as_deref()
-        .map_or_else(String::new, |link| format!("  link-to={link}"));
-    let text = shorten(&one_line(&object.text));
-    let quoted = if text.is_empty() {
-        String::new()
-    } else {
-        format!("  \"{text}\"")
-    };
-    format!(
-        "@{} {:<7} {corner}{size}{inside}{color}{look}{style}{ends}{padlock}{turn}{linked}{tags}{quoted}  {}",
-        short(&object.id),
-        object.kind.short_name(),
-        listed.link
-    )
-}
-
-fn shorten(text: &str) -> String {
-    text.char_indices().nth(TEXT_MAX_CHARS).map_or_else(
-        || text.to_owned(),
-        |(cut, _)| format!("{}…", text.get(..cut).unwrap_or(text)),
-    )
 }
 
 /// Returns a line per original: where it went and how big it is, then a line
@@ -273,7 +204,7 @@ mod tests {
                 .collect();
         assert_eq!(
             lines.get(1).map(String::as_str),
-            Some("@a1 arrow   (100, 50)  s1111111 → ·  L/a1")
+            Some("@a1 arrow   (100, 50)  @s1111111 → ·  L/a1")
         );
         assert_eq!(
             lines.get(2).map(String::as_str),

@@ -63,8 +63,6 @@ impl CommentRoom {
     /// [`SentUpdate::accepted`](crate::remote::socket::write::SentUpdate::accepted).
     pub async fn send(self, client: &Client, change: &CommentChange) -> Result<()> {
         let update = build(self.connected.document(), change, client.ids())?;
-        sent(self.connected, client, update, update_id(&client.new_id()))
-            .await
-            .map(|_| ())
+        sent(self.connected, client, update, update_id(&client.new_id())).await
     }
 }

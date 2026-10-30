@@ -1042,7 +1042,7 @@ expression: "*holst.tools"
   },
   {
     "name": "api",
-    "description": "Any Holst API endpoint; only GET unless a human set HOLST_MCP_RAW_WRITE=1.",
+    "description": "Known Holst API calls; only GET unless a human set HOLST_MCP_RAW_WRITE=1.",
     "inputSchema": {
       "properties": {
         "body": {
@@ -1058,7 +1058,6 @@ expression: "*holst.tools"
           "enum": [
             "GET",
             "POST",
-            "PUT",
             "PATCH",
             "DELETE"
           ],

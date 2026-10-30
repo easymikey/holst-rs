@@ -1,18 +1,14 @@
 //! What the workspace commands print.
 
 use holst_core::{
-    command::{
-        change::ChangeReport,
-        workspace::{
-            ChangeKind,
-            EventLog,
-            Member,
-            PartRead,
-            ShowPart,
-            WorkspaceBrief,
-            WorkspaceChange,
-            WorkspaceRow,
-        },
+    command::workspace::{
+        EventLog,
+        Member,
+        PartRead,
+        ShowPart,
+        WorkspaceBrief,
+        WorkspaceChange,
+        WorkspaceRow,
     },
     domain::text::{EMPTY, joined},
 };
@@ -32,7 +28,7 @@ pub(super) fn shown(format: OutputFormat, shown: &WorkspaceBrief) -> Result<()> 
 }
 
 pub(super) fn change(format: OutputFormat, change: &WorkspaceChange) -> Result<()> {
-    output::print(format, &change_text(change), change)
+    output::print(format, &change.phrase(|id| format!(" ({id})")), change)
 }
 
 pub(super) fn log(format: OutputFormat, log: &EventLog) -> Result<()> {
@@ -127,34 +123,6 @@ fn member_line(member: &Member) -> String {
     .join("  ")
 }
 
-fn change_text(change: &WorkspaceChange) -> String {
-    let id = change
-        .id
-        .as_deref()
-        .map(|id| format!(" ({id})"))
-        .unwrap_or_default();
-    let was = change.was.as_deref().unwrap_or_default();
-    let name = &change.name;
-    match (change.change, &change.report) {
-        (ChangeKind::Create, ChangeReport::Sent) => format!("created {name}{id}"),
-        (
-            ChangeKind::Create,
-            ChangeReport::DryRun { .. } | ChangeReport::Held { .. },
-        ) => {
-            format!("would create {name}")
-        }
-        (ChangeKind::Rename, ChangeReport::Sent) => {
-            format!("renamed {was} to {name}{id}")
-        }
-        (
-            ChangeKind::Rename,
-            ChangeReport::DryRun { .. } | ChangeReport::Held { .. },
-        ) => {
-            format!("would rename {was} to {name}{id}")
-        }
-    }
-}
-
 fn log_text(log: &EventLog) -> String {
     let more = log
         .cursor
@@ -184,7 +152,7 @@ mod tests {
     };
     use rstest::rstest;
 
-    use crate::commands::workspace::render::{change_text, listing_text, members_text};
+    use crate::commands::workspace::render::{listing_text, members_text};
 
     fn planned() -> PlannedRequest {
         PlannedRequest {
@@ -231,7 +199,7 @@ mod tests {
         #[case] report: ChangeReport,
         #[case] text: &str,
     ) {
-        assert_eq!(change_text(&change(kind, report)), text);
+        assert_eq!(change(kind, report).phrase(|id| format!(" ({id})")), text);
     }
 
     #[test]

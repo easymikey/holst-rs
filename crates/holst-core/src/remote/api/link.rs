@@ -1,11 +1,17 @@
 use holst_macros::get;
 
-use crate::{domain::response::LinkPreview, error::Result, remote::client::Client};
+use crate::{
+    domain::response::LinkPreview,
+    error::Result,
+    remote::{catalogue::Endpoint, client::Client},
+};
 
 /// A link's title and picture; the parameter is `link`, as in the web
 /// client.
-#[get("link_preview", query(link = encode_uri(url)), response = typed)]
+#[get("link_preview", class = Read, query(link = encode_uri(url)), response = typed)]
 pub async fn link_preview(client: &Client, url: &str) -> Result<LinkPreview>;
+
+pub(crate) const ENDPOINTS: &[Endpoint] = &[LINK_PREVIEW];
 
 /// `encodeURI`: the web client encodes the link, and the request encodes the
 /// result once more.

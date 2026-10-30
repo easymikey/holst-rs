@@ -19,10 +19,13 @@ use yrs::{
     Any,
     Doc,
     Map as _,
+    MapPrelim,
+    MapRef,
     Out,
     ReadTxn,
     Text as _,
     Transact as _,
+    TransactionMut,
     Xml as _,
     XmlTextRef,
     branch::{Branch, BranchPtr},
@@ -489,7 +492,7 @@ pub(crate) fn object_of(fields: Value) -> Option<Object> {
 pub(crate) fn object_with_text<T: ReadTxn>(
     fields: Value,
     txn: &T,
-    documents: &yrs::MapRef,
+    documents: &MapRef,
 ) -> Option<Object> {
     object(fields, |id| text_of(txn, documents, id), &HashMap::new())
 }
@@ -570,14 +573,20 @@ fn object(
 }
 
 fn arrow_text(texts: &Value) -> String {
-    let labels: Vec<String> = texts
+    labels(texts, slate_text).join("\n")
+}
+
+/// The non-empty labels of an arrow, each rendered from its editor value or
+/// else its plain text.
+fn labels(texts: &Value, render: fn(&Value) -> String) -> Vec<String> {
+    texts
         .as_array()
         .into_iter()
         .flatten()
         .map(|label| {
             label
                 .get(document::EDITOR)
-                .map(slate_text)
+                .map(render)
                 .or_else(|| {
                     label
                         .get(document::TEXT)
@@ -587,8 +596,7 @@ fn arrow_text(texts: &Value) -> String {
                 .unwrap_or_default()
         })
         .filter(|label| !label.is_empty())
-        .collect();
-    labels.join("\n")
+        .collect()
 }
 
 pub(crate) fn slate_text(nodes: &Value) -> String {
@@ -650,15 +658,41 @@ pub(crate) fn any(value: &Value) -> Result<Any> {
     Ok(serde_json::from_value(value.clone())?)
 }
 
+/// Writes `pairs` as a new map at `key` of `parent`.
+pub(crate) fn insert_map(
+    transaction: &mut TransactionMut<'_>,
+    parent: &MapRef,
+    key: &str,
+    pairs: impl IntoIterator<Item = (String, Value)>,
+) -> Result<()> {
+    let fields = pairs
+        .into_iter()
+        .map(|(name, value)| any(&value).map(|value| (name, value)))
+        .collect::<Result<Vec<(String, Any)>>>()?;
+    parent.insert(transaction, key, MapPrelim::from_iter(fields));
+    Ok(())
+}
+
+/// The text document `id` of `documents`, if it is one.
+pub(crate) fn document_root<T: ReadTxn>(
+    txn: &T,
+    documents: &MapRef,
+    id: &str,
+) -> Option<XmlTextRef> {
+    match documents.get(txn, id) {
+        Some(Out::YXmlText(root)) => Some(root),
+        _ => None,
+    }
+}
+
 fn number(any: &Any) -> Option<u64> {
     json(any).and_then(|value| value.as_u64())
 }
 
-fn text_of<T: ReadTxn>(txn: &T, documents: &yrs::MapRef, document: &str) -> String {
-    match documents.get(txn, document) {
-        Some(Out::YXmlText(root)) => plain(txn, &root),
-        _ => String::new(),
-    }
+fn text_of<T: ReadTxn>(txn: &T, documents: &MapRef, document: &str) -> String {
+    document_root(txn, documents, document)
+        .map(|root| plain(txn, &root))
+        .unwrap_or_default()
 }
 
 /// Whether an element sits inside a line of text: a link or a mention.
@@ -750,10 +784,8 @@ pub fn text_marks(document: &Doc, object: &Object) -> Vec<&'static str> {
     let documents = document.get_or_insert_map(document::DOCUMENTS);
     let txn = document.transact();
     let leaves = name
-        .and_then(|name| match documents.get(&txn, name) {
-            Some(Out::YXmlText(root)) => Some(leaf_marks(&slate_children(&txn, &root))),
-            _ => None,
-        })
+        .and_then(|name| document_root(&txn, &documents, name))
+        .map(|root| leaf_marks(&slate_children(&txn, &root)))
         .unwrap_or_default();
     Mark::ALL
         .into_iter()
@@ -803,32 +835,13 @@ pub fn markdown_text(document: &Doc, object: &Object) -> Option<String> {
     if let Some(name) = field(document::DOCUMENT_ID).and_then(Value::as_str) {
         let documents = document.get_or_insert_map(document::DOCUMENTS);
         let txn = document.transact();
-        Some(match documents.get(&txn, name) {
-            Some(Out::YXmlText(root)) => {
-                markdown(&Value::Array(slate_children(&txn, &root)))
-            }
-            _ => String::new(),
-        })
+        Some(
+            document_root(&txn, &documents, name)
+                .map(|root| markdown(&Value::Array(slate_children(&txn, &root))))
+                .unwrap_or_default(),
+        )
     } else {
-        let labels: Vec<String> = field(document::TEXTS)?
-            .as_array()
-            .into_iter()
-            .flatten()
-            .map(|label| {
-                label.get(document::EDITOR).map_or_else(
-                    || {
-                        label
-                            .get(document::TEXT)
-                            .and_then(Value::as_str)
-                            .map(str::to_owned)
-                            .unwrap_or_default()
-                    },
-                    markdown,
-                )
-            })
-            .filter(|label| !label.is_empty())
-            .collect();
-        Some(labels.join("\n\n"))
+        Some(labels(field(document::TEXTS)?, markdown).join("\n\n"))
     }
 }
 

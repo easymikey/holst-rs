@@ -463,7 +463,7 @@ async fn an_import_of_a_broken_file_is_refused(
         .on(surface)
         .import_board("broken.board", Import::new())
         .await?;
-    then(&observation).signalled_as(surface.bad_data());
+    then(&observation).signalled_as(surface.data_error());
     tree_of(&holst, "Team").has_nothing_named("broken");
     Ok(())
 }
