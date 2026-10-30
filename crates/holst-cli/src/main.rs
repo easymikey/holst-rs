@@ -22,12 +22,29 @@ use self::{
 };
 use crate::{cli::Cli, exit::report, terminal::detect::TerminalType};
 
-#[tokio::main(flavor = "current_thread")]
+/// holst's thread stack: 8 MiB as on Unix; Windows gives main 1 MiB.
+const STACK: usize = 8 << 20;
+
+fn main() -> ExitCode {
+    std::thread::Builder::new()
+        .stack_size(STACK)
+        .spawn(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map(|runtime| runtime.block_on(start()))
+        })
+        .ok()
+        .and_then(|thread| thread.join().ok())
+        .and_then(Result::ok)
+        .unwrap_or(ExitCode::FAILURE)
+}
+
 #[expect(
     clippy::disallowed_methods,
     reason = "main.rs is the one place that reads the process arguments"
 )]
-async fn main() -> ExitCode {
+async fn start() -> ExitCode {
     // First of all: from here on a Ctrl-C is counted, not fatal.
     terminal::signals::note_arrivals();
     match Cli::parse_from_args(std::env::args_os()) {
