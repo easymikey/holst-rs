@@ -28,6 +28,8 @@ cargo bin just ci       # all of the above: run it before you push
 cargo bin just budget   # release binary sizes and startup against the limits in `justfile` (CI job `budget`; slow, not part of `ci`)
 ```
 
+Commit subjects follow Conventional Commits, in lower case and without a version, e.g. `fix(workspace): say a guest cannot see the members` or `ci: raise the startup limits`; CI job `deps` runs `cargo bin just commits <range>` on them.
+
 `cargo bin just` lists the recipes. The recipes call each tool as `cargo bin cargo-<tool>`, not through cargo aliases, which would shadow a copy installed globally.
 
 `cargo spellcheck` needs `libclang` to build: on macOS `brew install llvm` and set `LIBCLANG_PATH=$(brew --prefix llvm)/lib` the first time. New words go into `spellcheck.dic`, one per line, and the count on its first line is updated. Nextest retries a failed test twice, because loopback connects to the fakes can stall on a busy machine; a test that passes on a retry is reported as flaky.

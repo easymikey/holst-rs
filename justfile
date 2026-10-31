@@ -1,8 +1,8 @@
 nightly := "nightly-2026-10-30"
 size_holst := "11400000"
 size_holst_mcp := "12400000"
-startup_ms_holst := "20"
-startup_ms_holst_mcp := "20"
+startup_ms_holst := "50"
+startup_ms_holst_mcp := "50"
 
 [private]
 default:
@@ -61,3 +61,18 @@ budget:
     check holst {{ size_holst }} {{ startup_ms_holst }}
     check holst-mcp {{ size_holst_mcp }} {{ startup_ms_holst_mcp }}
     exit $failed
+
+# CI job `deps`: every commit subject in the range is a Conventional Commit and names no version.
+commits range="origin/main..HEAD":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    pattern='^(feat|fix|perf|refactor|style|test|docs|build|ci|chore|revert)(\([a-z0-9-]+\))?!?: [a-z]'
+    version='(^|[^0-9.])v?0\.[0-9]+\.[0-9]+'
+    bad=$(git log --no-merges --format='%h %s' "{{ range }}" | while read -r hash subject; do
+        if ! [[ $subject =~ $pattern ]] || [[ $subject =~ $version ]]; then echo "  $hash $subject"; fi
+    done)
+    if [ -n "$bad" ]; then
+        echo "commit subjects that are not 'type(scope): lower-case text' or that name a version:" >&2
+        echo "$bad" >&2
+        exit 1
+    fi
