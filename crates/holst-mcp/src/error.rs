@@ -2,12 +2,25 @@
 
 use std::path::PathBuf;
 
-use holst_core::error::{
-    confirmation::Unconfirmed,
-    hint::{Hint, Surface},
+use holst_core::{
+    command::table::Command,
+    error::{
+        confirmation::Unconfirmed,
+        hint::{Hint, Surface},
+    },
 };
 
-use crate::memory::alias::UnknownAlias;
+mod call;
+mod http;
+mod setup;
+mod start;
+
+pub(crate) use self::{
+    call::{CallError, UnknownAlias, Verbs},
+    http::HttpError,
+    setup::SetupError,
+    start::StartError,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
@@ -20,14 +33,15 @@ pub(crate) enum Error {
     #[error("the search query must not be empty")]
     EmptyQuery,
 
-    #[error("missing target: {what}")]
-    NoArgument { what: &'static str },
+    #[error("`-` is for the command line: give a path")]
+    DashPath,
 
     #[error(
-        "`{command}` takes at most {max} items per call, not {given}: split them over several calls"
+        "`{}` takes at most {max} items per call, not {given}: split them over several calls",
+        .command.path()
     )]
     TooManyItems {
-        command: String,
+        command: &'static Command,
         max: usize,
         given: usize,
     },
@@ -35,10 +49,10 @@ pub(crate) enum Error {
     #[error("the original goes into a new file: there is no standard output here")]
     NoStdout,
 
-    #[error("{command} is for the command line: it has no tool")]
-    CliOnly { command: String },
+    #[error("{} is for the command line: it has no tool", .command.path())]
+    CliOnly { command: &'static Command },
 
-    #[error("{}", .0.on(Surface::Mcp))]
+    #[error(transparent)]
     Unconfirmed(Unconfirmed),
 
     #[error("the file cannot be read")]
@@ -81,7 +95,7 @@ impl Error {
             Error::Unconfirmed(err) => err.hint(),
             Error::Alias(_)
             | Error::EmptyQuery
-            | Error::NoArgument { .. }
+            | Error::DashPath
             | Error::TooManyItems { .. }
             | Error::NoStdout
             | Error::CliOnly { .. }
@@ -95,8 +109,8 @@ impl Error {
     }
 
     #[must_use]
-    pub(crate) fn advice(&self) -> Option<holst_core::error::hint::Advice> {
-        self.hint().map(|hint| hint.on(Surface::Mcp))
+    pub(crate) fn advice(&self) -> Option<&'static str> {
+        self.hint().map(|hint| hint.text(Surface::Mcp))
     }
 }
 
@@ -104,9 +118,12 @@ pub(crate) type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]
 mod tests {
-    use holst_core::error::{
-        confirmation::{ChangeRisk, Unconfirmed},
-        hint::Hint,
+    use holst_core::{
+        command::storage::StorageVerb,
+        error::{
+            confirmation::{ChangeRisk, Unconfirmed},
+            hint::Hint,
+        },
     };
 
     use crate::error::Error;
@@ -128,7 +145,29 @@ mod tests {
         assert_eq!(unconfirmed.hint(), Some(Hint::ConfirmFirst));
         assert_eq!(
             unconfirmed.to_string(),
-            "granting a right changes who can open or edit it; confirm with confirm: true"
+            "granting a right changes who can open or edit it"
+        );
+    }
+
+    #[test]
+    fn refusals_name_the_command_they_were_given() {
+        let command = StorageVerb::Ls.command();
+        assert_eq!(
+            Error::CliOnly { command }.to_string(),
+            "storage ls is for the command line: it has no tool"
+        );
+        assert_eq!(
+            Error::TooManyItems {
+                command,
+                max: 2,
+                given: 3
+            }
+            .to_string(),
+            "`storage ls` takes at most 2 items per call, not 3: split them over several calls"
+        );
+        assert_eq!(
+            Error::DashPath.to_string(),
+            "`-` is for the command line: give a path"
         );
     }
 }

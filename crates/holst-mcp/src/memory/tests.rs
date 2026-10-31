@@ -1,6 +1,9 @@
-use crate::memory::{
-    McpMemory,
-    alias::{Aliases, UnknownAlias, alias_text, expand_json},
+use crate::{
+    error::UnknownAlias,
+    memory::{
+        McpMemory,
+        alias::{Aliases, alias_text, expand_json},
+    },
 };
 
 const ID: &str = "ae1f0a2b-c3d4-4f19-8a7b-1c2d3e4f5a6b";

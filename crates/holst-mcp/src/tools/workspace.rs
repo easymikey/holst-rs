@@ -172,7 +172,10 @@ impl McpServer {
                     PartRead::NeedsAdmin { error } => format!("{label}: {error}\n"),
                     PartRead::Hidden { reason } => format!("{label}: {reason}\n"),
                     PartRead::NotRead { error } => {
-                        format!("{label}: not read: {error}\n")
+                        format!(
+                            "{label}: not read: {}\n",
+                            holst_core::error::chained(error)
+                        )
                     }
                 }
             })

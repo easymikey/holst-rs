@@ -151,7 +151,7 @@ impl<Trust> CachedCopy<Trust> {
             .inspect_err(|err| {
                 tracing::debug!(
                     board = self.board,
-                    %err,
+                    err = %crate::error::chained(err),
                     "dropped a cached board that does not decode"
                 );
                 cache

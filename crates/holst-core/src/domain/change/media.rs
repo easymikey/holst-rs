@@ -12,7 +12,12 @@ use crate::{
         geometry::{Rectangle, Size},
         response::PagesInfo,
     },
-    error::{Error, Result, board_change::BoardChangeError, input::InputError},
+    error::{
+        Error,
+        Result,
+        board_change::{BoardChangeError, FileState, ObjectField},
+        input::InputError,
+    },
     protocol::document::{
         CROP_TRANSFORM,
         DISPLAY_FILE_NAME,
@@ -172,16 +177,16 @@ pub struct MediaEdit {
 impl MediaEdit {
     /// The names of the fields asked for, as `object edit` words them.
     #[must_use]
-    pub fn fields(&self) -> Vec<&'static str> {
+    pub fn fields(&self) -> Vec<ObjectField> {
         self.name
             .iter()
-            .map(|_| "name")
-            .chain(self.crop.map(|_| "crop"))
-            .chain(self.flip.map(|_| "flip"))
-            .chain(self.replace.as_ref().map(|_| "path"))
-            .chain(self.display.map(|_| "display"))
-            .chain(self.start_page.map(|_| "start_page"))
-            .chain(self.hide_details.map(|_| "hide_details"))
+            .map(|_| ObjectField::Name)
+            .chain(self.crop.map(|_| ObjectField::Crop))
+            .chain(self.flip.map(|_| ObjectField::Flip))
+            .chain(self.replace.as_ref().map(|_| ObjectField::Path))
+            .chain(self.display.map(|_| ObjectField::Display))
+            .chain(self.start_page.map(|_| ObjectField::StartPage))
+            .chain(self.hide_details.map(|_| ObjectField::HideDetails))
             .collect()
     }
 }
@@ -204,7 +209,7 @@ pub(super) fn fits(
     let only = |given: bool, held: bool, field| {
         (!given || held).then_some(()).ok_or_else(|| {
             Error::BoardChange(BoardChangeError::NotChangeable {
-                kind: kind.as_str().to_owned(),
+                kind: kind.clone(),
                 field,
             })
         })
@@ -212,18 +217,26 @@ pub(super) fn fits(
     let image = *kind == ObjectKind::Image;
     let file = *kind == ObjectKind::File;
     match (&media.name, name_field(kind)) {
-        (Some(_), None) => only(true, false, "name"),
+        (Some(_), None) => only(true, false, ObjectField::Name),
         (Some(name), Some(_)) if name.trim().is_empty() => {
             Err(Error::Input(InputError::BlankMediaName))
         }
         _ => Ok(()),
     }
-    .and(only(media.crop.is_some(), image, "crop"))
-    .and(only(media.flip.is_some(), image, "flip"))
-    .and(only(media.replace.is_some(), image, "path"))
-    .and(only(media.display.is_some(), file, "display"))
-    .and(only(media.start_page.is_some(), file, "start_page"))
-    .and(only(media.hide_details.is_some(), file, "hide_details"))
+    .and(only(media.crop.is_some(), image, ObjectField::Crop))
+    .and(only(media.flip.is_some(), image, ObjectField::Flip))
+    .and(only(media.replace.is_some(), image, ObjectField::Path))
+    .and(only(media.display.is_some(), file, ObjectField::Display))
+    .and(only(
+        media.start_page.is_some(),
+        file,
+        ObjectField::StartPage,
+    ))
+    .and(only(
+        media.hide_details.is_some(),
+        file,
+        ObjectField::HideDetails,
+    ))
     .and(view_fits(fields.unwrap_or(&Value::Null), media))
 }
 
@@ -307,9 +320,9 @@ pub(crate) fn page_count(fields: &Value) -> Option<u32> {
 /// pages (117168); details are offered for a video shown as content (117266).
 fn view_fits(stored: &Value, media: &MediaEdit) -> Result<()> {
     let fields = &*counted(stored, media);
-    let refuse = |kind: &str, field| {
-        Err(Error::BoardChange(BoardChangeError::NotChangeable {
-            kind: kind.to_owned(),
+    let refuse = |state, field| {
+        Err(Error::BoardChange(BoardChangeError::UnshownFile {
+            state,
             field,
         }))
     };
@@ -331,18 +344,20 @@ fn view_fits(stored: &Value, media: &MediaEdit) -> Result<()> {
     let page = media.start_page.map(|page| (page, page_count(fields)));
     match (media.display, page, media.hide_details) {
         (Some(FileDisplay::Content), _, _) if !measured => {
-            refuse("file without the info to show its content", "display")
+            refuse(FileState::NoContentInfo, ObjectField::Display)
         }
         (_, Some((_, None)), _) if !asking => {
-            refuse("file without page info", "start_page")
+            refuse(FileState::NoPageInfo, ObjectField::StartPage)
         }
         (_, Some((page, Some(count))), _) if !(1..=count).contains(&page) => {
             Err(Error::BoardChange(BoardChangeError::NoPage { page, count }))
         }
         (_, _, Some(_)) if view != FileView::Video => {
-            refuse("file that is not a video", "hide_details")
+            refuse(FileState::NotVideo, ObjectField::HideDetails)
         }
-        (_, _, Some(_)) if !content => refuse("video shown as a stamp", "hide_details"),
+        (_, _, Some(_)) if !content => {
+            refuse(FileState::VideoAsStamp, ObjectField::HideDetails)
+        }
         _ => Ok(()),
     }
 }
@@ -371,9 +386,8 @@ pub(super) fn corners_fit(
     let circle = media.crop.map_or(stored, |mask| mask == CropMask::Circle);
     match (circle, radius, *kind == ObjectKind::Image) {
         (true, Some(_), true) => {
-            Err(Error::BoardChange(BoardChangeError::NotChangeable {
-                kind: "circle-cropped image".to_owned(),
-                field: "radius",
+            Err(Error::BoardChange(BoardChangeError::CroppedImage {
+                field: ObjectField::Radius,
             }))
         }
         _ => Ok(()),

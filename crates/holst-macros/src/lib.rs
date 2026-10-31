@@ -1,6 +1,7 @@
 //! Endpoint attributes and the `CommandArgs` derive for `holst-core`.
 
 mod command;
+mod hint;
 
 use std::collections::BTreeSet;
 
@@ -96,6 +97,29 @@ pub fn command_args(item: TokenStream) -> TokenStream {
 #[proc_macro_derive(ArgumentGroup, attributes(argument))]
 pub fn argument_group(item: TokenStream) -> TokenStream {
     command::expand_group(item.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// The advice under each variant of an error enum: `pub const fn hint(&self)`.
+///
+/// `#[hint(Name)]` on a variant gives `Some(Hint::Name)`, `#[hint(forward)]` on
+/// a variant with one field gives that field's `.hint()`, and a variant with
+/// neither gives `None`.
+///
+/// ```text
+/// #[derive(Debug, thiserror::Error, Hint)]
+/// pub enum LoginError {
+///     #[error("no login found")]
+///     #[hint(LoginAgain)]
+///     NoSavedLogin,
+///     #[error("not an email")]
+///     NotEmail { raw: String },
+/// }
+/// ```
+#[proc_macro_derive(Hint, attributes(hint))]
+pub fn hint(item: TokenStream) -> TokenStream {
+    hint::expand(item.into())
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

@@ -78,7 +78,7 @@ pub(crate) async fn run(
                     .into_iter()
                     .next()
                     .map(|failed| Error::NotCleaned {
-                        name: failed.name,
+                        place: failed.place,
                         error: failed.error,
                     });
             refused.or(failed).map_or_else(

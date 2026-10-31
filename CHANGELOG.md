@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.5.0
+
+### Added
+
+- In coloured terminal output, flags and commands in errors and hints are cyan and bold, and quoted values are yellow.
+- A JSON argument that does not parse (`template edit` body, `object` items) shows the line and a `^` under the column where it breaks; on MCP the message ends with `, at line L, column C`.
+- On MCP, the hint of an error arrives as a separate `hint:` line.
+- New hints: how to name an object, how to shrink a picture too large to draw, how to import into a non-empty board, and what to change when `--no-compress` meets a `.gz` name.
+
+### Changed
+
+- Error messages say the fact alone and the how-to moves to the hint line; both surfaces now use the same message, and only the hint names `--flag` (CLI) or `argument` (MCP).
+- A target board that already has objects: "the target board already has N objects: only an empty board takes an import; nothing was changed", with the hint to import into an empty board or merge.
+- An object that cannot be found: "\"R\" does not name an object", with the hint on full ids, `objectId=` links and the first 8 characters.
+- An object that would stick out of a frame: the message states it, and the hint says `--at` counts from the frame's corner (MCP: `at`).
+- A picture too large to draw: "cannot be drawn", with its size in pixels, and a hint to use a smaller scale or area.
+- A name that fits both the workspace root and a folder: the message states it and the hint says to give `/` or no folder for the root, the folder's id for the folder.
+- Leaving your own board: "is your own board, so you cannot leave it"; the hint is `holst b rm BOARD` (MCP: `board_write action=rm`).
+- `--no-compress` with a `.gz` file name, and an unconfirmed risky action: the message drops the advice; it moves to the hint (`--yes` or `confirm: true`).
+- A size change of an object a container sizes (for example a picture in a frame) says "a X in a Y has no size to change: the Y sizes it".
+- Several problems in one input are listed as "N problems: a; b" on MCP and one per line on CLI.
+- Colour and shade errors, lookup misses ("not found; available: ..."), keychain, Secret Service, login and setup errors use lower case, no final period and commands in code style.
+- HTTP errors name the method of the request; timeout, connection failure and cut-off connection are told apart, and an HTML refusal page is shown as a short stand-in rather than the page.
+- The form's answer errors (empty, not an email, wrong code, wrong password) read the same in the CLI and MCP setup; the code error says "that code did not match - check ...".
+- MCP: `-` as a path says "`-` is for the command line: give a path".
+- Errors with causes print the cause chain on one line without repeats; MCP `auth` tools now show it too.
+
 ## 0.4.0
 
 ### Added

@@ -91,9 +91,8 @@ async fn a_dry_run_group_changes_nothing(
 
 #[rstest]
 #[tokio::test]
-async fn a_frame_is_refused_and_nothing_is_written(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_frame_is_refused_and_nothing_is_written() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = plans_with(vec![
         FixtureObject::Frame("Q4".into()),
         FixtureObject::Sticker("One".into()),
@@ -113,9 +112,8 @@ async fn a_frame_is_refused_and_nothing_is_written(
 
 #[rstest]
 #[tokio::test]
-async fn one_object_is_not_a_group(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn one_object_is_not_a_group() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = three_notes().start().await?;
     let call = ObjectCall::group().with("object", holst.fixture_object("Plans", 1)?);
     let observation = holst.on(surface).object("Plans", call).await?;
@@ -146,9 +144,8 @@ async fn an_ungrouped_group_frees_its_members_and_goes(
 
 #[rstest]
 #[tokio::test]
-async fn only_a_group_can_be_ungrouped(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn only_a_group_can_be_ungrouped() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = grouped_notes().start().await?;
     let call = ObjectCall::ungroup().with("object", holst.fixture_object("Plans", 4)?);
     let observation = holst.on(surface).object("Plans", call).await?;

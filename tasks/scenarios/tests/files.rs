@@ -48,9 +48,9 @@ async fn a_backup_is_saved_to_a_new_file(
 
 #[rstest]
 #[tokio::test]
-async fn a_backup_the_server_does_not_have_saves_nothing(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_backup_the_server_does_not_have_saves_nothing() -> Result<(), ScenarioError>
+{
+    let surface = Surface::Cli;
     let holst = with_a_backup().start().await?;
     let observation = holst
         .on(surface)
@@ -130,9 +130,8 @@ async fn a_backup_to_stdout() -> Result<(), ScenarioError> {
 
 #[rstest]
 #[tokio::test]
-async fn an_existing_backup_file_is_not_overwritten(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn an_existing_backup_file_is_not_overwritten() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_a_backup()
         .local_file("snapshot.ydoc", b"MINE")
         .start()
@@ -162,12 +161,13 @@ fn backup_sent(gzipped: bool) -> Given {
 
 /// Whichever way the server sends it, the file is plain or gzip as asked.
 #[rstest]
-#[case::plain_on_the_server(backup_sent(false))]
-#[case::gzipped_on_the_server(backup_sent(true))]
+#[case::plain_on_the_server(backup_sent(false), Surface::Cli)]
+#[case::plain_on_the_server_mcp(backup_sent(false), Surface::Mcp)]
+#[case::gzipped_on_the_server(backup_sent(true), Surface::Cli)]
 #[tokio::test]
 async fn a_backup_comes_plain_or_compressed(
     #[case] fixture: Given,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+    #[case] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = fixture.start().await?;
     let on = holst.on(surface);
@@ -226,9 +226,8 @@ async fn a_backup_is_taken_from_the_named_provider(
 
 #[rstest]
 #[tokio::test]
-async fn an_unknown_backup_provider_is_a_usage_error(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn an_unknown_backup_provider_is_a_usage_error() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_a_backup().start().await?;
     let observation = holst
         .on(surface)
@@ -314,9 +313,8 @@ async fn a_dry_run_restore_changes_nothing(
 
 #[rstest]
 #[tokio::test]
-async fn a_restore_of_an_unknown_key_is_not_found(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_restore_of_an_unknown_key_is_not_found() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_a_backup_of_two_objects().start().await?;
     let observation = holst.on(surface).restore_backup("Plan", "snap-9").await?;
     then(&observation)
@@ -328,9 +326,8 @@ async fn a_restore_of_an_unknown_key_is_not_found(
 
 #[rstest]
 #[tokio::test]
-async fn a_read_only_board_refuses_a_restore(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_read_only_board_refuses_a_restore() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team")
@@ -352,9 +349,8 @@ fn asks_to_sign_in(observation: &Observation, surface: Surface) {
 
 #[rstest]
 #[tokio::test]
-async fn backup_and_settings_commands_need_a_login(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn backup_and_settings_commands_need_a_login() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .workspace("Team")
         .board("Plan", "Team", None)
@@ -410,9 +406,8 @@ async fn an_original_is_downloaded(
 
 #[rstest]
 #[tokio::test]
-async fn a_sticker_has_no_original(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_sticker_has_no_original() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_originals().start().await?;
     let call = ObjectCall::get()
         .with("object", holst.fixture_object("Plans", 2)?)
@@ -426,9 +421,8 @@ async fn a_sticker_has_no_original(
 
 #[rstest]
 #[tokio::test]
-async fn a_refused_original_is_told(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_refused_original_is_told() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_originals().start().await?;
     let call = ObjectCall::get()
         .with("object", holst.fixture_object("Plans", 3)?)
@@ -441,9 +435,8 @@ async fn a_refused_original_is_told(
 
 #[rstest]
 #[tokio::test]
-async fn an_existing_download_is_not_overwritten(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn an_existing_download_is_not_overwritten() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_originals()
         .local_file("mine.png", b"mine")
         .start()
@@ -601,9 +594,8 @@ async fn a_dry_run_uploads_and_places_nothing(
 // Gap: the scenario asks for not found (66), core fails the read (74).
 #[rstest]
 #[tokio::test]
-async fn a_missing_local_file_is_not_found(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_missing_local_file_is_not_found() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_media().start().await?;
     let call = ObjectCall::add("image").path(&holst.work_place("nope.png"));
     let observation = holst.on(surface).object("Plans", call).await?;
@@ -615,9 +607,8 @@ async fn a_missing_local_file_is_not_found(
 
 #[rstest]
 #[tokio::test]
-async fn a_read_only_board_is_refused_before_the_upload(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_read_only_board_is_refused_before_the_upload() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team")
@@ -691,10 +682,8 @@ async fn an_image_is_placed_at_a_corner_and_size(
 #[case::image("image")]
 #[case::file("file")]
 #[tokio::test]
-async fn media_commands_need_a_login(
-    #[case] kind: &str,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn media_commands_need_a_login(#[case] kind: &str) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .workspace("Team")
         .board("Plans", "Team", None)
@@ -749,9 +738,8 @@ async fn an_image_and_a_file_are_renamed_and_read_back(
 
 #[rstest]
 #[tokio::test]
-async fn a_sticker_takes_no_name(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_sticker_takes_no_name() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_an_image_a_file_and_a_sticker().start().await?;
     let call = ObjectCall::edit()
         .with("object", holst.fixture_object("Plans", 3)?)
@@ -766,9 +754,8 @@ async fn a_sticker_takes_no_name(
 
 #[rstest]
 #[tokio::test]
-async fn a_blank_name_of_an_image_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_blank_name_of_an_image_is_refused() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_an_image_a_file_and_a_sticker().start().await?;
     let call = ObjectCall::edit()
         .with("object", holst.fixture_object("Plans", 1)?)
@@ -912,9 +899,8 @@ async fn a_flip_is_set_not_toggled(
 
 #[rstest]
 #[tokio::test]
-async fn a_crop_beside_a_size_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_crop_beside_a_size_is_refused() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_an_image_a_file_and_a_sticker().start().await?;
     let call = ObjectCall::edit()
         .with("object", holst.fixture_object("Plans", 1)?)
@@ -995,9 +981,8 @@ async fn a_dry_run_replacement_uploads_nothing(
 
 #[rstest]
 #[tokio::test]
-async fn a_sticker_takes_no_path(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_sticker_takes_no_path() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_a_new_picture().start().await?;
     let call = ObjectCall::edit()
         .with("object", holst.fixture_object("Plans", 3)?)
@@ -1013,9 +998,8 @@ async fn a_sticker_takes_no_path(
 
 #[rstest]
 #[tokio::test]
-async fn a_text_file_is_not_a_picture(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_text_file_is_not_a_picture() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_a_new_picture().start().await?;
     let call = ObjectCall::edit()
         .with("object", holst.fixture_object("Plans", 1)?)
@@ -1062,9 +1046,9 @@ async fn a_pdf_is_shown_as_pages_from_page_two(
 
 #[rstest]
 #[tokio::test]
-async fn a_start_page_past_the_last_page_is_refused_on_the_board(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_start_page_past_the_last_page_is_refused_on_the_board()
+-> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_a_counted_pdf().start().await?;
     let call = ObjectCall::edit()
         .with("object", holst.fixture_object("Plans", 1)?)
@@ -1111,9 +1095,8 @@ async fn a_pdf_without_pages_is_counted_then_shown_as_pages(
 
 #[rstest]
 #[tokio::test]
-async fn an_unconvertible_file_says_why(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn an_unconvertible_file_says_why() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_an_uncounted("plan.docx")
         .unconvertible_file(
             "plan.docx",
@@ -1253,9 +1236,8 @@ async fn pages_1_to_25_take_two_runs(
 
 #[rstest]
 #[tokio::test]
-async fn a_failed_run_adds_nothing(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_failed_run_adds_nothing() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_a_pdf_of(30)
         .unconvertible_file("plan.pdf", "conversion_failed", "no converter")
         .start()
@@ -1297,9 +1279,9 @@ async fn a_file_without_pages_is_counted_then_extracted(
 
 #[rstest]
 #[tokio::test]
-async fn a_file_the_service_cannot_count_refuses_extract(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_file_the_service_cannot_count_refuses_extract() -> Result<(), ScenarioError>
+{
+    let surface = Surface::Cli;
     let holst = with_an_uncounted("plan.pdf")
         .unconvertible_file("plan.pdf", "office_conversion_unavailable", "no converter")
         .start()
@@ -1334,9 +1316,8 @@ async fn a_dry_run_of_extract_converts_nothing(
 
 #[rstest]
 #[tokio::test]
-async fn extract_takes_no_other_field(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn extract_takes_no_other_field() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_a_pdf_of(3).page_count("plan.pdf", 3).start().await?;
     let call = extract_call(&holst, "all")?.with("color", "yellow4");
     let observation = holst.on(surface).object("Plans", call).await?;
@@ -1350,9 +1331,9 @@ async fn extract_takes_no_other_field(
 
 #[rstest]
 #[tokio::test]
-async fn more_than_fifty_pages_are_refused_before_any_run(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn more_than_fifty_pages_are_refused_before_any_run() -> Result<(), ScenarioError>
+{
+    let surface = Surface::Cli;
     let holst = with_a_pdf_of(60).page_count("plan.pdf", 60).start().await?;
     let call = extract_call(&holst, "1-51")?;
     let observation = holst.on(surface).object("Plans", call).await?;

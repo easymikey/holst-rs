@@ -36,10 +36,11 @@ pub(super) async fn show(
     run_signed_in(run, async |client| {
         let shown = show::show(client, run.cache(), &args).await?;
         output::print(format, &shown_text(&shown), &shown)?;
-        shown
-            .missing
-            .iter()
-            .for_each(|gone| output::warn(printable(&gone.reason)));
+        shown.missing.iter().for_each(|gone| {
+            output::warn(printable(
+                &holst_core::error::chained(&gone.reason).to_string(),
+            ));
+        });
         shown
             .missing
             .first()

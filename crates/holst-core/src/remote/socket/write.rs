@@ -28,7 +28,7 @@ use crate::{
         Error,
         Result,
         board_change::BoardChangeError,
-        board_socket::BoardSocketError,
+        board_socket::{BoardSocketError, FrameFault},
         http::HttpError,
     },
     protocol::{
@@ -328,7 +328,7 @@ fn acked_by(
         })),
         hud::SocketMessage::Unknown { .. } => {
             Err(Error::BoardSocket(BoardSocketError::MalformedFrame {
-                what: "an unknown message type",
+                what: FrameFault::UnknownMessageType,
             }))
         }
         hud::SocketMessage::Response(DocumentResponse::Subscribed { .. })

@@ -26,7 +26,7 @@ use crate::{
     error::{
         Result,
         confirmation::{ChangeRisk, Unconfirmed},
-        http::HttpError,
+        http::{HttpError, ReplyBody},
         input::InputError,
         lookup::{Candidate, Candidates},
     },
@@ -312,7 +312,7 @@ impl Plan {
 }
 
 /// What came of one part: its reply, or why it failed; a part fails alone.
-#[derive(Debug, PartialEq, Eq, Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum PartRead {
     Members(Vec<Member>),
@@ -320,7 +320,8 @@ pub enum PartRead {
     Plan(Plan),
     Found(Value),
     NotRead {
-        error: String,
+        #[serde(serialize_with = "crate::error::serialize_chained")]
+        error: crate::Error,
     },
     /// The plan is only read for those who manage the licence.
     NeedsAdmin {
@@ -333,7 +334,7 @@ pub enum PartRead {
 }
 
 /// A workspace with the parts asked for; a guest's nulls are left out.
-#[derive(Debug, PartialEq, Eq, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct WorkspaceBrief {
     pub id: String,
     pub name: String,
@@ -493,9 +494,7 @@ pub async fn show(client: &Client, args: &ShowArgs) -> Result<WorkspaceBrief> {
                             error: "needs admin rights",
                         }
                     } else {
-                        PartRead::NotRead {
-                            error: error.to_string(),
-                        }
+                        PartRead::NotRead { error }
                     }
                 })
             }))
@@ -506,8 +505,11 @@ pub async fn show(client: &Client, args: &ShowArgs) -> Result<WorkspaceBrief> {
 fn refuses_licence_management(error: &crate::Error) -> bool {
     matches!(
         error,
-        crate::Error::Http(HttpError::Status { status: 403, detail, .. })
-            if serde_json::from_str::<Value>(detail)
+        crate::Error::Http(HttpError::Status {
+            status: 403,
+            body: ReplyBody::Text(detail),
+            ..
+        }) if serde_json::from_str::<Value>(detail)
                 .is_ok_and(|body| body.get("errCode") == Some(&json!("can-not-manage-license")))
     )
 }

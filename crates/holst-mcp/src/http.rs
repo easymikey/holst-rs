@@ -5,7 +5,7 @@
 use std::{
     convert::Infallible,
     io,
-    net::{AddrParseError, SocketAddr},
+    net::SocketAddr,
     path::Path,
     sync::Arc,
     time::Duration,
@@ -37,7 +37,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 use tokio::net::TcpListener;
 
-use crate::{server::McpServer, setup::SERVER};
+use crate::{error::HttpError, server::McpServer, setup::SERVER};
 
 /// The variable that hands the token to the server instead of the file.
 pub(crate) const TOKEN_VAR: &str = "HOLST_MCP_TOKEN";
@@ -50,58 +50,10 @@ const HOST_NAMES: [&str; 2] = ["host.docker.internal", "host.lima.internal"];
 const PATH: &str = "/mcp";
 
 /// The shortest token the variable may hold; the generated one has 43.
-const MIN_TOKEN_CHARS: usize = 32;
+pub(crate) const MIN_TOKEN_CHARS: usize = 32;
 
 /// The pause after a failed accept, such as a process out of file handles.
 const ACCEPT_PAUSE: Duration = Duration::from_millis(100);
-
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum HttpError {
-    #[error("--http needs an address to listen on, like 127.0.0.1:8808")]
-    MissingAddr,
-
-    #[error("{text} is not an address to listen on, like 127.0.0.1:8808")]
-    BadAddr {
-        text: String,
-        #[source]
-        source: AddrParseError,
-    },
-
-    #[error("unknown argument {arg}: after --http come an address and --print-config")]
-    UnknownArg { arg: String },
-
-    #[error(
-        "{addr} is not a loopback address and there is no token yet: set \
-         {TOKEN_VAR}, or run holst-mcp --http 127.0.0.1:<port> --print-config \
-         once to create {TOKEN_FILE}"
-    )]
-    NoToken { addr: SocketAddr },
-
-    #[error(
-        "{TOKEN_VAR} is shorter than {MIN_TOKEN_CHARS} characters: set a longer \
-         secret, or unset it to use the token file"
-    )]
-    ShortToken,
-
-    #[error("there is no place for the token file: set HOLST_HOME")]
-    NoTokenPlace,
-
-    #[error("could not read the token file")]
-    TokenRead(#[source] holst_core::Error),
-
-    #[error("could not write the token file")]
-    TokenWrite(#[source] holst_core::Error),
-
-    #[error("the system has no random bytes for a token")]
-    Random(#[source] getrandom::Error),
-
-    #[error("could not listen on {addr}")]
-    Bind {
-        addr: SocketAddr,
-        #[source]
-        source: io::Error,
-    },
-}
 
 /// What follows `--http` on the command line.
 #[derive(Debug, PartialEq, Eq)]

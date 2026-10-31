@@ -143,30 +143,24 @@ impl FromStr for Color {
     fn from_str(raw: &str) -> Result<Self> {
         let token = raw.trim().to_ascii_lowercase();
         hex(&token).ok_or_else(|| {
-            Error::BoardChange(BoardChangeError::NotColor {
-                raw: raw.into(),
-                expected: expected(&token),
+            let raw = raw.into();
+            Error::BoardChange(match family_of(&token) {
+                Some(family) => BoardChangeError::NotShade { raw, family },
+                None => BoardChangeError::NotColor { raw },
             })
         })?;
         Ok(Self(token))
     }
 }
 
-/// What a refused token should have been: the tokens of its family when its
-/// name is a color's.
-fn expected(token: &str) -> String {
+/// The color family a refused token names, when its name is a color's.
+fn family_of(token: &str) -> Option<&'static str> {
     let name = token.trim_end_matches(|c: char| c.is_ascii_digit());
     SHADES
         .binary_search_by(|(known, _)| known.cmp(&name))
         .ok()
-        .map_or_else(
-            || "a name and a shade 1-12, e.g. yellow4".to_owned(),
-            |_| {
-                let family: Vec<String> =
-                    (1..=12).map(|shade| format!("{name}{shade}")).collect();
-                format!("one of {}", family.join(", "))
-            },
-        )
+        .and_then(|at| SHADES.get(at))
+        .map(|(family, _)| *family)
 }
 
 impl fmt::Display for Color {

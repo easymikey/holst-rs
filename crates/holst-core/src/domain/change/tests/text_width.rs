@@ -11,7 +11,11 @@ use crate::{
         id_source::SequentialIds,
         rich_text::TextFormat,
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{
+        Error,
+        Result,
+        board_change::{BoardChangeError, ObjectField},
+    },
 };
 
 fn board_with(new: NewObject) -> Result<Doc> {
@@ -96,7 +100,7 @@ fn only_a_text_has_a_width() -> Result<()> {
     assert!(matches!(
         refused,
         Err(Error::BoardChange(BoardChangeError::NotChangeable {
-            field: "width",
+            field: ObjectField::Width,
             ..
         }))
     ));

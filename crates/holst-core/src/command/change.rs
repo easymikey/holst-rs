@@ -213,7 +213,7 @@ pub(in crate::command) fn gate<P: 'static>(
     ) {
         (Err(refusal), _) => Err(ChangeReport::Held {
             request: plan(),
-            needs: refusal.needs(),
+            needs: refusal.to_string(),
             refusal,
         }),
         (Ok(()), WriteMode::DryRun) => Err(ChangeReport::DryRun { request: plan() }),

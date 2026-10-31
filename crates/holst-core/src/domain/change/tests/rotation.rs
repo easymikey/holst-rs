@@ -16,7 +16,11 @@ use crate::{
         id_source::SequentialIds,
         time::Timestamp,
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{
+        Error,
+        Result,
+        board_change::{BoardChangeError, ObjectField},
+    },
 };
 
 fn turn(document: &Doc, degrees: f64) -> Result<()> {
@@ -61,7 +65,7 @@ fn pose(document: &Doc) -> Value {
     json!([turned(&fields), round("x"), round("y")])
 }
 
-fn refusal(kind: &str) -> Option<&'static str> {
+fn refusal(kind: &str) -> Option<ObjectField> {
     let id = "00000000-0000-4000-8000-000000000001";
     let patch = ObjectPatch {
         rotation: Some(30.0),
@@ -168,18 +172,18 @@ fn a_turn_with_a_size_turns_about_the_centre_of_the_new_size() -> Result<()> {
 }
 
 #[rstest]
-#[case::table("table", Some("rotation"))]
-#[case::table_cell("table-cell", Some("rotation"))]
-#[case::frame("frame", Some("rotation"))]
-#[case::group("group", Some("rotation"))]
-#[case::arrow("arrow", Some("rotation"))]
+#[case::table("table", Some(ObjectField::Rotation))]
+#[case::table_cell("table-cell", Some(ObjectField::Rotation))]
+#[case::frame("frame", Some(ObjectField::Rotation))]
+#[case::group("group", Some(ObjectField::Rotation))]
+#[case::arrow("arrow", Some(ObjectField::Rotation))]
 #[case::sticker("sticker", None)]
 #[case::shape("shape", None)]
 #[case::text("simple-text", None)]
 #[case::image("image", None)]
 fn only_what_can_turn_takes_a_rotation(
     #[case] kind: &str,
-    #[case] refused: Option<&'static str>,
+    #[case] refused: Option<ObjectField>,
 ) {
     assert_eq!(refusal(kind), refused);
 }

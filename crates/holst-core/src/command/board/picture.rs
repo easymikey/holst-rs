@@ -595,7 +595,7 @@ async fn save_originals(
                     Some(object) => stored_file::original(&client, object).await,
                     None => Err(Error::StoredFile(StoredFileError::NoFile {
                         object: object_id,
-                        kind: "object".to_owned(),
+                        kind: ObjectKind::File,
                     })),
                 }
             }

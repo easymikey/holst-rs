@@ -241,7 +241,11 @@ mod tests {
             object::get::{deliver, downloaded, save_each},
         },
         domain::board::{Object, object_of},
-        error::{Error, http::HttpError, stored_file::StoredFileError},
+        error::{
+            Error,
+            http::{HttpError, HttpMethod, ReplyBody},
+            stored_file::StoredFileError,
+        },
         remote::client::fake::{on_fake, stored},
     };
 
@@ -315,10 +319,10 @@ mod tests {
     fn storage_answer(object: &Object) -> Result<Vec<u8>> {
         if object.id == "i3" {
             Err(Error::Http(HttpError::Status {
-                method: "GET",
+                method: HttpMethod::Get,
                 path: "/storage/i3.png".to_owned(),
                 status: 404,
-                detail: String::new(),
+                body: ReplyBody::Empty,
             }))
         } else {
             Ok(object.id.clone().into_bytes())

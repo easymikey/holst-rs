@@ -187,7 +187,7 @@ pub(crate) fn answered(
 pub(crate) fn put<T: Terminal>(form: &Form<T>, question: Question) -> Result<Answer> {
     match question {
         Question::Confirm(needs) => form
-            .confirm(&format!("{}? (y/N)", needs.needs()), false)
+            .confirm(&format!("{needs}? (y/N)"), false)
             .map_err(Error::from)
             .and_then(|yes| {
                 yes.then_some(Answer::Confirmed)

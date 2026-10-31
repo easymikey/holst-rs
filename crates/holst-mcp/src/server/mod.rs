@@ -383,12 +383,12 @@ impl McpServer {
             .login
             .save(session.clone(), ready.store)
             .await
-            .inspect_err(|err| tracing::warn!(%err, "could not save rotated cookies"))
+            .inspect_err(|err| tracing::warn!(err = %holst_core::error::chained(err), "could not save rotated cookies"))
             .ok()
             .map(|saved| {
                 tracing::debug!(store = saved.store.as_str(), "saved rotated cookies");
                 saved.stale.iter().for_each(|stale| {
-                    let hint = stale.hint().map(|hint| hint.on(Surface::Mcp).to_string());
+                    let hint = stale.hint().map(|hint| hint.text(Surface::Mcp).to_string());
                     tracing::warn!(%stale, ?hint, "saved rotated cookies behind an older login");
                 });
                 client.confirm_saved(&session);

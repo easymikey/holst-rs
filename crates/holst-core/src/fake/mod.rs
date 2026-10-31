@@ -46,7 +46,7 @@ pub use crate::fake::{
     comment::{FixtureThread, ThreadAnchor, ThreadMessage},
     files::{Upload, png},
     fixture::{Fixture, FixtureError},
-    helpers::{assert_none, candidates},
+    helpers::{assert_none, candidates, http_status},
     login::LOGIN_CODE,
     tree::ListedNode,
     workspace::WorkspaceRole,

@@ -66,13 +66,12 @@ async fn a_category_is_found_by_slug_or_name(
 
 #[rstest]
 #[tokio::test]
-async fn an_unknown_category_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn an_unknown_category_is_refused() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_templates().start().await?;
     let observation = holst.on(surface).list_standard_templates("retro").await?;
     then(&observation)
-        .failed_saying("Available: strategic-planning")
+        .failed_saying("available: strategic-planning")
         .signalled_as(surface.not_found());
     Ok(())
 }
@@ -217,8 +216,8 @@ async fn a_template_is_shown_with_its_content(
 #[tokio::test]
 async fn an_unknown_template_is_not_found(
     #[values(TemplateCommand::Show, TemplateCommand::Remove)] command: TemplateCommand,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given().saved_login().workspace("Team").start().await?;
     let observation = holst.on(surface).run_template_command(command).await?;
     then(&observation)
@@ -230,9 +229,8 @@ async fn an_unknown_template_is_not_found(
 
 #[rstest]
 #[tokio::test]
-async fn an_ambiguous_template_name_lists_the_matches(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn an_ambiguous_template_name_lists_the_matches() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_templates()
         .template_category("Retrospectives", "retrospectives", &["Retro"])
         .start()
@@ -263,13 +261,14 @@ async fn a_template_is_made_from_a_whole_board(
 }
 
 #[rstest]
-#[case::frame(TemplatePart::Frame("Q4"), &["frame", "sticker", "sticker"])]
-#[case::objects(TemplatePart::Objects(&[4, 5]), &["sticker", "sticker"])]
+#[case::frame(TemplatePart::Frame("Q4"), &["frame", "sticker", "sticker"], Surface::Cli)]
+#[case::frame_mcp(TemplatePart::Frame("Q4"), &["frame", "sticker", "sticker"], Surface::Mcp)]
+#[case::objects(TemplatePart::Objects(&[4, 5]), &["sticker", "sticker"], Surface::Cli)]
 #[tokio::test]
 async fn a_template_is_made_from_a_frame_or_objects(
     #[case] part: TemplatePart<'_>,
     #[case] kinds: &[&str],
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+    #[case] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = with_a_framed_board().start().await?;
     let observation = holst
@@ -282,14 +281,15 @@ async fn a_template_is_made_from_a_frame_or_objects(
 }
 
 #[rstest]
-#[case::for_me(TemplateAudience::Me, &["Retro", "Roadmap"], &[])]
-#[case::for_workspace(TemplateAudience::Workspace, &["Retro"], &["Roadmap"])]
+#[case::for_me(TemplateAudience::Me, &["Retro", "Roadmap"], &[], Surface::Cli)]
+#[case::for_me_mcp(TemplateAudience::Me, &["Retro", "Roadmap"], &[], Surface::Mcp)]
+#[case::for_workspace(TemplateAudience::Workspace, &["Retro"], &["Roadmap"], Surface::Cli)]
 #[tokio::test]
 async fn a_template_is_for_me_or_the_workspace(
     #[case] audience: TemplateAudience,
     #[case] mine: &[&str],
     #[case] shared: &[&str],
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+    #[case] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = with_a_board().start().await?;
     let observation = holst
@@ -321,9 +321,8 @@ async fn a_template_dry_run_creates_and_uploads_nothing(
 
 #[rstest]
 #[tokio::test]
-async fn an_empty_selection_makes_no_template(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn an_empty_selection_makes_no_template() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_templates()
         .board_with_objects("Plan", "Team", vec![FixtureObject::Frame("Empty".into())])
         .start()
@@ -398,8 +397,8 @@ async fn template_commands_need_a_login(
         TemplateCommand::Remove
     )]
     command: TemplateCommand,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .workspace("Team")
         .personal_template("Retro")

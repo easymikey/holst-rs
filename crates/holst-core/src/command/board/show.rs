@@ -52,10 +52,11 @@ pub struct Briefs {
     pub missing: Vec<Missing>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct Missing {
     pub reference: String,
-    pub reason: String,
+    #[serde(serialize_with = "crate::error::serialize_chained")]
+    pub reason: Error,
 }
 
 /// One board, or the part of it a selection or a link names.
@@ -153,20 +154,20 @@ async fn shown(
         .partition_result();
     let (gone, fatal): (Vec<_>, Vec<_>) =
         failed.into_iter().partition(|(_, error)| is_missing(error));
-    let missing = gone
-        .iter()
-        .map(|(reference, error)| Missing {
-            reference: (*reference).clone(),
-            reason: error.to_string(),
-        })
-        .collect();
-    match (
-        fatal.into_iter().next(),
-        boards.is_empty(),
-        gone.into_iter().next(),
-    ) {
+    let mut gone = gone.into_iter();
+    match (fatal.into_iter().next(), boards.is_empty(), gone.next()) {
         (Some((_, error)), _, _) | (None, true, Some((_, error))) => Err(error),
-        (None, _, _) => Ok(Briefs { boards, missing }),
+        (None, _, first) => Ok(Briefs {
+            boards,
+            missing: first
+                .into_iter()
+                .chain(gone)
+                .map(|(reference, reason)| Missing {
+                    reference: reference.to_owned(),
+                    reason,
+                })
+                .collect(),
+        }),
     }
 }
 
@@ -448,11 +449,11 @@ mod tests {
         let wrong =
             arguments::<ShowArgs>(json!({ "board": 7, "padding": "wide" })).err();
         assert_eq!(
-            wrong.map(|error| error.to_string()),
-            Some(
-                "2 problems:\n  - board of `board show` must be text or a list of them\n  - padding of `board show` must be a number"
-                    .to_owned()
-            )
+            wrong.map(|error| error.problem_texts()),
+            Some(vec![
+                "board of `board show` must be text or a list of them".to_owned(),
+                "padding of `board show` must be a number".to_owned()
+            ])
         );
         Ok(())
     }

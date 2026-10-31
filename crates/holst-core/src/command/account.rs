@@ -53,7 +53,7 @@ pub async fn check(client: &Client) -> SessionCheck {
 pub async fn known_account_id(client: &Client) -> Option<String> {
     account_id(client)
         .await
-        .inspect_err(|err| tracing::debug!(%err, "board cache: the account is unknown"))
+        .inspect_err(|err| tracing::debug!(err = %crate::error::chained(err), "board cache: the account is unknown"))
         .ok()
 }
 

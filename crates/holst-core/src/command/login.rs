@@ -12,7 +12,7 @@ use crate::{
 /// time by `clock` and numbering new objects by `ids`.
 ///
 /// # Errors
-/// [`crate::error::http::HttpError::Transport`] if the HTTP client cannot be
+/// [`crate::error::http::HttpError::Build`] if the HTTP client cannot be
 /// built.
 pub fn connect(
     session: Option<Session>,

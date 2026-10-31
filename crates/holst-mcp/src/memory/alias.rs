@@ -81,15 +81,6 @@ pub(crate) fn alias_text(text: &str, mut alias: impl FnMut(&str) -> String) -> S
     out + text.get(copied..).unwrap_or_default()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error(
-    "{alias} is not from this session (did the server restart?): take an @N from a fresh \
-     search or list"
-)]
-pub(crate) struct UnknownAlias {
-    pub(crate) alias: String,
-}
-
 pub(crate) fn expand_json<E>(
     value: &mut Value,
     expand: &impl Fn(&str) -> Result<String, E>,

@@ -38,7 +38,7 @@ use crate::{
     error::{
         Error,
         Result,
-        http::HttpError,
+        http::{HttpError, ReplyBody},
         input::InputError,
         login::LoginError,
         lookup,
@@ -123,7 +123,7 @@ const EASY_DESIGN: &[(&str, &str)] = &[("w1", "easy"), ("w2", "Design team")];
 #[case::unknown_lists_existing(
         &[("w1", "easy")],
         Some("nope"),
-        fails("workspace \"nope\" not found. Available: easy (w1)")
+        fails("workspace \"nope\" not found; available: easy (w1)")
     )]
 fn workspace_cases(
     #[case] all: &[(&str, &str)],
@@ -163,12 +163,7 @@ fn candidates_ignore_words_in_any_order(
 }
 
 fn api_error(status: u16) -> Error {
-    Error::Http(HttpError::Status {
-        method: "GET",
-        path: "/t".into(),
-        status,
-        detail: String::new(),
-    })
+    Error::Http(crate::fake::http_status(status, ReplyBody::Empty))
 }
 
 fn board(
@@ -351,11 +346,10 @@ fn root_is_ambiguous_beside_a_folder_called_root() -> Result<()> {
             .contains("Root (00000001-0000-4000-8000-0000000000f1)"),
         "{both:?}"
     );
-    let text = both
-        .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
-    assert!(text.contains("give / or no folder"), "{text}");
+    assert_eq!(
+        both.err().and_then(|error| error.hint()),
+        Some(crate::error::hint::Hint::NameRootOrFolder)
+    );
     Ok(())
 }
 

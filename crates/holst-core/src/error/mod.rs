@@ -13,12 +13,13 @@ pub mod lookup;
 pub mod picture;
 pub mod stored_file;
 
-use std::error::Error as StdError;
+use std::{error::Error as StdError, fmt::Display};
+
+use holst_macros::Hint;
 
 use self::{
     board_change::BoardChangeError,
     board_socket::{BoardSocketError, SocketErrorCode},
-    hint::{Hint, Surface},
     http::HttpError,
     input::InputError,
     local_data::LocalDataError,
@@ -29,33 +30,58 @@ use self::{
 };
 
 /// An error from the Holst API or from the local side of a call, by domain.
-#[derive(Debug, thiserror::Error)]
+///
+/// `hint()` is what the person can do about it, when the core knows; each
+/// domain decides.
+///
+/// ```
+/// use holst_core::{
+///     Error,
+///     error::{hint::Hint, input::InputError, login::LoginError},
+/// };
+///
+/// assert_eq!(
+///     Error::from(LoginError::SessionRevoked).hint(),
+///     Some(Hint::LoginAgain)
+/// );
+/// assert_eq!(Error::from(InputError::FullUrl).hint(), None);
+/// ```
+#[derive(Debug, thiserror::Error, Hint)]
 pub enum Error {
     #[error(transparent)]
+    #[hint(forward)]
     Login(#[from] LoginError),
 
     #[error(transparent)]
+    #[hint(forward)]
     Http(#[from] HttpError),
 
     #[error(transparent)]
+    #[hint(forward)]
     Input(#[from] InputError),
 
     #[error(transparent)]
+    #[hint(forward)]
     LocalData(#[from] LocalDataError),
 
     #[error(transparent)]
+    #[hint(forward)]
     Lookup(#[from] LookupError),
 
     #[error(transparent)]
+    #[hint(forward)]
     BoardSocket(#[from] BoardSocketError),
 
     #[error(transparent)]
+    #[hint(forward)]
     BoardChange(#[from] BoardChangeError),
 
     #[error(transparent)]
+    #[hint(forward)]
     Picture(#[from] PictureError),
 
     #[error(transparent)]
+    #[hint(forward)]
     StoredFile(#[from] StoredFileError),
 }
 
@@ -168,75 +194,6 @@ impl Error {
         )
     }
 
-    /// What the person can do about it, when the core knows; each domain
-    /// decides.
-    ///
-    /// ```
-    /// use holst_core::{
-    ///     Error,
-    ///     error::{hint::Hint, input::InputError, login::LoginError},
-    /// };
-    ///
-    /// assert_eq!(
-    ///     Error::from(LoginError::SessionRevoked).hint(),
-    ///     Some(Hint::LoginAgain)
-    /// );
-    /// assert_eq!(Error::from(InputError::FullUrl).hint(), None);
-    /// ```
-    #[must_use]
-    pub fn hint(&self) -> Option<Hint> {
-        match self {
-            Error::Login(err) => err.hint(),
-            Error::Http(err) => err.hint(),
-            Error::Input(err) => err.hint(),
-            Error::LocalData(err) => err.hint(),
-            Error::Lookup(err) => err.hint(),
-            Error::BoardSocket(err) => err.hint(),
-            Error::BoardChange(err) => err.hint(),
-            Error::Picture(err) => err.hint(),
-            Error::StoredFile(err) => err.hint(),
-        }
-    }
-
-    /// The message in the words of `surface`: flags or parameters.
-    ///
-    /// ```
-    /// use std::path::PathBuf;
-    ///
-    /// use holst_core::{
-    ///     Error,
-    ///     error::{hint::Surface, local_data::LocalDataError},
-    /// };
-    ///
-    /// let err = Error::from(LocalDataError::PlainGz {
-    ///     path: PathBuf::from("b.gz"),
-    /// });
-    /// assert!(err.on(Surface::Cli).contains("--no-compress"));
-    /// assert!(err.on(Surface::Mcp).contains("no_compress: true"));
-    /// ```
-    #[must_use]
-    pub fn on(&self, surface: Surface) -> String {
-        match surface {
-            Surface::Cli => None,
-            Surface::Mcp => self.mcp_words(),
-        }
-        .unwrap_or_else(|| self.to_string())
-    }
-
-    fn mcp_words(&self) -> Option<String> {
-        match self {
-            Error::Login(_)
-            | Error::Http(_)
-            | Error::Lookup(_)
-            | Error::BoardSocket(_)
-            | Error::StoredFile(_) => None,
-            Error::BoardChange(err) => err.mcp_words(),
-            Error::Picture(err) => err.mcp_words(),
-            Error::LocalData(err) => err.mcp_words(),
-            Error::Input(err) => err.mcp_words(),
-        }
-    }
-
     /// The HTTP status of an [`HttpError::Status`].
     ///
     /// ```
@@ -277,6 +234,36 @@ pub fn chain<'a>(
     chain_unless(err, |_| false)
 }
 
+/// The error and its causes in one line, `a: b: c`, skipping what [`chain`]
+/// skips.
+///
+/// ```
+/// use std::io;
+///
+/// use holst_core::error::chained;
+///
+/// let err = io::Error::from(io::ErrorKind::NotFound);
+/// assert_eq!(chained(&err).to_string(), err.to_string());
+/// ```
+pub fn chained<'a>(error: &'a (dyn StdError + 'static)) -> impl Display + 'a {
+    std::fmt::from_fn(move |f| {
+        write!(f, "{error}")?;
+        chain(error).try_for_each(|cause| write!(f, ": {cause}"))
+    })
+}
+
+/// `serialize_with` for a report field that keeps its [`Error`] and writes
+/// the [`chained`] text.
+///
+/// # Errors
+/// Those of the serializer.
+pub fn serialize_chained<S: serde::Serializer>(
+    error: &Error,
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error> {
+    serializer.collect_str(&chained(error))
+}
+
 /// [`chain`] without the causes `hidden` says are not for the reader.
 pub fn chain_unless<'a>(
     err: &'a (dyn StdError + 'static),
@@ -303,7 +290,7 @@ mod tests {
         Error,
         board_change,
         chain,
-        hint::Surface,
+        chained,
         http,
         input,
         local_data,
@@ -313,46 +300,39 @@ mod tests {
         stored_file,
     };
 
+    fn hinted<E, H>(samples: Vec<(E, H)>) -> impl Iterator<Item = Error>
+    where
+        Error: From<E>,
+    {
+        samples.into_iter().map(|(err, _)| Error::from(err))
+    }
+
     fn all_samples() -> Vec<Error> {
         login::tests::samples()
             .into_iter()
-            .map(|(err, _)| Error::from(err))
-            .chain(
-                http::tests::samples()
-                    .into_iter()
-                    .map(|(err, _)| Error::from(err)),
-            )
-            .chain(
-                input::tests::samples()
-                    .into_iter()
-                    .map(|(err, _)| Error::from(err)),
-            )
-            .chain(
-                local_data::tests::samples()
-                    .into_iter()
-                    .map(|(err, _)| Error::from(err)),
-            )
-            .chain(
-                crate::error::board_socket::tests::samples()
-                    .into_iter()
-                    .map(|(err, _)| Error::from(err)),
-            )
-            .chain(
-                board_change::tests::samples()
-                    .into_iter()
-                    .map(|(err, _)| Error::from(err)),
-            )
+            .map(Error::from)
+            .chain(hinted(http::tests::samples()))
+            .chain(input::tests::samples().into_iter().map(Error::from))
+            .chain(local_data::tests::samples().into_iter().map(Error::from))
+            .chain(hinted(crate::error::board_socket::tests::samples()))
+            .chain(board_change::tests::samples().into_iter().map(Error::from))
             .chain(
                 crate::error::picture::tests::samples()
                     .into_iter()
-                    .map(|(err, _)| Error::from(err)),
+                    .map(Error::from),
             )
-            .chain(
-                stored_file::tests::samples()
-                    .into_iter()
-                    .map(|(err, _)| Error::from(err)),
-            )
+            .chain(stored_file::tests::samples().into_iter().map(Error::from))
             .collect()
+    }
+
+    #[test]
+    fn messages_are_not_empty_and_end_without_a_period() {
+        let bad: Vec<String> = all_samples()
+            .iter()
+            .map(ToString::to_string)
+            .filter(|text| text.is_empty() || text.ends_with('.'))
+            .collect();
+        assert_eq!(bad, Vec::<String>::new());
     }
 
     #[test]
@@ -360,11 +340,18 @@ mod tests {
         let all = all_samples();
         let flagged: Vec<String> = all
             .iter()
-            .filter(|err| err.on(Surface::Mcp).contains("--"))
+            .filter(|err| err.to_string().contains("--"))
             .map(|err| format!("{err:?}"))
             .collect();
-        // `--offline` exists on the command line only.
-        let cli_only = ["NotCached", "CacheOff", "AccountUnknown", "OfflineByName"];
+        // `--offline` exists on the command line only; `PlainGz` names its flag
+        // on both.
+        let cli_only = [
+            "NotCached",
+            "CacheOff",
+            "AccountUnknown",
+            "OfflineByName",
+            "PlainGz",
+        ];
         let reachable: Vec<&String> = flagged
             .iter()
             .filter(|debug| !cli_only.iter().any(|name| debug.contains(name)))
@@ -372,14 +359,6 @@ mod tests {
         assert!(all.len() > 80, "{}", all.len());
         assert_eq!(reachable, Vec::<&String>::new());
         assert_eq!(flagged.len(), cli_only.len(), "{flagged:?}");
-        let words = |err: &Error| (err.on(Surface::Cli), err.on(Surface::Mcp));
-        let differing = all
-            .iter()
-            .map(words)
-            .filter(|(cli, mcp)| cli != mcp)
-            .count();
-        // A list of several, `holst b rm` or its tool.
-        assert_eq!(differing, 8, "the MCP words of a flag message are missing");
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -408,6 +387,18 @@ mod tests {
         assert_eq!(
             chain(&Outer::Repeats(inner())).collect::<Vec<_>>(),
             [not_found]
+        );
+    }
+
+    #[test]
+    fn chained_is_one_line_without_repeats() {
+        assert_eq!(
+            chained(&Outer::Plain(inner())).to_string(),
+            "outside: inside: entity not found"
+        );
+        assert_eq!(
+            chained(&Outer::Repeats(inner())).to_string(),
+            "wrapper: inside: entity not found"
         );
     }
 

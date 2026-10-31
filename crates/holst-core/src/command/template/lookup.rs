@@ -17,7 +17,7 @@ use crate::{
             LookupError,
             LookupKind,
             LookupMiss,
-            SkipReason,
+            SkipWhy,
             Skipped,
             SkippedWorkspaces,
         },
@@ -69,8 +69,7 @@ async fn by_name(client: &Client, reference: &str) -> Result<String> {
             }
             Err(error) => Either::Right(Skipped {
                 workspace: workspace.name,
-                reason: SkipReason::from(&error),
-                status: error.status(),
+                why: SkipWhy::from(&error),
             }),
         });
     everything.extend(read.into_iter().flatten());

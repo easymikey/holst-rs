@@ -182,8 +182,8 @@ impl SavedLogin {
             sessions_error: None,
             tokens: None,
             tokens_error: None,
-            error: Some(err.to_string()),
-            hint: err.hint().map(|hint| hint.on(Surface::Cli).to_string()),
+            error: Some(holst_core::error::chained(err).to_string()),
+            hint: err.hint().map(|hint| hint.text(Surface::Cli).to_string()),
             token: token.clone(),
         };
         match checked {
@@ -223,7 +223,7 @@ fn read<T: Clone>(
 ) -> (Option<Vec<T>>, Option<String>) {
     match part {
         Some(Ok(rows)) => (Some(rows.clone()), None),
-        Some(Err(err)) => (None, Some(err.to_string())),
+        Some(Err(err)) => (None, Some(holst_core::error::chained(err).to_string())),
         None => (None, None),
     }
 }
@@ -363,13 +363,10 @@ mod tests {
     #[expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
     fn status_json_has_every_field_in_every_state() -> holst_core::Result<()> {
         let refused = holst_core::Error::Login(LoginError::SessionRevoked);
-        let down =
-            holst_core::Error::Http(holst_core::error::http::HttpError::Status {
-                method: "GET",
-                path: "/gapi/current_user".into(),
-                status: 503,
-                detail: String::new(),
-            });
+        let down = holst_core::Error::Http(holst_core::fake::http_status(
+            503,
+            holst_core::error::http::ReplyBody::Empty,
+        ));
         let shape = |checked: &StatusReport| {
             serde_json::to_value(SavedLogin::of("file", String::new(), 2, checked)).ok()
         };

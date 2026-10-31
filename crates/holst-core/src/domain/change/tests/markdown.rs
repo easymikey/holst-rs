@@ -24,7 +24,11 @@ use crate::{
         rich_text::{Kept, TextFormat},
         time::Timestamp,
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{
+        Error,
+        Result,
+        board_change::{BoardChangeError, ObjectField},
+    },
 };
 
 /// An element as `type{attributes}[children]`; text in quotes, its marks in
@@ -281,7 +285,7 @@ fn a_frame_title_takes_no_markdown() -> Result<()> {
     assert!(matches!(
         refused,
         Err(Error::BoardChange(BoardChangeError::NotChangeable {
-            field: "text format",
+            field: ObjectField::TextFormat,
             ..
         }))
     ));

@@ -4,6 +4,7 @@ pub(crate) mod change;
 pub(crate) mod compact;
 pub(crate) mod render;
 
+use holst_core::error::input::InputError;
 use rmcp::model::{CallToolResult, ContentBlock};
 
 use crate::error::Error;
@@ -18,18 +19,37 @@ pub(crate) fn error(text: impl Into<String>) -> CallToolResult {
 
 #[must_use]
 pub(crate) fn explain(err: &Error) -> String {
-    let text = holst_core::error::chain(err)
-        .fold(message(err), |text, cause| format!("{text}: {cause}"));
+    let text = said(message(err), err);
     err.advice()
         .map_or_else(|| text.clone(), |hint| format!("{text}\nhint: {hint}"))
 }
 
+/// A core error and its causes in one line, in MCP words.
+#[must_use]
+pub(crate) fn line(err: &holst_core::Error) -> String {
+    said(head(err), err)
+}
+
+/// A core error laid out for one line: the place in a JSON argument after a
+/// comma.
+fn head(err: &holst_core::Error) -> String {
+    if let holst_core::Error::Input(InputError::NotJsonObject { spot, .. }) = err {
+        format!("{err}, at line {}, column {}", spot.line, spot.column)
+    } else {
+        err.to_string()
+    }
+}
+
+fn said(head: String, err: &(dyn std::error::Error + 'static)) -> String {
+    holst_core::error::chain(err).fold(head, |text, cause| format!("{text}: {cause}"))
+}
+
 fn message(err: &Error) -> String {
     match err {
-        Error::Holst(core) => core.on(holst_core::error::hint::Surface::Mcp),
+        Error::Holst(core) => head(core),
         Error::Alias(_)
         | Error::EmptyQuery
-        | Error::NoArgument { .. }
+        | Error::DashPath
         | Error::TooManyItems { .. }
         | Error::NoStdout
         | Error::CliOnly { .. }
@@ -43,22 +63,18 @@ fn message(err: &Error) -> String {
     }
 }
 
-#[must_use]
-pub(crate) fn chained(err: &(dyn std::error::Error + 'static)) -> String {
-    holst_core::error::chain(err)
-        .fold(err.to_string(), |text, cause| format!("{text}: {cause}"))
-}
-
 #[cfg(test)]
 mod tests {
     use holst_core::{
+        command::storage::StorageVerb,
         error::{
             hint::{Hint, Surface},
+            input::InputError,
             lookup::{
                 LookupError,
                 LookupKind,
                 LookupMiss,
-                SkipReason,
+                SkipWhy,
                 Skipped,
                 SkippedWorkspaces,
             },
@@ -67,17 +83,16 @@ mod tests {
     };
     use strum::IntoEnumIterator as _;
 
-    use crate::{error::Error, reply::explain};
+    use crate::{
+        error::Error,
+        reply::{explain, said},
+    };
 
     fn status_error(status: u16) -> Error {
-        Error::Holst(holst_core::Error::Http(
-            holst_core::error::http::HttpError::Status {
-                method: "GET",
-                path: "/gapi/current_user".into(),
-                status,
-                detail: String::new(),
-            },
-        ))
+        Error::Holst(holst_core::Error::Http(holst_core::fake::http_status(
+            status,
+            holst_core::error::http::ReplyBody::Empty,
+        )))
     }
 
     #[rstest::rstest]
@@ -87,7 +102,7 @@ mod tests {
     #[case::down(503)]
     fn hint_follows_the_core(#[case] status: u16) {
         let err = status_error(status);
-        let hint = err.advice().map(|hint| hint.to_string());
+        let hint = err.advice().map(str::to_owned);
         assert!(hint.is_some(), "no hint for {status}");
         assert_eq!(
             explain(&err).lines().last(),
@@ -127,6 +142,66 @@ mod tests {
         );
     }
 
+    #[derive(Debug, thiserror::Error)]
+    #[error("outside")]
+    struct Wrapper(#[source] holst_core::Error);
+
+    #[test]
+    fn a_core_cause_follows_the_head() {
+        let cause = holst_core::Error::LocalData(
+            holst_core::error::local_data::LocalDataError::PlainGz {
+                path: "b.gz".into(),
+            },
+        );
+        let text = said("outside".to_owned(), &Wrapper(cause));
+        assert!(text.starts_with("outside: b.gz ends in .gz"), "{text}");
+        assert!(text.contains("--no-compress"), "{text}");
+        assert!(!text.contains("no_compress"), "{text}");
+    }
+
+    #[test]
+    fn a_json_argument_error_names_its_line_and_column() {
+        let err = Error::Holst(holst_core::Error::Input(InputError::NotJsonObject {
+            command: "template edit".into(),
+            name: "body",
+            spot: holst_core::error::input::JsonSpot {
+                line: 2,
+                column: 5,
+                text: "  x".into(),
+                caret: 4,
+            },
+        }));
+        assert_eq!(
+            explain(&err),
+            "body of `template edit` must be a JSON object, at line 2, column 5"
+        );
+    }
+
+    #[test]
+    fn several_problems_share_one_line() {
+        let err = Error::Holst(holst_core::Error::Input(InputError::Several {
+            errors: vec![
+                holst_core::Error::Input(InputError::FullUrl),
+                holst_core::Error::Input(InputError::RelativePath),
+            ],
+        }));
+        assert_eq!(
+            explain(&err),
+            "2 problems: expected a path, not a full URL: the session is sent only to its own server; the path must start with \"/\", for example /gapi/current_user"
+        );
+    }
+
+    #[test]
+    fn the_how_to_of_an_input_error_is_its_hint() {
+        let err = Error::Holst(holst_core::Error::Input(InputError::LeaveOwnBoard {
+            name: "Plans".into(),
+        }));
+        assert_eq!(
+            explain(&err),
+            "\"Plans\" is your own board, so you cannot leave it\nhint: remove it with board_write action=rm"
+        );
+    }
+
     #[test]
     fn own_errors_have_no_hint_line() {
         assert_eq!(
@@ -152,8 +227,7 @@ mod tests {
                     candidates: candidates(&["@1 a"]),
                     unread: SkippedWorkspaces(vec![Skipped {
                         workspace: "team".into(),
-                        reason: SkipReason::NotRead,
-                        status: Some(500),
+                        why: SkipWhy::Status(500),
                     }]),
                 },
                 LookupMiss::Elsewhere {
@@ -185,7 +259,7 @@ mod tests {
                 ),
             )]);
         let hints: Vec<String> = errors
-            .filter_map(|err| err.advice().map(|hint| hint.to_string()))
+            .filter_map(|err| err.advice().map(str::to_owned))
             .collect();
         let cli: Vec<&String> = hints
             .iter()
@@ -198,7 +272,7 @@ mod tests {
         assert!(hints.len() > 20, "{hints:?}");
         assert_eq!(cli, Vec::<&String>::new());
         let all: Vec<String> = Hint::iter()
-            .map(|hint| hint.on(Surface::Mcp).to_string())
+            .map(|hint| hint.text(Surface::Mcp).to_string())
             .filter(|text| text.contains("holst ") || text.contains("--"))
             .collect();
         assert_eq!(all, Vec::<String>::new());
@@ -233,7 +307,10 @@ mod tests {
             },
         ));
         let text = explain(&plain_gz);
-        assert!(text.contains("no_compress: true"), "{text}");
+        assert!(
+            text.contains("hint: drop .gz from the file name, or drop no_compress"),
+            "{text}"
+        );
         let outside = Error::Holst(holst_core::Error::BoardChange(
             holst_core::error::board_change::BoardChangeError::OutsideFrame {
                 reference: "Plan".into(),
@@ -248,14 +325,14 @@ mod tests {
         ));
         let own = [
             Error::EmptyQuery,
-            Error::NoArgument { what: "board" },
+            Error::DashPath,
             Error::CliOnly {
-                command: "storage ls".into(),
+                command: StorageVerb::Ls.command(),
             },
             Error::NotAFile,
             Error::StoreAborted,
         ];
-        let flagged: Vec<String> = [plain_gz, outside]
+        let flagged: Vec<String> = [outside]
             .into_iter()
             .chain(own)
             .map(|err| explain(&err))

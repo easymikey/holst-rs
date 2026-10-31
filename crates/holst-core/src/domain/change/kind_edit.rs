@@ -30,13 +30,17 @@ use crate::{
         kinds::code::{Language, Theme},
         rich_text::TextFormat,
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{
+        Error,
+        Result,
+        board_change::{BoardChangeError, ObjectField},
+    },
 };
 
 /// The refusal of a field the kind does not have.
-pub(super) fn not_changeable(kind: &ObjectKind, field: &'static str) -> Error {
+pub(super) fn not_changeable(kind: &ObjectKind, field: ObjectField) -> Error {
     Error::BoardChange(BoardChangeError::NotChangeable {
-        kind: kind.as_str().to_owned(),
+        kind: kind.clone(),
         field,
     })
 }
@@ -45,7 +49,7 @@ pub(super) fn not_changeable(kind: &ObjectKind, field: &'static str) -> Error {
 pub(super) fn only(
     kind: &ObjectKind,
     only: &ObjectKind,
-    field: &'static str,
+    field: ObjectField,
 ) -> Result<()> {
     (kind == only)
         .then_some(())
@@ -90,16 +94,16 @@ pub enum KindEdit {
 impl KindEdit {
     /// The word a report and a refusal use, e.g. `status`.
     #[must_use]
-    pub fn field(&self) -> &'static str {
+    pub fn field(&self) -> ObjectField {
         match self {
             Self::Sticker(edit) => edit.field(),
-            Self::Reaction(_) => reaction::FIELD,
-            Self::Roll => chance::ROLL,
-            Self::Faces(_) => chance::FACES,
-            Self::Children(_) => mind_map::CHILDREN,
-            Self::Flip => flipcard::FLIP,
-            Self::Back(..) => flipcard::BACK,
-            Self::Code { .. } => code::CODE,
+            Self::Reaction(_) => ObjectField::Reactions,
+            Self::Roll => ObjectField::Roll,
+            Self::Faces(_) => ObjectField::Faces,
+            Self::Children(_) => ObjectField::Children,
+            Self::Flip => ObjectField::Flip,
+            Self::Back(..) => ObjectField::Back,
+            Self::Code { .. } => ObjectField::Code,
             Self::Table(edit) => edit.field(),
             Self::Task(edit) => edit.field(),
             Self::Card(edit) => edit.field(),
@@ -151,8 +155,8 @@ impl KindEdit {
             Self::Roll => chance::check_roll(kind, states.get(id)),
             Self::Faces(_) => chance::check_faces(kind),
             Self::Children(_) => mind_map::check(kind),
-            Self::Flip => flipcard::check(kind, flipcard::FLIP),
-            Self::Back(..) => flipcard::check(kind, flipcard::BACK),
+            Self::Flip => flipcard::check(kind, ObjectField::Flip),
+            Self::Back(..) => flipcard::check(kind, ObjectField::Back),
             Self::Code { .. } => code::check(kind),
             Self::Table(edit) => table::check(edit, kind, states, id),
             Self::Task(edit) => task::check(edit, kind, states, id),

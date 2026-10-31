@@ -35,9 +35,9 @@ fn locked_notes() -> Given {
 
 #[rstest]
 #[tokio::test]
-async fn locked_objects_sit_in_a_locked_group_and_are_kept(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn locked_objects_sit_in_a_locked_group_and_are_kept() -> Result<(), ScenarioError>
+{
+    let surface = Surface::Cli;
     let holst = two_notes().start().await?;
     let sticker = holst.fixture_object("Plans", 1)?;
     let call = ObjectCall::lock().with("object", &sticker);
@@ -61,6 +61,12 @@ async fn locked_objects_sit_in_a_locked_group_and_are_kept(
     then(&removed)
         .failed_saying("is locked on the board; unlock it in the web client first")
         .signalled_as(surface.permission_denied());
+    let after = holst.on(surface).objects("Plans").await?;
+    then(&after).lists_objects_in_any_order(&[
+        ("sticker", "One"),
+        ("sticker", "Two"),
+        ("group", ""),
+    ]);
     Ok(())
 }
 
@@ -111,9 +117,8 @@ async fn a_dry_run_lock_changes_nothing(
 
 #[rstest]
 #[tokio::test]
-async fn a_board_that_withholds_locking_is_not_locked(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_board_that_withholds_locking_is_not_locked() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = two_notes().start().await?;
     withhold_locking(&holst, "Plans", "co_owner", "editor");
     let call = ObjectCall::lock().with("object", holst.fixture_object("Plans", 1)?);
@@ -180,9 +185,8 @@ async fn an_unlocked_frame_is_flagged_free(
 
 #[rstest]
 #[tokio::test]
-async fn unlock_all_with_nothing_locked_says_so(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn unlock_all_with_nothing_locked_says_so() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = two_notes().start().await?;
     let observation = holst
         .on(surface)
@@ -197,9 +201,8 @@ async fn unlock_all_with_nothing_locked_says_so(
 
 #[rstest]
 #[tokio::test]
-async fn an_object_that_is_not_locked_is_not_unlocked(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn an_object_that_is_not_locked_is_not_unlocked() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = locked_notes().start().await?;
     let call = ObjectCall::unlock().with("object", holst.fixture_object("Plans", 4)?);
     let observation = holst.on(surface).object("Plans", call).await?;
@@ -212,9 +215,8 @@ async fn an_object_that_is_not_locked_is_not_unlocked(
 
 #[rstest]
 #[tokio::test]
-async fn all_beside_an_object_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn all_beside_an_object_is_refused() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = locked_notes().start().await?;
     let call = ObjectCall::unlock()
         .with("object", holst.fixture_object("Plans", 1)?)

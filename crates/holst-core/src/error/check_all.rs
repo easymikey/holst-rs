@@ -58,6 +58,17 @@ impl Error {
         }
     }
 
+    /// The text of each problem: that of the error itself, or of each one a
+    /// list of several holds.
+    #[cfg(test)]
+    pub(crate) fn problem_texts(&self) -> Vec<String> {
+        if let Error::Input(InputError::Several { errors }) = self {
+            errors.iter().map(ToString::to_string).collect()
+        } else {
+            vec![self.to_string()]
+        }
+    }
+
     fn into_errors(self) -> Vec<Error> {
         match self {
             Error::Input(InputError::Several { errors: problems }) => problems,

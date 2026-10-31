@@ -5,7 +5,7 @@ use std::{convert::Infallible, ops::ControlFlow, time::Duration};
 use zeroize::Zeroizing;
 
 use crate::{
-    coloring::Coloring,
+    color_choice::ColorChoice,
     draw::{self, NoteTone, QuestionFooter},
     error::{FormError, Reason, Result},
     line::{Cancellation, Decoder, EditorStep, Keystroke, QuestionKind, TypedAnswer},
@@ -43,7 +43,7 @@ pub struct Question {
 #[derive(Debug)]
 pub struct Form<T: Terminal> {
     terminal: T,
-    coloring: Coloring,
+    color: ColorChoice,
     _quiet: T::QuietTerminal,
 }
 
@@ -52,7 +52,7 @@ impl<T: Terminal> Form<T> {
     pub fn bare(term: T) -> Self {
         Self {
             _quiet: term.quiet(),
-            coloring: Coloring::colored_if(term.has_color()),
+            color: ColorChoice::colored_if(term.has_color()),
             terminal: term,
         }
     }
@@ -62,8 +62,7 @@ impl<T: Terminal> Form<T> {
     pub fn intro(term: T, title: &str) -> Result<Self> {
         let form = Self::bare(term);
         form.write_live(&draw::clear_line())?;
-        form.write(&draw::intro(form.coloring, title))
-            .map(|()| form)
+        form.write(&draw::intro(form.color, title)).map(|()| form)
     }
 
     fn not_interrupted(&self) -> Result<()> {
@@ -169,7 +168,7 @@ impl<T: Terminal> Form<T> {
         match parse(&typed) {
             Ok(value) => self
                 .write(&draw::answered(
-                    self.coloring,
+                    self.color,
                     label,
                     &draw::masked(kind, &typed),
                 ))
@@ -244,9 +243,9 @@ impl<T: Terminal> Form<T> {
 
     fn press_keys<P: Prompt>(&self, label: &str, prompt: P) -> Result<P::Answer> {
         let frame = |shown: &P| {
-            std::iter::once(format!("{}  {label}", self.coloring.cyan("◆")))
-                .chain(shown.view(self.coloring, self.terminal.width()))
-                .chain([self.coloring.cyan("└")])
+            std::iter::once(format!("{}  {label}", self.color.cyan("◆")))
+                .chain(shown.view(self.color, self.terminal.width()))
+                .chain([self.color.cyan("└")])
                 .collect::<Vec<_>>()
         };
         let first = frame(&prompt);
@@ -273,11 +272,7 @@ impl<T: Terminal> Form<T> {
                         Step::Quit(quit) => ControlFlow::Break(
                             self.write(&draw::repaint(drawn, &[]))
                                 .and_then(|()| {
-                                    self.write(&draw::cancelled(
-                                        self.coloring,
-                                        label,
-                                        "",
-                                    ))
+                                    self.write(&draw::cancelled(self.color, label, ""))
                                 })
                                 .and(Err(stopped_by(quit))),
                         ),
@@ -323,14 +318,14 @@ impl<T: Terminal> Form<T> {
     /// # Errors
     /// The terminal failed, or the person stopped the form.
     pub fn step(&self, label: &str, value: &str) -> Result<()> {
-        self.write(&draw::answered(self.coloring, label, value))
+        self.write(&draw::answered(self.color, label, value))
     }
 
     /// # Errors
     /// The terminal failed, or the person stopped the form.
     pub fn write_box(&self, title: &str, lines: &[(NoteTone, String)]) -> Result<()> {
         self.write(&draw::boxed(
-            self.coloring,
+            self.color,
             title,
             lines,
             self.terminal.width(),
@@ -347,7 +342,7 @@ impl<T: Terminal> Form<T> {
         // Listen before the line shows, so an early Ctrl-C reaches this wait.
         let interrupt = self.terminal.interrupt();
         self.not_interrupted()?;
-        self.write_live(&draw::waiting(self.coloring, label))?;
+        self.write_live(&draw::waiting(self.color, label))?;
         let out = signals::or_interrupted(
             async {
                 tokio::select! {
@@ -385,7 +380,7 @@ impl<T: Terminal> Form<T> {
             tokio::time::sleep_until(origin + SPIN_STEP.saturating_mul(frame)).await;
             frames.set(frame.saturating_add(1));
             self.write(&draw::spinning(
-                self.coloring,
+                self.color,
                 label,
                 usize::try_from(frame).unwrap_or_default(),
             ))
@@ -396,13 +391,13 @@ impl<T: Terminal> Form<T> {
     /// # Errors
     /// The terminal failed, or the person stopped the form.
     pub fn outro(&self, message: &str) -> Result<()> {
-        self.write(&draw::outro(self.coloring, message))
+        self.write(&draw::outro(self.color, message))
     }
 
     /// # Errors
     /// The terminal failed, or the person stopped the form.
     pub fn cancel(&self, message: &str, causes: &[String]) -> Result<()> {
-        self.write(&draw::error_outro(self.coloring, message, causes))
+        self.write(&draw::error_outro(self.color, message, causes))
     }
 
     fn read(
@@ -427,11 +422,11 @@ impl<T: Terminal> Form<T> {
     ) -> Result<Zeroizing<String>> {
         let ask = || {
             let first = draw::draw_input(
-                self.coloring,
+                self.color,
                 &TypedAnswer::new(kind),
                 self.terminal.width(),
             );
-            self.write(&draw::active(self.coloring, label, &first, footer))?;
+            self.write(&draw::active(self.color, label, &first, footer))?;
             let typed = self.read_keys(TypedAnswer::new(kind));
             // Drop the unread rest of a paste while the echo is still off.
             self.terminal.discard_typeahead();
@@ -445,7 +440,7 @@ impl<T: Terminal> Form<T> {
                 masked: shown,
                 cancellation: quit,
             } => self
-                .write(&draw::cancelled(self.coloring, label, &shown))
+                .write(&draw::cancelled(self.color, label, &shown))
                 .and(Err(stopped_by(quit))),
         }
     }
@@ -461,15 +456,14 @@ impl<T: Terminal> Form<T> {
                 }) {
                     Ok((decoder, EditorStep::Editing(answer))) => {
                         let redrawn = draw::draw_input(
-                            self.coloring,
+                            self.color,
                             &answer,
                             self.terminal.width(),
                         );
-                        self.write(&draw::update(self.coloring, &redrawn))
-                            .map_or_else(
-                                |error| ControlFlow::Break(Err(error)),
-                                |()| ControlFlow::Continue((answer, decoder)),
-                            )
+                        self.write(&draw::update(self.color, &redrawn)).map_or_else(
+                            |error| ControlFlow::Break(Err(error)),
+                            |()| ControlFlow::Continue((answer, decoder)),
+                        )
                     }
                     Ok((_, EditorStep::Submit(text))) => {
                         ControlFlow::Break(Ok(KeyReadEnd::Typed(text)))
@@ -582,7 +576,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        coloring::Coloring,
+        color_choice::ColorChoice,
         error::{FormError, Reason, Result},
         fake::{Script, screen, without_escapes},
         form::{Form, Question},
@@ -591,17 +585,13 @@ mod tests {
         terminal::TerminalKind,
     };
 
-    const EMPTY: Reason = Reason("this cannot be empty");
-    const NOT_EMAIL: Reason = Reason("enter an address like you@example.com");
-    const WRONG_CODE: Reason = Reason("that code did not match");
-
     fn chars(text: &'static str) -> impl Iterator<Item = Keystroke> {
         text.chars().map(Keystroke::Char)
     }
 
     fn not_empty(text: &str) -> Result<String, Reason> {
         if text.is_empty() {
-            Err(EMPTY)
+            Err(Reason::Empty)
         } else {
             Ok(text.to_owned())
         }
@@ -611,7 +601,7 @@ mod tests {
         if text.contains('@') {
             Ok(text.to_owned())
         } else {
-            Err(NOT_EMAIL)
+            Err(Reason::NotEmail)
         }
     }
 
@@ -702,7 +692,7 @@ mod tests {
                 kind: QuestionKind::LoginCode,
             },
             &not_empty,
-            WRONG_CODE,
+            Reason::WrongCode,
         )?;
         assert_eq!(again, "2");
         let raw = form.terminal().written();
@@ -1062,7 +1052,7 @@ mod tests {
         }
 
         #[expect(clippy::panic, reason = "the prompt breaks on purpose")]
-        fn view(&self, _: Coloring, _: Option<usize>) -> Vec<String> {
+        fn view(&self, _: ColorChoice, _: Option<usize>) -> Vec<String> {
             panic!("the prompt broke")
         }
 
@@ -1099,14 +1089,14 @@ mod tests {
     fn right_code(code: &str) -> Result<(), Reason> {
         match code {
             "123456" => Ok(()),
-            _ => Err(WRONG_CODE),
+            _ => Err(Reason::WrongCode),
         }
     }
 
     #[rstest]
     #[case::second_try_takes(Script::new(TerminalKind::Live, chars("000000").chain([Keystroke::Enter]).chain(chars("123456")).chain([Keystroke::Enter]), []), 3, Ok(()), 1)]
-    #[case::tries_run_out(Script::new(TerminalKind::Live, chars("000000").chain([Keystroke::Enter]).chain(chars("111111")).chain([Keystroke::Enter]), []), 2, Err(WRONG_CODE), 1)]
-    #[case::piped_is_asked_once(Script::new(TerminalKind::Redirected, [], ["000000", "123456"]), 3, Err(WRONG_CODE), 0)]
+    #[case::tries_run_out(Script::new(TerminalKind::Live, chars("000000").chain([Keystroke::Enter]).chain(chars("111111")).chain([Keystroke::Enter]), []), 2, Err(Reason::WrongCode), 1)]
+    #[case::piped_is_asked_once(Script::new(TerminalKind::Redirected, [], ["000000", "123456"]), 3, Err(Reason::WrongCode), 0)]
     #[tokio::test]
     async fn ask_until_asks_again_only_while_it_can(
         #[case] script: Script,
@@ -1120,7 +1110,7 @@ mod tests {
                 CODE,
                 &not_empty,
                 async |code: &String| right_code(code),
-                |_| Some(WRONG_CODE),
+                |_| Some(Reason::WrongCode),
                 tries,
             )
             .await?;

@@ -11,7 +11,7 @@ use crate::{
         board::ObjectKind,
         change::write::{WriteTransaction, object_map},
     },
-    error::Result,
+    error::{Result, board_change::ObjectField},
     protocol::document::{FONT_SIZE, SHOW_AUTHOR},
 };
 
@@ -36,11 +36,11 @@ pub struct StickerEdit {
 }
 
 impl StickerEdit {
-    pub(super) fn field(&self) -> &'static str {
+    pub(super) fn field(&self) -> ObjectField {
         match (self.text_size, self.author) {
-            (Some(_), None) => "text size",
-            (None, Some(_)) => "author",
-            _ => "text size and author",
+            (Some(_), None) => ObjectField::TextSize,
+            (None, Some(_)) => ObjectField::Author,
+            _ => ObjectField::TextSizeAndAuthor,
         }
     }
 
@@ -92,7 +92,11 @@ mod tests {
             id_source::SequentialIds,
             rich_text::TextFormat,
         },
-        error::{Error, Result, board_change::BoardChangeError},
+        error::{
+            Error,
+            Result,
+            board_change::{BoardChangeError, ObjectField},
+        },
     };
 
     fn board_with(new: NewObject) -> Result<Doc> {
@@ -190,7 +194,7 @@ mod tests {
         assert!(matches!(
             refused,
             Err(Error::BoardChange(BoardChangeError::NotChangeable {
-                field: "text size",
+                field: ObjectField::TextSize,
                 ..
             }))
         ));

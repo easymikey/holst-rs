@@ -3,10 +3,12 @@
 use std::{io, path::PathBuf};
 
 use holst_core::{
-    domain::login::Email,
+    command::storage::CleanPlace,
+    domain::{login::Email, session::SessionStoreKind},
     error::{
         confirmation::Unconfirmed,
-        hint::{Advice, LOGIN, Surface},
+        hint::{LOGIN, Surface},
+        input::JsonSpot,
     },
 };
 use holst_form::error::{FormError, Reason};
@@ -69,7 +71,7 @@ pub(crate) enum Error {
     Cancelled,
 
     // The form showed the inner error under its `└`; its exit code is left.
-    #[error("{0}; already shown")]
+    #[error(transparent)]
     Shown(Box<Error>),
 
     #[error("{question}: {reason}")]
@@ -93,18 +95,22 @@ pub(crate) enum Error {
 
     #[error("could not remove the saved login from the {store}")]
     NotForgotten {
-        store: &'static str,
+        store: SessionStoreKind,
         #[source]
         error: holst_core::Error,
     },
 
-    #[error("could not remove {name}: {error}")]
-    NotCleaned { name: String, error: String },
+    #[error("could not remove {place}")]
+    NotCleaned {
+        place: CleanPlace,
+        #[source]
+        error: holst_core::Error,
+    },
 
     #[error("login finished, but the server did not accept the new session")]
     SessionNotAccepted(#[source] holst_core::Error),
 
-    #[error("{}", .0.on(Surface::Cli))]
+    #[error(transparent)]
     Unconfirmed(Unconfirmed),
 
     #[error("\"{item}\" is not key=value: expected key=value, e.g. limit=50")]
@@ -118,7 +124,11 @@ pub(crate) enum Error {
     },
 
     #[error("the items are not a JSON array or JSON lines")]
-    ItemsNotJson(#[source] serde_json::Error),
+    ItemsNotJson {
+        spot: JsonSpot,
+        #[source]
+        error: serde_json::Error,
+    },
 }
 
 pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
@@ -139,32 +149,6 @@ impl From<FormError> for Error {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum InvalidAnswer {
-    NotEmail,
-    Empty,
-    WrongCode,
-    WrongPassword,
-}
-
-impl InvalidAnswer {
-    #[must_use]
-    pub(crate) const fn reason(self) -> Reason {
-        match self {
-            InvalidAnswer::NotEmail => NOT_EMAIL,
-            InvalidAnswer::Empty => EMPTY,
-            InvalidAnswer::WrongCode => WRONG_CODE,
-            InvalidAnswer::WrongPassword => WRONG_PASSWORD,
-        }
-    }
-}
-
-const NOT_EMAIL: Reason = Reason("enter an address like you@example.com");
-const EMPTY: Reason = Reason("this cannot be empty");
-const WRONG_CODE: Reason =
-    Reason("that code did not match — check the latest email and type it again");
-const WRONG_PASSWORD: Reason = Reason("that password did not match — try again");
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
 pub(crate) enum SecretKind {
     #[display("login code")]
@@ -175,10 +159,10 @@ pub(crate) enum SecretKind {
 
 impl SecretKind {
     #[must_use]
-    pub(crate) const fn wrong_answer(self) -> InvalidAnswer {
+    pub(crate) const fn wrong_answer(self) -> Reason {
         match self {
-            SecretKind::Code => InvalidAnswer::WrongCode,
-            SecretKind::Password => InvalidAnswer::WrongPassword,
+            SecretKind::Code => Reason::WrongCode,
+            SecretKind::Password => Reason::WrongPassword,
         }
     }
 }
@@ -186,7 +170,7 @@ impl SecretKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
 pub(crate) enum CommandLineHint {
     #[display("{_0}")]
-    Core(Advice),
+    Core(&'static str),
     #[display("run `{LOGIN}` again and type the code from the new email")]
     NewCode,
     #[display("check the password, or log in with a login code")]
@@ -212,7 +196,7 @@ impl Error {
     #[must_use]
     pub(crate) fn hint(&self) -> Option<CommandLineHint> {
         let core = |hint: holst_core::error::hint::Hint| {
-            CommandLineHint::Core(hint.on(Surface::Cli))
+            CommandLineHint::Core(hint.text(Surface::Cli))
         };
         match self {
             Error::Holst(error)
@@ -250,7 +234,7 @@ impl Error {
             | Error::Shown(_)
             | Error::NoDownloads
             | Error::QueryNoEquals { .. }
-            | Error::ItemsNotJson(_)
+            | Error::ItemsNotJson { .. }
             | Error::BodyFile { .. }
             | Error::NotCleaned { .. } => None,
         }
@@ -260,15 +244,31 @@ impl Error {
 #[cfg(test)]
 mod tests {
     use holst_core::{
+        domain::session::SessionStoreKind,
         error::{
             confirmation::Unconfirmed,
             lookup::{LookupError, LookupKind, LookupMiss},
         },
         fake::candidates,
     };
+    use holst_form::error::Reason;
     use rstest::rstest;
 
-    use crate::error::{Error, InvalidAnswer, SecretKind};
+    use crate::error::{Error, SecretKind};
+
+    #[test]
+    fn not_forgotten_names_the_store() {
+        let error = Error::NotForgotten {
+            store: SessionStoreKind::File,
+            error: holst_core::Error::LocalData(
+                holst_core::error::local_data::LocalDataError::KeychainLocked,
+            ),
+        };
+        assert_eq!(
+            error.to_string(),
+            "could not remove the saved login from the file"
+        );
+    }
 
     fn lookup(what: LookupKind, outcome: LookupMiss) -> Error {
         Error::Holst(holst_core::Error::Lookup(LookupError {
@@ -279,14 +279,10 @@ mod tests {
     }
 
     fn status(code: u16) -> Error {
-        Error::Holst(holst_core::Error::Http(
-            holst_core::error::http::HttpError::Status {
-                method: "GET",
-                path: "/gapi/current_user".into(),
-                status: code,
-                detail: String::new(),
-            },
-        ))
+        Error::Holst(holst_core::Error::Http(holst_core::fake::http_status(
+            code,
+            holst_core::error::http::ReplyBody::Empty,
+        )))
     }
 
     #[rstest]
@@ -332,12 +328,10 @@ mod tests {
     #[test]
     fn rejected_token_hints_by_its_cause() {
         let error = Error::SessionNotAccepted(holst_core::Error::Http(
-            holst_core::error::http::HttpError::Status {
-                method: "GET",
-                path: "/gapi/current_user".into(),
-                status: 401,
-                detail: String::new(),
-            },
+            holst_core::fake::http_status(
+                401,
+                holst_core::error::http::ReplyBody::Empty,
+            ),
         ));
         assert!(
             error
@@ -348,11 +342,8 @@ mod tests {
 
     #[test]
     fn refused_secret_maps_to_its_complaint() {
-        assert_eq!(SecretKind::Code.wrong_answer(), InvalidAnswer::WrongCode);
-        assert_eq!(
-            SecretKind::Password.wrong_answer(),
-            InvalidAnswer::WrongPassword
-        );
+        assert_eq!(SecretKind::Code.wrong_answer(), Reason::WrongCode);
+        assert_eq!(SecretKind::Password.wrong_answer(), Reason::WrongPassword);
         assert_eq!(SecretKind::Code.to_string(), "login code");
     }
 }

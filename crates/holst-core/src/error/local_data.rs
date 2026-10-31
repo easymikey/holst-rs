@@ -3,10 +3,12 @@
 #[cfg(not(target_os = "macos"))] use std::fmt;
 use std::{io, path::PathBuf, time::Duration};
 
-use crate::error::{Error, hint::Hint};
+use holst_macros::Hint;
+
+use crate::{domain::session::SessionStoreKind, error::Error};
 
 /// A file or the login store refused, failed or holds something unexpected.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Hint)]
 #[cfg_attr(test, derive(strum::EnumDiscriminants))]
 #[cfg_attr(test, strum_discriminants(derive(strum::EnumIter, PartialOrd, Ord)))]
 pub enum LocalDataError {
@@ -46,10 +48,8 @@ pub enum LocalDataError {
     #[error("the file unpacks to more than {limit_mib} MiB; refusing to read it")]
     UnpackTooLarge { limit_mib: u64 },
 
-    #[error(
-        "{} ends in .gz, but --no-compress writes plain bytes: drop .gz or the flag",
-        .path.display()
-    )]
+    #[error("{} ends in .gz, but --no-compress writes plain bytes", .path.display())]
+    #[hint(DropGzOrPlain)]
     PlainGz { path: PathBuf },
 
     #[error("{} is a symbolic link; refusing to remove through it", .path.display())]
@@ -59,6 +59,7 @@ pub enum LocalDataError {
     OutsideLocalData { path: PathBuf },
 
     #[error("board {board} is not in the cache, and --offline allows no network")]
+    #[hint(LoadOnline)]
     NotCached { board: String },
 
     #[error(
@@ -69,6 +70,7 @@ pub enum LocalDataError {
     #[error(
         "--offline does not know whose board cache to read: the saved login names no account yet"
     )]
+    #[hint(LoadOnline)]
     AccountUnknown,
 
     #[error("the board cache at {} is busy in another holst process", .path.display())]
@@ -98,6 +100,7 @@ pub enum LocalDataError {
     NoHome,
 
     #[error("the keychain is locked or access was denied")]
+    #[hint(UnlockKeychain)]
     KeychainLocked,
 
     #[error("the saved login at {} is busy in another holst process", .path.display())]
@@ -106,13 +109,15 @@ pub enum LocalDataError {
     #[error(
         "an older login may be left in the {session_store}, which is read before the new one"
     )]
+    #[hint(ReplaceStale)]
     StaleLogin {
-        session_store: &'static str,
+        session_store: SessionStoreKind,
         #[source]
         error: Box<Error>,
     },
 
     #[error("the saved login is corrupted")]
+    #[hint(LoginAgain)]
     SavedLoginCorrupt,
 
     #[error("the saved login changed while this command ran, so it was kept")]
@@ -120,107 +125,22 @@ pub enum LocalDataError {
 
     #[cfg(not(target_os = "macos"))]
     #[error("no Secret Service found (gnome-keyring or KWallet)")]
+    #[hint(UseHome)]
     NoSecretService(#[source] keyring::Error),
 
     #[cfg(not(target_os = "macos"))]
-    #[error("Secret Service failed: {}", platform_cause(.0))]
-    SecretService(keyring::Error),
+    #[error("the Secret Service failed")]
+    #[hint(UseHome)]
+    SecretService(#[source] keyring::Error),
 
     #[cfg(not(target_os = "macos"))]
     #[error("the keychain is unavailable")]
+    #[hint(UnlockKeychain)]
     KeychainUnavailable(#[from] keyring::Error),
 
     #[error(transparent)]
+    #[hint(UnlockKeychain)]
     Keychain(#[from] KeychainError),
-}
-
-impl LocalDataError {
-    #[must_use]
-    pub(super) fn mcp_words(&self) -> Option<String> {
-        match self {
-            LocalDataError::PlainGz { path } => Some(format!(
-                "{} ends in .gz, but no_compress: true writes plain bytes: drop .gz or \
-                 no_compress",
-                path.display()
-            )),
-            #[cfg(not(target_os = "macos"))]
-            LocalDataError::NoSecretService(_)
-            | LocalDataError::SecretService(_)
-            | LocalDataError::KeychainUnavailable(_) => None,
-            // `--offline` is the CLI's only: MCP never reads offline.
-            LocalDataError::NotCached { .. }
-            | LocalDataError::CacheOff
-            | LocalDataError::AccountUnknown
-            | LocalDataError::SavedLoginCorrupt
-            | LocalDataError::KeychainLocked
-            | LocalDataError::Keychain(_)
-            | LocalDataError::StaleLogin { .. }
-            | LocalDataError::NoFileName { .. }
-            | LocalDataError::AlreadyExists { .. }
-            | LocalDataError::FileRead { .. }
-            | LocalDataError::FileWrite { .. }
-            | LocalDataError::FileRemove { .. }
-            | LocalDataError::Pack(_)
-            | LocalDataError::Unpack(_)
-            | LocalDataError::UnpackTooLarge { .. }
-            | LocalDataError::Symlink { .. }
-            | LocalDataError::OutsideLocalData { .. }
-            | LocalDataError::CacheBusy { .. }
-            | LocalDataError::LoginBusy { .. }
-            | LocalDataError::Io(_)
-            | LocalDataError::NotBoardIndex
-            | LocalDataError::IndexVersion { .. }
-            | LocalDataError::IndexCorrupt { .. }
-            | LocalDataError::IndexEncode(_)
-            | LocalDataError::NoHome
-            | LocalDataError::LoginReplaced => None,
-        }
-    }
-
-    /// What to do next, decided for every variant.
-    #[must_use]
-    pub const fn hint(&self) -> Option<Hint> {
-        match self {
-            LocalDataError::SavedLoginCorrupt => Some(Hint::LoginAgain),
-            #[cfg(not(target_os = "macos"))]
-            LocalDataError::KeychainLocked
-            | LocalDataError::KeychainUnavailable(_)
-            | LocalDataError::Keychain(_) => Some(Hint::UnlockKeychain),
-            #[cfg(target_os = "macos")]
-            LocalDataError::KeychainLocked | LocalDataError::Keychain(_) => {
-                Some(Hint::UnlockKeychain)
-            }
-            #[cfg(not(target_os = "macos"))]
-            LocalDataError::NoSecretService(_) | LocalDataError::SecretService(_) => {
-                Some(Hint::UseHome)
-            }
-            LocalDataError::StaleLogin { .. } => Some(Hint::ReplaceStale),
-            LocalDataError::NotCached { .. } | LocalDataError::AccountUnknown => {
-                Some(Hint::LoadOnline)
-            }
-            LocalDataError::NoFileName { .. }
-            | LocalDataError::AlreadyExists { .. }
-            | LocalDataError::FileRead { .. }
-            | LocalDataError::FileWrite { .. }
-            | LocalDataError::FileRemove { .. }
-            | LocalDataError::Pack(_)
-            | LocalDataError::Unpack(_)
-            | LocalDataError::UnpackTooLarge { .. }
-            | LocalDataError::PlainGz { .. }
-            | LocalDataError::Symlink { .. }
-            | LocalDataError::OutsideLocalData { .. }
-            | LocalDataError::CacheOff
-            | LocalDataError::CacheBusy { .. }
-            | LocalDataError::LoginBusy { .. }
-            | LocalDataError::Io(_)
-            | LocalDataError::NotBoardIndex
-            | LocalDataError::IndexVersion { .. }
-            | LocalDataError::IndexCorrupt { .. }
-            | LocalDataError::IndexEncode(_)
-            | LocalDataError::NoHome
-            | LocalDataError::LoginReplaced => None,
-        }
-    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -236,19 +156,27 @@ pub(crate) fn platform_cause(err: &keyring::Error) -> impl fmt::Display + '_ {
 
 #[cfg(test)]
 pub(super) mod tests {
-    use std::path::PathBuf;
+    use std::{path::PathBuf, time::Duration};
 
-    use crate::error::{
-        Error,
-        hint::{Hint, decided::assert_every_variant},
-        local_data::{KeychainError, LocalDataError, LocalDataErrorDiscriminants, io},
+    use crate::{
+        domain::session::SessionStoreKind,
+        error::{
+            Error,
+            hint::decided::assert_all_listed,
+            local_data::{
+                KeychainError,
+                LocalDataError,
+                LocalDataErrorDiscriminants,
+                io,
+            },
+        },
     };
 
     fn io() -> io::Error {
         io::Error::from(io::ErrorKind::NotFound)
     }
 
-    pub(in crate::error) fn samples() -> Vec<(LocalDataError, Option<Hint>)> {
+    pub(in crate::error) fn samples() -> Vec<LocalDataError> {
         file_samples()
             .into_iter()
             .chain(login_samples())
@@ -256,111 +184,111 @@ pub(super) mod tests {
             .collect()
     }
 
-    fn file_samples() -> Vec<(LocalDataError, Option<Hint>)> {
+    fn file_samples() -> Vec<LocalDataError> {
         let path = || PathBuf::from("/x");
         vec![
-            (LocalDataError::NoFileName { path: path() }, None),
-            (LocalDataError::AlreadyExists { path: path() }, None),
-            (
-                LocalDataError::FileRead {
-                    path: path(),
-                    error: io(),
-                },
-                None,
-            ),
-            (
-                LocalDataError::FileWrite {
-                    path: path(),
-                    error: io(),
-                },
-                None,
-            ),
-            (
-                LocalDataError::FileRemove {
-                    path: path(),
-                    error: io(),
-                },
-                None,
-            ),
-            (LocalDataError::Pack(io()), None),
-            (LocalDataError::Unpack(io()), None),
-            (LocalDataError::UnpackTooLarge { limit_mib: 1 }, None),
-            (LocalDataError::PlainGz { path: path() }, None),
-            (LocalDataError::Symlink { path: path() }, None),
-            (LocalDataError::OutsideLocalData { path: path() }, None),
-            (
-                LocalDataError::NotCached { board: "b".into() },
-                Some(Hint::LoadOnline),
-            ),
-            (LocalDataError::CacheOff, None),
-            (LocalDataError::AccountUnknown, Some(Hint::LoadOnline)),
-            (LocalDataError::CacheBusy { path: path() }, None),
-            (LocalDataError::LoginBusy { path: path() }, None),
-            (LocalDataError::Io(io()), None),
+            LocalDataError::NoFileName { path: path() },
+            LocalDataError::AlreadyExists { path: path() },
+            LocalDataError::FileRead {
+                path: path(),
+                error: io(),
+            },
+            LocalDataError::FileWrite {
+                path: path(),
+                error: io(),
+            },
+            LocalDataError::FileRemove {
+                path: path(),
+                error: io(),
+            },
+            LocalDataError::Pack(io()),
+            LocalDataError::Unpack(io()),
+            LocalDataError::UnpackTooLarge { limit_mib: 1 },
+            LocalDataError::PlainGz { path: path() },
+            LocalDataError::Symlink { path: path() },
+            LocalDataError::OutsideLocalData { path: path() },
+            LocalDataError::NotCached { board: "b".into() },
+            LocalDataError::CacheOff,
+            LocalDataError::AccountUnknown,
+            LocalDataError::CacheBusy { path: path() },
+            LocalDataError::LoginBusy { path: path() },
+            LocalDataError::Io(io()),
         ]
     }
 
-    fn login_samples() -> Vec<(LocalDataError, Option<Hint>)> {
+    fn login_samples() -> Vec<LocalDataError> {
         vec![
-            (LocalDataError::NotBoardIndex, None),
-            (
-                LocalDataError::IndexVersion {
-                    found: 9,
-                    supported: 1,
-                },
-                None,
-            ),
-            (LocalDataError::IndexCorrupt { error: None }, None),
-            (
-                LocalDataError::IndexEncode(postcard::Error::SerializeBufferFull),
-                None,
-            ),
-            (LocalDataError::NoHome, None),
-            (LocalDataError::KeychainLocked, Some(Hint::UnlockKeychain)),
-            (
-                LocalDataError::StaleLogin {
-                    session_store: "keychain",
-                    error: Box::new(Error::from(LocalDataError::KeychainLocked)),
-                },
-                Some(Hint::ReplaceStale),
-            ),
-            (LocalDataError::SavedLoginCorrupt, Some(Hint::LoginAgain)),
-            (LocalDataError::LoginReplaced, None),
-            (
-                LocalDataError::Keychain(KeychainError::Cancelled),
-                Some(Hint::UnlockKeychain),
-            ),
+            LocalDataError::NotBoardIndex,
+            LocalDataError::IndexVersion {
+                found: 9,
+                supported: 1,
+            },
+            LocalDataError::IndexCorrupt { error: None },
+            LocalDataError::IndexEncode(postcard::Error::SerializeBufferFull),
+            LocalDataError::NoHome,
+            LocalDataError::KeychainLocked,
+            LocalDataError::StaleLogin {
+                session_store: SessionStoreKind::Keychain,
+                error: Box::new(Error::from(LocalDataError::KeychainLocked)),
+            },
+            LocalDataError::SavedLoginCorrupt,
+            LocalDataError::LoginReplaced,
+            LocalDataError::Keychain(KeychainError::Cancelled),
         ]
     }
 
     #[test]
     fn every_variant_has_a_hint_decision() {
-        assert_every_variant::<_, LocalDataErrorDiscriminants>(
-            samples(),
-            LocalDataError::hint,
+        assert_all_listed::<_, LocalDataErrorDiscriminants>(&samples());
+    }
+
+    #[test]
+    fn a_keychain_timeout_names_its_seconds() {
+        assert_eq!(
+            KeychainError::TimedOut(Duration::from_secs(30)).to_string(),
+            "the keychain did not answer within 30 s; an access dialog may be waiting"
+        );
+    }
+
+    #[test]
+    fn stale_login_names_its_store() {
+        let error = LocalDataError::StaleLogin {
+            session_store: SessionStoreKind::File,
+            error: Box::new(Error::from(LocalDataError::KeychainLocked)),
+        };
+        assert_eq!(
+            error.to_string(),
+            "an older login may be left in the file, which is read before the new one"
         );
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn platform() -> Vec<(LocalDataError, Option<Hint>)> {
+    #[test]
+    fn secret_service_keeps_its_cause_as_the_source() {
+        let error = LocalDataError::SecretService(keyring::Error::NoEntry);
+        assert_eq!(
+            (
+                error.to_string(),
+                std::error::Error::source(&error).map(ToString::to_string)
+            ),
+            (
+                "the Secret Service failed".to_owned(),
+                Some(keyring::Error::NoEntry.to_string())
+            )
+        );
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn platform() -> Vec<LocalDataError> {
         vec![
-            (
-                LocalDataError::NoSecretService(keyring::Error::NoEntry),
-                Some(Hint::UseHome),
-            ),
-            (
-                LocalDataError::SecretService(keyring::Error::NoEntry),
-                Some(Hint::UseHome),
-            ),
-            (
-                LocalDataError::KeychainUnavailable(keyring::Error::NoEntry),
-                Some(Hint::UnlockKeychain),
-            ),
+            LocalDataError::NoSecretService(keyring::Error::NoEntry),
+            LocalDataError::SecretService(keyring::Error::NoEntry),
+            LocalDataError::KeychainUnavailable(keyring::Error::NoEntry),
         ]
     }
 
     #[cfg(target_os = "macos")]
-    fn platform() -> Vec<(LocalDataError, Option<Hint>)> {
+    fn platform() -> Vec<LocalDataError> {
         Vec::new()
     }
 }
@@ -370,18 +298,18 @@ pub(super) mod tests {
 pub enum KeychainError {
     #[error("the keychain is locked")]
     Locked,
-    #[error("Keychain access was denied")]
+    #[error("access to the keychain was denied")]
     Denied,
-    #[error("Keychain access was cancelled")]
+    #[error("access to the keychain was cancelled")]
     Cancelled,
     #[error(
-        "Keychain did not answer within {} s; an access dialog may be waiting",
+        "the keychain did not answer within {} s; an access dialog may be waiting",
         .0.as_secs()
     )]
     TimedOut(Duration),
     #[error("the login is too long for the Keychain: {len} bytes, at most {max}")]
     TooLong { len: usize, max: usize },
-    #[error("a Keychain name or path contains a line break, a NUL or non-UTF-8 bytes")]
+    #[error("a keychain name or path contains a line break, a NUL or non-UTF-8 bytes")]
     BadName,
     #[error("could not run {}", .program.display())]
     Spawn {

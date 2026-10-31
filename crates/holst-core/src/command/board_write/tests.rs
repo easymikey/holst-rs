@@ -33,7 +33,7 @@ use crate::{
         Result,
         board_change::BoardChangeError,
         board_socket::{BoardSocketError, SocketErrorCode},
-        http::HttpError,
+        http::{HttpError, HttpMethod, ReplyBody},
     },
     protocol::{
         hud,
@@ -180,15 +180,10 @@ fn unknown_outcome_cases(
 #[test]
 fn a_failed_upload_is_unknown_only_when_it_may_have_landed() {
     let maybe = Error::Http(HttpError::NoResponse {
-        method: "POST",
+        method: HttpMethod::Post,
         path: UPLOAD_PATH.into(),
     });
-    let refused = Error::Http(HttpError::Status {
-        method: "POST",
-        path: UPLOAD_PATH.into(),
-        status: 413,
-        detail: String::new(),
-    });
+    let refused = Error::Http(crate::fake::http_status(413, ReplyBody::Empty));
     assert!(matches!(
         upload_error(3, maybe),
         Error::BoardChange(BoardChangeError::NotAccepted { update: 3, .. })

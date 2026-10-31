@@ -88,7 +88,7 @@ impl McpServer {
     ) -> Result<Map<String, Value>> {
         match arguments.get_mut("items").and_then(Value::as_array_mut) {
             Some(items) if items.len() > ITEMS_MAX => Err(Error::TooManyItems {
-                command: verb.command().path(),
+                command: verb.command(),
                 max: ITEMS_MAX,
                 given: items.len(),
             }),

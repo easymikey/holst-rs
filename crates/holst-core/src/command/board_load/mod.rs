@@ -615,6 +615,6 @@ fn cached_index(
 
 fn logged(result: Result<()>) {
     result
-        .inspect_err(|err| tracing::debug!(%err, "board cache: not updated"))
+        .inspect_err(|err| tracing::debug!(err = %crate::error::chained(err), "board cache: not updated"))
         .unwrap_or_default();
 }

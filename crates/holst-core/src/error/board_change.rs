@@ -2,9 +2,13 @@
 
 use std::fmt;
 
+use holst_macros::Hint;
 use itertools::Itertools as _;
 
-use crate::error::{Error, hint::Hint};
+use crate::{
+    domain::{board::ObjectKind, change::kind_edit::Track},
+    error::Error,
+};
 
 /// A point on the board, as given.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -79,159 +83,226 @@ fn short(number: f64) -> impl fmt::Display {
 }
 
 /// Why an object cannot go into a group, as the web client's menu refuses it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
 pub enum GroupRefusal {
+    #[display("a frame holds its content itself")]
     Frame,
+    #[display("a mind-map node stays in its map")]
     MindMapNode,
+    #[display("a table cell stays in its table")]
     TableCell,
+    #[display("it is in a group already; ungroup that one first")]
     InGroup,
+    #[display("a card in a kanban column stays in it")]
     InColumn,
 }
 
-impl fmt::Display for GroupRefusal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            GroupRefusal::Frame => "a frame holds its content itself",
-            GroupRefusal::MindMapNode => "a mind-map node stays in its map",
-            GroupRefusal::TableCell => "a table cell stays in its table",
-            GroupRefusal::InGroup => "it is in a group already; ungroup that one first",
-            GroupRefusal::InColumn => "a card in a kanban column stays in it",
-        })
-    }
-}
-
 /// Why an object cannot be locked, as the web client's menu refuses it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
 pub enum LockRefusal {
+    #[display("it is locked already")]
     Held,
+    #[display("only locks frames and tables, nothing else")]
     NotFrameOrTable,
+    #[display("{_0}")]
     Group(GroupRefusal),
 }
 
-impl fmt::Display for LockRefusal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LockRefusal::Held => f.write_str("it is locked already"),
-            LockRefusal::NotFrameOrTable => {
-                f.write_str("only locks frames and tables, nothing else")
-            }
-            LockRefusal::Group(why) => write!(f, "{why}"),
-        }
-    }
+/// Why an object cannot move into or out of a frame.
+#[derive(Debug, Clone, PartialEq, Eq, derive_more::Display)]
+pub enum MoveRefusal {
+    #[display("it follows the objects it joins")]
+    FollowsJoined,
+    #[display("it stands where its members do")]
+    StandsWithMembers,
+    #[display("it is held by a {_0}")]
+    HeldBy(ObjectKind),
+    #[display("the frame lies inside it")]
+    FrameInside,
+}
+
+/// The field of an object an edit asks for, as `object edit` words it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display, strum::IntoStaticStr)]
+#[strum(serialize_all = "lowercase")]
+pub enum ObjectField {
+    Text,
+    #[strum(serialize = "text format")]
+    TextFormat,
+    Position,
+    Size,
+    Color,
+    Width,
+    Checklist,
+    Marks,
+    #[strum(serialize = "text color")]
+    TextColor,
+    #[strum(serialize = "text background")]
+    TextBackground,
+    Rotation,
+    Scale,
+    Tags,
+    #[strum(serialize = "stored fields")]
+    StoredFields,
+    Shape,
+    Stroke,
+    #[strum(serialize = "stroke-width")]
+    StrokeWidth,
+    #[strum(serialize = "stroke-style")]
+    StrokeStyle,
+    Radius,
+    Opacity,
+    Line,
+    Heads,
+    Bend,
+    From,
+    To,
+    Label,
+    Ratio,
+    Background,
+    Content,
+    Name,
+    Crop,
+    Flip,
+    Path,
+    Display,
+    #[strum(serialize = "start_page")]
+    StartPage,
+    #[strum(serialize = "hide_details")]
+    HideDetails,
+    Reactions,
+    Roll,
+    Faces,
+    Children,
+    Back,
+    Code,
+    #[strum(serialize = "cell text")]
+    CellText,
+    #[strum(serialize = "rows and columns")]
+    RowsAndColumns,
+    #[strum(serialize = "merged cells")]
+    MergedCells,
+    #[strum(serialize = "cell content")]
+    CellContent,
+    #[strum(serialize = "cell color")]
+    CellColor,
+    #[strum(serialize = "text size")]
+    TextSize,
+    Author,
+    #[strum(serialize = "text size and author")]
+    TextSizeAndAuthor,
+    Kanban,
+    Column,
+    Swimlane,
+    Status,
+    Start,
+    Due,
+    Description,
+    Assignees,
+}
+
+/// What a file lacks when it refuses a field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
+pub enum FileState {
+    #[display("file without the info to show its content")]
+    NoContentInfo,
+    #[display("file without page info")]
+    NoPageInfo,
+    #[display("file that is not a video")]
+    NotVideo,
+    #[display("video shown as a stamp")]
+    VideoAsStamp,
 }
 
 /// Why a table cannot take an edit, as the web client's menu refuses it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
 pub enum TableRefusal {
-    OutOfRange {
-        track: &'static str,
-        at: u32,
-        most: usize,
-    },
+    #[display("{track} {at} is not in the table: use 1 to {most}")]
+    OutOfRange { track: Track, at: u32, most: usize },
+    #[display("a table holds at most 2500 cells")]
     TooBig,
-    MergedAcross {
-        track: &'static str,
-        at: u32,
-    },
-    MergedBetween {
-        track: &'static str,
-        at: u32,
-    },
-    LastTrack {
-        track: &'static str,
-        at: u32,
-    },
+    #[display(
+        "a merged block crosses {track} {at}: unmerge it in the web client first"
+    )]
+    MergedAcross { track: Track, at: u32 },
+    #[display(
+        "a merged block crosses the place of new {track} {at}: unmerge it in the web client first"
+    )]
+    MergedBetween { track: Track, at: u32 },
+    #[display("{track} {at} is the last {track}: remove the table instead")]
+    LastTrack { track: Track, at: u32 },
+    #[display("merging takes at least two cells")]
     OneCell,
-    Ragged {
-        first: (u32, u32),
-        last: (u32, u32),
-    },
-    NotMerged {
-        row: u32,
-        column: u32,
-    },
-}
-
-impl fmt::Display for TableRefusal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TableRefusal::OutOfRange { track, at, most } => {
-                write!(f, "{track} {at} is not in the table: use 1 to {most}")
-            }
-            TableRefusal::TooBig => f.write_str("a table holds at most 2500 cells"),
-            TableRefusal::MergedAcross { track, at } => write!(
-                f,
-                "a merged block crosses {track} {at}: unmerge it in the web client first"
-            ),
-            TableRefusal::MergedBetween { track, at } => write!(
-                f,
-                "a merged block crosses the place of new {track} {at}: unmerge it in the web client first"
-            ),
-            TableRefusal::LastTrack { track, at } => {
-                write!(
-                    f,
-                    "{track} {at} is the last {track}: remove the table instead"
-                )
-            }
-            TableRefusal::OneCell => f.write_str("merging takes at least two cells"),
-            TableRefusal::Ragged { first, last } => write!(
-                f,
-                "a merged block reaches out of cells {},{} to {},{}: take all of it or none",
-                first.0, first.1, last.0, last.1
-            ),
-            TableRefusal::NotMerged { row, column } => {
-                write!(f, "cell {row},{column} does not lead a merged block")
-            }
-        }
-    }
+    #[display(
+        "a merged block reaches out of cells {},{} to {},{}: take all of it or none",
+        first.0, first.1, last.0, last.1
+    )]
+    Ragged { first: (u32, u32), last: (u32, u32) },
+    #[display("cell {row},{column} does not lead a merged block")]
+    NotMerged { row: u32, column: u32 },
 }
 
 /// A board change that was refused, malformed or not accepted.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Hint)]
 #[cfg_attr(test, derive(strum::EnumDiscriminants))]
 #[cfg_attr(test, strum_discriminants(derive(strum::EnumIter, PartialOrd, Ord)))]
 pub enum BoardChangeError {
     #[error("the board is read-only for you: nothing was changed")]
+    #[hint(AskOwner)]
     ReadOnly,
 
     #[error(
         "copying out of this board is held to {needs} and above: your right here is {holds}; \
          nothing was copied"
     )]
+    #[hint(AskOwner)]
     CopyWithheld { needs: String, holds: &'static str },
 
     #[error(
         "locking and unlocking on this board is held to {needs} and above: your right here \
          is {holds}; nothing was changed"
     )]
+    #[hint(AskOwner)]
     LockWithheld { needs: String, holds: &'static str },
 
     #[error(
         "hiding and showing frame content on this board is held to {needs} and above: your \
          right here is {holds}; nothing was changed"
     )]
+    #[hint(AskOwner)]
     HideWithheld { needs: String, holds: &'static str },
 
     #[error(
         "removing objects on this board is held to {needs} and above: your right here is \
          {holds}; a restore removes what the backup lacks, so nothing was changed"
     )]
+    #[hint(AskOwner)]
     DeleteWithheld { needs: String, holds: &'static str },
 
     #[error(
-        "the target board already has {objects} objects: import only into an empty board, or \
-         merge with --merge; nothing was changed"
+        "the target board already has {objects} objects: only an empty board takes an import; \
+         nothing was changed"
     )]
+    #[hint(MergeOrEmpty)]
     NotEmpty { objects: usize },
 
-    #[error(
-        "\"{reference}\" does not name an object: give its full id, a link with objectId=, or at \
-         least the first 8 hex characters of its id"
-    )]
+    #[error("\"{reference}\" does not name an object")]
+    #[hint(NameObject)]
     NoObject { reference: String },
 
     #[error("{kind} objects have no {field} to change")]
-    NotChangeable { kind: String, field: &'static str },
+    NotChangeable {
+        kind: ObjectKind,
+        field: ObjectField,
+    },
+
+    #[error("circle-cropped image objects have no {field} to change")]
+    CroppedImage { field: ObjectField },
+
+    #[error("{state} objects have no {field} to change")]
+    UnshownFile {
+        state: FileState,
+        field: ObjectField,
+    },
 
     #[error(
         "a wheel spins among at least 2 choices still in play: this one has {choices}"
@@ -239,14 +310,22 @@ pub enum BoardChangeError {
     NotSpinnable { choices: usize },
 
     #[error("{kind} objects cannot move into or out of a frame: {why}")]
-    NotMovable { kind: String, why: String },
+    NotMovable { kind: ObjectKind, why: MoveRefusal },
 
     #[error(
         "a {held} in a {container} has no position to change: the {container} places it"
     )]
     PlacedByContainer {
-        held: &'static str,
-        container: &'static str,
+        held: ObjectKind,
+        container: ObjectKind,
+    },
+
+    #[error(
+        "a {held} in a {container} has no size to change: the {container} sizes it"
+    )]
+    SizedByContainer {
+        held: ObjectKind,
+        container: ObjectKind,
     },
 
     #[error(
@@ -286,8 +365,16 @@ pub enum BoardChangeError {
     #[error("\"{raw}\" is not a size: expected WIDTH,HEIGHT, e.g. 192,192")]
     NotSize { raw: String },
 
-    #[error("\"{raw}\" is not a palette color: expected {expected}")]
-    NotColor { raw: String, expected: String },
+    #[error(
+        "\"{raw}\" is not a palette color: expected a name and a shade 1-12, e.g. yellow4"
+    )]
+    NotColor { raw: String },
+
+    #[error(
+        "\"{raw}\" is not a palette color: expected one of {}",
+        shades_of(.family)
+    )]
+    NotShade { raw: String, family: &'static str },
 
     #[error("\"{raw}\" is not {expected}")]
     NotArrowLook { raw: String, expected: &'static str },
@@ -302,6 +389,7 @@ pub enum BoardChangeError {
     StickerSize { width: f64, height: f64 },
 
     #[error("\"{reference}\" is not a frame: only frames hold objects")]
+    #[hint(ListObjects)]
     NotFrame { reference: String },
 
     #[error(
@@ -310,10 +398,8 @@ pub enum BoardChangeError {
     )]
     ContentHidden { reference: String },
 
-    #[error(
-        "the object at {at} would stick out of frame \"{reference}\" ({frame}): --at counts from \
-         the frame's corner"
-    )]
+    #[error("the object at {at} would stick out of frame \"{reference}\" ({frame})")]
+    #[hint(PositionInFrame)]
     OutsideFrame {
         reference: String,
         frame: GivenRectangle,
@@ -330,6 +416,7 @@ pub enum BoardChangeError {
     },
 
     #[error("\"{reference}\" is not a group: only groups can be ungrouped")]
+    #[hint(ListObjects)]
     NotGroup { reference: String },
 
     #[error("\"{reference}\" cannot be locked: {why}")]
@@ -339,6 +426,7 @@ pub enum BoardChangeError {
         "\"{reference}\" is not locked itself: only a locked group, frame or table can be \
          unlocked"
     )]
+    #[hint(ListObjects)]
     NotLocked { reference: String },
 
     #[error("nothing is locked on the board: nothing was changed")]
@@ -363,12 +451,14 @@ pub enum BoardChangeError {
         "the server did not accept the change within {seconds} s — it may or may not be on \
          the board"
     )]
+    #[hint(CheckBeforeRetry)]
     AcceptTimeout { seconds: u64 },
 
     #[error(
         "the board connection closed before the server accepted the change — it may or may \
          not be on the board"
     )]
+    #[hint(CheckBeforeRetry)]
     ClosedBeforeAccept,
 
     #[error(
@@ -376,6 +466,7 @@ pub enum BoardChangeError {
          the board",
         objects_note(.objects)
     )]
+    #[hint(ReadBeforeRetry)]
     NotAccepted {
         update: u64,
         objects: Vec<String>,
@@ -384,114 +475,8 @@ pub enum BoardChangeError {
     },
 }
 
-impl BoardChangeError {
-    /// What to do next, decided for every variant.
-    #[must_use]
-    pub const fn hint(&self) -> Option<Hint> {
-        match self {
-            BoardChangeError::ReadOnly
-            | BoardChangeError::CopyWithheld { .. }
-            | BoardChangeError::LockWithheld { .. }
-            | BoardChangeError::HideWithheld { .. }
-            | BoardChangeError::DeleteWithheld { .. } => Some(Hint::AskOwner),
-            BoardChangeError::NoObject { .. }
-            | BoardChangeError::NotFrame { .. }
-            | BoardChangeError::NotGroup { .. }
-            | BoardChangeError::NotLocked { .. }
-            | BoardChangeError::OutsideFrame { .. } => Some(Hint::ListObjects),
-            BoardChangeError::AcceptTimeout { .. }
-            | BoardChangeError::ClosedBeforeAccept => Some(Hint::CheckBeforeRetry),
-            BoardChangeError::NotAccepted { .. } => Some(Hint::ReadBeforeRetry),
-            BoardChangeError::NotEmpty { .. }
-            | BoardChangeError::NotChangeable { .. }
-            | BoardChangeError::NotSpinnable { .. }
-            | BoardChangeError::NotMovable { .. }
-            | BoardChangeError::PlacedByContainer { .. }
-            | BoardChangeError::Locked { .. }
-            | BoardChangeError::NotYours { .. }
-            | BoardChangeError::NothingToChange
-            | BoardChangeError::NoTag { .. }
-            | BoardChangeError::TagTaken { .. }
-            | BoardChangeError::NoCheckItem { .. }
-            | BoardChangeError::NoPage { .. }
-            | BoardChangeError::NotPoint { .. }
-            | BoardChangeError::OffBoard { .. }
-            | BoardChangeError::NotSize { .. }
-            | BoardChangeError::NotColor { .. }
-            | BoardChangeError::NotArrowLook { .. }
-            | BoardChangeError::BadValue { .. }
-            | BoardChangeError::StickerSize { .. }
-            | BoardChangeError::TooFewToGroup { .. }
-            | BoardChangeError::NotGroupable { .. }
-            | BoardChangeError::NotLockable { .. }
-            | BoardChangeError::NothingToUnlock
-            | BoardChangeError::NotArrangeable { .. }
-            | BoardChangeError::TooFewToArrange { .. }
-            | BoardChangeError::TableRefused { .. }
-            | BoardChangeError::ContentHidden { .. } => None,
-        }
-    }
-}
-
-impl BoardChangeError {
-    #[must_use]
-    pub(super) fn mcp_words(&self) -> Option<String> {
-        match self {
-            BoardChangeError::NotEmpty { objects } => Some(format!(
-                "the target board already has {objects} objects: import only into an empty board, \
-                 or merge with merge: true; nothing was changed"
-            )),
-            BoardChangeError::NoObject { reference } => Some(format!(
-                "\"{reference}\" does not name an object: give an @N from the object tool, its full id, \
-                 a link with objectId=, or at least the first 8 hex characters of its id"
-            )),
-            BoardChangeError::OutsideFrame {
-                reference,
-                frame,
-                at,
-            } => Some(format!(
-                "the object at {at} would stick out of frame \"{reference}\" ({frame}): x,y count \
-                 from the frame's corner"
-            )),
-            BoardChangeError::ReadOnly
-            | BoardChangeError::CopyWithheld { .. }
-            | BoardChangeError::LockWithheld { .. }
-            | BoardChangeError::HideWithheld { .. }
-            | BoardChangeError::DeleteWithheld { .. }
-            | BoardChangeError::NotChangeable { .. }
-            | BoardChangeError::NotSpinnable { .. }
-            | BoardChangeError::NotMovable { .. }
-            | BoardChangeError::PlacedByContainer { .. }
-            | BoardChangeError::Locked { .. }
-            | BoardChangeError::NotYours { .. }
-            | BoardChangeError::NothingToChange
-            | BoardChangeError::NoTag { .. }
-            | BoardChangeError::TagTaken { .. }
-            | BoardChangeError::NoCheckItem { .. }
-            | BoardChangeError::NoPage { .. }
-            | BoardChangeError::NotPoint { .. }
-            | BoardChangeError::OffBoard { .. }
-            | BoardChangeError::NotSize { .. }
-            | BoardChangeError::NotColor { .. }
-            | BoardChangeError::NotArrowLook { .. }
-            | BoardChangeError::BadValue { .. }
-            | BoardChangeError::StickerSize { .. }
-            | BoardChangeError::NotFrame { .. }
-            | BoardChangeError::TooFewToGroup { .. }
-            | BoardChangeError::NotGroupable { .. }
-            | BoardChangeError::NotGroup { .. }
-            | BoardChangeError::NotLockable { .. }
-            | BoardChangeError::NotLocked { .. }
-            | BoardChangeError::NothingToUnlock
-            | BoardChangeError::NotArrangeable { .. }
-            | BoardChangeError::TooFewToArrange { .. }
-            | BoardChangeError::TableRefused { .. }
-            | BoardChangeError::ContentHidden { .. }
-            | BoardChangeError::AcceptTimeout { .. }
-            | BoardChangeError::ClosedBeforeAccept
-            | BoardChangeError::NotAccepted { .. } => None,
-        }
-    }
+fn shades_of(family: &str) -> String {
+    (1..=12).map(|shade| format!("{family}{shade}")).join(", ")
 }
 
 fn objects_note(objects: &[String]) -> impl fmt::Display {
@@ -506,235 +491,243 @@ fn objects_note(objects: &[String]) -> impl fmt::Display {
 
 #[cfg(test)]
 pub(super) mod tests {
-    use crate::error::{
-        Error,
-        board_change::{
-            BoardChangeError,
-            BoardChangeErrorDiscriminants,
-            GivenPoint,
-            GivenRectangle,
-            GroupRefusal,
-            LockRefusal,
-            OffBoardValue,
-            TableRefusal,
+    use rstest::rstest;
+
+    use crate::{
+        domain::{board::ObjectKind, change::kind_edit::Track},
+        error::{
+            Error,
+            board_change::{
+                BoardChangeError,
+                BoardChangeErrorDiscriminants,
+                FileState,
+                GivenPoint,
+                GivenRectangle,
+                GroupRefusal,
+                LockRefusal,
+                MoveRefusal,
+                ObjectField,
+                OffBoardValue,
+                TableRefusal,
+            },
+            hint::{Surface, decided::assert_all_listed},
         },
-        hint::{Hint, Surface, decided::assert_every_variant},
     };
 
-    pub(in crate::error) fn samples() -> Vec<(BoardChangeError, Option<Hint>)> {
-        input_samples().into_iter().chain(ack_samples()).collect()
+    pub(in crate::error) fn samples() -> Vec<BoardChangeError> {
+        input_samples()
+            .into_iter()
+            .chain(value_samples())
+            .chain(ack_samples())
+            .collect()
     }
 
-    fn input_samples() -> Vec<(BoardChangeError, Option<Hint>)> {
+    fn input_samples() -> Vec<BoardChangeError> {
         let text = || String::from("x");
         vec![
-            (BoardChangeError::ReadOnly, Some(Hint::AskOwner)),
-            (
-                BoardChangeError::CopyWithheld {
-                    needs: text(),
-                    holds: "viewer",
-                },
-                Some(Hint::AskOwner),
-            ),
-            (BoardChangeError::NotEmpty { objects: 1 }, None),
-            (
-                BoardChangeError::NoObject { reference: text() },
-                Some(Hint::ListObjects),
-            ),
-            (
-                BoardChangeError::NotChangeable {
-                    kind: text(),
-                    field: "text",
-                },
-                None,
-            ),
-            (BoardChangeError::NotSpinnable { choices: 1 }, None),
-            (
-                BoardChangeError::TableRefused {
-                    why: TableRefusal::TooBig,
-                },
-                None,
-            ),
-            (
-                BoardChangeError::NotMovable {
-                    kind: text(),
-                    why: text(),
-                },
-                None,
-            ),
-            (
-                BoardChangeError::PlacedByContainer {
-                    held: "task-card",
-                    container: "kanban",
-                },
-                None,
-            ),
-            (BoardChangeError::Locked { reference: text() }, None),
-            (BoardChangeError::NotYours { reference: text() }, None),
-            (BoardChangeError::NothingToChange, None),
-            (BoardChangeError::NoTag { reference: text() }, None),
-            (BoardChangeError::TagTaken { title: text() }, None),
-            (BoardChangeError::NoCheckItem { item: 1, count: 0 }, None),
-            (BoardChangeError::NoPage { page: 4, count: 3 }, None),
-            (BoardChangeError::NotPoint { raw: text() }, None),
-            (
-                BoardChangeError::OffBoard {
-                    what: OffBoardValue::At(GivenPoint { x: 0.0, y: 0.0 }),
-                },
-                None,
-            ),
-            (BoardChangeError::NotSize { raw: text() }, None),
-            (
-                BoardChangeError::NotColor {
-                    raw: text(),
-                    expected: text(),
-                },
-                None,
-            ),
-            (
-                BoardChangeError::NotArrowLook {
-                    raw: text(),
-                    expected: "x",
-                },
-                None,
-            ),
-            (
-                BoardChangeError::BadValue {
-                    field: "x",
-                    raw: text(),
-                    expected: "x",
-                },
-                None,
-            ),
-            (
-                BoardChangeError::StickerSize {
+            BoardChangeError::ReadOnly,
+            BoardChangeError::CopyWithheld {
+                needs: text(),
+                holds: "viewer",
+            },
+            BoardChangeError::NotEmpty { objects: 1 },
+            BoardChangeError::NoObject { reference: text() },
+            BoardChangeError::NotChangeable {
+                kind: ObjectKind::Sticker,
+                field: ObjectField::Text,
+            },
+            BoardChangeError::CroppedImage {
+                field: ObjectField::Radius,
+            },
+            BoardChangeError::UnshownFile {
+                state: FileState::NotVideo,
+                field: ObjectField::HideDetails,
+            },
+            BoardChangeError::NotSpinnable { choices: 1 },
+            BoardChangeError::TableRefused {
+                why: TableRefusal::TooBig,
+            },
+            BoardChangeError::NotMovable {
+                kind: ObjectKind::Arrow,
+                why: MoveRefusal::FollowsJoined,
+            },
+            BoardChangeError::PlacedByContainer {
+                held: ObjectKind::Task,
+                container: ObjectKind::Other("kanban".into()),
+            },
+            BoardChangeError::SizedByContainer {
+                held: ObjectKind::Task,
+                container: ObjectKind::Other("kanban".into()),
+            },
+        ]
+    }
+
+    fn value_samples() -> Vec<BoardChangeError> {
+        let text = || String::from("x");
+        vec![
+            BoardChangeError::Locked { reference: text() },
+            BoardChangeError::NotYours { reference: text() },
+            BoardChangeError::NothingToChange,
+            BoardChangeError::NoTag { reference: text() },
+            BoardChangeError::TagTaken { title: text() },
+            BoardChangeError::NoCheckItem { item: 1, count: 0 },
+            BoardChangeError::NoPage { page: 4, count: 3 },
+            BoardChangeError::NotPoint { raw: text() },
+            BoardChangeError::OffBoard {
+                what: OffBoardValue::At(GivenPoint { x: 0.0, y: 0.0 }),
+            },
+            BoardChangeError::NotSize { raw: text() },
+            BoardChangeError::NotColor { raw: text() },
+            BoardChangeError::NotShade {
+                raw: text(),
+                family: "red",
+            },
+            BoardChangeError::NotArrowLook {
+                raw: text(),
+                expected: "x",
+            },
+            BoardChangeError::BadValue {
+                field: "x",
+                raw: text(),
+                expected: "x",
+            },
+            BoardChangeError::StickerSize {
+                width: 1.0,
+                height: 3.0,
+            },
+        ]
+    }
+
+    fn ack_samples() -> Vec<BoardChangeError> {
+        let text = || String::from("x");
+        vec![
+            BoardChangeError::NotFrame { reference: text() },
+            BoardChangeError::ContentHidden { reference: text() },
+            BoardChangeError::TooFewToGroup { given: 1 },
+            BoardChangeError::NotGroupable {
+                reference: text(),
+                why: GroupRefusal::Frame,
+            },
+            BoardChangeError::NotGroup { reference: text() },
+            BoardChangeError::LockWithheld {
+                needs: text(),
+                holds: "editor",
+            },
+            BoardChangeError::HideWithheld {
+                needs: text(),
+                holds: "editor",
+            },
+            BoardChangeError::DeleteWithheld {
+                needs: text(),
+                holds: "editor",
+            },
+            BoardChangeError::NotLockable {
+                reference: text(),
+                why: LockRefusal::Held,
+            },
+            BoardChangeError::NotLockable {
+                reference: text(),
+                why: LockRefusal::NotFrameOrTable,
+            },
+            BoardChangeError::NotLocked { reference: text() },
+            BoardChangeError::NothingToUnlock,
+            BoardChangeError::NotArrangeable {
+                reference: text(),
+                why: GroupRefusal::TableCell,
+            },
+            BoardChangeError::TooFewToArrange { needs: 2, given: 1 },
+            BoardChangeError::OutsideFrame {
+                reference: text(),
+                frame: GivenRectangle {
+                    x: 0.0,
+                    y: 0.0,
                     width: 1.0,
-                    height: 3.0,
+                    height: 1.0,
                 },
-                None,
-            ),
+                at: GivenPoint { x: 2.0, y: 2.0 },
+            },
+            BoardChangeError::AcceptTimeout { seconds: 1 },
+            BoardChangeError::ClosedBeforeAccept,
+            BoardChangeError::NotAccepted {
+                update: 1,
+                objects: Vec::new(),
+                cause: Box::new(Error::from(BoardChangeError::ClosedBeforeAccept)),
+            },
         ]
     }
 
-    fn ack_samples() -> Vec<(BoardChangeError, Option<Hint>)> {
-        let text = || String::from("x");
-        vec![
-            (
-                BoardChangeError::NotFrame { reference: text() },
-                Some(Hint::ListObjects),
-            ),
-            (BoardChangeError::ContentHidden { reference: text() }, None),
-            (BoardChangeError::TooFewToGroup { given: 1 }, None),
-            (
-                BoardChangeError::NotGroupable {
-                    reference: text(),
-                    why: GroupRefusal::Frame,
-                },
-                None,
-            ),
-            (
-                BoardChangeError::NotGroup { reference: text() },
-                Some(Hint::ListObjects),
-            ),
-            (
-                BoardChangeError::LockWithheld {
-                    needs: text(),
-                    holds: "editor",
-                },
-                Some(Hint::AskOwner),
-            ),
-            (
-                BoardChangeError::HideWithheld {
-                    needs: text(),
-                    holds: "editor",
-                },
-                Some(Hint::AskOwner),
-            ),
-            (
-                BoardChangeError::DeleteWithheld {
-                    needs: text(),
-                    holds: "editor",
-                },
-                Some(Hint::AskOwner),
-            ),
-            (
-                BoardChangeError::NotLockable {
-                    reference: text(),
-                    why: LockRefusal::Held,
-                },
-                None,
-            ),
-            (
-                BoardChangeError::NotLockable {
-                    reference: text(),
-                    why: LockRefusal::NotFrameOrTable,
-                },
-                None,
-            ),
-            (
-                BoardChangeError::NotLocked { reference: text() },
-                Some(Hint::ListObjects),
-            ),
-            (BoardChangeError::NothingToUnlock, None),
-            (
-                BoardChangeError::NotArrangeable {
-                    reference: text(),
-                    why: GroupRefusal::TableCell,
-                },
-                None,
-            ),
-            (
-                BoardChangeError::TooFewToArrange { needs: 2, given: 1 },
-                None,
-            ),
-            (
-                BoardChangeError::OutsideFrame {
-                    reference: text(),
-                    frame: GivenRectangle {
-                        x: 0.0,
-                        y: 0.0,
-                        width: 1.0,
-                        height: 1.0,
-                    },
-                    at: GivenPoint { x: 2.0, y: 2.0 },
-                },
-                Some(Hint::ListObjects),
-            ),
-            (
-                BoardChangeError::AcceptTimeout { seconds: 1 },
-                Some(Hint::CheckBeforeRetry),
-            ),
-            (
-                BoardChangeError::ClosedBeforeAccept,
-                Some(Hint::CheckBeforeRetry),
-            ),
-            (
-                BoardChangeError::NotAccepted {
-                    update: 1,
-                    objects: Vec::new(),
-                    cause: Box::new(Error::from(BoardChangeError::ClosedBeforeAccept)),
-                },
-                Some(Hint::ReadBeforeRetry),
-            ),
-        ]
+    #[rstest]
+    #[case::lock_group(
+        LockRefusal::Group(GroupRefusal::Frame),
+        "a frame holds its content itself"
+    )]
+    #[case::move_held(MoveRefusal::HeldBy(ObjectKind::Table), "it is held by a table")]
+    #[case::table_range(
+        TableRefusal::OutOfRange { track: Track::Row, at: 9, most: 3 },
+        "row 9 is not in the table: use 1 to 3"
+    )]
+    #[case::table_ragged(
+        TableRefusal::Ragged { first: (1, 2), last: (3, 4) },
+        "a merged block reaches out of cells 1,2 to 3,4: take all of it or none"
+    )]
+    fn refusals_say_their_reason(
+        #[case] refusal: impl std::fmt::Display,
+        #[case] said: &str,
+    ) {
+        assert_eq!(refusal.to_string(), said);
+    }
+
+    #[rstest]
+    #[case::sized(
+        BoardChangeError::SizedByContainer {
+            held: ObjectKind::Task,
+            container: ObjectKind::Other("kanban".into()),
+        },
+        "a task-card in a kanban has no size to change: the kanban sizes it"
+    )]
+    #[case::not_color(
+        BoardChangeError::NotColor { raw: "black4".into() },
+        "\"black4\" is not a palette color: expected a name and a shade 1-12, e.g. yellow4"
+    )]
+    #[case::not_shade(
+        BoardChangeError::NotShade { raw: "red13".into(), family: "red" },
+        "\"red13\" is not a palette color: expected one of red1, red2, red3, red4, red5, red6, red7, red8, red9, red10, red11, red12"
+    )]
+    fn the_new_refusals_say_what_was_wrong(
+        #[case] error: BoardChangeError,
+        #[case] said: &str,
+    ) {
+        assert_eq!(error.to_string(), said);
+    }
+
+    #[test]
+    fn not_empty_and_no_object_say_the_fact_alone() {
+        let said = [
+            BoardChangeError::NotEmpty { objects: 3 }.to_string(),
+            BoardChangeError::NoObject {
+                reference: "z".into(),
+            }
+            .to_string(),
+        ];
+        assert_eq!(
+            said,
+            [
+                "the target board already has 3 objects: only an empty board takes an import; nothing was changed",
+                "\"z\" does not name an object",
+            ]
+        );
     }
 
     #[test]
     fn not_empty_names_the_merge_of_each_surface() {
-        let err = Error::from(BoardChangeError::NotEmpty { objects: 3 });
-        let cli = err.on(Surface::Cli);
-        let mcp = err.on(Surface::Mcp);
-        assert!(cli.contains("--merge"), "{cli}");
-        assert!(mcp.contains("merge: true"), "{mcp}");
-        assert!(!cli.contains("--force") && !mcp.contains("--force"));
-        assert!(!mcp.contains("--"), "{mcp}");
+        let hint = BoardChangeError::NotEmpty { objects: 3 }.hint();
+        let on = |surface| hint.map(|hint| hint.text(surface));
+        assert!(on(Surface::Cli).is_some_and(|text| text.contains("--merge")));
+        assert!(on(Surface::Mcp).is_some_and(|text| text.contains("merge: true")));
     }
 
     #[test]
     fn every_variant_has_a_hint_decision() {
-        assert_every_variant::<_, BoardChangeErrorDiscriminants>(
-            samples(),
-            BoardChangeError::hint,
-        );
+        assert_all_listed::<_, BoardChangeErrorDiscriminants>(&samples());
     }
 }

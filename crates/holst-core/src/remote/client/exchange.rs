@@ -16,7 +16,7 @@ use crate::{
     error::{
         Error,
         Result,
-        http::{HTML_BODY, HttpError},
+        http::{HttpError, ReplyBody},
         login::LoginError,
     },
     remote::client::{
@@ -151,7 +151,7 @@ impl Client {
             response,
             sent_session: credentials,
         } = delivered;
-        let method = leg.method.as_str();
+        let method = leg.method;
         let path = leg.url.path().to_owned();
         match (response.status, authorization) {
             (status @ 200..=299, _) => {
@@ -178,15 +178,10 @@ impl Client {
 
     fn status_error(
         &self,
-        method: &'static str,
+        method: HttpMethod,
         path: String,
         response: &HttpResponse,
     ) -> Error {
-        let body = if response.is_html() {
-            HTML_BODY.to_owned()
-        } else {
-            response.text()
-        };
         let state = self.state();
         let secrets = state
             .token()
@@ -202,7 +197,11 @@ impl Client {
             method,
             path,
             status: response.status,
-            detail: scrub_secrets(&body, secrets),
+            body: if response.is_html() {
+                ReplyBody::Html
+            } else {
+                ReplyBody::text(scrub_secrets(&response.text(), secrets))
+            },
         })
     }
 }
@@ -225,7 +224,7 @@ fn next_step(
         (301..=303 | 307 | 308, _) => redirect(leg, response, hops),
         (429, Some(wait)) if wait > MAX_RETRY_WAIT => {
             Err(Error::Http(HttpError::RateLimited {
-                method: leg.method.as_str(),
+                method: leg.method,
                 path: leg.url.path().to_owned(),
                 retry_after: wait,
             }))

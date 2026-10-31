@@ -10,7 +10,7 @@
 use std::{path::PathBuf, process::ExitCode};
 
 use holst_scenarios::{
-    ScenarioError,
+    EvalError,
     eval::{
         AgentRun,
         Scored,
@@ -22,22 +22,6 @@ use holst_scenarios::{
         write_scores,
     },
 };
-
-#[derive(Debug, thiserror::Error)]
-enum EvalError {
-    #[error(
-        "usage: holst-eval oracle | serve | agent --command '<agent command with {{prompt}} and {{config}}>' [--runs 3] --out <dir>"
-    )]
-    Usage,
-    #[error("{0}")]
-    Scenario(#[from] ScenarioError),
-    #[error("--runs: {0}")]
-    Runs(std::num::ParseIntError),
-    #[error("{0} tasks not proven")]
-    Unproven(usize),
-    #[error("{0}")]
-    Signal(std::io::Error),
-}
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
@@ -51,7 +35,7 @@ async fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("{error}");
+            eprintln!("{}", holst_core::error::chained(&error));
             ExitCode::FAILURE
         }
     }
@@ -124,7 +108,7 @@ async fn agent(arguments: &[String]) -> Result<(), EvalError> {
                         "task {:2} run {number}: {} calls, correct: {}",
                         done.number,
                         done.uses.len(),
-                        done.verdict.correct
+                        done.verdict.is_ok()
                     )
                 })
                 .collect();

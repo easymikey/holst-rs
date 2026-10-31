@@ -10,17 +10,15 @@ use crate::{
         board::{ObjectKind, insert_map, json as stored_json},
         change::write::WriteTransaction,
     },
-    error::Result,
+    error::{Result, board_change::ObjectField},
     protocol::document::{AUTHOR_ID, CREATED_AT, ID, REACTION_ID, TARGET_ID},
 };
-
-pub(super) const FIELD: &str = "reactions";
 
 /// BUNDLE: the most reaction kinds a sticker holds (`R2#54`, 202219-202241).
 pub const MOST_KINDS: usize = 8;
 
 pub(super) fn check(kind: &ObjectKind) -> Result<()> {
-    only(kind, &ObjectKind::Sticker, FIELD)
+    only(kind, &ObjectKind::Sticker, ObjectField::Reactions)
 }
 
 /// Makes the entries of the caller on `id` exactly `wanted`; other users' stay.
@@ -104,7 +102,11 @@ mod tests {
             rich_text::TextFormat,
             time::Timestamp,
         },
-        error::{Error, Result, board_change::BoardChangeError},
+        error::{
+            Error,
+            Result,
+            board_change::{BoardChangeError, ObjectField},
+        },
     };
 
     const ME: &str = "me";
@@ -262,7 +264,7 @@ mod tests {
         assert!(matches!(
             refused,
             Err(Error::BoardChange(BoardChangeError::NotChangeable {
-                field: "reactions",
+                field: ObjectField::Reactions,
                 ..
             }))
         ));

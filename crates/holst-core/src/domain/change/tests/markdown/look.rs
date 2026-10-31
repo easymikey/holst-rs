@@ -23,7 +23,11 @@ use crate::{
         palette::Color,
         rich_text::{Mark, TextFormat},
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{
+        Error,
+        Result,
+        board_change::{BoardChangeError, ObjectField},
+    },
 };
 
 fn look(
@@ -171,7 +175,7 @@ fn a_frame_has_no_text_marks() -> Result<()> {
     assert!(matches!(
         refused,
         Err(Error::BoardChange(BoardChangeError::NotChangeable {
-            field: "marks",
+            field: ObjectField::Marks,
             ..
         }))
     ));

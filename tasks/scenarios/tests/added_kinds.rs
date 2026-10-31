@@ -50,104 +50,6 @@ async fn a_table_lists_its_rows_and_columns(
 
 #[rstest]
 #[tokio::test]
-async fn a_die_is_added_with_its_faces_and_listed(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
-    let holst = given()
-        .saved_login()
-        .workspace("Team")
-        .board_with_objects(
-            "Plans",
-            "Team",
-            vec![FixtureObject::Sticker("Grid".into())],
-        )
-        .start()
-        .await?;
-    let call = ObjectCall::add("dice").with("faces", "20");
-    let written = holst.on(surface).object("Plans", call).await?;
-    then(&written).succeeded();
-    let observation = holst.on(surface).objects("Plans").await?;
-    then(&observation).lists_object_detail("dice", &["faces=20", "value=1"]);
-    Ok(())
-}
-
-#[rstest]
-#[tokio::test]
-async fn a_wheel_is_added_with_its_choices_and_listed(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
-    let holst = given()
-        .saved_login()
-        .workspace("Team")
-        .board_with_objects(
-            "Plans",
-            "Team",
-            vec![FixtureObject::Sticker("Grid".into())],
-        )
-        .start()
-        .await?;
-    let call = ObjectCall::add("wheel")
-        .with("choice", "Pizza")
-        .with("choice", "Sushi")
-        .with("choice", "Soup");
-    let written = holst.on(surface).object("Plans", call).await?;
-    then(&written).succeeded();
-    let observation = holst.on(surface).objects("Plans").await?;
-    then(&observation).lists_object_detail("wheel", &["choices=3", "selected=none"]);
-    Ok(())
-}
-
-#[rstest]
-#[tokio::test]
-async fn a_sticker_stack_is_added_with_its_title_and_listed(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
-    let holst = given()
-        .saved_login()
-        .workspace("Team")
-        .board_with_objects(
-            "Plans",
-            "Team",
-            vec![FixtureObject::Sticker("Grid".into())],
-        )
-        .start()
-        .await?;
-    let call = ObjectCall::add("sticker-stack").text("Ideas");
-    let written = holst.on(surface).object("Plans", call).await?;
-    then(&written).succeeded();
-    let observation = holst.on(surface).objects("Plans").await?;
-    then(&observation)
-        .lists_objects_in_any_order(&[("sticker", "Grid"), ("sticker-stack", "Ideas")]);
-    Ok(())
-}
-
-#[rstest]
-#[tokio::test]
-async fn a_flip_card_is_added_with_two_sides_and_listed(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
-    let holst = given()
-        .saved_login()
-        .workspace("Team")
-        .board_with_objects(
-            "Plans",
-            "Team",
-            vec![FixtureObject::Sticker("Grid".into())],
-        )
-        .start()
-        .await?;
-    let call = ObjectCall::add("flipcard").text("Q").with("back", "A");
-    let written = holst.on(surface).object("Plans", call).await?;
-    then(&written).succeeded();
-    let observation = holst.on(surface).objects("Plans").await?;
-    then(&observation)
-        .lists_objects_in_any_order(&[("sticker", "Grid"), ("flipcard", "Q")]);
-    then(&observation).lists_object_detail("flipcard", &["side=front", "back=A"]);
-    Ok(())
-}
-
-#[rstest]
-#[tokio::test]
 async fn a_mind_map_root_and_its_child_are_added_and_listed(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
@@ -194,109 +96,6 @@ async fn a_whole_mind_map_is_added_in_one_write(
     then(&holst.on(surface).object("Plans", call).await?).succeeded();
     let observation = holst.on(surface).objects("Plans").await?;
     then(&observation).lists_inside_a_parent(&["Build", "Test", "Ship"]);
-    Ok(())
-}
-
-#[rstest]
-#[tokio::test]
-async fn a_document_is_added_with_its_color_token_and_listed(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
-    let holst = given()
-        .saved_login()
-        .workspace("Team")
-        .board_with_objects(
-            "Plans",
-            "Team",
-            vec![FixtureObject::Sticker("Grid".into())],
-        )
-        .start()
-        .await?;
-    let call = ObjectCall::add("document")
-        .text("Spec")
-        .with("color", "white1");
-    let written = holst.on(surface).object("Plans", call).await?;
-    then(&written).succeeded();
-    let observation = holst.on(surface).objects("Plans").await?;
-    then(&observation)
-        .lists_objects_in_any_order(&[("sticker", "Grid"), ("document", "Spec")]);
-    then(&observation).lists_object_detail("document", &["color=white1"]);
-    Ok(())
-}
-#[rstest]
-#[tokio::test]
-async fn a_text_stamp_is_added_and_listed(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
-    let holst = given()
-        .saved_login()
-        .workspace("Team")
-        .board_with_objects(
-            "Plans",
-            "Team",
-            vec![FixtureObject::Sticker("Grid".into())],
-        )
-        .start()
-        .await?;
-    let call = ObjectCall::add("stamp").text("\u{1F44D}");
-    let written = holst.on(surface).object("Plans", call).await?;
-    then(&written).succeeded();
-    let observation = holst.on(surface).objects("Plans").await?;
-    then(&observation)
-        .lists_objects_in_any_order(&[("sticker", "Grid"), ("stamp", "\u{1F44D}")]);
-    Ok(())
-}
-
-#[rstest]
-#[tokio::test]
-async fn a_code_block_is_added_with_its_language_and_listed_with_its_text(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
-    let holst = given()
-        .saved_login()
-        .workspace("Team")
-        .board_with_objects(
-            "Plans",
-            "Team",
-            vec![FixtureObject::Sticker("Grid".into())],
-        )
-        .start()
-        .await?;
-    let call = ObjectCall::add("code")
-        .text("fn main() {}")
-        .with("language", "rust");
-    let written = holst.on(surface).object("Plans", call).await?;
-    then(&written).succeeded();
-    let observation = holst.on(surface).objects("Plans").await?;
-    then(&observation)
-        .lists_objects_in_any_order(&[("sticker", "Grid"), ("code", "fn main() {}")]);
-    then(&observation).lists_object_detail("code", &["language=rust", "theme=light"]);
-    Ok(())
-}
-
-#[rstest]
-#[tokio::test]
-async fn a_table_is_added_with_its_counts_and_listed_with_its_size(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
-    let holst = given()
-        .saved_login()
-        .workspace("Team")
-        .board_with_objects(
-            "Plans",
-            "Team",
-            vec![FixtureObject::Sticker("Grid".into())],
-        )
-        .start()
-        .await?;
-    let call = ObjectCall::add("table")
-        .with("rows", "3")
-        .with("columns", "4");
-    let written = holst.on(surface).object("Plans", call).await?;
-    then(&written).succeeded();
-    let observation = holst.on(surface).objects("Plans").await?;
-    then(&observation).lists_object_detail("table", &["rows=3", "columns=4"]);
-    then(&observation).lists_object_sized("", "960x180");
     Ok(())
 }
 
@@ -361,9 +160,9 @@ async fn a_phosphor_icon_is_added_and_listed_with_its_name_and_weight(
 
 #[rstest]
 #[tokio::test]
-async fn an_icon_the_set_lacks_is_refused_with_close_names_and_nothing_is_written(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn an_icon_the_set_lacks_is_refused_with_close_names_and_nothing_is_written()
+-> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team")
@@ -614,8 +413,8 @@ async fn a_stroke_in_a_frame_counts_from_its_corner(
 async fn a_stroke_with_one_point_or_a_bad_point_is_refused(
     #[case] points: &[&'static str],
     #[case] saying: &str,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team")

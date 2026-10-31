@@ -122,7 +122,13 @@ impl Dropped {
     fn of(err: Option<&Error>) -> Self {
         match err {
             Some(Error::Http(HttpError::NoResponse { .. })) => Self::OutcomeUnknown,
-            Some(Error::Http(HttpError::Transport(_))) => Self::Network,
+            Some(Error::Http(
+                HttpError::Timeout(_)
+                | HttpError::Connect(_)
+                | HttpError::CutOff(_)
+                | HttpError::Build(_)
+                | HttpError::Network(_),
+            )) => Self::Network,
             _ => Self::Other,
         }
     }
@@ -151,7 +157,7 @@ async fn dropped_connection_after_send(
 fn unknown_post_path(err: Option<&Error>) -> Option<&str> {
     match err {
         Some(Error::Http(HttpError::NoResponse {
-            method: "POST",
+            method: HttpMethod::Post,
             path,
         })) => Some(path),
         _ => None,

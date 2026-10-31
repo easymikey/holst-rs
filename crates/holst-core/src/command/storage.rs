@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use holst_macros::CommandArgs;
+use itertools::{Either, Itertools as _};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -16,7 +17,10 @@ use crate::{
         clock::Clock,
         settings::CacheSettings,
     },
-    error::confirmation::{ChangeRisk, Unconfirmed},
+    error::{
+        Error,
+        confirmation::{ChangeRisk, Unconfirmed},
+    },
     storage::{
         cache::Cache,
         local_data::{self, CleanMode, DataPlace, DataRoots, FilePlace},
@@ -114,11 +118,32 @@ pub fn ls(roots: &DataRoots, cache: &CacheSettings, clock: &Arc<dyn Clock>) -> L
     }
 }
 
-/// A place that could not be removed.
+/// Where a clean failed to remove something.
+#[derive(Debug, derive_more::Display)]
+pub enum CleanPlace {
+    #[display("{_0}")]
+    File(String),
+    #[display("a board cache")]
+    BoardCache,
+}
+
+/// The JSON names the place as the report shows it.
+impl Serialize for CleanPlace {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+/// A place that could not be removed; the JSON has the error's chained text.
 #[derive(Debug, Serialize)]
 pub struct NotRemoved {
-    pub name: String,
-    pub error: String,
+    #[serde(rename = "name")]
+    pub place: CleanPlace,
+    #[serde(serialize_with = "crate::error::serialize_chained")]
+    pub error: Error,
 }
 
 /// The places a clean removed, or in a dry run would remove.
@@ -181,20 +206,15 @@ pub fn clean(
             )
         })
         .collect();
-    let mut failed: Vec<NotRemoved> = results
-        .iter()
-        .filter_map(|(place, result)| {
-            result.as_ref().err().map(|error| NotRemoved {
-                name: place.name.clone(),
-                error: error.to_string(),
-            })
-        })
-        .collect();
-    let removed = results
-        .iter()
-        .filter(|(_, result)| result.is_ok())
-        .map(|(place, _)| (*place).clone())
-        .collect();
+    let (removed, mut failed): (Vec<FilePlace>, Vec<NotRemoved>) = results
+        .into_iter()
+        .partition_map(|(place, result)| match result {
+            Ok(()) => Either::Left(place.clone()),
+            Err(error) => Either::Right(NotRemoved {
+                place: CleanPlace::File(place.name.clone()),
+                error,
+            }),
+        });
     let evicted = (scope == CleanMode::Leftovers).then(|| {
         if removing {
             let (usage, errors) = evict(cache, clock);
@@ -224,24 +244,19 @@ fn evict(
     settings: &CacheSettings,
     clock: &Arc<dyn Clock>,
 ) -> (CacheUsage, Vec<NotRemoved>) {
-    let results: Vec<_> = Cache::accounts(settings, clock)
-        .iter()
-        .map(CachePort::evict)
-        .collect();
-    let usage = results
-        .iter()
-        .filter_map(|result| result.as_ref().ok())
-        .copied()
-        .sum::<CacheUsage>();
-    let failures = results
-        .iter()
-        .filter_map(|result| result.as_ref().err())
+    let (usages, errors): (Vec<CacheUsage>, Vec<Error>) =
+        Cache::accounts(settings, clock)
+            .iter()
+            .map(CachePort::evict)
+            .partition_result();
+    let failures = errors
+        .into_iter()
         .map(|error| NotRemoved {
-            name: "a board cache".to_owned(),
-            error: error.to_string(),
+            place: CleanPlace::BoardCache,
+            error,
         })
         .collect();
-    (usage, failures)
+    (usages.into_iter().sum(), failures)
 }
 
 #[cfg(test)]
@@ -259,13 +274,14 @@ mod tests {
     use crate::{
         Result,
         command::{
-            storage::{CleanArgs, Cleaned, clean},
+            storage::{CleanArgs, CleanPlace, Cleaned, NotRemoved, clean},
             table::parse,
         },
         effect::{
             clock::{Clock, FixedClock},
             settings::{CacheSettings, SessionLocation},
         },
+        error::local_data::LocalDataError,
         storage::local_data::{CONFIG_DIR, DataRoots},
     };
 
@@ -337,6 +353,32 @@ mod tests {
                 false,
                 true,
                 false
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_failure_keeps_the_error_and_writes_its_chained_text() -> Result<()> {
+        let failure = NotRemoved {
+            place: CleanPlace::BoardCache,
+            error: LocalDataError::FileRemove {
+                path: PathBuf::from("/h/cache"),
+                error: std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+            }
+            .into(),
+        };
+        assert_eq!(
+            (
+                serde_json::to_value(&failure)?,
+                std::error::Error::source(&failure.error).is_some()
+            ),
+            (
+                json!({
+                    "name": "a board cache",
+                    "error": "could not remove /h/cache: permission denied"
+                }),
+                true
             )
         );
         Ok(())

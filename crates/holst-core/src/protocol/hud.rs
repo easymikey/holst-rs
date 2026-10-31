@@ -14,7 +14,7 @@ use crate::{
     error::{
         Error,
         Result,
-        board_socket::{BoardSocketError, SocketErrorCode},
+        board_socket::{BoardSocketError, FrameFault, SocketErrorCode},
     },
 };
 
@@ -122,7 +122,7 @@ pub(crate) fn read_update_frame(input: &[u8]) -> Result<(String, u64, OutgoingUp
     let (id, rest) = match kind {
         UPDATE => read_var_uint(rest)?,
         _ => Err(Error::BoardSocket(BoardSocketError::MalformedFrame {
-            what: "a client frame that is not an update",
+            what: FrameFault::ClientFrameNotUpdate,
         }))?,
     };
     let (how, rest) = read_var_uint(rest)?;
@@ -142,13 +142,13 @@ pub(crate) fn read_update_frame(input: &[u8]) -> Result<(String, u64, OutgoingUp
             })?
         }
         _ => Err(Error::BoardSocket(BoardSocketError::MalformedFrame {
-            what: "an unknown update kind",
+            what: FrameFault::UnknownUpdateKind,
         }))?,
     };
     rest.is_empty()
         .then(|| (document.to_owned(), id, payload))
         .ok_or(Error::BoardSocket(BoardSocketError::MalformedFrame {
-            what: "bytes after the update",
+            what: FrameFault::BytesAfterUpdate,
         }))
 }
 
@@ -218,7 +218,7 @@ fn update(encoding: UpdateEncoding, input: &[u8]) -> Result<(ServerUpdate, &[u8]
         LINK => read_var_string(rest)
             .map(|(link, rest)| (UpdatePayload::Link(link.to_owned()), rest))?,
         _ => Err(Error::BoardSocket(BoardSocketError::MalformedFrame {
-            what: "an unknown update kind",
+            what: FrameFault::UnknownUpdateKind,
         }))?,
     };
     Ok((
@@ -247,7 +247,7 @@ fn answer(input: &[u8]) -> Result<(DocumentResponse, &[u8])> {
     let (text, rest) = read_var_string(input)?;
     let reply: Reply = serde_json::from_str(text).map_err(|_| {
         Error::BoardSocket(BoardSocketError::MalformedFrame {
-            what: "an answer that is not JSON",
+            what: FrameFault::AnswerNotJson,
         })
     })?;
     let response = match (reply.error, reply.status) {

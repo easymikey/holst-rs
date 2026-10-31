@@ -37,7 +37,7 @@ pub use crate::{
     board_tag::TagEdit,
     comments::{CommentCommand, CommentsThen, ThreadPin, comments_of, read_time_of},
     edit::{BoardThen, ItemsFile, ObjectCall, board_of},
-    error::ScenarioError,
+    error::{EvalError, Mismatch, ScenarioError},
     export::{Export, FileThen, Import, SavedThen, exported_file, saved_in},
     files::{downloaded, downloaded_bytes, objects_on, uploads_of},
     given::{Given, given},
@@ -68,7 +68,7 @@ pub use crate::{
         withhold_locking,
     },
     storage::{Cleaning, kept_in},
-    surface::Surface,
+    surface::{Guard, Surface},
     templates::{
         TemplateAudience,
         TemplateCommand,

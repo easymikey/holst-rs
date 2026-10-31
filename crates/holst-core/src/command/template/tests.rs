@@ -6,10 +6,21 @@ use crate::{
     Result,
     command::{
         fixture::{arguments, channel, channel_with, client, json_reply, status_of},
-        template::{Changed, CreateArgs, ShowArgs, create::created, ls, rm, show},
+        template::{
+            Changed,
+            CreateArgs,
+            EditArgs,
+            ShowArgs,
+            create::created,
+            edit,
+            ls,
+            rm,
+            show,
+        },
     },
     domain::board::EditRight,
     effect::http::HttpResponse,
+    error::{Error, input::InputError},
     protocol::hud::{DocumentResponse, UpdatePayload},
     remote::{
         client::{
@@ -153,6 +164,37 @@ async fn a_category_outside_the_standard_view_is_refused() -> Result<()> {
 }
 
 #[tokio::test]
+async fn a_body_that_is_not_json_says_where_it_breaks() -> Result<()> {
+    let (fake, client) = client([])?;
+    let body = "{\n  \"name\": ,\n}";
+    let error = edit(
+        &client,
+        &arguments::<EditArgs>(json!({ "template": TEMPLATE, "body": body }))?,
+    )
+    .await
+    .err();
+    let spot = match &error {
+        Some(Error::Input(InputError::NotJsonObject { spot, .. })) => {
+            Some((spot.line, spot.column))
+        }
+        _ => None,
+    };
+    assert_eq!(
+        (
+            spot,
+            error.map(|error| error.to_string()),
+            asked(&fake).len()
+        ),
+        (
+            Some((2, 11)),
+            Some("body of `template edit` must be a JSON object".to_owned()),
+            0
+        )
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_template_is_shown_by_id() -> Result<()> {
     let (fake, client) = client([json_reply(
         &json!({ "id": TEMPLATE, "name": "Retro", "cells": 3 }),
@@ -230,7 +272,7 @@ async fn a_template_name_is_looked_up_among_all_the_lists() -> Result<()> {
         (
             Some("Plan"),
             Some("\"retro\" matches several templates: Retro (p-Retro), retro/Retro (s-Retro)".to_owned()),
-            Some("template \"nothing\" not found. Available: Mine (p-Mine), easy/Plan (w-Plan), retro/Retro (s-Retro)".to_owned())
+            Some("template \"nothing\" not found; available: Mine (p-Mine), easy/Plan (w-Plan), retro/Retro (s-Retro)".to_owned())
         )
     );
     Ok(())

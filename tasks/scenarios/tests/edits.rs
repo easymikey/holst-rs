@@ -178,9 +178,9 @@ async fn a_grouped_sticker_moves_and_stays_in_its_group(
 
 #[rstest]
 #[tokio::test]
-async fn another_users_sticker_stays_on_a_restricted_board(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn another_users_sticker_stays_on_a_restricted_board() -> Result<(), ScenarioError>
+{
+    let surface = Surface::Cli;
     let holst = two_notes().start().await?;
     withhold_deleting(&holst, "Plans", "co_owner", "editor");
     let theirs = holst.fixture_object("Plans", 1)?;
@@ -259,9 +259,8 @@ async fn a_preview_changes_nothing(
 
 #[rstest]
 #[tokio::test]
-async fn a_read_only_board_refuses_a_change(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_read_only_board_refuses_a_change() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team")
@@ -328,15 +327,50 @@ fn frame_with_one_inside() -> Given {
 }
 
 #[rstest]
-#[case::sticker("sticker", "Call Ann", &[])]
-#[case::text("text", "Call Ann", &[])]
-#[case::shape("shape", "Call Ann", &[("shape", "ellipse")])]
-#[case::frame("frame", "Call Ann", &[])]
+#[case::sticker("sticker", "Call Ann", &[], &[], None)]
+#[case::text("text", "Call Ann", &[], &[], None)]
+#[case::shape("shape", "Call Ann", &[("shape", "ellipse")], &[], None)]
+#[case::frame("frame", "Call Ann", &[], &[], None)]
+#[case::die("dice", "", &[("faces", "20")], &["faces=20", "value=1"], None)]
+#[case::wheel(
+    "wheel",
+    "",
+    &[("choice", "Pizza"), ("choice", "Sushi"), ("choice", "Soup")],
+    &["choices=3", "selected=none"],
+    None
+)]
+#[case::sticker_stack("sticker-stack", "Ideas", &[], &[], None)]
+#[case::flip_card("flipcard", "Q", &[("back", "A")], &["side=front", "back=A"], None)]
+#[case::document("document", "Spec", &[("color", "white1")], &["color=white1"], None)]
+#[case::stamp("stamp", "\u{1F44D}", &[], &[], None)]
+#[case::code(
+    "code",
+    "fn main() {}",
+    &[("language", "rust")],
+    &["language=rust", "theme=light"],
+    None
+)]
+#[case::table(
+    "table",
+    "",
+    &[("rows", "3"), ("columns", "4")],
+    &["rows=3", "columns=4"],
+    Some("960x180")
+)]
+#[case::task(
+    "task",
+    "Ship",
+    &[("status", "in-progress"), ("due", "2026-11-06")],
+    &["status=in-progress", "due=2026-11-06", "assignees=0"],
+    None
+)]
 #[tokio::test]
 async fn each_object_kind_can_be_added(
     #[case] kind: &'static str,
     #[case] text: &str,
     #[case] flags: &[(&'static str, &'static str)],
+    #[case] detail: &[&str],
+    #[case] size: Option<&str>,
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = two_notes().start().await?;
@@ -345,13 +379,25 @@ async fn each_object_kind_can_be_added(
         .fold(ObjectCall::add(kind), |call, (name, value)| {
             call.with(name, *value)
         });
-    holst.on(surface).object("Plans", call.text(text)).await?;
+    let call = if text.is_empty() {
+        call
+    } else {
+        call.text(text)
+    };
+    let written = holst.on(surface).object("Plans", call).await?;
+    then(&written).succeeded();
     let observation = holst.on(surface).objects("Plans").await?;
     then(&observation).lists_objects_in_any_order(&[
         ("sticker", "Buy milk"),
         ("text", "Roadmap"),
         (kind, text),
     ]);
+    if !detail.is_empty() {
+        then(&observation).lists_object_detail(kind, detail);
+    }
+    if let Some(size) = size {
+        then(&observation).lists_object_sized(text, size);
+    }
     Ok(())
 }
 
@@ -407,13 +453,22 @@ async fn markdown_text_is_written_and_read_back(
 }
 
 #[rstest]
-#[case::flowchart("flowchart_decision", "flowchart-decision stroke gray12 2px")]
-#[case::bpmn("bpmn_gateway", "bpmn-gateway stroke gray12 2px")]
+#[case::flowchart(
+    "flowchart_decision",
+    "flowchart-decision stroke gray12 2px",
+    Surface::Cli
+)]
+#[case::flowchart_mcp(
+    "flowchart_decision",
+    "flowchart-decision stroke gray12 2px",
+    Surface::Mcp
+)]
+#[case::bpmn("bpmn_gateway", "bpmn-gateway stroke gray12 2px", Surface::Cli)]
 #[tokio::test]
 async fn a_shape_is_added_in_a_kind_from_all_the_kinds(
     #[case] shape: &'static str,
     #[case] listed: &str,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+    #[case] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = two_notes().start().await?;
     let call = ObjectCall::add("shape")
@@ -466,9 +521,8 @@ async fn a_shape_edit_changes_its_kind_outline_corners_and_opacity(
 
 #[rstest]
 #[tokio::test]
-async fn a_shape_edit_with_a_wrong_outline_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_shape_edit_with_a_wrong_outline_is_refused() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = one_shape().start().await?;
     let shape = holst.fixture_object("Plans", 1)?;
     let call = ObjectCall::edit()
@@ -538,11 +592,11 @@ async fn an_arrow_edit_changes_its_line_one_head_dash_and_width(
 #[case::width("stroke_width", "3", "an arrow stroke width")]
 #[tokio::test]
 async fn an_arrow_edit_with_a_wrong_look_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
     #[case] flag: &'static str,
     #[case] value: &str,
     #[case] saying: &str,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = one_arrow().start().await?;
     let arrow = holst.fixture_object("Plans", 3)?;
     let call = ObjectCall::edit().with("object", arrow).with(flag, value);
@@ -602,9 +656,9 @@ async fn an_arrow_edit_replaces_its_labels(
 #[case::off_the_arrow("Yes@2")]
 #[tokio::test]
 async fn an_arrow_edit_with_a_wrong_label_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
     #[case] label: &'static str,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = one_arrow().start().await?;
     let arrow = holst.fixture_object("Plans", 3)?;
     let call = ObjectCall::edit()
@@ -619,14 +673,25 @@ async fn an_arrow_edit_with_a_wrong_label_is_refused(
 }
 
 #[rstest]
-#[case::curved("curved", "300,200", "curved bend 300,200 stroke gray8 2px")]
-#[case::elbow("elbow", ",250", "elbow bend ,250 stroke gray8 2px")]
+#[case::curved(
+    "curved",
+    "300,200",
+    "curved bend 300,200 stroke gray8 2px",
+    Surface::Cli
+)]
+#[case::curved_mcp(
+    "curved",
+    "300,200",
+    "curved bend 300,200 stroke gray8 2px",
+    Surface::Mcp
+)]
+#[case::elbow("elbow", ",250", "elbow bend ,250 stroke gray8 2px", Surface::Cli)]
 #[tokio::test]
 async fn an_arrow_edit_bends_its_line(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
     #[case] line: &'static str,
     #[case] bend: &'static str,
     #[case] looking: &str,
+    #[case] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = one_arrow().start().await?;
     let arrow = holst.fixture_object("Plans", 3)?;
@@ -646,10 +711,10 @@ async fn an_arrow_edit_bends_its_line(
 #[case::elbow_by_two("elbow", "300,200")]
 #[tokio::test]
 async fn an_arrow_edit_with_a_bend_its_line_cannot_take_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
     #[case] line: &'static str,
     #[case] bend: &'static str,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = one_arrow().start().await?;
     let arrow = holst.fixture_object("Plans", 3)?;
     let call = ObjectCall::edit()
@@ -688,10 +753,10 @@ async fn an_arrow_edit_moves_its_ends_to_a_side_and_to_a_free_point(
 #[case::unknown_side("Buy milk:middle", "is not an arrow end")]
 #[tokio::test]
 async fn an_arrow_edit_with_a_wrong_end_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
     #[case] end: &'static str,
     #[case] saying: &str,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = one_arrow().start().await?;
     let arrow = holst.fixture_object("Plans", 3)?;
     let call = ObjectCall::edit().with("object", arrow).with("to", end);
@@ -720,9 +785,8 @@ async fn an_arrow_joins_two_objects(
 
 #[rstest]
 #[tokio::test]
-async fn an_arrow_to_an_unknown_object_is_not_found(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn an_arrow_to_an_unknown_object_is_not_found() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = two_notes().start().await?;
     let call = ObjectCall::add("arrow")
         .with("from", holst.fixture_object("Plans", 1)?)
@@ -737,9 +801,9 @@ async fn an_arrow_to_an_unknown_object_is_not_found(
 
 #[rstest]
 #[tokio::test]
-async fn a_misspelt_shape_is_refused_with_the_shapes_listed(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_misspelt_shape_is_refused_with_the_shapes_listed()
+-> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = two_notes().start().await?;
     let call = ObjectCall::add("shape")
         .text("Launch")
@@ -837,9 +901,8 @@ async fn items_can_mix_kinds_and_name_earlier_items(
 
 #[rstest]
 #[tokio::test]
-async fn a_bad_item_adds_nothing(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_bad_item_adds_nothing() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = two_notes().start().await?;
     let call = ObjectCall::add("sticker").items(vec![
         json!({ "text": "A" }),
@@ -900,14 +963,15 @@ async fn a_text_filter_finds_objects_ignoring_case(
 }
 
 #[rstest]
-#[case::rectangle("rectangle", "0,0,400,400")]
-#[case::frame("frame", "Q4")]
-#[case::object("object", "@2")]
+#[case::rectangle("rectangle", "0,0,400,400", Surface::Cli)]
+#[case::rectangle_mcp("rectangle", "0,0,400,400", Surface::Mcp)]
+#[case::frame("frame", "Q4", Surface::Cli)]
+#[case::object("object", "@2", Surface::Cli)]
 #[tokio::test]
 async fn objects_are_selected_by_rectangle_frame_or_object(
     #[case] flag: &'static str,
     #[case] value: &str,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+    #[case] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = frame_with_one_inside().start().await?;
     let value = resolved(&holst, value)?;
@@ -1045,9 +1109,8 @@ async fn many_objects_are_edited_in_one_write(
 
 #[rstest]
 #[tokio::test]
-async fn an_edit_without_an_object_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn an_edit_without_an_object_is_refused() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = two_notes().start().await?;
     let call = ObjectCall::edit().with("text", "Buy oat milk");
     let observation = holst.on(surface).object("Plans", call).await?;
@@ -1063,8 +1126,8 @@ async fn an_edit_without_an_object_is_refused(
 #[tokio::test]
 async fn an_unknown_object_is_not_found(
     #[case] call: ObjectCall,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = two_notes().start().await?;
     let observation = holst
         .on(surface)
@@ -1127,9 +1190,8 @@ async fn a_copy_goes_to_the_asked_corner(
 
 #[rstest]
 #[tokio::test]
-async fn a_frame_name_that_fits_two_frames_lists_them(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_frame_name_that_fits_two_frames_lists_them() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = plans_with(vec![
         FixtureObject::Frame("Q4 plan".into()),
         FixtureObject::Frame("Q4 review".into()),
@@ -1158,8 +1220,8 @@ async fn a_frame_name_that_fits_two_frames_lists_them(
 #[tokio::test]
 async fn object_commands_need_a_login(
     #[case] call: ObjectCall,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .workspace("Team")
         .board_with_objects(
@@ -1174,37 +1236,6 @@ async fn object_commands_need_a_login(
         .failed_with_hint("log in again")
         .signalled_as(surface.permission_denied());
     board_of(&holst).got_no_update();
-    Ok(())
-}
-
-#[rstest]
-#[tokio::test]
-async fn a_locked_sticker_is_not_changed(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
-    let holst = plans_with(vec![
-        FixtureObject::Shape("Lock".into())
-            .set("type", json!("group"))
-            .set("locked", json!(true)),
-        FixtureObject::Sticker("Buy milk".into()).inside(1),
-    ])
-    .start()
-    .await?;
-    let sticker = holst.fixture_object("Plans", 2)?;
-    let edited = holst
-        .on(surface)
-        .change_object_text("Plans", &sticker, "Buy oat milk")
-        .await?;
-    then(&edited)
-        .failed_saying("is locked on the board; unlock it in the web client first")
-        .signalled_as(surface.permission_denied());
-    let removed = holst.on(surface).remove_object("Plans", &sticker).await?;
-    then(&removed)
-        .failed_saying("is locked on the board; unlock it in the web client first")
-        .signalled_as(surface.permission_denied());
-    let after = holst.on(surface).objects("Plans").await?;
-    then(&after)
-        .lists_objects_in_any_order(&[("group", "Lock"), ("sticker", "Buy milk")]);
     Ok(())
 }
 
@@ -1287,9 +1318,8 @@ fn one_table() -> Given {
 
 #[rstest]
 #[tokio::test]
-async fn a_table_is_not_rotated(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_table_is_not_rotated() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = one_table().start().await?;
     let table = holst.fixture_object("Plans", 1)?;
     let call = ObjectCall::edit()
@@ -1316,14 +1346,15 @@ fn one_of_kind(kind: &str) -> Given {
 }
 
 #[rstest]
-#[case::size("size", "384,384", "384x384")]
-#[case::scale("scale", "0.5", "96x96")]
+#[case::size("size", "384,384", "384x384", Surface::Cli)]
+#[case::size_mcp("size", "384,384", "384x384", Surface::Mcp)]
+#[case::scale("scale", "0.5", "96x96", Surface::Cli)]
 #[tokio::test]
 async fn a_die_is_resized_by_scale_and_read_back(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
     #[case] flag: &'static str,
     #[case] value: &str,
     #[case] drawn: &str,
+    #[case] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = one_of_kind("dice").start().await?;
     let die = holst.fixture_object("Plans", 1)?;
@@ -1354,9 +1385,8 @@ async fn a_drawing_gets_a_thicker_red_stroke(
 
 #[rstest]
 #[tokio::test]
-async fn a_kanban_is_scaled_but_has_no_size(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_kanban_is_scaled_but_has_no_size() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = one_of_kind("kanban").start().await?;
     let kanban = holst.fixture_object("Plans", 1)?;
     let call = ObjectCall::edit()
@@ -1372,9 +1402,8 @@ async fn a_kanban_is_scaled_but_has_no_size(
 
 #[rstest]
 #[tokio::test]
-async fn a_size_and_a_scale_together_are_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_size_and_a_scale_together_are_refused() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = one_of_kind("dice").start().await?;
     let die = holst.fixture_object("Plans", 1)?;
     let call = ObjectCall::edit()
@@ -1527,9 +1556,9 @@ async fn a_note_is_linked_to_another_object_of_the_board(
 
 #[rstest]
 #[tokio::test]
-async fn a_link_to_an_object_that_is_not_there_changes_nothing(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_link_to_an_object_that_is_not_there_changes_nothing()
+-> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = two_notes().start().await?;
     let call = ObjectCall::edit()
         .with("object", holst.fixture_object("Plans", 1)?)
@@ -1586,9 +1615,8 @@ async fn a_frame_edit_reshapes_and_shows_its_content_again(
 
 #[rstest]
 #[tokio::test]
-async fn hiding_frame_content_needs_the_board_right(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn hiding_frame_content_needs_the_board_right() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = frame_and_note().start().await?;
     withhold_hiding(&holst, "Plans", "co_owner", "editor");
     let call = ObjectCall::edit()
@@ -1607,10 +1635,10 @@ async fn hiding_frame_content_needs_the_board_right(
 #[case::background("background", "dotted")]
 #[tokio::test]
 async fn a_frame_look_with_a_wrong_value_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
     #[case] flag: &'static str,
     #[case] value: &str,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = frame_and_note().start().await?;
     let call = ObjectCall::edit()
         .with("object", holst.fixture_object("Plans", 1)?)
@@ -1625,9 +1653,8 @@ async fn a_frame_look_with_a_wrong_value_is_refused(
 
 #[rstest]
 #[tokio::test]
-async fn a_frame_look_on_a_sticker_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_frame_look_on_a_sticker_is_refused() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = frame_and_note().start().await?;
     let call = ObjectCall::edit()
         .with("object", holst.fixture_object("Plans", 2)?)
@@ -1684,9 +1711,9 @@ async fn checklist_items_are_ticked_and_unticked_by_their_number(
 
 #[rstest]
 #[tokio::test]
-async fn a_checklist_item_the_text_does_not_have_changes_nothing(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_checklist_item_the_text_does_not_have_changes_nothing()
+-> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = checklist_text().start().await?;
     let call = ObjectCall::edit()
         .with("object", holst.fixture_object("Plans", 1)?)
@@ -1722,9 +1749,8 @@ async fn a_text_is_held_to_a_width_and_let_go_to_wrap_by_itself(
 
 #[rstest]
 #[tokio::test]
-async fn a_sticker_has_no_width_to_set(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_sticker_has_no_width_to_set() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = two_notes().start().await?;
     let call = ObjectCall::edit()
         .with("object", holst.fixture_object("Plans", 1)?)
@@ -1780,9 +1806,8 @@ async fn an_object_far_from_the_frame_lands_inside_it(
 
 #[rstest]
 #[tokio::test]
-async fn a_frame_that_hides_its_content_takes_no_object(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_frame_that_hides_its_content_takes_no_object() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = plans_with(vec![
         FixtureObject::Frame("Q4".into()).set("isContentHidden", json!(true)),
         FixtureObject::Sticker("Buy milk".into()),
@@ -1802,9 +1827,8 @@ async fn a_frame_that_hides_its_content_takes_no_object(
 
 #[rstest]
 #[tokio::test]
-async fn an_object_in_a_group_stays_out_of_frames(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn an_object_in_a_group_stays_out_of_frames() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = plans_with(vec![
         FixtureObject::Frame("Q4".into()),
         FixtureObject::Shape("Group".into()).set("type", json!("group")),

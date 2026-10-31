@@ -58,23 +58,66 @@ fn not_http_method(raw: &str) -> Error {
     })
 }
 
+/// What the server put in the body of a refusal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReplyBody {
+    Empty,
+    /// A page for people, not the API: a wrong address or a filter.
+    Html,
+    Text(String),
+}
+
+impl ReplyBody {
+    /// `Empty` for a blank text, else the text.
+    #[must_use]
+    pub fn text(text: String) -> Self {
+        if text.trim().is_empty() {
+            ReplyBody::Empty
+        } else {
+            ReplyBody::Text(text)
+        }
+    }
+}
+
+/// The tail of a status line: `: body`, cut at 400 characters, or nothing.
+impl fmt::Display for ReplyBody {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ReplyBody::Empty => Ok(()),
+            ReplyBody::Html => f.write_str(": (an HTML page)"),
+            ReplyBody::Text(text) => {
+                let text = text.trim();
+                let head = text
+                    .char_indices()
+                    .nth(400)
+                    .and_then(|(cut, _)| text.get(..cut));
+                match (text, head) {
+                    ("", _) => Ok(()),
+                    (_, Some(head)) => write!(f, ": {head}…"),
+                    (text, None) => write!(f, ": {text}"),
+                }
+            }
+        }
+    }
+}
+
 /// A reply that is a refusal, not what was asked, or never came.
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(test, derive(strum::EnumDiscriminants))]
 #[cfg_attr(test, strum_discriminants(derive(strum::EnumIter, PartialOrd, Ord)))]
 pub enum HttpError {
-    #[error("{method} {path} -> HTTP {status}{}", display_body(.detail))]
+    #[error("{method} {path} -> HTTP {status}{body}")]
     Status {
-        method: &'static str,
+        method: HttpMethod,
         path: String,
         status: u16,
-        detail: String,
+        body: ReplyBody,
     },
 
     #[error(
         "{method} {path}: no answer from the server — the change may or may not have been applied"
     )]
-    NoResponse { method: &'static str, path: String },
+    NoResponse { method: HttpMethod, path: String },
 
     #[error("the server answered with an HTML page instead of JSON (HTTP {status})")]
     HtmlInsteadOfJson { status: u16 },
@@ -92,7 +135,7 @@ pub enum HttpError {
         .retry_after.as_secs()
     )]
     RateLimited {
-        method: &'static str,
+        method: HttpMethod,
         path: String,
         retry_after: std::time::Duration,
     },
@@ -106,25 +149,55 @@ pub enum HttpError {
     #[error("the server sent JSON instead of a backup (perhaps a link to it): {head}")]
     JsonInsteadOfBackup { head: String },
 
-    #[error("{}", http_summary(.0))]
-    Transport(#[from] reqwest::Error),
+    #[error("the server did not answer in time")]
+    Timeout(#[source] reqwest::Error),
+
+    #[error("could not connect to the server")]
+    Connect(#[source] reqwest::Error),
+
+    #[error("the server's reply was cut off or unreadable")]
+    CutOff(#[source] reqwest::Error),
+
+    #[error("the request could not be built")]
+    Build(#[source] reqwest::Error),
+
+    #[error("network error")]
+    Network(#[source] reqwest::Error),
 
     #[error("the reply is not valid JSON")]
     Json(#[from] serde_json::Error),
 }
 
+impl From<reqwest::Error> for HttpError {
+    fn from(error: reqwest::Error) -> Self {
+        match error {
+            e if e.is_timeout() => HttpError::Timeout(e),
+            e if e.is_connect() => HttpError::Connect(e),
+            e if e.is_decode() || e.is_body() => HttpError::CutOff(e),
+            e if e.is_builder() => HttpError::Build(e),
+            e => HttpError::Network(e),
+        }
+    }
+}
+
 impl HttpError {
     /// What to do next, decided for every variant.
     #[must_use]
-    pub fn hint(&self) -> Option<Hint> {
+    pub const fn hint(&self) -> Option<Hint> {
         match self {
             HttpError::Status { status: 401, .. } => Some(Hint::LoginAgain),
             // An HTML refusal is a wrong address or a filter, not the API.
             HttpError::Status {
                 status: 400 | 403 | 404 | 405,
-                detail: body,
+                body: ReplyBody::Html,
                 ..
-            } if body == HTML_BODY => Some(Hint::CheckNetwork),
+            }
+            | HttpError::Timeout(_)
+            | HttpError::Connect(_)
+            | HttpError::CutOff(_)
+            | HttpError::Build(_)
+            | HttpError::Network(_)
+            | HttpError::HtmlInsteadOfJson { .. } => Some(Hint::CheckNetwork),
             HttpError::Status { status: 403, .. } => Some(Hint::AskOwner),
             HttpError::Status { status: 404, .. } => Some(Hint::CheckId),
             HttpError::Status {
@@ -139,9 +212,6 @@ impl HttpError {
                 status: 500..=599, ..
             } => Some(Hint::ServerFailed),
             HttpError::RateLimited { .. } => Some(Hint::WaitAsAsked),
-            HttpError::Transport(_) | HttpError::HtmlInsteadOfJson { .. } => {
-                Some(Hint::CheckNetwork)
-            }
             HttpError::NoResponse { .. } => Some(Hint::CheckBeforeRetry),
             HttpError::Status { .. }
             | HttpError::ResponseTooLarge { .. }
@@ -153,50 +223,26 @@ impl HttpError {
     }
 }
 
-const CUT_OFF: &str = "the server's reply was cut off or unreadable";
-
-fn http_summary(err: &reqwest::Error) -> &'static str {
-    match err {
-        e if e.is_timeout() => "the server did not answer in time",
-        e if e.is_connect() => "could not connect to the server",
-        e if e.is_decode() || e.is_body() => CUT_OFF,
-        e if e.is_builder() => "the request could not be built",
-        _ => "network error",
-    }
-}
-
-fn display_body(body: &str) -> impl fmt::Display {
-    let body = body.trim();
-    let head = body
-        .char_indices()
-        .nth(400)
-        .and_then(|(cut, _)| body.get(..cut));
-    fmt::from_fn(move |f| match (body, head) {
-        ("", _) => Ok(()),
-        (_, Some(head)) => write!(f, ": {head}…"),
-        (body, None) => write!(f, ": {body}"),
-    })
-}
-
-pub(crate) const HTML_BODY: &str = "(an HTML page)";
-
 #[cfg(test)]
 pub(super) mod tests {
+    use std::{net::TcpListener, time::Duration};
+
     use rstest::rstest;
     use strum::IntoEnumIterator as _;
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
-    use crate::error::{
-        hint::{Hint, Surface, decided::assert_every_variant},
-        http::{HttpError, HttpErrorDiscriminants},
+    use crate::{
+        error::{
+            hint::{Hint, Surface, decided::assert_every_variant},
+            http::{HttpError, HttpErrorDiscriminants, HttpMethod, ReplyBody},
+        },
+        fake::http_status,
     };
 
-    pub(in crate::error) fn status(status: u16, body: &str) -> HttpError {
-        HttpError::Status {
-            method: "GET",
-            path: "/x".into(),
-            status,
-            detail: body.into(),
-        }
+    type Kind = fn(reqwest::Error) -> HttpError;
+
+    pub(in crate::error) fn status(code: u16, body: &str) -> HttpError {
+        http_status(code, ReplyBody::text(body.to_owned()))
     }
 
     #[rstest]
@@ -212,16 +258,20 @@ pub(super) mod tests {
     #[case::not_implemented(status(501, ""), Some(Hint::ServerFailed))]
     #[case::teapot(status(418, ""), None)]
     #[case::html_404_is_a_wrong_address(
-        status(404, crate::error::http::HTML_BODY),
+        http_status(404, ReplyBody::Html),
         Some(Hint::CheckNetwork)
     )]
     #[case::html_403_is_a_filter(
-        status(403, crate::error::http::HTML_BODY),
+        http_status(403, ReplyBody::Html),
         Some(Hint::CheckNetwork)
     )]
     #[case::html_502_is_still_a_gateway(
-        status(502, crate::error::http::HTML_BODY),
+        http_status(502, ReplyBody::Html),
         Some(Hint::RetryLater)
+    )]
+    #[case::the_words_of_a_stand_in_are_only_words(
+        http_status(404, ReplyBody::Text("(an HTML page)".into())),
+        Some(Hint::CheckId)
     )]
     fn status_hints_point_to_the_next_step(
         #[case] err: HttpError,
@@ -230,25 +280,104 @@ pub(super) mod tests {
         assert_eq!(err.hint(), hint);
     }
 
+    /// The URL of a server that writes `reply` to its first connection, then
+    /// hangs up, or keeps the connection open.
+    async fn serve(reply: &'static [u8], hang_up: bool) -> String {
+        let Ok(listener) = tokio::net::TcpListener::bind("127.0.0.1:0").await else {
+            return String::new();
+        };
+        let url = listener
+            .local_addr()
+            .map(|address| format!("http://{address}/"))
+            .unwrap_or_default();
+        tokio::spawn(async move {
+            if let Ok((mut stream, _)) = listener.accept().await {
+                let _request: usize =
+                    stream.read(&mut [0; 1024]).await.unwrap_or_default();
+                drop(stream.write_all(reply).await);
+                if !hang_up {
+                    std::future::pending::<()>().await;
+                }
+            }
+        });
+        url
+    }
+
+    async fn failure(url: &str) -> Option<HttpError> {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_millis(300))
+            .build()
+            .ok()?;
+        match client.get(url).send().await {
+            Ok(reply) => reply.bytes().await.err().map(HttpError::from),
+            Err(error) => Some(error.into()),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_silent_server_is_a_timeout() {
+        let err = failure(&serve(b"", false).await).await;
+        assert!(matches!(err, Some(HttpError::Timeout(_))), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn a_closed_port_is_a_failed_connection() {
+        let gone = TcpListener::bind("127.0.0.1:0")
+            .ok()
+            .and_then(|listener| listener.local_addr().ok())
+            .map(|address| format!("http://{address}/"))
+            .unwrap_or_default();
+        let err = failure(&gone).await;
+        assert!(matches!(err, Some(HttpError::Connect(_))), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn a_body_cut_short_is_a_cut_off_reply() {
+        let url =
+            serve(b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nabc", true).await;
+        let err = failure(&url).await;
+        assert!(matches!(err, Some(HttpError::CutOff(_))), "{err:?}");
+    }
+
+    #[test]
+    fn a_request_that_cannot_be_built_is_a_build_error() {
+        let err = build_error();
+        assert!(matches!(err, Some(HttpError::Build(_))), "{err:?}");
+    }
+
+    fn reqwest_error() -> Option<reqwest::Error> {
+        reqwest::Client::new().get("http://[").build().err()
+    }
+
+    fn build_error() -> Option<HttpError> {
+        reqwest_error().map(HttpError::from)
+    }
+
     pub(in crate::error) fn samples() -> Vec<(HttpError, Option<Hint>)> {
         let unknown = HttpError::NoResponse {
-            method: "POST",
+            method: HttpMethod::Post,
             path: "/gapi/channel/create".into(),
         };
         let rate_limited = HttpError::RateLimited {
-            method: "GET",
+            method: HttpMethod::Get,
             path: "/x".into(),
-            retry_after: std::time::Duration::from_secs(1),
+            retry_after: Duration::from_secs(1),
         };
         let json = serde_json::from_str::<u8>("x")
             .map_err(HttpError::Json)
             .err();
-        let transport = reqwest::Client::builder()
-            .build()
-            .and_then(|client| client.get("http://[").build())
-            .map_err(HttpError::Transport)
-            .err();
-        let foreign = [(json, None), (transport, Some(Hint::CheckNetwork))]
+        let kinds: [Kind; 5] = [
+            HttpError::Timeout,
+            HttpError::Connect,
+            HttpError::CutOff,
+            HttpError::Build,
+            HttpError::Network,
+        ];
+        let transport = kinds
+            .into_iter()
+            .filter_map(|kind| reqwest_error().map(kind))
+            .map(|err| (err, Some(Hint::CheckNetwork)));
+        let foreign = [(json, None)]
             .into_iter()
             .filter_map(|(err, hint)| err.map(|err| (err, hint)));
         [
@@ -277,6 +406,7 @@ pub(super) mod tests {
         ]
         .into_iter()
         .chain(foreign)
+        .chain(transport)
         .collect()
     }
 
@@ -287,24 +417,31 @@ pub(super) mod tests {
 
     #[test]
     fn status_error_shows_trimmed_body_or_nothing() {
-        assert_eq!(status(500, "  ").to_string(), "GET /x -> HTTP 500");
+        assert_eq!(
+            status(500, "  ").to_string(),
+            "GET /gapi/current_user -> HTTP 500"
+        );
         assert_eq!(
             status(500, " oops ").to_string(),
-            "GET /x -> HTTP 500: oops"
+            "GET /gapi/current_user -> HTTP 500: oops"
         );
         let long = status(500, &"я".repeat(401)).to_string();
         assert!(long.ends_with('…'), "{long}");
+        assert_eq!(
+            http_status(404, ReplyBody::Html).to_string(),
+            "GET /gapi/current_user -> HTTP 404: (an HTML page)"
+        );
     }
 
     #[test]
     fn rate_limit_hint_does_not_contradict_the_pause() {
         let err = HttpError::RateLimited {
-            method: "GET",
+            method: HttpMethod::Get,
             path: "/x".into(),
-            retry_after: std::time::Duration::from_mins(2),
+            retry_after: Duration::from_mins(2),
         };
         let hints: Vec<String> = Surface::iter()
-            .filter_map(|surface| err.hint().map(|hint| hint.on(surface).to_string()))
+            .filter_map(|surface| err.hint().map(|hint| hint.text(surface).to_string()))
             .collect();
         assert!(err.to_string().contains("120 s"), "{err}");
         assert!(

@@ -118,7 +118,7 @@ impl McpServer {
             CommandName::Backup(verb) => self.backup_command(verb, arguments).await,
             // `storage` is for the CLI; the table gives it no tool.
             CommandName::Storage(verb) => self.fail(&Error::CliOnly {
-                command: verb.command().path(),
+                command: verb.command(),
             }),
             CommandName::Object(verb) => {
                 Box::pin(self.object_command(verb, arguments)).await

@@ -82,8 +82,8 @@ pub(super) fn cleaned_text(
     let failed = cleaned.failed.iter().map(|failure| {
         format!(
             "not removed {}: {}",
-            printable(&failure.name),
-            failure.error
+            printable(&failure.place.to_string()),
+            holst_core::error::chained(&failure.error)
         )
     });
     let evicted = cleaned.evicted.map(|usage| {

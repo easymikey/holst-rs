@@ -487,7 +487,7 @@ mod tests {
             whole_i32,
             whole_u32,
         },
-        error::{Error, Result, check_all::both, hint::Surface, input::InputError},
+        error::{Error, Result, check_all::both, input::InputError},
     };
 
     #[test]
@@ -528,10 +528,8 @@ mod tests {
         assert_eq!(Rectangle::bounding([]), None);
     }
 
-    fn words(result: Result<impl Sized>) -> Option<(String, String)> {
-        result
-            .err()
-            .map(|err| (err.on(Surface::Cli), err.on(Surface::Mcp)))
+    fn words(result: Result<impl Sized>) -> Option<String> {
+        result.err().map(|err| err.to_string())
     }
 
     #[test]
@@ -550,13 +548,15 @@ mod tests {
     fn validated_failures_are_listed_flat() {
         let inner = both(Finite::new(f64::NAN), Finite::new(f64::INFINITY));
         let outer = both(inner, Positive::new(-1.0));
-        let cli = "3 problems:\n  - NaN is not a coordinate: expected a finite number, e.g. -40.5\
-             \n  - inf is not a coordinate: expected a finite number, e.g. -40.5\
-             \n  - -1 is not a positive number: sides are above 0, e.g. 192";
-        let mcp = "3 problems: NaN is not a coordinate: expected a finite number, e.g. -40.5; \
-             inf is not a coordinate: expected a finite number, e.g. -40.5; \
-             -1 is not a positive number: sides are above 0, e.g. 192";
-        assert_eq!(words(outer), Some((cli.into(), mcp.into())));
+        let listed = [
+            "NaN is not a coordinate: expected a finite number, e.g. -40.5",
+            "inf is not a coordinate: expected a finite number, e.g. -40.5",
+            "-1 is not a positive number: sides are above 0, e.g. 192",
+        ];
+        assert_eq!(
+            outer.err().map(|error| error.problem_texts()),
+            Some(listed.map(String::from).to_vec())
+        );
     }
 
     #[test]

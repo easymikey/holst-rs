@@ -10,7 +10,7 @@ use crate::error::hint::Hint;
 #[cfg_attr(test, strum_discriminants(derive(strum::EnumIter, PartialOrd, Ord)))]
 pub enum BoardSocketError {
     #[error("the board server sent a malformed frame: {what}")]
-    MalformedFrame { what: &'static str },
+    MalformedFrame { what: FrameFault },
 
     #[error("the board server refused the board: {code}")]
     NotSubscribed { code: SocketErrorCode },
@@ -69,6 +69,34 @@ pub enum BoardSocketError {
     UnsupportedFormat { schema: u32, provider: String },
 }
 
+/// What is wrong with a frame of the board server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[cfg_attr(test, derive(strum::EnumIter))]
+pub enum FrameFault {
+    #[error("an unknown message type")]
+    UnknownMessageType,
+    #[error("a client frame that is not an update")]
+    ClientFrameNotUpdate,
+    #[error("an unknown update kind")]
+    UnknownUpdateKind,
+    #[error("bytes after the update")]
+    BytesAfterUpdate,
+    #[error("an answer that is not JSON")]
+    AnswerNotJson,
+    #[error("a cut varint")]
+    CutVarint,
+    #[error("a varint over 64 bits")]
+    VarintOver64Bits,
+    #[error("a cut signed varint")]
+    CutSignedVarint,
+    #[error("a signed varint over 63 bits")]
+    SignedVarintOver63Bits,
+    #[error("bytes longer than the frame")]
+    BytesPastFrame,
+    #[error("a string that is not UTF-8")]
+    StringNotUtf8,
+}
+
 /// Why the board server refused a board, parsed once from the code it sent.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SocketErrorCode {
@@ -105,7 +133,7 @@ impl SocketErrorCode {
 impl BoardSocketError {
     /// What to do next, decided for every variant.
     #[must_use]
-    pub fn hint(&self) -> Option<Hint> {
+    pub const fn hint(&self) -> Option<Hint> {
         match self {
             BoardSocketError::Connection(_)
             | BoardSocketError::Proxy { .. }
@@ -137,6 +165,7 @@ pub(super) mod tests {
         board_socket::{
             BoardSocketError,
             BoardSocketErrorDiscriminants,
+            FrameFault,
             SocketErrorCode,
         },
         hint::{Hint, decided::assert_every_variant},
@@ -149,7 +178,12 @@ pub(super) mod tests {
             0,
         );
         vec![
-            (BoardSocketError::MalformedFrame { what: "x" }, None),
+            (
+                BoardSocketError::MalformedFrame {
+                    what: FrameFault::CutVarint,
+                },
+                None,
+            ),
             (
                 BoardSocketError::NotSubscribed {
                     code: SocketErrorCode::Forbidden,
@@ -221,6 +255,17 @@ pub(super) mod tests {
         assert_every_variant::<_, BoardSocketErrorDiscriminants>(
             samples(),
             BoardSocketError::hint,
+        );
+    }
+
+    #[test]
+    fn a_malformed_frame_names_its_fault() {
+        assert_eq!(
+            BoardSocketError::MalformedFrame {
+                what: FrameFault::CutVarint
+            }
+            .to_string(),
+            "the board server sent a malformed frame: a cut varint"
         );
     }
 }

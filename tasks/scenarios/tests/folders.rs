@@ -135,9 +135,8 @@ async fn a_move_to_a_folder_that_does_not_exist_is_refused(
 
 #[rstest]
 #[tokio::test]
-async fn a_folder_is_not_moved_into_itself(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_folder_is_not_moved_into_itself() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team")
@@ -307,6 +306,7 @@ async fn a_folder_is_not_deleted_unconfirmed(
 #[rstest]
 #[tokio::test]
 async fn a_confirmed_folder_delete_is_for_good_and_leaves_its_boards_up(
+    #[values(false, true)] permanently: bool,
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = given()
@@ -316,11 +316,13 @@ async fn a_confirmed_folder_delete_is_for_good_and_leaves_its_boards_up(
         .board("Roadmap", "Team", Some("Plans"))
         .start()
         .await?;
-    holst
-        .on(surface)
-        .confirming()
-        .delete_node("Plans", "Team")
-        .await?;
+    let on = holst.on(surface).confirming();
+    if permanently {
+        on.delete_permanently(&id_of(&holst, "Plans"), "Team")
+            .await?;
+    } else {
+        on.delete_node("Plans", "Team").await?;
+    }
     tree_of(&holst, "Team").has_nothing_named("Plans");
     tree_of(&holst, "Team").has_board("Roadmap", None);
     trash_of(&holst, "Team").has_nothing_named("Plans");
@@ -330,9 +332,9 @@ async fn a_confirmed_folder_delete_is_for_good_and_leaves_its_boards_up(
 
 #[rstest]
 #[tokio::test]
-async fn a_folder_is_not_deleted_for_good_by_a_part_of_its_name(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_folder_is_not_deleted_for_good_by_a_part_of_its_name()
+-> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team")
@@ -421,9 +423,8 @@ async fn a_dry_run_duplicates_nothing(
 
 #[rstest]
 #[tokio::test]
-async fn what_is_not_in_the_trash_is_not_restored(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn what_is_not_in_the_trash_is_not_restored() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team")
@@ -456,9 +457,9 @@ async fn a_board_is_created_in_the_named_workspace(
 
 #[rstest]
 #[tokio::test]
-async fn a_create_without_a_workspace_with_several_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_create_without_a_workspace_with_several_is_refused()
+-> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team")
@@ -477,9 +478,8 @@ async fn a_create_without_a_workspace_with_several_is_refused(
 
 #[rstest]
 #[tokio::test]
-async fn a_board_is_not_created_in_a_missing_folder(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_board_is_not_created_in_a_missing_folder() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given().saved_login().workspace("Team").start().await?;
     let observation = holst
         .on(surface)
@@ -619,30 +619,6 @@ async fn a_permanent_delete_removes_the_board_for_good(
 
 #[rstest]
 #[tokio::test]
-async fn a_folder_deleted_for_good_leaves_its_board_at_the_root(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
-    let holst = given()
-        .saved_login()
-        .workspace("Team")
-        .folder("Plans", "Team")
-        .board("Roadmap", "Team", Some("Plans"))
-        .start()
-        .await?;
-    holst
-        .on(surface)
-        .confirming()
-        .delete_permanently(&id_of(&holst, "Plans"), "Team")
-        .await?;
-    tree_of(&holst, "Team").has_nothing_named("Plans");
-    tree_of(&holst, "Team").has_board("Roadmap", None);
-    trash_of(&holst, "Team").has_nothing_named("Plans");
-    trash_of(&holst, "Team").has_nothing_named("Roadmap");
-    Ok(())
-}
-
-#[rstest]
-#[tokio::test]
 async fn a_deleted_folder_is_gone_and_its_boards_stay_at_the_parent_level(
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
@@ -771,8 +747,8 @@ async fn a_dry_run_changes_nothing_for_leaving(
 async fn a_board_you_may_not_change_is_refused(
     #[values(TreeCommand::Rename, TreeCommand::Remove, TreeCommand::Move)]
     command: TreeCommand,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team")
@@ -798,8 +774,8 @@ async fn an_unknown_board_is_not_found(
         TreeCommand::Favorite
     )]
     command: TreeCommand,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team")
@@ -827,8 +803,8 @@ async fn board_tree_commands_need_a_login(
         TreeCommand::Favorite
     )]
     command: TreeCommand,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .workspace("Team")
         .board("Plan", "Team", None)

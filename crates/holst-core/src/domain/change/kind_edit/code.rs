@@ -6,13 +6,11 @@ use crate::{
         board::ObjectKind,
         kinds::code::{LANGUAGE, Language, THEME, Theme},
     },
-    error::Result,
+    error::{Result, board_change::ObjectField},
 };
 
-pub(super) const CODE: &str = "code";
-
 pub(super) fn check(kind: &ObjectKind) -> Result<()> {
-    only(kind, &ObjectKind::Code, CODE)
+    only(kind, &ObjectKind::Code, ObjectField::Code)
 }
 
 /// The language and the theme given, as the add writes them.
@@ -47,7 +45,11 @@ mod tests {
             kinds::code::{self, Language, Theme},
             rich_text::TextFormat,
         },
-        error::{Error, Result, board_change::BoardChangeError},
+        error::{
+            Error,
+            Result,
+            board_change::{BoardChangeError, ObjectField},
+        },
     };
 
     fn board_with(new: NewObject) -> Result<Doc> {
@@ -152,7 +154,7 @@ mod tests {
         assert!(matches!(
             refused,
             Some(Error::BoardChange(BoardChangeError::NotChangeable {
-                field: "code",
+                field: ObjectField::Code,
                 ..
             }))
         ));

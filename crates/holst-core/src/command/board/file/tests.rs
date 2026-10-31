@@ -267,7 +267,10 @@ async fn a_failed_import_that_cannot_remove_its_board_names_it() -> Result<()> {
     )
     .await;
     assert!(
-        refused.is_err_and(|error| error.to_string().contains(BOARD)),
+        refused.err().is_some_and(|error| error
+            .problem_texts()
+            .iter()
+            .any(|text| text.contains(BOARD))),
         "the error does not name the board"
     );
     Ok(())

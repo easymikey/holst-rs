@@ -1,13 +1,73 @@
 //! Addresses, ids and values the caller gave.
 
-use crate::error::{
-    Error,
-    hint::{Hint, Surface},
-    lookup::Candidates,
-};
+use holst_macros::Hint;
+
+use crate::error::{Error, lookup::Candidates};
+
+/// Characters of the offending line kept on each side of the column.
+const SPOT_REACH: usize = 40;
+
+/// Where JSON argument text goes wrong: 1-based line and column in the
+/// argument, and the offending line cut to a window around the column, with
+/// `…` where it was cut and a tab as one space.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JsonSpot {
+    pub line: usize,
+    pub column: usize,
+    pub text: String,
+    /// Where the column falls in `text`, in characters.
+    pub caret: usize,
+}
+
+impl JsonSpot {
+    /// The position `error` reports in `text`.
+    ///
+    /// ```
+    /// use holst_core::error::input::JsonSpot;
+    ///
+    /// let text = "{\n  \"a\": ,\n}";
+    /// let error = serde_json::from_str::<serde_json::Value>(text).unwrap_err();
+    /// let spot = JsonSpot::of(&error, text);
+    /// assert_eq!((spot.line, spot.column), (2, 8));
+    /// assert_eq!((spot.text.as_str(), spot.caret), ("  \"a\": ,", 7));
+    ///
+    /// let long = format!("[{}1 2{}]", "0,".repeat(100), ",0".repeat(100));
+    /// let error = serde_json::from_str::<serde_json::Value>(&long).unwrap_err();
+    /// let spot = JsonSpot::of(&error, &long);
+    /// assert_eq!(spot.text.chars().count(), 1 + 40 + 40 + 1);
+    /// assert!(spot.text.starts_with('…') && spot.text.ends_with('…'));
+    /// ```
+    #[must_use]
+    pub fn of(error: &serde_json::Error, text: &str) -> Self {
+        let line = text
+            .lines()
+            .nth(error.line().saturating_sub(1))
+            .unwrap_or_default();
+        let mut at = error.column().saturating_sub(1).min(line.len());
+        while !line.is_char_boundary(at) {
+            at -= 1;
+        }
+        let (before, after) = line.split_at(at);
+        let skipped = before.chars().count().saturating_sub(SPOT_REACH);
+        let before: String = before.chars().skip(skipped).collect();
+        let lead = if skipped > 0 { "…" } else { "" };
+        let tail = if after.chars().nth(SPOT_REACH).is_some() {
+            "…"
+        } else {
+            ""
+        };
+        let after: String = after.chars().take(SPOT_REACH).collect();
+        Self {
+            line: error.line(),
+            column: error.column(),
+            text: format!("{lead}{before}{after}{tail}").replace('\t', " "),
+            caret: lead.chars().count() + before.chars().count(),
+        }
+    }
+}
 
 /// A value that cannot be used as given; nothing was sent.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Hint)]
 #[cfg_attr(test, derive(strum::EnumDiscriminants))]
 #[cfg_attr(test, strum_discriminants(derive(strum::EnumIter, PartialOrd, Ord)))]
 pub enum InputError {
@@ -107,10 +167,8 @@ pub enum InputError {
     )]
     OfflineByName { reference: String },
 
-    #[error(
-        "\"{reference}\" names both the workspace root and the folder {folders}: give / or no \
-         folder for the root, the folder's id for the folder"
-    )]
+    #[error("\"{reference}\" names both the workspace root and the folder {folders}")]
+    #[hint(NameRootOrFolder)]
     RootOrFolder {
         reference: String,
         folders: Candidates,
@@ -119,9 +177,8 @@ pub enum InputError {
     #[error("cannot move \"{name}\" into itself or into a folder inside it")]
     MoveIntoItself { name: String },
 
-    #[error(
-        "\"{name}\" is your own board, so you cannot leave it: remove it with `holst b rm`"
-    )]
+    #[error("\"{name}\" is your own board, so you cannot leave it")]
+    #[hint(RemoveInstead)]
     LeaveOwnBoard { name: String },
 
     #[error("the name is empty: a board or folder needs a visible name")]
@@ -155,9 +212,16 @@ pub enum InputError {
         expected: String,
     },
 
+    #[error("{name} of `{command}` must be a JSON object")]
+    NotJsonObject {
+        command: String,
+        name: &'static str,
+        spot: JsonSpot,
+    },
+
     // The words are those of a value's own parse, which are ours.
-    #[error("{0}")]
-    NotCommandArguments(#[source] serde_json::Error),
+    #[error(transparent)]
+    NotCommandArguments(serde_json::Error),
 
     #[error(
         "the new empty board {board} is left in the workspace: moving it to the trash failed ({failed})"
@@ -165,132 +229,15 @@ pub enum InputError {
     ImportBoardLeft { board: String, failed: Box<Error> },
     #[error("the cover was changed, but the note was not written")]
     CoverChanged,
-    #[error("{} problems:{}", .errors.len(), listed(.errors))]
+    #[error("{} problems: {}", .errors.len(), joined(.errors))]
     Several { errors: Vec<Error> },
 
     #[error("no workspaces found")]
     NoWorkspaces,
 
     #[error("there are several workspaces; choose one: {workspaces}")]
+    #[hint(NarrowDown)]
     WorkspaceNotChosen { workspaces: Candidates },
-}
-
-impl InputError {
-    #[must_use]
-    pub(super) fn mcp_words(&self) -> Option<String> {
-        match self {
-            // One line, as MCP replies are short.
-            InputError::Several { errors: problems } => Some(format!(
-                "{} problems: {}",
-                problems.len(),
-                problems
-                    .iter()
-                    .map(|problem| problem.on(Surface::Mcp))
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            )),
-            InputError::RootOrFolder { reference, folders } => Some(format!(
-                "\"{reference}\" names both the workspace root and the folder {folders}: give the \
-                 workspace id for the root, the folder's id or @N for the folder"
-            )),
-            InputError::LeaveOwnBoard { name } => Some(format!(
-                "\"{name}\" is your own board, so you cannot leave it: remove it with \
-                 board_write action=rm"
-            )),
-            // `--offline` is the CLI's only: MCP never reads offline.
-            InputError::OfflineByName { .. }
-            | InputError::WorkspaceNotChosen { .. }
-            | InputError::BaseNotOrigin { .. }
-            | InputError::BaseNotUrl { .. }
-            | InputError::BaseNotHttps { .. }
-            | InputError::NotUrl { .. }
-            | InputError::ForeignOrigin { .. }
-            | InputError::NotApiPath { .. }
-            | InputError::FullUrl
-            | InputError::RelativePath
-            | InputError::NotBoardId { .. }
-            | InputError::NotWorkspaceId { .. }
-            | InputError::NotFolderId { .. }
-            | InputError::NotObjectId { .. }
-            | InputError::NotPathSegment { .. }
-            | InputError::NotFinite { .. }
-            | InputError::NotPositive { .. }
-            | InputError::NotNodeKind { .. }
-            | InputError::NotObjectKind { .. }
-            | InputError::NotIcon { .. }
-            | InputError::NotHttpMethod { .. }
-            | InputError::SessionNotHeaderSafe
-            | InputError::EmptySharingPatch
-            | InputError::TemplateNotObject
-            | InputError::BlankName
-            | InputError::BlankMediaName
-            | InputError::GuestSharesNoTemplate { .. }
-            | InputError::MoveIntoItself { .. }
-            | InputError::CacheMaxNotSize { .. }
-            | InputError::CacheTrustNotDuration { .. }
-            | InputError::CacheDirRelative { .. }
-            | InputError::NotArgument { .. }
-            | InputError::NoArgument { .. }
-            | InputError::NotArgumentValue { .. }
-            | InputError::ReplyNotFound { .. }
-            | InputError::NotCommandArguments(_)
-            | InputError::ImportBoardLeft { .. }
-            | InputError::CoverChanged
-            | InputError::NoWorkspaces => None,
-        }
-    }
-
-    /// What to do next, decided for every variant.
-    #[must_use]
-    pub const fn hint(&self) -> Option<Hint> {
-        match self {
-            InputError::WorkspaceNotChosen { .. } => Some(Hint::NarrowDown),
-            InputError::BaseNotOrigin { .. }
-            | InputError::BaseNotUrl { .. }
-            | InputError::BaseNotHttps { .. }
-            | InputError::NotUrl { .. }
-            | InputError::ForeignOrigin { .. }
-            | InputError::NotApiPath { .. }
-            | InputError::FullUrl
-            | InputError::RelativePath
-            | InputError::NotBoardId { .. }
-            | InputError::NotWorkspaceId { .. }
-            | InputError::NotFolderId { .. }
-            | InputError::NotObjectId { .. }
-            | InputError::NotPathSegment { .. }
-            | InputError::NotFinite { .. }
-            | InputError::NotPositive { .. }
-            | InputError::NotNodeKind { .. }
-            | InputError::NotObjectKind { .. }
-            | InputError::NotIcon { .. }
-            | InputError::NotHttpMethod { .. }
-            | InputError::SessionNotHeaderSafe
-            | InputError::EmptySharingPatch
-            | InputError::TemplateNotObject
-            | InputError::BlankName
-            | InputError::BlankMediaName
-            // The message names the flag value to use instead.
-            | InputError::GuestSharesNoTemplate { .. }
-            | InputError::MoveIntoItself { .. }
-            | InputError::CacheMaxNotSize { .. }
-            | InputError::CacheTrustNotDuration { .. }
-            | InputError::CacheDirRelative { .. }
-            | InputError::OfflineByName { .. }
-            | InputError::RootOrFolder { .. }
-            // The message names the command to use instead.
-            | InputError::LeaveOwnBoard { .. }
-            | InputError::NoWorkspaces
-            | InputError::NotArgument { .. }
-            | InputError::NoArgument { .. }
-            | InputError::NotArgumentValue { .. }
-            | InputError::ReplyNotFound { .. }
-            | InputError::NotCommandArguments(_)
-            | InputError::ImportBoardLeft { .. }
-            | InputError::CoverChanged
-            // Each problem's own words say what to change.
-            | InputError::Several { .. } => None,
-        }
-    }
 }
 
 fn close_list(close: &[String]) -> String {
@@ -308,148 +255,137 @@ fn taken_list(taken: &[&str]) -> String {
     }
 }
 
-fn listed(problems: &[Error]) -> String {
-    problems
+fn joined(errors: &[Error]) -> String {
+    errors
         .iter()
-        .flat_map(|problem| [String::from("\n  - "), problem.to_string()])
-        .collect()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 #[cfg(test)]
 pub(super) mod tests {
     use crate::error::{
         Error,
-        hint::{Hint, decided::assert_every_variant},
-        input::{InputError, InputErrorDiscriminants},
+        hint::decided::assert_all_listed,
+        input::{InputError, InputErrorDiscriminants, JsonSpot},
         lookup::Candidates,
     };
 
-    #[expect(clippy::too_many_lines, reason = "one sample per variant")]
-    pub(in crate::error) fn samples() -> Vec<(InputError, Option<Hint>)> {
+    pub(in crate::error) fn samples() -> Vec<InputError> {
         let text = || String::from("x");
         vec![
-            (InputError::BaseNotOrigin { base: text() }, None),
-            (InputError::BaseNotUrl { base: text() }, None),
-            (InputError::BaseNotHttps { base: text() }, None),
-            (InputError::NotUrl { url: text() }, None),
-            (
-                InputError::ForeignOrigin {
-                    origin: text(),
-                    base: text(),
+            InputError::BaseNotOrigin { base: text() },
+            InputError::BaseNotUrl { base: text() },
+            InputError::BaseNotHttps { base: text() },
+            InputError::NotUrl { url: text() },
+            InputError::ForeignOrigin {
+                origin: text(),
+                base: text(),
+            },
+            InputError::NotApiPath { path: text() },
+            InputError::FullUrl,
+            InputError::RelativePath,
+            InputError::NotBoardId { raw: text() },
+            InputError::NotWorkspaceId { raw: text() },
+            InputError::NotFolderId { raw: text() },
+            InputError::NotObjectId { raw: text() },
+            InputError::NotPathSegment { raw: text() },
+            InputError::NotFinite { value: f64::NAN },
+            InputError::NotPositive { value: -1.0 },
+            InputError::NotNodeKind { raw: text() },
+            InputError::NotHttpMethod { raw: text() },
+            InputError::NotObjectKind {
+                raw: text(),
+                known: vec![text()],
+            },
+            InputError::SessionNotHeaderSafe,
+            InputError::EmptySharingPatch,
+            InputError::TemplateNotObject,
+            InputError::BlankName,
+            InputError::BlankMediaName,
+            InputError::NotIcon {
+                name: text(),
+                close: Vec::new(),
+            },
+            InputError::GuestSharesNoTemplate { workspace: text() },
+            InputError::LeaveOwnBoard { name: text() },
+            InputError::MoveIntoItself { name: text() },
+            InputError::CacheMaxNotSize { value: text() },
+            InputError::CacheTrustNotDuration { value: text() },
+            InputError::CacheDirRelative { value: text() },
+            InputError::OfflineByName { reference: text() },
+            InputError::RootOrFolder {
+                reference: text(),
+                folders: Candidates::default(),
+            },
+            InputError::NoWorkspaces,
+            InputError::CoverChanged,
+            InputError::NotArgument {
+                command: text(),
+                name: text(),
+                taken: Vec::new(),
+            },
+            InputError::NoArgument {
+                command: text(),
+                name: "x",
+            },
+            InputError::NotArgumentValue {
+                command: text(),
+                name: "x",
+                expected: text(),
+            },
+            InputError::NotJsonObject {
+                command: text(),
+                name: "x",
+                spot: JsonSpot {
+                    line: 2,
+                    column: 5,
+                    text: text(),
+                    caret: 4,
                 },
-                None,
-            ),
-            (InputError::NotApiPath { path: text() }, None),
-            (InputError::FullUrl, None),
-            (InputError::RelativePath, None),
-            (InputError::NotBoardId { raw: text() }, None),
-            (InputError::NotWorkspaceId { raw: text() }, None),
-            (InputError::NotFolderId { raw: text() }, None),
-            (InputError::NotObjectId { raw: text() }, None),
-            (InputError::NotPathSegment { raw: text() }, None),
-            (InputError::NotFinite { value: f64::NAN }, None),
-            (InputError::NotPositive { value: -1.0 }, None),
-            (InputError::NotNodeKind { raw: text() }, None),
-            (InputError::NotHttpMethod { raw: text() }, None),
-            (
-                InputError::NotObjectKind {
-                    raw: text(),
-                    known: vec![text()],
-                },
-                None,
-            ),
-            (InputError::SessionNotHeaderSafe, None),
-            (InputError::EmptySharingPatch, None),
-            (InputError::TemplateNotObject, None),
-            (InputError::BlankName, None),
-            (InputError::BlankMediaName, None),
-            (
-                InputError::NotIcon {
-                    name: text(),
-                    close: Vec::new(),
-                },
-                None,
-            ),
-            (
-                InputError::GuestSharesNoTemplate { workspace: text() },
-                None,
-            ),
-            (InputError::LeaveOwnBoard { name: text() }, None),
-            (InputError::MoveIntoItself { name: text() }, None),
-            (InputError::CacheMaxNotSize { value: text() }, None),
-            (InputError::CacheTrustNotDuration { value: text() }, None),
-            (InputError::CacheDirRelative { value: text() }, None),
-            (InputError::OfflineByName { reference: text() }, None),
-            (
-                InputError::RootOrFolder {
-                    reference: text(),
-                    folders: Candidates::default(),
-                },
-                None,
-            ),
-            (InputError::NoWorkspaces, None),
-            (InputError::CoverChanged, None),
-            (
-                InputError::NotArgument {
-                    command: text(),
-                    name: text(),
-                    taken: Vec::new(),
-                },
-                None,
-            ),
-            (
-                InputError::NoArgument {
-                    command: text(),
-                    name: "x",
-                },
-                None,
-            ),
-            (
-                InputError::NotArgumentValue {
-                    command: text(),
-                    name: "x",
-                    expected: text(),
-                },
-                None,
-            ),
-            (
-                InputError::ReplyNotFound {
-                    reply: text(),
-                    thread: text(),
-                },
-                None,
-            ),
-            (
-                InputError::NotCommandArguments(serde::de::Error::custom("x")),
-                None,
-            ),
-            (
-                InputError::ImportBoardLeft {
-                    board: text(),
-                    failed: Box::new(Error::from(InputError::FullUrl)),
-                },
-                None,
-            ),
-            (
-                InputError::Several {
-                    errors: vec![
-                        Error::from(InputError::FullUrl),
-                        Error::from(InputError::RelativePath),
-                    ],
-                },
-                None,
-            ),
-            (
-                InputError::WorkspaceNotChosen {
-                    workspaces: Candidates::default(),
-                },
-                Some(Hint::NarrowDown),
-            ),
+            },
+            InputError::ReplyNotFound {
+                reply: text(),
+                thread: text(),
+            },
+            InputError::NotCommandArguments(serde::de::Error::custom("x")),
+            InputError::ImportBoardLeft {
+                board: text(),
+                failed: Box::new(Error::from(InputError::FullUrl)),
+            },
+            InputError::Several {
+                errors: vec![
+                    Error::from(InputError::FullUrl),
+                    Error::from(InputError::RelativePath),
+                ],
+            },
+            InputError::WorkspaceNotChosen {
+                workspaces: Candidates::default(),
+            },
         ]
     }
 
     #[test]
     fn every_variant_has_a_hint_decision() {
-        assert_every_variant::<_, InputErrorDiscriminants>(samples(), InputError::hint);
+        assert_all_listed::<_, InputErrorDiscriminants>(&samples());
+    }
+
+    #[test]
+    fn several_problems_are_listed_on_one_line() {
+        let several = InputError::Several {
+            errors: vec![
+                Error::from(InputError::FullUrl),
+                Error::from(InputError::RelativePath),
+            ],
+        };
+        assert_eq!(
+            several.to_string(),
+            format!(
+                "2 problems: {}; {}",
+                InputError::FullUrl,
+                InputError::RelativePath
+            )
+        );
     }
 }

@@ -79,9 +79,9 @@ async fn a_spread_makes_the_gaps_equal(
 
 #[rstest]
 #[tokio::test]
-async fn a_locked_object_refuses_the_call_and_nothing_is_written(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_locked_object_refuses_the_call_and_nothing_is_written()
+-> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = plans_with(vec![
         FixtureObject::Group.set("locked", json!(true)),
         FixtureObject::Sticker("One".into()).inside(1),

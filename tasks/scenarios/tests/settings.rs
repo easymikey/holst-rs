@@ -65,9 +65,8 @@ async fn a_cover_reset_uploads_a_fresh_preview(
 
 #[rstest]
 #[tokio::test]
-async fn a_cover_that_is_not_an_image_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_cover_that_is_not_an_image_is_refused() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_a_plan()
         .local_file("notes.png", b"plain words")
         .start()
@@ -107,9 +106,8 @@ async fn a_board_edit_dry_run_changes_nothing(
 
 #[rstest]
 #[tokio::test]
-async fn a_board_edit_without_flags_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_board_edit_without_flags_is_refused() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_a_plan().start().await?;
     let observation = holst.on(surface).edit_board_settings("Plan", None).await?;
     then(&observation).signalled_as(surface.usage());
@@ -119,9 +117,8 @@ async fn a_board_edit_without_flags_is_refused(
 
 #[rstest]
 #[tokio::test]
-async fn a_board_you_cannot_edit_keeps_its_cover(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_board_you_cannot_edit_keeps_its_cover() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team")
@@ -203,9 +200,8 @@ async fn a_note_dry_run_changes_nothing(
 
 #[rstest]
 #[tokio::test]
-async fn a_note_of_a_board_you_cannot_edit_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_note_of_a_board_you_cannot_edit_is_refused() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team")

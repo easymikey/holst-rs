@@ -8,10 +8,8 @@ use crate::{
         board::ObjectKind,
         kinds::mind_map::{HIDE_CHILDREN, NODE},
     },
-    error::Result,
+    error::{Result, board_change::ObjectField},
 };
-
-pub(super) const CHILDREN: &str = "children";
 
 pub(super) fn write(hidden: bool) -> Written {
     Written {
@@ -21,7 +19,7 @@ pub(super) fn write(hidden: bool) -> Written {
 }
 
 pub(super) fn check(kind: &ObjectKind) -> Result<()> {
-    only(kind, &ObjectKind::of(NODE), CHILDREN)
+    only(kind, &ObjectKind::of(NODE), ObjectField::Children)
 }
 
 #[cfg(test)]
@@ -44,7 +42,11 @@ mod tests {
             kinds::mind_map,
             rich_text::TextFormat,
         },
-        error::{Error, Result, board_change::BoardChangeError},
+        error::{
+            Error,
+            Result,
+            board_change::{BoardChangeError, ObjectField},
+        },
     };
 
     fn board_with(new: NewObject) -> Result<Doc> {
@@ -105,7 +107,7 @@ mod tests {
         assert!(matches!(
             edit(&document, true),
             Err(Error::BoardChange(BoardChangeError::NotChangeable {
-                field: "children",
+                field: ObjectField::Children,
                 ..
             }))
         ));

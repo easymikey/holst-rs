@@ -336,7 +336,7 @@ async fn named_clients_without_a_terminal_or_a_login_say_where_to_log_in()
         .await;
     assert_eq!(
         outcome.err().map(|err| err.to_string()).as_deref(),
-        Some("There is no saved login: run holst-mcp setup in a terminal.")
+        Some("there is no saved login: run `holst-mcp setup` in a terminal")
     );
     assert!(!shown.contains("Email"), "{shown}");
     assert!(asked.is_empty(), "{asked:?}");
@@ -347,7 +347,7 @@ async fn named_clients_without_a_terminal_or_a_login_say_where_to_log_in()
 fn a_stale_copy_is_warned_about_with_its_hint() {
     let stale = holst_core::Error::LocalData(
         holst_core::error::local_data::LocalDataError::StaleLogin {
-            session_store: "keychain",
+            session_store: holst_core::domain::session::SessionStoreKind::File,
             error: Box::new(holst_core::Error::Login(
                 holst_core::error::login::LoginError::NoSavedLogin,
             )),
@@ -355,7 +355,7 @@ fn a_stale_copy_is_warned_about_with_its_hint() {
     );
     let warning = stale_warning(&stale);
     assert!(
-        warning.starts_with("an older login may be left in the keychain"),
+        warning.starts_with("an older login may be left in the file"),
         "{warning}"
     );
     assert!(
@@ -396,7 +396,7 @@ async fn a_login_saved_for_another_server_is_refused_to_the_agent()
     let advice = refused
         .as_ref()
         .and_then(holst_core::Error::hint)
-        .map(|hint| hint.on(Surface::Mcp).to_string());
+        .map(|hint| hint.text(Surface::Mcp).to_string());
     assert!(refused.is_some_and(|err| {
         err.to_string()
             .starts_with("the saved login is for http://")

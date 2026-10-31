@@ -1,6 +1,6 @@
 //! A login and its lifecycle `Missing → Active → Revoked` as typed states.
 
-use std::{borrow::Cow, str::FromStr};
+use std::{borrow::Cow, fmt, str::FromStr};
 
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
@@ -268,6 +268,12 @@ impl SessionStoreKind {
             SessionStoreKind::Keychain => "Secret Service",
             SessionStoreKind::File => "file",
         }
+    }
+}
+
+impl fmt::Display for SessionStoreKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 

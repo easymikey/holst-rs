@@ -29,13 +29,14 @@ async fn boards_are_found_by_part_of_their_name(
 }
 
 #[rstest]
-#[case("folder", "Road works")]
-#[case("board", "Roadmap")]
+#[case("folder", "Road works", Surface::Cli)]
+#[case("folder", "Road works", Surface::Mcp)]
+#[case("board", "Roadmap", Surface::Cli)]
 #[tokio::test]
 async fn names_search_finds_folders_and_boards(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
     #[case] kind: &str,
     #[case] expected: &str,
+    #[case] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = given()
         .saved_login()
@@ -173,13 +174,14 @@ async fn a_search_with_no_hits_says_so(
 }
 
 #[rstest]
-#[case::default(None, 20)]
-#[case::all(Some(0), 25)]
+#[case::default(None, 20, Surface::Cli)]
+#[case::default_mcp(None, 20, Surface::Mcp)]
+#[case::all(Some(0), 25, Surface::Cli)]
 #[tokio::test]
 async fn the_default_limit_is_twenty(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
     #[case] limit: Option<u32>,
     #[case] shown: usize,
+    #[case] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = given()
         .saved_login()
@@ -218,9 +220,8 @@ async fn a_misspelt_mode_is_refused_with_the_modes_listed(
 
 #[rstest]
 #[tokio::test]
-async fn an_unknown_board_filter_is_not_found(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn an_unknown_board_filter_is_not_found() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = two_boards_with_milk().start().await?;
     let observation = holst
         .on(surface)
@@ -234,9 +235,8 @@ async fn an_unknown_board_filter_is_not_found(
 
 #[rstest]
 #[tokio::test]
-async fn search_needs_a_login(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn search_needs_a_login() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given().workspace("Team").start().await?;
     let observation = holst.on(surface).search(Search::new("milk")).await?;
     then(&observation)

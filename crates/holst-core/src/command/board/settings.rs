@@ -679,9 +679,13 @@ mod tests {
         .await?;
         let said = done
             .err()
-            .map(|error| error.to_string())
+            .map(|error| error.problem_texts())
             .unwrap_or_default();
-        assert!(said.contains("the cover was changed"), "{said}");
+        assert!(
+            said.iter()
+                .any(|text| text.contains("the cover was changed")),
+            "{said:?}"
+        );
         Ok(())
     }
 

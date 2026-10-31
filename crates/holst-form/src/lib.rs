@@ -1,6 +1,6 @@
 //! Terminal pieces shared by the Holst command-line tools.
 
-pub mod coloring;
+pub mod color_choice;
 pub mod detect;
 pub mod draw;
 pub mod error;

@@ -10,7 +10,11 @@ use crate::{
         change::value::{BoardChange, FrameEdit, NewObject, ObjectPatch},
         geometry::{Point, Size},
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{
+        Error,
+        Result,
+        board_change::{BoardChangeError, ObjectField},
+    },
 };
 
 fn apply(document: &Doc, change: &BoardChange) -> Result<Vec<String>> {
@@ -149,7 +153,7 @@ fn only_a_frame_has_a_ratio() -> Result<()> {
     assert!(matches!(
         refused,
         Err(Error::BoardChange(BoardChangeError::NotChangeable {
-            field: "ratio",
+            field: ObjectField::Ratio,
             ..
         }))
     ));

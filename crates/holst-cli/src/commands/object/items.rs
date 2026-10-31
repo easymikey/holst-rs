@@ -1,5 +1,6 @@
 //! `--items FILE`: the file or stdin, read into the array the command parses.
 
+use holst_core::error::input::JsonSpot;
 use serde_json::{Map, Value};
 
 use crate::{
@@ -28,14 +29,25 @@ pub(super) fn read(arguments: &mut Map<String, Value>) -> Result<()> {
 fn parse(text: &str) -> Result<Value> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     if text.trim_start().starts_with('[') {
-        serde_json::from_str(text).map_err(Error::ItemsNotJson)
+        serde_json::from_str(text).map_err(|error| Error::ItemsNotJson {
+            spot: JsonSpot::of(&error, text),
+            error,
+        })
     } else {
         text.lines()
-            .filter(|line| !line.trim().is_empty())
-            .map(serde_json::from_str)
-            .collect::<std::result::Result<Vec<Value>, _>>()
+            .enumerate()
+            .filter(|(_, line)| !line.trim().is_empty())
+            .map(|(at, line)| {
+                serde_json::from_str(line).map_err(|error| Error::ItemsNotJson {
+                    spot: JsonSpot {
+                        line: at + 1,
+                        ..JsonSpot::of(&error, line)
+                    },
+                    error,
+                })
+            })
+            .collect::<Result<Vec<Value>>>()
             .map(Value::Array)
-            .map_err(Error::ItemsNotJson)
     }
 }
 
@@ -66,7 +78,31 @@ mod tests {
 
     #[test]
     fn text_that_is_not_json_is_refused() {
-        assert!(matches!(parse("{\"text\": "), Err(Error::ItemsNotJson(_))));
-        assert!(matches!(parse("[{}"), Err(Error::ItemsNotJson(_))));
+        assert!(matches!(
+            parse("{\"text\": "),
+            Err(Error::ItemsNotJson { .. })
+        ));
+        assert!(matches!(parse("[{}"), Err(Error::ItemsNotJson { .. })));
+    }
+
+    fn spot(text: &str) -> Option<(usize, usize, String)> {
+        match parse(text) {
+            Err(Error::ItemsNotJson { spot, .. }) => {
+                Some((spot.line, spot.column, spot.text))
+            }
+            Ok(_) | Err(_) => None,
+        }
+    }
+
+    #[test]
+    fn the_error_of_an_array_knows_its_line_and_column() {
+        let text = "[\n  {\"a\": 1},\n  {\"a\": }\n]";
+        assert_eq!(spot(text), Some((3, 9, "  {\"a\": }".to_owned())));
+    }
+
+    #[test]
+    fn the_error_of_json_lines_knows_the_line_in_the_file() {
+        let text = "{\"a\":1}\n\n{\"a\":2}\n{\"a\": }\n";
+        assert_eq!(spot(text), Some((4, 7, "{\"a\": }".to_owned())));
     }
 }

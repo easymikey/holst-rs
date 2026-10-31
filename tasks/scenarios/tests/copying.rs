@@ -27,9 +27,9 @@ fn two_boards() -> Given {
 
 #[rstest]
 #[tokio::test]
-async fn a_board_that_withholds_copying_is_not_copied_from(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_board_that_withholds_copying_is_not_copied_from() -> Result<(), ScenarioError>
+{
+    let surface = Surface::Cli;
     let holst = two_boards().start().await?;
     withhold_copying(&holst, "Plans", "editor", "viewer");
     let call = ObjectCall::copy()

@@ -836,14 +836,21 @@ mod tests {
                 let kinds = subcommand_argument(command)
                     .map(kinds_of)
                     .unwrap_or_default();
+                let group_page = page.clone();
                 [
                     (group.clone(), format!("holst {group}")),
                     (page.clone(), line.clone()),
                 ]
                 .into_iter()
-                .chain(kinds.iter().map(move |kind| {
-                    (format!("{page}_{kind}"), format!("{line} {kind}"))
-                }))
+                .chain(
+                    kinds
+                        .iter()
+                        .filter(|kind| !is_diffed_kind(&group_page, kind))
+                        .map(move |kind| {
+                            (format!("{page}_{kind}"), format!("{line} {kind}"))
+                        })
+                        .collect::<Vec<_>>(),
+                )
             })
             .collect::<std::collections::BTreeMap<_, _>>();
         let failed = pages
@@ -860,6 +867,49 @@ mod tests {
             .map(|(name, _)| name.as_str())
             .collect::<Vec<_>>();
         assert!(failed.is_empty(), "help snapshots differ: {failed:?}");
+    }
+
+    /// `object add <kind>` pages share most of their text: only the sticker
+    /// page is pinned in full, the other kinds as their difference from it.
+    fn is_diffed_kind(page: &str, kind: &str) -> bool {
+        page == "object_add" && kind != "sticker"
+    }
+
+    #[test]
+    fn each_object_add_kind_page_differs_from_the_sticker_page_as_pinned() {
+        let sticker = help_of("holst object add sticker -h");
+        let base = sticker.lines().collect::<std::collections::BTreeSet<_>>();
+        let kinds = CommandName::iter()
+            .map(CommandName::command)
+            .filter(|command| command.surfaces.contains(&Surface::Cli))
+            .filter(|command| {
+                format!("{:?}", command.group).to_lowercase() == "object"
+                    && command.verb == Some("add")
+            })
+            .flat_map(|command| {
+                subcommand_argument(command)
+                    .map(kinds_of)
+                    .unwrap_or_default()
+            })
+            .filter(|kind| is_diffed_kind("object_add", kind))
+            .collect::<Vec<_>>();
+        let diff = kinds
+            .iter()
+            .map(|kind| {
+                let page = help_of(&format!("holst object add {kind} -h"));
+                let lines = page.lines().collect::<std::collections::BTreeSet<_>>();
+                let added = page.lines().filter(|line| !base.contains(line));
+                let removed = sticker.lines().filter(|line| !lines.contains(line));
+                let body = added
+                    .map(|line| format!("+ {line}"))
+                    .chain(removed.map(|line| format!("- {line}")))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                format!("== {kind}\n{body}")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        insta::assert_snapshot!("object_add_kinds", diff);
     }
 
     #[test]

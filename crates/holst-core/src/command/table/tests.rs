@@ -83,21 +83,6 @@ fn arguments(value: &Value) -> Map<String, Value> {
     value.as_object().cloned().unwrap_or_default()
 }
 
-/// The text of one problem, or of several as `Error::several` lists them.
-fn listed(problems: &[&str]) -> String {
-    match problems {
-        [only] => (*only).to_owned(),
-        several => format!(
-            "{} problems:{}",
-            several.len(),
-            several
-                .iter()
-                .flat_map(|problem| ["\n  - ", problem])
-                .collect::<String>()
-        ),
-    }
-}
-
 fn every_argument() -> impl Iterator<Item = (CommandGroup, &'static Argument)> {
     CommandName::iter().flat_map(|name| {
         let command = name.command();
@@ -262,8 +247,16 @@ fn wrong_arguments_are_reported_in_our_words(
 ) {
     let reported = parse::<ProbeArgs>(arguments(&given))
         .err()
-        .map(|error| error.to_string());
-    assert_eq!(reported, Some(listed(wanted)));
+        .map(|error| error.problem_texts());
+    assert_eq!(
+        reported,
+        Some(
+            wanted
+                .iter()
+                .map(|text| (*text).to_owned())
+                .collect::<Vec<_>>()
+        )
+    );
 }
 #[test]
 fn items_are_a_list_of_objects() -> crate::Result<()> {

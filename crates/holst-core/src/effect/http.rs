@@ -131,7 +131,10 @@ pub trait Transport: Send + Sync + 'static {
     /// Send the request and read the whole response, whatever the status.
     ///
     /// # Errors
-    /// [`HttpError::Transport`](crate::error::http::HttpError::Transport);
+    /// [`HttpError::Timeout`](crate::error::http::HttpError::Timeout),
+    /// [`HttpError::Connect`](crate::error::http::HttpError::Connect),
+    /// [`HttpError::CutOff`](crate::error::http::HttpError::CutOff) or
+    /// [`HttpError::Network`](crate::error::http::HttpError::Network);
     /// [`HttpError::NoResponse`](crate::error::http::HttpError::NoResponse) for
     /// a write that broke after it was sent;
     /// [`HttpError::ResponseTooLarge`](crate::error::http::HttpError::ResponseTooLarge)
@@ -146,8 +149,8 @@ pub trait Transport: Send + Sync + 'static {
     /// network may keep the default, which returns itself unchanged.
     ///
     /// # Errors
-    /// [`HttpError::Transport`](crate::error::http::HttpError::Transport) if
-    /// the limited transport cannot be built.
+    /// [`HttpError::Build`](crate::error::http::HttpError::Build) if the
+    /// limited transport cannot be built.
     fn limited(
         self: Arc<Self>,
         _timeout: Duration,

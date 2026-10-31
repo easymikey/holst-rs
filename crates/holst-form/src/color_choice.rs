@@ -3,24 +3,24 @@
 use console::Style;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Coloring {
+pub enum ColorChoice {
     Plain,
     Colored,
 }
 
-impl Coloring {
+impl ColorChoice {
     #[must_use]
     pub const fn colored_if(on: bool) -> Self {
         if on {
-            Coloring::Colored
+            ColorChoice::Colored
         } else {
-            Coloring::Plain
+            ColorChoice::Plain
         }
     }
 
     fn paint(self, style: Style, text: &str) -> String {
         style
-            .force_styling(self == Coloring::Colored)
+            .force_styling(self == ColorChoice::Colored)
             .apply_to(text)
             .to_string()
     }
@@ -33,6 +33,11 @@ impl Coloring {
     #[must_use]
     pub fn cyan(self, text: &str) -> String {
         self.paint(Style::new().cyan(), text)
+    }
+
+    #[must_use]
+    pub fn cyan_bold(self, text: &str) -> String {
+        self.paint(Style::new().cyan().bold(), text)
     }
 
     #[must_use]
@@ -73,7 +78,7 @@ impl Coloring {
     #[must_use]
     pub fn code_on(self, text: &str, rest: impl Fn(&str) -> String) -> String {
         match self {
-            Coloring::Colored => text
+            ColorChoice::Colored => text
                 .split('`')
                 .enumerate()
                 .map(|(at, part)| match at % 2 {
@@ -81,7 +86,7 @@ impl Coloring {
                     _ => rest(part),
                 })
                 .collect(),
-            Coloring::Plain => rest(text),
+            ColorChoice::Plain => rest(text),
         }
     }
 }

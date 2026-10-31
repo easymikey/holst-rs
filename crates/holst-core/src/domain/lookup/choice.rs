@@ -4,7 +4,7 @@
 
 use std::{borrow::Borrow, cmp::Reverse, collections::BTreeMap};
 
-pub use crate::error::lookup::{SkipReason, SkippedWorkspaces};
+pub use crate::error::lookup::{SkipWhy, SkippedWorkspaces};
 use crate::{
     domain::{
         account::Workspace,
@@ -105,8 +105,7 @@ impl SkippedWorkspaces {
                 .into_iter()
                 .chain([Skipped {
                     workspace: workspace.name.clone(),
-                    reason: SkipReason::from(error),
-                    status: error.status(),
+                    why: SkipWhy::from(error),
                 }])
                 .collect(),
         )

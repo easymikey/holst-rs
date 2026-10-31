@@ -11,14 +11,11 @@ use crate::{
         kinds::flipcard::{BACK_DOCUMENT, HIGH, SIDE, WIDE},
         rich_text::TextFormat,
     },
-    error::Result,
+    error::{Result, board_change::ObjectField},
     protocol::document::{HEIGHT, POSITION, ROTATION, SCALE, WIDTH, X, Y},
 };
 
-pub(super) const FLIP: &str = "flip";
-pub(super) const BACK: &str = "back";
-
-pub(super) fn check(kind: &ObjectKind, field: &'static str) -> Result<()> {
+pub(super) fn check(kind: &ObjectKind, field: ObjectField) -> Result<()> {
     only(kind, &ObjectKind::Flipcard, field)
 }
 
@@ -101,7 +98,11 @@ mod tests {
             kinds::flipcard,
             rich_text::TextFormat,
         },
-        error::{Error, Result, board_change::BoardChangeError},
+        error::{
+            Error,
+            Result,
+            board_change::{BoardChangeError, ObjectField},
+        },
     };
 
     fn board_with(new: NewObject) -> Result<Doc> {
@@ -222,11 +223,11 @@ mod tests {
             refused,
             [
                 Some(Error::BoardChange(BoardChangeError::NotChangeable {
-                    field: "flip",
+                    field: ObjectField::Flip,
                     ..
                 })),
                 Some(Error::BoardChange(BoardChangeError::NotChangeable {
-                    field: "back",
+                    field: ObjectField::Back,
                     ..
                 })),
             ]

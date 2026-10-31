@@ -28,8 +28,10 @@ use crate::{
     },
     effect::{board_write::WriteMode, request::ApiRequest},
     error::{
+        Error,
         Result,
         confirmation::{ChangeRisk, Unconfirmed},
+        input::{InputError, JsonSpot},
     },
     remote::{api, client::Client, socket::write::connector},
 };
@@ -394,8 +396,14 @@ pub async fn create(client: &Client, args: &CreateArgs) -> Result<Changed> {
 /// A body that is not a JSON object, a template that is not found or is named
 /// by several, and errors of the requests.
 pub async fn edit(client: &Client, args: &EditArgs) -> Result<Changed> {
-    let body = serde_json::from_str::<Map<String, Value>>(&args.body.0)
-        .map_err(|_| not_value(EDIT, "body", "a JSON object"))?;
+    let body =
+        serde_json::from_str::<Map<String, Value>>(&args.body.0).map_err(|error| {
+            Error::from(InputError::NotJsonObject {
+                command: EDIT.to_owned(),
+                name: "body",
+                spot: JsonSpot::of(&error, &args.body.0),
+            })
+        })?;
     let (id, current) = lookup::found(client, &args.template).await?;
     let template = Template::try_from(body)?;
     let unconfirmed = Unconfirmed::new(

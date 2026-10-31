@@ -135,7 +135,7 @@ impl SessionLocation {
                 })
                 .collect(),
             Err(err) => {
-                tracing::debug!(%err, "login store: logging out unlocked");
+                tracing::debug!(err = %crate::error::chained(err), "login store: logging out unlocked");
                 clear_from(&borrowed(&stores), ended)
             }
             Ok(_) => clear_from(&borrowed(&stores), ended),
@@ -376,11 +376,11 @@ fn remove_others(stores: &[&dyn SessionStore], at: usize) -> Option<Error> {
         .fold(None, |stale, (other, store)| match store.remove() {
             Ok(_) => stale,
             Err(err) if other < at => stale.or(Some(Error::LocalData(LocalDataError::StaleLogin {
-                session_store: store.kind().as_str(),
+                session_store: store.kind(),
                 error: Box::new(err),
             }))),
             Err(err) => {
-                tracing::warn!(%err, "an old copy of the login is left in the {}", store.kind().as_str());
+                tracing::warn!(err = %crate::error::chained(&err), "an old copy of the login is left in the {}", store.kind().as_str());
                 stale
             }
         })

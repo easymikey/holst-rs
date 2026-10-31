@@ -11,7 +11,7 @@ use serde_json::{Map, Value};
 
 use crate::{
     error::Result,
-    output::{self, DiagnosticLabel, OutputFormat, coloring::Coloring},
+    output::{self, DiagnosticLabel, OutputFormat, color_choice::ColorChoice},
     run::{RunSettings, run_signed_in},
 };
 
@@ -38,13 +38,13 @@ pub(crate) async fn run(
 }
 
 /// Returns one line per match, best first; `no matches` when there is none.
-fn text(found: &Found, coloring: Coloring) -> String {
+fn text(found: &Found, color: ColorChoice) -> String {
     let lines: Vec<String> = found
         .hits
         .iter()
         .map(|hit| match hit {
             SearchHit::Name(name) => name_line(name),
-            SearchHit::Text(text) => text_line(text, coloring),
+            SearchHit::Text(text) => text_line(text, color),
         })
         .collect();
     if lines.is_empty() {
@@ -77,7 +77,7 @@ fn name_line(found: &NameMatch) -> String {
     .into_owned()
 }
 
-fn text_line(found: &TextMatch, coloring: Coloring) -> String {
+fn text_line(found: &TextMatch, color: ColorChoice) -> String {
     let [from, to] = found.matched;
     let chars: Vec<char> = found.excerpt.chars().collect();
     let part = |start: usize, end: usize| -> String {
@@ -89,7 +89,7 @@ fn text_line(found: &TextMatch, coloring: Coloring) -> String {
         printable(&found.kind),
         printable(short_id(&found.object)),
         printable(&part(0, from)),
-        coloring.yellow(&printable(&part(from, to))),
+        color.yellow(&printable(&part(from, to))),
         printable(&part(to, chars.len())),
         found.link,
     )
@@ -133,7 +133,7 @@ mod tests {
 
     use crate::{
         commands::search::{name_line, skipped_workspace, text, text_line},
-        output::coloring::Coloring,
+        output::color_choice::ColorChoice,
     };
 
     fn text_match(excerpt: &str, matched: [usize; 2]) -> TextMatch {
@@ -165,10 +165,10 @@ mod tests {
     fn a_text_line_marks_the_match_and_disarms_escapes() {
         let hit = text_match("План \u{1b}[2J релиза", [10, 16]);
         assert_eq!(
-            text_line(&hit, Coloring::Plain),
+            text_line(&hit, ColorChoice::Plain),
             "Roadmap\u{fffd} / sticker @01234567 : План \u{fffd}[2J релиза  https://x"
         );
-        let coloured = text_line(&hit, Coloring::Colored);
+        let coloured = text_line(&hit, ColorChoice::Colored);
         assert!(
             coloured.contains("\u{1b}[33mрелиза\u{1b}[0m"),
             "{coloured:?}"
@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn no_hits_say_so() {
-        assert_eq!(text(&found(Vec::new()), Coloring::Plain), "no matches");
+        assert_eq!(text(&found(Vec::new()), ColorChoice::Plain), "no matches");
     }
 
     #[test]
@@ -224,6 +224,6 @@ mod tests {
             SearchHit::Text(text_match("plan", [0, 4])),
             SearchHit::Text(text_match("a plan", [2, 6])),
         ];
-        assert_eq!(text(&found(hits), Coloring::Plain).lines().count(), 2);
+        assert_eq!(text(&found(hits), ColorChoice::Plain).lines().count(), 2);
     }
 }

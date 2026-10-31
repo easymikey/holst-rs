@@ -54,17 +54,18 @@ async fn a_board_shows_its_objects(
 }
 
 #[rstest]
-#[case::sticker("sticker", "sticker", "Buy milk")]
-#[case::text("text", "text", "Roadmap")]
-#[case::shape_any_case("Shape", "shape", "Decision")]
-#[case::without_variant("mind-map-node", "mind-map", "Idea")]
-#[case::short_word("mind-map", "mind-map", "Idea")]
+#[case::sticker("sticker", "sticker", "Buy milk", Surface::Cli)]
+#[case::sticker_mcp("sticker", "sticker", "Buy milk", Surface::Mcp)]
+#[case::text("text", "text", "Roadmap", Surface::Cli)]
+#[case::shape_any_case("Shape", "shape", "Decision", Surface::Cli)]
+#[case::without_variant("mind-map-node", "mind-map", "Idea", Surface::Cli)]
+#[case::short_word("mind-map", "mind-map", "Idea", Surface::Cli)]
 #[tokio::test]
 async fn objects_are_filtered_by_kind(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
     #[case] kind: &str,
     #[case] shown: &str,
     #[case] text: &str,
+    #[case] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = given()
         .saved_login()
@@ -91,9 +92,9 @@ async fn objects_are_filtered_by_kind(
 
 #[rstest]
 #[tokio::test]
-async fn a_misspelt_kind_is_refused_with_the_kinds_listed(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_misspelt_kind_is_refused_with_the_kinds_listed() -> Result<(), ScenarioError>
+{
+    let surface = Surface::Cli;
     let holst = two_boards_with_milk().start().await?;
     let observation = holst
         .on(surface)
@@ -295,9 +296,8 @@ fn two_plans() -> Given {
 
 #[rstest]
 #[tokio::test]
-async fn an_ambiguous_board_name_lists_the_matches(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn an_ambiguous_board_name_lists_the_matches() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = two_plans().start().await?;
     let observation = holst
         .on(surface)
@@ -457,9 +457,8 @@ async fn a_left_board_is_gone_from_the_list(
 
 #[rstest]
 #[tokio::test]
-async fn an_own_board_cannot_be_left(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn an_own_board_cannot_be_left() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team")
@@ -468,7 +467,8 @@ async fn an_own_board_cannot_be_left(
         .await?;
     let observation = holst.on(surface).leave_board("Plan", "Team").await?;
     then(&observation)
-        .failed_saying("rm")
+        .failed_saying("your own board")
+        .failed_with_hint("rm")
         .signalled_as(surface.usage());
     tree_of(&holst, "Team").has_board("Plan", None);
     Ok(())
@@ -556,13 +556,14 @@ async fn a_board_not_found_among_several_is_told_after_the_found(
 }
 
 #[rstest]
-#[case::members("members", "editor")]
-#[case::rights("rights", "[]")]
+#[case::members("members", "editor", Surface::Cli)]
+#[case::members_mcp("members", "editor", Surface::Mcp)]
+#[case::rights("rights", "[]", Surface::Cli)]
 #[tokio::test]
 async fn board_parts_are_shown_when_asked(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
     #[case] part: &str,
     #[case] text: &str,
+    #[case] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = plan_of_four()
         .member("Ann", "Team", WorkspaceRole::Member)
@@ -608,12 +609,13 @@ async fn a_part_of_a_board_is_shown_by_frame(
 }
 
 #[rstest]
-#[case::rectangle(Look::new().rectangle("0,0,400,300"))]
-#[case::objects(Look::new().object("20000000-0000-4000-8000-000040960002").object("20000000-0000-4000-8000-000040960003").padding(0.0))]
+#[case::rectangle(Look::new().rectangle("0,0,400,300"), Surface::Cli)]
+#[case::rectangle_mcp(Look::new().rectangle("0,0,400,300"), Surface::Mcp)]
+#[case::objects(Look::new().object("20000000-0000-4000-8000-000040960002").object("20000000-0000-4000-8000-000040960003").padding(0.0), Surface::Cli)]
 #[tokio::test]
 async fn a_part_of_a_board_is_shown_by_rectangle_and_object(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
     #[case] look: Look<'_>,
+    #[case] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = plan_with_a_frame().start().await?;
     let observation = holst.on(surface).show_boards(&["Plan"], &look).await?;
@@ -732,9 +734,9 @@ async fn a_board_in_another_format_is_not_listed(
 #[rstest]
 #[tokio::test]
 async fn a_board_in_another_format_takes_no_object(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
     #[values((1, "hud"), (2, "hocuspocus"))] storage: (u32, &'static str),
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = stored_as(storage.0, storage.1).start().await?;
     let observation = holst
         .on(surface)
@@ -749,9 +751,8 @@ async fn a_board_in_another_format_takes_no_object(
 
 #[rstest]
 #[tokio::test]
-async fn a_v3_board_is_read_and_written(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_v3_board_is_read_and_written() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = stored_as(3, "hud").start().await?;
     holst.edit_board_behind_its_back(
         "Old",

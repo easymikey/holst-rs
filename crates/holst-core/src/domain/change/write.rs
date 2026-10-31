@@ -49,7 +49,7 @@ use crate::{
                 subtree,
             },
             journal,
-            kind_edit::{KindEdit, next_index},
+            kind_edit::next_index,
             made,
             media,
             rich::{fill_blocks, restyle, tick},
@@ -89,7 +89,11 @@ use crate::{
         text_layout,
         time::Timestamp,
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{
+        Error,
+        Result,
+        board_change::{BoardChangeError, ObjectField},
+    },
     protocol::document::{
         ALGORITHM,
         ALPHA,
@@ -1433,11 +1437,11 @@ fn changed_names(
     ]
     .into_iter()
     .flatten()
-    .chain(patch.shape.fields())
-    .chain(patch.arrow.fields())
-    .chain(patch.frame.fields())
-    .chain(patch.media.fields())
-    .chain(patch.kind_edits.iter().map(KindEdit::field))
+    .chain(patch.shape.fields().into_iter().map(Into::into))
+    .chain(patch.arrow.fields().into_iter().map(Into::into))
+    .chain(patch.frame.fields().into_iter().map(Into::into))
+    .chain(patch.media.fields().into_iter().map(Into::into))
+    .chain(patch.kind_edits.iter().map(|edit| edit.field().into()))
     .collect()
 }
 
@@ -1565,8 +1569,8 @@ pub(crate) fn object_map<T: ReadTxn>(
     match objects.get(transaction, id) {
         Some(Out::YMap(map)) => Ok(map),
         _ => Err(Error::BoardChange(BoardChangeError::NotChangeable {
-            kind: kind.as_str().to_owned(),
-            field: "stored fields",
+            kind: kind.clone(),
+            field: ObjectField::StoredFields,
         })),
     }
 }

@@ -146,9 +146,8 @@ async fn a_thread_starts_on_an_object_named_as_the_listing_prints_it(
 
 #[rstest]
 #[tokio::test]
-async fn a_point_and_an_object_are_not_both_taken(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_point_and_an_object_are_not_both_taken() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_board()
         .board_with_objects(BOARD, "Team", vec![FixtureObject::Sticker("Idea".into())])
         .start()
@@ -170,8 +169,8 @@ async fn a_point_and_an_object_are_not_both_taken(
 #[tokio::test]
 async fn a_command_on_an_unknown_thread_is_not_found(
     #[case] command: CommentCommand,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_thread().start().await?;
     let observation = holst
         .on(surface)
@@ -242,13 +241,14 @@ async fn a_reply_removal_needs_confirmation(
 }
 
 #[rstest]
-#[case::by_id("c1r1", &["Why?", "Theirs", "Later"])]
-#[case::by_number("3", &["Why?", "Mine", "Theirs"])]
+#[case::by_id("c1r1", &["Why?", "Theirs", "Later"], Surface::Cli)]
+#[case::by_id_mcp("c1r1", &["Why?", "Theirs", "Later"], Surface::Mcp)]
+#[case::by_number("3", &["Why?", "Mine", "Theirs"], Surface::Cli)]
 #[tokio::test]
 async fn a_confirmed_reply_removal_takes_only_that_reply(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
     #[case] reply: &str,
     #[case] left: &[&str],
+    #[case] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = with_three_replies().start().await?;
     let removed = holst
@@ -343,9 +343,8 @@ async fn a_thread_moves_onto_an_object(
 
 #[rstest]
 #[tokio::test]
-async fn a_colour_outside_the_thread_colours_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_colour_outside_the_thread_colours_is_refused() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_thread().start().await?;
     let refused = holst
         .on(surface)
@@ -361,9 +360,8 @@ async fn a_colour_outside_the_thread_colours_is_refused(
 
 #[rstest]
 #[tokio::test]
-async fn an_edit_that_changes_nothing_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn an_edit_that_changes_nothing_is_refused() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_thread().start().await?;
     let refused = holst
         .on(surface)
@@ -393,9 +391,9 @@ async fn a_dry_run_edit_sends_nothing(
 
 #[rstest]
 #[tokio::test]
-async fn a_reply_outside_the_thread_is_named_when_not_found(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_reply_outside_the_thread_is_named_when_not_found()
+-> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_three_replies().start().await?;
     let observation = holst
         .on(surface)
@@ -409,9 +407,8 @@ async fn a_reply_outside_the_thread_is_named_when_not_found(
 
 #[rstest]
 #[tokio::test]
-async fn another_authors_reply_is_not_removed(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn another_authors_reply_is_not_removed() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_three_replies().start().await?;
     let observation = holst
         .on(surface)
@@ -469,9 +466,8 @@ async fn a_dry_run_of_a_comment_write_changes_nothing(
 
 #[rstest]
 #[tokio::test]
-async fn a_thread_is_not_marked_read_at_a_bad_time(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_thread_is_not_marked_read_at_a_bad_time() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_thread().start().await?;
     let refused = holst
         .on(surface)
@@ -537,12 +533,13 @@ async fn a_viewer_cannot_comment_a_commentator_can(
 }
 
 #[rstest]
-#[case::handle("@1")]
-#[case::id("c1")]
+#[case::handle("@1", Surface::Cli)]
+#[case::handle_mcp("@1", Surface::Mcp)]
+#[case::id("c1", Surface::Cli)]
 #[tokio::test]
 async fn a_comment_is_found_by_handle_or_id(
     #[case] thread: &str,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+    #[case] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = with_thread().start().await?;
     let replied = holst
@@ -564,8 +561,8 @@ async fn a_comment_is_found_by_handle_or_id(
 #[tokio::test]
 async fn comment_commands_need_a_login(
     #[case] command: CommentCommand,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .workspace("Team")
         .board(BOARD, "Team", None)

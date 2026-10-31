@@ -52,7 +52,11 @@ use crate::{
         kinds::task::INFO_ID,
         tree::name_index::build::normalized,
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{
+        Error,
+        Result,
+        board_change::{BoardChangeError, ObjectField},
+    },
     protocol::document::{
         COLOR,
         DOCUMENT_ID,
@@ -261,8 +265,8 @@ fn card_tags(
         })
         .ok_or_else(|| {
             Error::BoardChange(BoardChangeError::NotChangeable {
-                kind: ObjectKind::Task.as_str().to_owned(),
-                field: "tags",
+                kind: ObjectKind::Task,
+                field: ObjectField::Tags,
             })
         })?;
     let held = info

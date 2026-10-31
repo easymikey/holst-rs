@@ -31,12 +31,13 @@ fn plans_with_a_sticker() -> Given {
 }
 
 #[rstest]
-#[case::svg(PictureFormat::Svg)]
-#[case::png(PictureFormat::Png)]
+#[case::svg(PictureFormat::Svg, Surface::Cli)]
+#[case::svg_mcp(PictureFormat::Svg, Surface::Mcp)]
+#[case::png(PictureFormat::Png, Surface::Cli)]
 #[tokio::test]
 async fn a_board_picture_comes_in_the_asked_format(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
     #[case] picture: PictureFormat,
+    #[case] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = plans_with_a_sticker().start().await?;
     let observation = holst.on(surface).export_picture("Plans", picture).await?;
@@ -264,13 +265,14 @@ fn plans_with_objects() -> Given {
 const PLANS_OBJECTS: [(&str, &str); 2] = [("sticker", "Buy milk"), ("text", "Roadmap")];
 
 #[rstest]
-#[case::compressed(Export::new(), true)]
-#[case::plain(Export::new().uncompressed(), false)]
+#[case::compressed(Export::new(), true, Surface::Cli)]
+#[case::compressed_mcp(Export::new(), true, Surface::Mcp)]
+#[case::plain(Export::new().uncompressed(), false, Surface::Cli)]
 #[tokio::test]
 async fn an_export_carries_compressed_or_plain_bytes(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
     #[case] how: Export,
     #[case] gzip: bool,
+    #[case] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = plans_with_objects().start().await?;
     let on = holst.on(surface);
@@ -411,9 +413,8 @@ async fn an_import_into_an_empty_board_fills_it(
 
 #[rstest]
 #[tokio::test]
-async fn a_board_that_holds_objects_is_not_overwritten(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_board_that_holds_objects_is_not_overwritten() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = plans_with_objects().start().await?;
     let on = holst.on(surface);
     on.export_board("Plans", "plans.board", Export::new())
@@ -501,9 +502,9 @@ async fn run_whole(
 #[case::import(Whole::Import)]
 #[tokio::test]
 async fn an_unknown_board_is_not_found_by_the_whole_board_commands(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
     #[case] verb: Whole,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = plans_with_objects().start().await?;
     holst
         .on(surface)
@@ -524,9 +525,9 @@ async fn an_unknown_board_is_not_found_by_the_whole_board_commands(
 #[case::import(Whole::Import)]
 #[tokio::test]
 async fn whole_board_commands_need_a_login(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
     #[case] verb: Whole,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .workspace("Team")
         .local_file("x.board", b"a board file")

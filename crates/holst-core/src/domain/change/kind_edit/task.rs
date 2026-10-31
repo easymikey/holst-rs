@@ -35,15 +35,13 @@ use crate::{
         },
         rich_text::TextFormat,
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{
+        Error,
+        Result,
+        board_change::{BoardChangeError, ObjectField},
+    },
     protocol::document::{COLOR, TASK_INFO_STORE},
 };
-
-const STATUS: &str = "status";
-const START: &str = "start";
-const DUE: &str = "due";
-const DESCRIPTION: &str = "description";
-const ASSIGNEES: &str = "assignees";
 
 /// What an edit does to one word of a card: sets it, or takes it away.
 #[derive(Debug, Clone, PartialEq)]
@@ -70,18 +68,18 @@ pub struct TaskEdit {
 
 impl TaskEdit {
     /// The first word the edit changes.
-    pub(super) fn field(&self) -> &'static str {
+    pub(super) fn field(&self) -> ObjectField {
         [
-            (STATUS, self.status.is_some()),
-            (START, self.start.is_some()),
-            (DUE, self.due.is_some()),
-            (DESCRIPTION, self.description.is_some()),
-            (ASSIGNEES, self.assignees.is_some()),
-            (COLOR, self.color.is_some()),
+            (ObjectField::Status, self.status.is_some()),
+            (ObjectField::Start, self.start.is_some()),
+            (ObjectField::Due, self.due.is_some()),
+            (ObjectField::Description, self.description.is_some()),
+            (ObjectField::Assignees, self.assignees.is_some()),
+            (ObjectField::Color, self.color.is_some()),
         ]
         .into_iter()
         .find_map(|(name, given)| given.then_some(name))
-        .unwrap_or(STATUS)
+        .unwrap_or(ObjectField::Status)
     }
 
     fn schedule_given(&self) -> bool {
@@ -250,7 +248,7 @@ fn card_assignees(
                 .cast::<MapRef>()
                 .ok()
         })
-        .ok_or_else(|| not_changeable(&ObjectKind::Task, ASSIGNEES))?;
+        .ok_or_else(|| not_changeable(&ObjectKind::Task, ObjectField::Assignees))?;
     let list = info
         .get(&*transaction, ASSIGNEE_IDS)
         .and_then(|held| held.cast::<ArrayRef>().ok())
@@ -330,7 +328,11 @@ mod tests {
             kinds::task::{self, Day},
             rich_text::TextFormat,
         },
-        error::{Error, Result, board_change::BoardChangeError},
+        error::{
+            Error,
+            Result,
+            board_change::{BoardChangeError, ObjectField},
+        },
     };
 
     fn board_with(new: NewObject) -> Result<Doc> {
@@ -661,7 +663,7 @@ mod tests {
         assert!(matches!(
             refused,
             Some(Error::BoardChange(BoardChangeError::NotChangeable {
-                field: "assignees",
+                field: ObjectField::Assignees,
                 ..
             }))
         ));
@@ -680,7 +682,7 @@ mod tests {
         assert!(matches!(
             refused,
             Some(Error::BoardChange(BoardChangeError::NotChangeable {
-                field: "status",
+                field: ObjectField::Status,
                 ..
             }))
         ));

@@ -5,7 +5,9 @@ pub const TREE: &str = "holst b ls";
 pub const TREE_TRASH: &str = "holst b ls --view trash";
 pub const OBJECTS: &str = "holst o ls BOARD";
 pub const BACKUPS: &str = "holst backup ls BOARD";
-pub const COMMANDS: [&str; 5] = [LOGIN, TREE, TREE_TRASH, OBJECTS, BACKUPS];
+pub const REMOVE_BOARD: &str = "holst b rm BOARD";
+pub const COMMANDS: [&str; 6] =
+    [LOGIN, TREE, TREE_TRASH, OBJECTS, BACKUPS, REMOVE_BOARD];
 
 /// Advice shown under an error, one action per variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, strum::EnumIter)]
@@ -33,6 +35,13 @@ pub enum Hint {
     FullLogin,
     ConfirmFirst,
     LoadOnline,
+    DropGzOrPlain,
+    MergeOrEmpty,
+    NameObject,
+    ShrinkPicture,
+    NameRootOrFolder,
+    RemoveInstead,
+    PositionInFrame,
 }
 
 /// Where a hint is shown: the command line names commands, MCP names tools.
@@ -42,51 +51,7 @@ pub enum Surface {
     Mcp,
 }
 
-impl Surface {
-    /// How this surface confirms an irreversible action.
-    ///
-    /// ```
-    /// use holst_core::error::hint::Surface;
-    ///
-    /// assert_eq!(Surface::Cli.confirmation(), "--yes");
-    /// assert_eq!(Surface::Mcp.confirmation(), "confirm: true");
-    /// ```
-    #[must_use]
-    pub const fn confirmation(self) -> &'static str {
-        match self {
-            Surface::Cli => "--yes",
-            Surface::Mcp => "confirm: true",
-        }
-    }
-}
-
-/// A hint in the words of one surface: one line in the rustc style.
-///
-/// ```
-/// use holst_core::error::hint::{Hint, Surface};
-///
-/// assert_eq!(
-///     Hint::LoginAgain.on(Surface::Cli).to_string(),
-///     "run `holst auth login` to log in again"
-/// );
-/// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
-#[display("{}", hint.text(*surface))]
-pub struct Advice {
-    pub hint: Hint,
-    pub surface: Surface,
-}
-
 impl Hint {
-    /// This hint as `surface` shows it.
-    #[must_use]
-    pub const fn on(self, surface: Surface) -> Advice {
-        Advice {
-            hint: self,
-            surface,
-        }
-    }
-
     /// The text on `surface`: the CLI names commands, MCP names tools.
     #[must_use]
     pub fn text(self, surface: Surface) -> &'static str {
@@ -122,6 +87,13 @@ impl Hint {
             Hint::FullLogin => FULL_LOGIN,
             Hint::ConfirmFirst => CONFIRM_FIRST,
             Hint::LoadOnline => LOAD_ONLINE,
+            Hint::DropGzOrPlain => DROP_GZ_OR_PLAIN,
+            Hint::MergeOrEmpty => MERGE_OR_EMPTY,
+            Hint::NameObject => NAME_OBJECT,
+            Hint::ShrinkPicture => SHRINK_PICTURE,
+            Hint::NameRootOrFolder => NAME_ROOT_OR_FOLDER,
+            Hint::RemoveInstead => REMOVE_INSTEAD,
+            Hint::PositionInFrame => POSITION_IN_FRAME,
         }
     }
 }
@@ -181,6 +153,10 @@ const LIST_OBJECTS: SurfaceText = SurfaceText::Each {
     cli: "run `holst o ls BOARD` to see the object ids",
     mcp: "call the object tool to see the object ids",
 };
+const POSITION_IN_FRAME: SurfaceText = SurfaceText::Each {
+    cli: "`--at` counts from the frame's corner",
+    mcp: "at counts from the frame's corner",
+};
 const LIST_BACKUPS: SurfaceText = SurfaceText::Each {
     cli: "run `holst backup ls BOARD` to see the backup keys",
     mcp: "call backup with action ls to see the backup keys",
@@ -217,6 +193,32 @@ const LOAD_ONLINE: SurfaceText = SurfaceText::Each {
     cli: "run the command once without `--offline` to cache the board",
     mcp: "call the object tool once to load the board",
 };
+const DROP_GZ_OR_PLAIN: SurfaceText = SurfaceText::Each {
+    cli: "drop .gz from the file name, or drop `--no-compress`",
+    mcp: "drop .gz from the file name, or drop no_compress",
+};
+const MERGE_OR_EMPTY: SurfaceText = SurfaceText::Each {
+    cli: "import into an empty board, or run the command again with `--merge`",
+    mcp: "import into an empty board, or call again with merge: true",
+};
+const NAME_OBJECT: SurfaceText = SurfaceText::Each {
+    cli: "give the full id, a link with objectId=, or the first 8 hex characters of \
+          the id; `holst o ls BOARD` shows the ids",
+    mcp: "give an @N from the object tool, the full id, a link with objectId=, or \
+          the first 8 hex characters of the id",
+};
+const SHRINK_PICTURE: SurfaceText = SurfaceText::Each {
+    cli: "use a smaller `--scale` or `--max-side`, or a smaller area",
+    mcp: "use a smaller scale or max_side, or a smaller part of the board",
+};
+const NAME_ROOT_OR_FOLDER: SurfaceText = SurfaceText::Each {
+    cli: "give / or no folder for the root, the folder's id for the folder",
+    mcp: "give the workspace id for the root, the folder's id or @N for the folder",
+};
+const REMOVE_INSTEAD: SurfaceText = SurfaceText::Each {
+    cli: "remove it with `holst b rm BOARD`",
+    mcp: "remove it with board_write action=rm",
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SurfaceText {
@@ -234,6 +236,17 @@ pub(super) mod decided {
     use strum::IntoEnumIterator;
 
     use crate::error::hint::Hint;
+
+    /// Every variant of a derived enum appears in `samples`.
+    pub(in crate::error) fn assert_all_listed<E, D>(samples: &[E])
+    where
+        D: IntoEnumIterator + Ord + Debug + for<'a> From<&'a E>,
+    {
+        let covered: BTreeSet<D> = samples.iter().map(D::from).collect();
+        let missing: Vec<D> =
+            D::iter().filter(|kind| !covered.contains(kind)).collect();
+        assert_eq!(missing, Vec::<D>::new(), "variants missing from samples");
+    }
 
     pub(in crate::error) fn assert_every_variant<E, D>(
         samples: Vec<(E, Option<Hint>)>,
@@ -267,8 +280,8 @@ mod tests {
     #[test]
     fn every_hint_is_one_rustc_style_line() {
         let bad: Vec<String> = Hint::iter()
-            .flat_map(|hint| Surface::iter().map(move |surface| hint.on(surface)))
-            .map(|advice| advice.to_string())
+            .flat_map(|hint| Surface::iter().map(move |surface| hint.text(surface)))
+            .map(str::to_owned)
             .filter(|text| {
                 text.is_empty()
                     || text.contains('\n')
@@ -283,7 +296,7 @@ mod tests {
     #[test]
     fn cli_hints_name_only_known_commands() {
         let named: Vec<String> = Hint::iter()
-            .map(|hint| hint.on(Surface::Cli).to_string())
+            .map(|hint| hint.text(Surface::Cli))
             .flat_map(|text| {
                 text.split('`')
                     .skip(1)
@@ -303,7 +316,7 @@ mod tests {
     #[test]
     fn mcp_hints_never_mention_cli_commands_or_flags() {
         let cli: Vec<String> = Hint::iter()
-            .map(|hint| hint.on(Surface::Mcp).to_string())
+            .map(|hint| hint.text(Surface::Mcp))
             // The one command the model may name is the server's own.
             .map(|text| text.replace("`holst-mcp setup`", "holst-mcp setup"))
             .filter(|text| {

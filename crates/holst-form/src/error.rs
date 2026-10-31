@@ -33,5 +33,15 @@ pub enum FormError {
 
 /// Why an answer was refused, in words for the person typing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
-pub struct Reason(pub &'static str);
+pub enum Reason {
+    #[display("this cannot be empty")]
+    Empty,
+    #[display("enter an address like you@example.com")]
+    NotEmail,
+    #[display("that code did not match — check the latest email and type it again")]
+    WrongCode,
+    #[display("that password did not match — try again")]
+    WrongPassword,
+}
+
 pub type Result<T, E = FormError> = std::result::Result<T, E>;

@@ -24,15 +24,18 @@ use std::{
 use holst_core::effect::cache::trust::Unverified;
 use itertools::Itertools as _;
 
-use crate::memory::{
-    alias::{Aliases, UnknownAlias, alias_text},
-    board_memory::{
-        BOARD_MEMORY_BYTES,
-        BoardMemory,
-        BoardRead,
-        DownloadTrust,
-        KeptBoard,
-        KeptCopy,
+use crate::{
+    error::UnknownAlias,
+    memory::{
+        alias::{Aliases, alias_text},
+        board_memory::{
+            BOARD_MEMORY_BYTES,
+            BoardMemory,
+            BoardRead,
+            DownloadTrust,
+            KeptBoard,
+            KeptCopy,
+        },
     },
 };
 

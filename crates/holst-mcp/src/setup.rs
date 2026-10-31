@@ -15,23 +15,23 @@ use holst_core::{
 };
 use holst_form::{
     draw::NoteTone,
-    error::{FormError, Reason},
+    error::Reason,
     form::{Form, Question},
     line::QuestionKind,
     terminal::{Terminal, TerminalKind},
 };
 use secrecy::SecretString;
 
-use crate::login::store::{Backend as _, SystemBackend};
+use crate::{
+    error::SetupError,
+    login::store::{Backend as _, SystemBackend},
+};
 
 mod connect;
 pub(crate) use connect::{Clients, Program, SERVER, System, stable_binary};
 
 /// Tries for the code or password, as the CLI allows.
-const ATTEMPTS: u8 = 3;
-
-const NOT_EMAIL: Reason = Reason("enter an address like you@example.com");
-const EMPTY: Reason = Reason("this cannot be empty");
+pub(crate) const ATTEMPTS: u8 = 3;
 
 /// What the second step asks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,7 +41,7 @@ pub(crate) enum Secret {
 }
 
 impl Secret {
-    const fn noun(self) -> &'static str {
+    pub(crate) const fn noun(self) -> &'static str {
         match self {
             Secret::Code => "code",
             Secret::Password => "password",
@@ -63,41 +63,10 @@ impl Secret {
 
     const fn wrong(self) -> Reason {
         match self {
-            Secret::Code => Reason(
-                "that code did not match — check the latest email and type it again",
-            ),
-            Secret::Password => Reason("that password did not match — try again"),
+            Secret::Code => Reason::WrongCode,
+            Secret::Password => Reason::WrongPassword,
         }
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum SetupError {
-    #[error("No Holst account uses that address.")]
-    NoAccount,
-
-    #[error(
-        "That account signs in through single sign-on, which holst-mcp setup does not do."
-    )]
-    SsoOnly,
-
-    #[error(
-        "The {} was not accepted {ATTEMPTS} times. Run holst-mcp setup to try again.",
-        .0.noun()
-    )]
-    Refused(Secret),
-
-    #[error("There is no saved login: run holst-mcp setup in a terminal.")]
-    NoTerminal,
-
-    #[error("unknown client {0}: --clients takes claude or codex, comma-separated")]
-    UnknownClient(String),
-
-    #[error(transparent)]
-    Form(#[from] FormError),
-
-    #[error("Could not log in")]
-    Holst(#[from] holst_core::Error),
 }
 
 const fn secret_of(awaiting: &Awaiting) -> Secret {
@@ -202,7 +171,8 @@ async fn saved_login<T: Terminal>(
                 SessionCheck::Unknown(err) => replace(
                     form,
                     &format!(
-                        "A login is saved already (Holst could not check it: {err})."
+                        "A login is saved already (Holst could not check it: {}).",
+                        holst_core::error::chained(&err)
                     ),
                     client,
                 ),
@@ -210,7 +180,10 @@ async fn saved_login<T: Terminal>(
         }
         Ok(None) => Ok(Saved::Replace(None)),
         Err(err) => {
-            form.step("The saved login could not be read", &err.to_string())?;
+            form.step(
+                "The saved login could not be read",
+                &holst_core::error::chained(&err).to_string(),
+            )?;
             Ok(Saved::Replace(None))
         }
     }
@@ -248,13 +221,13 @@ async fn begin<T: Terminal>(
 }
 
 fn parse_email(text: &str) -> Result<Email, Reason> {
-    text.trim().parse().map_err(|_| NOT_EMAIL)
+    text.trim().parse().map_err(|_| Reason::NotEmail)
 }
 
 fn parse_secret(text: &str) -> Result<SecretString, Reason> {
     (!text.is_empty())
         .then(|| SecretString::from(text))
-        .ok_or(EMPTY)
+        .ok_or(Reason::Empty)
 }
 
 /// Asks for a code or password until Holst takes it, `ATTEMPTS` times at most.
@@ -317,9 +290,9 @@ async fn keep<T: Terminal>(
 fn stale_warning(stale: &holst_core::Error) -> String {
     let hint = stale
         .hint()
-        .map(|hint| format!("; {}", hint.on(Surface::Mcp)))
+        .map(|hint| format!("; {}", hint.text(Surface::Mcp)))
         .unwrap_or_default();
-    format!("{stale}{hint}")
+    format!("{}{hint}", holst_core::error::chained(stale))
 }
 
 #[cfg(test)] mod tests;

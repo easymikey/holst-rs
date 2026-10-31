@@ -18,60 +18,11 @@ use std::{
 
 use holst_core::effect::settings::Settings;
 use holst_form::{detect::TerminalType, form::Form, terminal::Console};
-use rmcp::{ServiceExt as _, service::ServerInitializeError, transport::stdio};
+use rmcp::{ServiceExt as _, transport::stdio};
+
+use crate::error::{HttpError, StartError};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-#[derive(Debug, thiserror::Error)]
-enum StartError {
-    #[error(
-        "unknown argument {arg}: the server speaks MCP on stdio; its commands are setup and --http"
-    )]
-    UnknownArg { arg: String },
-
-    #[error(
-        "unknown setup flag {flag}: setup takes --no-connect, --connect-only or --clients <list>"
-    )]
-    SetupFlag { flag: String },
-
-    #[error("--clients needs a list such as claude,codex")]
-    ClientsList,
-
-    #[error("--clients names clients to connect, which --no-connect skips")]
-    ClientsWithoutConnect,
-
-    #[error(
-        "stdin is not a terminal: run holst-mcp setup in a terminal \
-         (in a container: docker exec -it <container> holst-mcp setup)"
-    )]
-    NotTerminal,
-
-    #[error("give setup one of --no-connect and --connect-only, once")]
-    OneFlag,
-
-    #[error(
-        "could not find the path of the running holst-mcp (it must be valid UTF-8)"
-    )]
-    Binary,
-
-    #[error(transparent)]
-    Http(#[from] http::HttpError),
-
-    #[error("setup did not finish")]
-    Setup(#[source] setup::SetupError),
-
-    #[error("could not write to stdout")]
-    Stdout(#[source] io::Error),
-
-    #[error("the server settings in the environment are not valid")]
-    Settings(#[source] holst_core::Error),
-
-    #[error("could not start the server on stdio")]
-    Serve(#[source] Box<ServerInitializeError>),
-
-    #[error("the server stopped with an error")]
-    Stopped(#[source] tokio::task::JoinError),
-}
 
 #[tokio::main]
 #[expect(
@@ -205,7 +156,7 @@ async fn serve_http(args: &[String]) -> Result<(), StartError> {
     let loopback = options.addr.ip().is_loopback();
     let create = loopback || options.print_config;
     let token = http::load_token(variable.as_deref(), file.as_deref(), create)?
-        .ok_or(http::HttpError::NoToken { addr: options.addr })?;
+        .ok_or(HttpError::NoToken { addr: options.addr })?;
     if options.print_config {
         let snippets = http::config_snippets(options.addr, &token);
         write!(io::stdout().lock(), "{snippets}").map_err(StartError::Stdout)
@@ -290,7 +241,7 @@ async fn set_up(flags: &[String]) -> Result<(), StartError> {
 }
 
 fn warn_cache_off(err: &holst_core::Error) {
-    tracing::warn!(error = %reply::chained(err), "the board cache is off");
+    tracing::warn!(error = %holst_core::error::chained(err), "the board cache is off");
 }
 
 #[expect(
@@ -298,7 +249,7 @@ fn warn_cache_off(err: &holst_core::Error) {
     reason = "a start error goes to stderr, as stdout carries the protocol"
 )]
 fn report(err: &StartError) -> ExitCode {
-    let text = reply::chained(err);
+    let text = holst_core::error::chained(err);
     drop(
         writeln!(io::stderr().lock(), "holst-mcp: {text}").inspect_err(
             |failure| tracing::debug!(%failure, "could not write the start error"),

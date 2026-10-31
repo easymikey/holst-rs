@@ -36,7 +36,7 @@ pub fn address(client: &Client, object: &Object) -> Result<String> {
         .ok_or_else(|| {
             Error::StoredFile(StoredFileError::NoFile {
                 object: object.id.clone(),
-                kind: object.kind.short_name().to_owned(),
+                kind: object.kind.clone(),
             })
         })
 }
@@ -89,7 +89,7 @@ pub fn saved_name(object: &Object) -> SavedName {
 /// 10 minutes.
 ///
 /// # Errors
-/// [`HttpError::Transport`] if the limited client cannot be built, else as
+/// [`HttpError::Build`] if the limited client cannot be built, else as
 /// [`address`] and [`download`].
 pub async fn original(client: &Client, object: &Object) -> Result<Vec<u8>> {
     let limited = client
@@ -127,7 +127,7 @@ pub async fn download(client: &Client, address: &str, limit: usize) -> Result<Ve
 /// out: it stays a placeholder.
 ///
 /// # Errors
-/// [`HttpError::Transport`] if the limited client cannot be built.
+/// [`HttpError::Build`] if the limited client cannot be built.
 pub async fn images(
     client: &Client,
     addresses: &[String],
@@ -200,7 +200,7 @@ async fn downloaded(client: &Client, missing: Vec<String>) -> Vec<(String, Vec<u
                 None
             }
             Ok(Err(err)) => {
-                tracing::debug!(address, %err, "an image was not downloaded");
+                tracing::debug!(address, err = %crate::error::chained(&err), "an image was not downloaded");
                 None
             }
             Err(_) => {
@@ -230,7 +230,7 @@ async fn kept(
                     })
                     .collect();
                 handle.store_assets(&named).err().into_iter().for_each(
-                    |err| tracing::debug!(%err, "board cache: images not kept"),
+                    |err| tracing::debug!(err = %crate::error::chained(&err), "board cache: images not kept"),
                 );
                 fresh
             });

@@ -275,11 +275,12 @@ fn built_once(profile: &Path) -> Result<(), BuildError> {
     }
 }
 
-/// Builds `holst` and `holst-mcp` in the profile the tests run in; cargo
-/// leaves up-to-date binaries alone.
+/// Builds the binaries in the profile and with the features the tests run with
+/// (`--workspace --all-features`), so nothing is rebuilt; cargo leaves
+/// up-to-date binaries alone.
 fn build(profile: &Path) -> Result<(), BuildError> {
     let mut command = Command::new(std::env::var_os("CARGO").unwrap_or("cargo".into()));
-    command.args(["build", "--quiet", "-p", "holst-cli", "-p", "holst-mcp"]);
+    command.args(["build", "--quiet", "--workspace", "--all-features"]);
     let flags: &[&str] = match profile.file_name().and_then(|name| name.to_str()) {
         Some("release") => &["--release"],
         Some(custom) if custom != "debug" => &["--profile", custom],
@@ -292,9 +293,9 @@ fn build(profile: &Path) -> Result<(), BuildError> {
     if output.status.success() {
         Ok(())
     } else {
-        Err(BuildError::Failed(
-            String::from_utf8_lossy(&output.stderr).into_owned(),
-        ))
+        Err(BuildError::Failed {
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        })
     }
 }
 

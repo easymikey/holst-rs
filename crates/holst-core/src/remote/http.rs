@@ -26,7 +26,7 @@ impl ReqwestTransport {
     /// A transport with the default timeouts and a body limit of `MAX_BODY`.
     ///
     /// # Errors
-    /// [`HttpError::Transport`] if the HTTP client cannot be
+    /// [`HttpError::Build`] if the HTTP client cannot be
     /// built.
     pub fn new(user_agent: &str) -> Result<Self> {
         Self::with_limits(user_agent, TIMEOUT, MAX_BODY)
@@ -160,8 +160,8 @@ const fn is_unsure_write(method: HttpMethod, reach: Arrival) -> bool {
     !method.is_read() && matches!(reach, Arrival::MaybeReceived)
 }
 
-/// [`HttpError::NoResponse`] if it may be applied, else
-/// [`HttpError::Transport`].
+/// [`HttpError::NoResponse`] if it may be applied, else the kind of transport
+/// failure `error` is.
 fn exchange_error(
     request: &HttpRequest,
     reach: Arrival,
@@ -169,9 +169,9 @@ fn exchange_error(
 ) -> Error {
     Some(request)
         .filter(|request| is_unsure_write(request.method, reach))
-        .map_or(Error::Http(HttpError::Transport(error)), |request| {
+        .map_or(Error::Http(HttpError::from(error)), |request| {
             Error::Http(HttpError::NoResponse {
-                method: request.method.as_str(),
+                method: request.method,
                 path: request.url.path().to_owned(),
             })
         })

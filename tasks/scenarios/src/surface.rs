@@ -2,7 +2,11 @@
 
 use serde_json::{Map, Value};
 
-use crate::{holst::SendMode, observation::ErrorExit};
+use crate::{
+    holst::{On, SendMode},
+    observation::{ErrorExit, Observation},
+    then::then,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Surface {
@@ -70,6 +74,38 @@ impl Surface {
         match self {
             Surface::Cli => ErrorExit::ExitCode(73),
             Surface::Mcp => ErrorExit::ToolError,
+        }
+    }
+}
+
+/// What holds a change back: it is sent without its confirmation, or only
+/// dry-run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Guard {
+    Unconfirmed,
+    DryRun,
+}
+
+impl Guard {
+    /// Returns `on`, dry-running when the guard is a dry run.
+    #[must_use]
+    pub const fn on(self, on: On<'_>) -> On<'_> {
+        match self {
+            Guard::Unconfirmed => on,
+            Guard::DryRun => on.dry_running(),
+        }
+    }
+
+    /// Checks that `observation` is the refusal of a change that needs its
+    /// confirmation, or the plan of a dry run that shows `plan`.
+    pub fn held_back(self, surface: Surface, observation: &Observation, plan: &str) {
+        match self {
+            Guard::Unconfirmed => {
+                then(observation).signalled_as(surface.permission_denied());
+            }
+            Guard::DryRun => {
+                then(observation).shows(plan);
+            }
         }
     }
 }

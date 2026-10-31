@@ -36,7 +36,7 @@ use crate::{
         text::joined,
         time::Timestamp,
     },
-    error::Result,
+    error::{Result, board_change::ObjectField},
 };
 
 /// A file the server holds, as the upload left it.
@@ -303,17 +303,17 @@ pub struct ArrowEdit {
 impl ArrowEdit {
     /// The names of the fields asked for, as `object edit` words them.
     #[must_use]
-    pub fn fields(&self) -> Vec<&'static str> {
+    pub fn fields(&self) -> Vec<ObjectField> {
         [
-            ("line", self.line.is_some()),
+            (ObjectField::Line, self.line.is_some()),
             (
-                "heads",
+                ObjectField::Heads,
                 self.heads.start.is_some() || self.heads.end.is_some(),
             ),
-            ("bend", self.bend.is_some()),
-            ("from", self.from.is_some()),
-            ("to", self.to.is_some()),
-            ("label", !self.labels.is_empty()),
+            (ObjectField::Bend, self.bend.is_some()),
+            (ObjectField::From, self.from.is_some()),
+            (ObjectField::To, self.to.is_some()),
+            (ObjectField::Label, !self.labels.is_empty()),
         ]
         .into_iter()
         .filter_map(|(name, given)| given.then_some(name))
@@ -332,11 +332,11 @@ pub struct FrameEdit {
 impl FrameEdit {
     /// The names of the fields asked for, as `object edit` words them.
     #[must_use]
-    pub fn fields(&self) -> Vec<&'static str> {
+    pub fn fields(&self) -> Vec<ObjectField> {
         [
-            ("ratio", self.ratio.is_some()),
-            ("background", self.background.is_some()),
-            ("content", self.hidden.is_some()),
+            (ObjectField::Ratio, self.ratio.is_some()),
+            (ObjectField::Background, self.background.is_some()),
+            (ObjectField::Content, self.hidden.is_some()),
         ]
         .into_iter()
         .filter_map(|(name, given)| given.then_some(name))
@@ -360,20 +360,20 @@ pub struct ShapeEdit {
 impl ShapeEdit {
     /// The name of the first field asked for, as `object edit` words it.
     #[must_use]
-    pub fn first_field(&self) -> Option<&'static str> {
+    pub fn first_field(&self) -> Option<ObjectField> {
         self.fields().first().copied()
     }
 
     /// The names of the fields asked for, as `object edit` words them.
     #[must_use]
-    pub fn fields(&self) -> Vec<&'static str> {
+    pub fn fields(&self) -> Vec<ObjectField> {
         [
-            ("shape", self.kind.is_some()),
-            ("stroke", self.stroke.is_some()),
-            ("stroke-width", self.stroke_width.is_some()),
-            ("stroke-style", self.stroke_style.is_some()),
-            ("radius", self.radius.is_some()),
-            ("opacity", self.opacity.is_some()),
+            (ObjectField::Shape, self.kind.is_some()),
+            (ObjectField::Stroke, self.stroke.is_some()),
+            (ObjectField::StrokeWidth, self.stroke_width.is_some()),
+            (ObjectField::StrokeStyle, self.stroke_style.is_some()),
+            (ObjectField::Radius, self.radius.is_some()),
+            (ObjectField::Opacity, self.opacity.is_some()),
         ]
         .into_iter()
         .filter_map(|(name, given)| given.then_some(name))

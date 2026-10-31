@@ -33,7 +33,7 @@ use crate::{
     error::{
         Error,
         Result,
-        board_change::{BoardChangeError, TableRefusal},
+        board_change::{BoardChangeError, ObjectField, TableRefusal},
     },
     protocol::document::{
         COLUMN_ID,
@@ -67,9 +67,11 @@ const CELL: &str = "table-cell";
 const STEP: f64 = 1_099_511_627_776.0;
 
 /// Rows or columns.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
 pub enum Track {
+    #[display("row")]
     Row,
+    #[display("column")]
     Column,
 }
 
@@ -112,13 +114,6 @@ impl Track {
         }
     }
 
-    const fn word(self) -> &'static str {
-        match self {
-            Track::Row => "row",
-            Track::Column => "column",
-        }
-    }
-
     const fn id_field(self) -> &'static str {
         match self {
             Track::Row => ROW_ID,
@@ -128,14 +123,16 @@ impl Track {
 }
 
 impl TableEdit {
-    pub(super) const fn field(&self) -> &'static str {
+    pub(super) const fn field(&self) -> ObjectField {
         match self {
-            TableEdit::Cell { .. } => "cell text",
+            TableEdit::Cell { .. } => ObjectField::CellText,
             TableEdit::Insert(Track::Row | Track::Column, _)
-            | TableEdit::Delete(Track::Row | Track::Column, _) => "rows and columns",
-            TableEdit::Merge(_) | TableEdit::Unmerge { .. } => "merged cells",
-            TableEdit::Clear(_) => "cell content",
-            TableEdit::Fill(..) => "cell color",
+            | TableEdit::Delete(Track::Row | Track::Column, _) => {
+                ObjectField::RowsAndColumns
+            }
+            TableEdit::Merge(_) | TableEdit::Unmerge { .. } => ObjectField::MergedCells,
+            TableEdit::Clear(_) => ObjectField::CellContent,
+            TableEdit::Fill(..) => ObjectField::CellColor,
         }
     }
 }
@@ -174,7 +171,7 @@ fn number_at(fields: &Value, track: Track, at: u32) -> Result<String> {
         .map(|(number, _)| number.clone())
         .ok_or_else(|| {
             refuse(TableRefusal::OutOfRange {
-                track: track.word(),
+                track,
                 at,
                 most: order.len(),
             })
@@ -429,7 +426,7 @@ fn inserting(fields: &Value, track: Track, at: u32) -> Result<()> {
         .then_some(())
         .ok_or_else(|| {
             refuse(TableRefusal::OutOfRange {
-                track: track.word(),
+                track,
                 at,
                 most: count + 1,
             })
@@ -437,34 +434,21 @@ fn inserting(fields: &Value, track: Track, at: u32) -> Result<()> {
     (after <= limit)
         .then_some(())
         .ok_or_else(|| refuse(TableRefusal::TooBig))?;
-    (!split).then_some(()).ok_or_else(|| {
-        refuse(TableRefusal::MergedBetween {
-            track: track.word(),
-            at,
-        })
-    })
+    (!split)
+        .then_some(())
+        .ok_or_else(|| refuse(TableRefusal::MergedBetween { track, at }))
 }
 
 fn deleting(fields: &Value, track: Track, at: u32) -> Result<()> {
     let number = number_at(fields, track, at)?;
     (tracks(fields, track).len() > 1)
         .then_some(())
-        .ok_or_else(|| {
-            refuse(TableRefusal::LastTrack {
-                track: track.word(),
-                at,
-            })
-        })?;
+        .ok_or_else(|| refuse(TableRefusal::LastTrack { track, at }))?;
     merged_over(fields, track, &number)
         .iter()
         .all(|(_, span)| *span <= 1)
         .then_some(())
-        .ok_or_else(|| {
-            refuse(TableRefusal::MergedAcross {
-                track: track.word(),
-                at,
-            })
-        })
+        .ok_or_else(|| refuse(TableRefusal::MergedAcross { track, at }))
 }
 
 pub(super) fn write(
@@ -1866,7 +1850,7 @@ mod tests {
     fn the_refusals_are_words() {
         assert_eq!(
             TableRefusal::MergedAcross {
-                track: "row",
+                track: Track::Row,
                 at: 2
             }
             .to_string(),

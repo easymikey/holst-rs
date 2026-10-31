@@ -152,9 +152,7 @@ impl McpServer {
     fn named_place(&self, place: Option<&str>) -> Result<()> {
         match place {
             None => checked_download(None, self.downloads.as_deref(), &self.secrets),
-            Some(STDOUT) => Err(Error::NoArgument {
-                what: "a path: - is for the command line",
-            }),
+            Some(STDOUT) => Err(Error::DashPath),
             Some(place) => checked_place(place, &self.secrets),
         }
     }
@@ -162,8 +160,10 @@ impl McpServer {
     fn boards_text(&self, shown: &Briefs) -> String {
         let boards = shown.boards.iter().map(|board| self.board_text(board));
         let missing = shown.missing.iter().map(|gone| {
-            self.state
-                .alias_text(&format!("not found: {}\n", printable(&gone.reason)))
+            self.state.alias_text(&format!(
+                "not found: {}\n",
+                printable(&holst_core::error::chained(&gone.reason).to_string())
+            ))
         });
         boards.chain(missing).collect()
     }

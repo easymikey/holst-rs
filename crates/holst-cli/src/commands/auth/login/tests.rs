@@ -18,6 +18,7 @@ use holst_core::{
     remote::client::Client,
     storage::session_store::{LoginSaveReport, SessionStoreKind},
 };
+use holst_form::error::Reason;
 use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::{Value, json};
@@ -27,7 +28,7 @@ use crate::{
         auth::login::{Done, conclude, finish, log_in_by_email, parse_secret},
         fake::FakeServer,
     },
-    error::{Error, InvalidAnswer, Result, SecretKind},
+    error::{Error, Result, SecretKind},
     form::{
         Form,
         draw::NoteTone,
@@ -353,7 +354,7 @@ fn closing_lines_warn_about_an_older_login() {
 
 #[test]
 fn empty_secret_is_not_an_answer() {
-    assert_eq!(parse_secret("").err(), Some(InvalidAnswer::Empty));
+    assert_eq!(parse_secret("").err(), Some(Reason::Empty));
     assert_eq!(
         parse_secret("919426").ok().as_ref().map(exposed),
         Some("919426")

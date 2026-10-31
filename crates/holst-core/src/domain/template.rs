@@ -227,7 +227,7 @@ mod tests {
         let unknown = found.err().map(|e| e.to_string()).unwrap_or_default();
         assert!(
             slug.is_some()
-                || unknown.ends_with("Available: strategic-planning, brainstorming"),
+                || unknown.ends_with("available: strategic-planning, brainstorming"),
             "{unknown}"
         );
     }

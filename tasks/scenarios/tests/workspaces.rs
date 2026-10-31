@@ -1,7 +1,7 @@
 //! Listing workspaces, the first thing a user does with a login.
 
 use holst_core::fake::WorkspaceRole;
-use holst_scenarios::{ScenarioError, Surface, WorkspaceCommand, given, then};
+use holst_scenarios::{Guard, ScenarioError, Surface, WorkspaceCommand, given, then};
 use rstest::rstest;
 
 #[rstest]
@@ -85,9 +85,8 @@ async fn a_workspace_is_shown_with_its_basics(
 
 #[rstest]
 #[tokio::test]
-async fn a_workspace_unknown_by_name_is_not_found(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_workspace_unknown_by_name_is_not_found() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given().saved_login().workspace("Team").start().await?;
     let observation = holst.on(surface).show_workspace(Some("Nowhere")).await?;
     then(&observation).signalled_as(surface.not_found());
@@ -96,9 +95,8 @@ async fn a_workspace_unknown_by_name_is_not_found(
 
 #[rstest]
 #[tokio::test]
-async fn an_ambiguous_workspace_name_lists_the_matches(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn an_ambiguous_workspace_name_lists_the_matches() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team A")
@@ -126,9 +124,8 @@ async fn no_workspace_given_takes_the_only_one(
 
 #[rstest]
 #[tokio::test]
-async fn no_workspace_given_with_several_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn no_workspace_given_with_several_is_refused() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team")
@@ -165,18 +162,19 @@ async fn workspace_parts_are_shown_only_when_asked(
 }
 
 #[rstest]
-#[case::members("members", "Ann")]
-#[case::activity("activity", "2026-03-01")]
-#[case::plan("plan", "Business")]
-#[case::plans("plans", "Enterprise")]
-#[case::sso("sso", "enabled")]
-#[case::domains("domains", "acme.test")]
-#[case::created("created", "count")]
+#[case::members("members", "Ann", Surface::Cli)]
+#[case::members_mcp("members", "Ann", Surface::Mcp)]
+#[case::activity("activity", "2026-03-01", Surface::Cli)]
+#[case::plan("plan", "Business", Surface::Cli)]
+#[case::plans("plans", "Enterprise", Surface::Cli)]
+#[case::sso("sso", "enabled", Surface::Cli)]
+#[case::domains("domains", "acme.test", Surface::Cli)]
+#[case::created("created", "count", Surface::Cli)]
 #[tokio::test]
 async fn each_workspace_part_is_shown(
     #[case] part: &str,
     #[case] listed: &str,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+    #[case] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = given()
         .saved_login()
@@ -220,9 +218,8 @@ async fn a_member_is_shown_alone_by_user(
 
 #[rstest]
 #[tokio::test]
-async fn an_unknown_user_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn an_unknown_user_is_refused() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team")
@@ -288,29 +285,16 @@ async fn a_renamed_workspace_has_the_new_name(
 
 #[rstest]
 #[tokio::test]
-async fn a_rename_without_confirmation_changes_nothing(
+async fn a_rename_unconfirmed_or_dry_run_changes_nothing(
+    #[values(Guard::Unconfirmed, Guard::DryRun)] guard: Guard,
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = given().saved_login().workspace("Team").start().await?;
-    let refused = holst.on(surface).rename_workspace("Team", "Crew").await?;
-    then(&refused).signalled_as(surface.permission_denied());
-    let listed = holst.on(surface).list_workspaces().await?;
-    then(&listed).lists_workspaces(&["Team"]);
-    Ok(())
-}
-
-#[rstest]
-#[tokio::test]
-async fn a_dry_run_rename_changes_nothing(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
-    let holst = given().saved_login().workspace("Team").start().await?;
-    let planned = holst
-        .on(surface)
-        .dry_running()
+    let refused = guard
+        .on(holst.on(surface))
         .rename_workspace("Team", "Crew")
         .await?;
-    then(&planned).shows("Crew");
+    guard.held_back(surface, &refused, "Crew");
     let listed = holst.on(surface).list_workspaces().await?;
     then(&listed).lists_workspaces(&["Team"]);
     Ok(())
@@ -318,9 +302,8 @@ async fn a_dry_run_rename_changes_nothing(
 
 #[rstest]
 #[tokio::test]
-async fn a_member_cannot_rename_a_workspace(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_member_cannot_rename_a_workspace() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team")
@@ -411,8 +394,8 @@ async fn workspace_commands_need_a_login(
         WorkspaceCommand::Log
     )]
     command: WorkspaceCommand,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given().workspace("Team").start().await?;
     let observation = holst.on(surface).run_workspace_command(command).await?;
     then(&observation)

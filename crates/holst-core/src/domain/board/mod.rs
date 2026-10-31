@@ -117,6 +117,12 @@ const KNOWN: [ObjectKind; 20] = [
     ObjectKind::Link,
 ];
 
+impl std::fmt::Display for ObjectKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 impl ObjectKind {
     /// The kind for a `type` field of the document.
     #[must_use]

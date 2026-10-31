@@ -214,7 +214,7 @@ impl Cache {
             .into_iter()
             .chain(failed.into_iter().filter_map(|(_, outcome)| outcome.err()))
             .chain(tallied)
-            .for_each(|err| tracing::debug!(%err, "board cache: not cleaned"));
+            .for_each(|err| tracing::debug!(err = %crate::error::chained(&err), "board cache: not cleaned"));
         freed
     }
     fn assets(&self) -> Vec<CachedAsset> {
@@ -320,7 +320,7 @@ impl CachePort for Cache {
                     cache
                         .discard(&board)
                         .inspect_err(
-                            |err| tracing::debug!(%err, "board cache: a bad board not dropped"),
+                            |err| tracing::debug!(err = %crate::error::chained(err), "board cache: a bad board not dropped"),
                         )
                         .unwrap_or_default();
                 })

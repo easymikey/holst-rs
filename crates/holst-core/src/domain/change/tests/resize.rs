@@ -106,7 +106,7 @@ fn a_scale_is_written_as_given(
     json!({"id":"o","type":"task-card","columnId":"c","parentId":"k"}),
     Some((100.0, 100.0)),
     None,
-    "task-card in a kanban objects have no size to change"
+    "a task-card in a kanban has no size to change: the kanban sizes it"
 )]
 fn a_kind_the_web_does_not_resize_that_way_is_refused_by_name(
     #[case] object: Value,

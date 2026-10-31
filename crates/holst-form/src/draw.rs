@@ -4,7 +4,7 @@ use console::measure_text_width;
 use unicode_segmentation::UnicodeSegmentation as _;
 
 use crate::{
-    coloring::Coloring,
+    color_choice::ColorChoice,
     error::Reason,
     line::{QuestionKind, TypedAnswer},
 };
@@ -32,12 +32,12 @@ pub fn clear_line() -> String {
 }
 
 #[must_use]
-pub fn intro(coloring: Coloring, title: &str) -> String {
+pub fn intro(color: ColorChoice, title: &str) -> String {
     format!(
         "{}  {}\n{}\n",
-        coloring.dim("┌"),
-        coloring.reverse(&format!(" {title} ")),
-        coloring.dim("│")
+        color.dim("┌"),
+        color.reverse(&format!(" {title} ")),
+        color.dim("│")
     )
 }
 
@@ -49,38 +49,38 @@ pub struct DrawnInput {
 
 #[must_use]
 pub fn active(
-    coloring: Coloring,
+    color: ColorChoice,
     label: &str,
     drawn: &DrawnInput,
     footer: QuestionFooter,
 ) -> String {
     let bottom = match footer {
-        QuestionFooter::Plain => coloring.cyan("└"),
+        QuestionFooter::Plain => color.cyan("└"),
         QuestionFooter::Warn(invalid) => format!(
             "{}  {}",
-            coloring.yellow("└"),
-            coloring.code_on(&format!("▲ {invalid}"), |part| coloring.yellow(part))
+            color.yellow("└"),
+            color.code_on(&format!("▲ {invalid}"), |part| color.yellow(part))
         ),
     };
     format!(
         "{}  {label}\n{}\n{bottom}{UP}{}",
-        coloring.cyan("◆"),
-        input(coloring, drawn),
-        update(coloring, drawn)
+        color.cyan("◆"),
+        input(color, drawn),
+        update(color, drawn)
     )
 }
 
 #[must_use]
-pub fn update(coloring: Coloring, drawn: &DrawnInput) -> String {
+pub fn update(color: ColorChoice, drawn: &DrawnInput) -> String {
     format!(
         "\r{CLEAR}{}\r\x1b[{}C",
-        input(coloring, drawn),
+        input(color, drawn),
         GUTTER + drawn.caret
     )
 }
 
-fn input(coloring: Coloring, drawn: &DrawnInput) -> String {
-    format!("{}  {}", coloring.cyan("│"), drawn.text)
+fn input(color: ColorChoice, drawn: &DrawnInput) -> String {
+    format!("{}  {}", color.cyan("│"), drawn.text)
 }
 
 /// Draws `rows` over the `previous` rows above; each row ends its line.
@@ -101,7 +101,7 @@ pub fn erase_active() -> String {
 
 #[must_use]
 pub fn draw_input(
-    coloring: Coloring,
+    color: ColorChoice,
     answer: &TypedAnswer,
     width: Option<usize>,
 ) -> DrawnInput {
@@ -118,7 +118,7 @@ pub fn draw_input(
     };
     match units.as_slice() {
         [] => DrawnInput {
-            text: placeholder(coloring, answer.kind().placeholder()),
+            text: placeholder(color, answer.kind().placeholder()),
             caret: 0,
         },
         units => {
@@ -128,12 +128,12 @@ pub fn draw_input(
     }
 }
 
-fn placeholder(coloring: Coloring, text: &str) -> String {
+fn placeholder(color: ColorChoice, text: &str) -> String {
     let first = text.graphemes(true).next().unwrap_or_default();
     format!(
         "{}{}",
-        coloring.reverse(first),
-        coloring.dim(text.get(first.len()..).unwrap_or_default())
+        color.reverse(first),
+        color.dim(text.get(first.len()..).unwrap_or_default())
     )
 }
 
@@ -218,16 +218,12 @@ pub fn masked(kind: QuestionKind, text: &str) -> String {
 }
 
 #[must_use]
-pub fn answered(coloring: Coloring, label: &str, value: &str) -> String {
+pub fn answered(color: ColorChoice, label: &str, value: &str) -> String {
     let value = match value {
         "" => String::new(),
-        value => format!("{}  {}\n", coloring.dim("│"), coloring.dim(value)),
+        value => format!("{}  {}\n", color.dim("│"), color.dim(value)),
     };
-    format!(
-        "{}  {label}\n{value}{}\n",
-        coloring.green("◇"),
-        coloring.dim("│")
-    )
+    format!("{}  {label}\n{value}{}\n", color.green("◇"), color.dim("│"))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -239,7 +235,7 @@ pub enum NoteTone {
 
 #[must_use]
 pub fn boxed(
-    coloring: Coloring,
+    color: ColorChoice,
     title: &str,
     lines: &[(NoteTone, String)],
     width: Option<usize>,
@@ -252,7 +248,7 @@ pub fn boxed(
         .collect();
     let painted: Vec<String> = shown
         .iter()
-        .map(|(tone, text)| toned(coloring, *tone, text))
+        .map(|(tone, text)| toned(color, *tone, text))
         .collect();
     let inner = painted
         .iter()
@@ -261,7 +257,7 @@ pub fn boxed(
         .max()
         .unwrap_or_default()
         + 2;
-    let bar = coloring.dim("│");
+    let bar = color.dim("│");
     let blank = format!("{bar}{}{bar}\n", " ".repeat(inner + 2));
     let body = painted
         .iter()
@@ -274,9 +270,9 @@ pub fn boxed(
     let rule = "─".repeat(inner.saturating_sub(measure_text_width(title) + 1).max(1));
     format!(
         "{}  {title} {}\n{blank}{body}{blank}{}\n{bar}\n",
-        coloring.green("◇"),
-        coloring.dim(&format!("{rule}╮")),
-        coloring.dim(&format!("├{}╯", "─".repeat(inner + 2))),
+        color.green("◇"),
+        color.dim(&format!("{rule}╮")),
+        color.dim(&format!("├{}╯", "─".repeat(inner + 2))),
     )
 }
 
@@ -287,11 +283,11 @@ fn warned(tone: NoteTone, text: &str) -> String {
     }
 }
 
-fn toned(coloring: Coloring, tone: NoteTone, text: &str) -> String {
+fn toned(color: ColorChoice, tone: NoteTone, text: &str) -> String {
     match tone {
-        NoteTone::Plain => coloring.code(text),
-        NoteTone::Faint => coloring.code_on(text, |part| coloring.dim(part)),
-        NoteTone::Warn => coloring.code_on(text, |part| coloring.yellow(part)),
+        NoteTone::Plain => color.code(text),
+        NoteTone::Faint => color.code_on(text, |part| color.dim(part)),
+        NoteTone::Warn => color.code_on(text, |part| color.yellow(part)),
     }
 }
 
@@ -313,30 +309,26 @@ fn clip(text: &str, room: Option<usize>) -> String {
 }
 
 #[must_use]
-pub fn cancelled(coloring: Coloring, label: &str, shown: &str) -> String {
+pub fn cancelled(color: ColorChoice, label: &str, shown: &str) -> String {
     let answer = match shown {
         "" => String::new(),
-        shown => format!("{}  {}\n", coloring.dim("│"), coloring.struck(shown)),
+        shown => format!("{}  {}\n", color.dim("│"), color.struck(shown)),
     };
-    format!(
-        "{}  {label}\n{answer}{}\n",
-        coloring.red("■"),
-        coloring.dim("│")
-    )
+    format!("{}  {label}\n{answer}{}\n", color.red("■"), color.dim("│"))
 }
 
 #[must_use]
-pub fn waiting(coloring: Coloring, label: &str) -> String {
-    format!("{}  {label}…\n", coloring.magenta("◒"))
+pub fn waiting(color: ColorChoice, label: &str) -> String {
+    format!("{}  {label}…\n", color.magenta("◒"))
 }
 
 #[must_use]
-pub fn spinning(coloring: Coloring, label: &str, step: usize) -> String {
+pub fn spinning(color: ColorChoice, label: &str, step: usize) -> String {
     let symbol = SPINNER_GLYPHS
         .get(step % SPINNER_GLYPHS.len())
         .copied()
         .unwrap_or_default();
-    format!("{UP}\r{CLEAR}{}  {label}…\n", coloring.magenta(symbol))
+    format!("{UP}\r{CLEAR}{}  {label}…\n", color.magenta(symbol))
 }
 
 #[must_use]
@@ -345,12 +337,12 @@ pub fn done_waiting() -> String {
 }
 
 #[must_use]
-pub fn outro(coloring: Coloring, message: &str) -> String {
-    format!("{}  {}\n\n", coloring.dim("└"), coloring.code(message))
+pub fn outro(color: ColorChoice, message: &str) -> String {
+    format!("{}  {}\n\n", color.dim("└"), color.code(message))
 }
 
 #[must_use]
-pub fn error_outro(coloring: Coloring, error: &str, causes: &[String]) -> String {
+pub fn error_outro(color: ColorChoice, error: &str, causes: &[String]) -> String {
     let causes: String = causes
         .iter()
         .map(|detail| format!("   {detail}\n"))
@@ -358,8 +350,8 @@ pub fn error_outro(coloring: Coloring, error: &str, causes: &[String]) -> String
         .concat();
     format!(
         "{}  {}\n{causes}\n",
-        coloring.dim("└"),
-        coloring.code_on(error, |part| coloring.red(part))
+        color.dim("└"),
+        color.code_on(error, |part| color.red(part))
     )
 }
 
@@ -369,7 +361,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        coloring::Coloring,
+        color_choice::ColorChoice,
         draw::{
             CLEAR,
             DOWN,
@@ -394,7 +386,7 @@ mod tests {
         line::{EditorStep, Keystroke, QuestionKind, TypedAnswer},
     };
 
-    const PLAIN: Coloring = Coloring::Plain;
+    const PLAIN: ColorChoice = ColorChoice::Plain;
 
     fn line(field: QuestionKind, text: &str) -> TypedAnswer {
         text.chars().fold(TypedAnswer::new(field), |line, c| {
@@ -480,7 +472,7 @@ mod tests {
     #[test]
     fn coloured_placeholder_inverts_its_first_character() {
         let empty = draw_input(
-            Coloring::Colored,
+            ColorChoice::Colored,
             &TypedAnswer::new(QuestionKind::Text),
             Some(80),
         );
@@ -530,12 +522,7 @@ mod tests {
             text: "x".into(),
             caret: 1,
         };
-        let block = active(
-            PLAIN,
-            "Email",
-            &x,
-            QuestionFooter::Warn(Reason("enter an address like you@example.com")),
-        );
+        let block = active(PLAIN, "Email", &x, QuestionFooter::Warn(Reason::NotEmail));
         assert!(block.contains("└  ▲ enter an address like you@example.com"));
         assert!(block.starts_with("◆  Email\n│  x\n"));
     }
@@ -568,7 +555,7 @@ mod tests {
 
     #[test]
     fn coloured_box_keeps_its_width_and_paints_by_tone() {
-        let colour = boxed(Coloring::Colored, "Logged in", &note(), Some(120));
+        let colour = boxed(ColorChoice::Colored, "Logged in", &note(), Some(120));
         let widths: Vec<usize> =
             colour.lines().take(7).map(measure_text_width).collect();
         assert!(
@@ -596,7 +583,7 @@ mod tests {
     #[test]
     fn code_in_a_box_is_cyan_without_backticks() {
         let lines = [(NoteTone::Plain, "run `holst logout`".to_owned())];
-        let colour = boxed(Coloring::Colored, "T", &lines, Some(80));
+        let colour = boxed(ColorChoice::Colored, "T", &lines, Some(80));
         assert!(colour.contains("\x1b[36mholst logout\x1b[0m"), "{colour:?}");
         assert!(boxed(PLAIN, "T", &lines, Some(80)).contains("`holst logout`"));
     }
@@ -605,7 +592,7 @@ mod tests {
     fn cancelled_question_stays_struck_through() {
         assert_eq!(cancelled(PLAIN, "Code", "▪▪"), "■  Code\n│  ▪▪\n│\n");
         assert_eq!(cancelled(PLAIN, "Email", ""), "■  Email\n│\n");
-        let colour = cancelled(Coloring::Colored, "Email", "you@");
+        let colour = cancelled(ColorChoice::Colored, "Email", "you@");
         assert!(colour.contains("\x1b[31m■"), "{colour:?}");
         assert!(colour.contains("\x1b[2m\x1b[9myou@"), "{colour:?}");
         assert!(
@@ -622,7 +609,7 @@ mod tests {
             error_outro(PLAIN, "login cancelled", &details),
             "└  login cancelled\n   cause: x\n\n"
         );
-        let colour = error_outro(Coloring::Colored, "login cancelled", &[]);
+        let colour = error_outro(ColorChoice::Colored, "login cancelled", &[]);
         assert!(colour.starts_with("\x1b[2m└"), "{colour:?}");
         assert!(colour.contains("\x1b[31mlogin cancelled"), "{colour:?}");
     }

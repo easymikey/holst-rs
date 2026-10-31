@@ -18,13 +18,17 @@ use crate::{
             task::{COLUMN_ID, Cell, SWIMLANE_ID},
         },
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{
+        Error,
+        Result,
+        board_change::{BoardChangeError, ObjectField},
+    },
     protocol::document::{INDEX, PARENT_ID, POSITION, SCALE, WIDTH, X, Y},
 };
 
-pub(super) const KANBAN: &str = "kanban";
-const COLUMN: &str = "column";
+pub(super) const COLUMN: &str = "column";
 const SWIMLANE: &str = "swimlane";
+const KANBAN: &str = "kanban";
 
 /// Where an edit puts a task card.
 #[derive(Debug, Clone, PartialEq)]
@@ -41,16 +45,16 @@ pub enum CardMove {
 
 impl CardMove {
     /// The first word the move says.
-    pub(super) fn field(&self) -> &'static str {
+    pub(super) fn field(&self) -> ObjectField {
         match self {
             Self::Out
             | Self::Into {
                 kanban: Some(_), ..
-            } => KANBAN,
+            } => ObjectField::Kanban,
             Self::Into {
                 column: Some(_), ..
-            } => COLUMN,
-            Self::Into { .. } => SWIMLANE,
+            } => ObjectField::Column,
+            Self::Into { .. } => ObjectField::Swimlane,
         }
     }
 
@@ -109,9 +113,13 @@ pub(super) fn check(
 ) -> Result<()> {
     only(kind, &ObjectKind::Task, edit.field())?;
     let card = states.get(id).unwrap_or(&Value::Null);
-    let inside = held_by(states, card)
-        .map(|_| ())
-        .ok_or_else(|| refused(edit.field(), edit.raw(), "a card that is in a kanban"));
+    let inside = held_by(states, card).map(|_| ()).ok_or_else(|| {
+        refused(
+            edit.field().into(),
+            edit.raw(),
+            "a card that is in a kanban",
+        )
+    });
     match edit {
         CardMove::Into {
             kanban: Some(reference),
@@ -296,7 +304,11 @@ mod tests {
             kinds::{kanban, task},
             rich_text::TextFormat,
         },
-        error::{Error, Result, board_change::BoardChangeError},
+        error::{
+            Error,
+            Result,
+            board_change::{BoardChangeError, ObjectField},
+        },
     };
 
     const STEP: u64 = 1_099_511_627_776;
@@ -517,7 +529,7 @@ mod tests {
         assert!(matches!(
             refused,
             Some(Error::BoardChange(BoardChangeError::NotChangeable {
-                field: "kanban",
+                field: ObjectField::Kanban,
                 ..
             }))
         ));

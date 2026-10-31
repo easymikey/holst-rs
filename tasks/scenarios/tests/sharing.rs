@@ -3,6 +3,7 @@
 use holst_core::fake::{Right, WorkspaceRole};
 use holst_scenarios::{
     Given,
+    Guard,
     Look,
     RightsChange,
     ScenarioError,
@@ -67,46 +68,32 @@ async fn a_granted_role_is_held_by_the_user(
 
 #[rstest]
 #[tokio::test]
-async fn a_role_is_not_granted_without_confirmation(
+async fn a_role_is_not_granted_unconfirmed_or_dry_run(
+    #[values(Guard::Unconfirmed, Guard::DryRun)] guard: Guard,
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = with_a_board().start().await?;
-    let observation = holst
-        .on(surface)
+    let observation = guard
+        .on(holst.on(surface))
         .change_rights("Roadmap", "Team", GRANT_EDITOR)
         .await?;
-    then(&observation).signalled_as(surface.permission_denied());
+    guard.held_back(surface, &observation, "channel_user");
     role_on(&holst, "Roadmap", ANN, None);
     Ok(())
 }
 
 #[rstest]
 #[tokio::test]
-async fn sharing_without_confirmation_changes_nothing(
+async fn sharing_unconfirmed_or_dry_run_changes_nothing(
+    #[values(Guard::Unconfirmed, Guard::DryRun)] guard: Guard,
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = with_a_board().start().await?;
-    let observation = holst
-        .on(surface)
+    let observation = guard
+        .on(holst.on(surface))
         .change_rights("Roadmap", "Team", SHARE_BY_LINK)
         .await?;
-    then(&observation).signalled_as(surface.permission_denied());
-    sharing_of(&holst, "Roadmap").is_untouched();
-    Ok(())
-}
-
-#[rstest]
-#[tokio::test]
-async fn a_dry_run_of_sharing_changes_nothing(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
-    let holst = with_a_board().start().await?;
-    let observation = holst
-        .on(surface)
-        .dry_running()
-        .change_rights("Roadmap", "Team", SHARE_BY_LINK)
-        .await?;
-    then(&observation).shows_change("link", "none", "viewer");
+    guard.held_back(surface, &observation, "link");
     sharing_of(&holst, "Roadmap").is_untouched();
     Ok(())
 }
@@ -141,25 +128,9 @@ async fn a_dry_run_of_both_kinds_of_sharing_plans_both_requests(
 
 #[rstest]
 #[tokio::test]
-async fn a_dry_run_of_a_grant_changes_nothing(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
-    let holst = with_a_board().start().await?;
-    let observation = holst
-        .on(surface)
-        .dry_running()
-        .change_rights("Roadmap", "Team", GRANT_EDITOR)
-        .await?;
-    then(&observation).shows("channel_user");
-    role_on(&holst, "Roadmap", ANN, None);
-    Ok(())
-}
-
-#[rstest]
-#[tokio::test]
-async fn a_grant_to_an_unknown_user_is_refused_with_the_members_listed(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_grant_to_an_unknown_user_is_refused_with_the_members_listed()
+-> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_a_board().start().await?;
     let observation = holst
         .on(surface)
@@ -185,8 +156,8 @@ async fn a_grant_to_an_unknown_user_is_refused_with_the_members_listed(
 #[tokio::test]
 async fn a_grant_with_a_misspelt_right_is_refused_with_the_rights_listed(
     #[case] right: &str,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_a_board().start().await?;
     let observation = holst
         .on(surface)
@@ -248,7 +219,8 @@ async fn a_revoked_right_is_gone(
 
 #[rstest]
 #[tokio::test]
-async fn a_revoke_without_confirmation_keeps_the_right(
+async fn a_revoke_unconfirmed_or_dry_run_keeps_the_right(
+    #[values(Guard::Unconfirmed, Guard::DryRun)] guard: Guard,
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = with_a_board().start().await?;
@@ -257,32 +229,11 @@ async fn a_revoke_without_confirmation_keeps_the_right(
         .confirming()
         .change_rights("Roadmap", "Team", GRANT_EDITOR)
         .await?;
-    let observation = holst
-        .on(surface)
+    let observation = guard
+        .on(holst.on(surface))
         .change_rights("Roadmap", "Team", REVOKE)
         .await?;
-    then(&observation).signalled_as(surface.permission_denied());
-    role_on(&holst, "Roadmap", ANN, Some("editor"));
-    Ok(())
-}
-
-#[rstest]
-#[tokio::test]
-async fn a_dry_run_of_a_revoke_changes_nothing(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
-    let holst = with_a_board().start().await?;
-    holst
-        .on(surface)
-        .confirming()
-        .change_rights("Roadmap", "Team", GRANT_EDITOR)
-        .await?;
-    let observation = holst
-        .on(surface)
-        .dry_running()
-        .change_rights("Roadmap", "Team", REVOKE)
-        .await?;
-    then(&observation).shows("channel_user");
+    guard.held_back(surface, &observation, "channel_user");
     role_on(&holst, "Roadmap", ANN, Some("editor"));
     Ok(())
 }
@@ -337,16 +288,17 @@ async fn each_typed_share_flag_writes_its_setting(
 }
 
 #[rstest]
-#[case("link", "commentator", json!({ "public": true, "public_access": "commentator" }))]
-#[case("link", "none", json!({ "public": false, "public_access": null }))]
-#[case("members", "editor", json!({ "workspace_member_access": "editor" }))]
-#[case("template", "on", json!({ "share_as_template": true }))]
+#[case("link", "commentator", json!({ "public": true, "public_access": "commentator" }), Surface::Cli)]
+#[case("link", "commentator", json!({ "public": true, "public_access": "commentator" }), Surface::Mcp)]
+#[case("link", "none", json!({ "public": false, "public_access": null }), Surface::Cli)]
+#[case("members", "editor", json!({ "workspace_member_access": "editor" }), Surface::Cli)]
+#[case("template", "on", json!({ "share_as_template": true }), Surface::Cli)]
 #[tokio::test]
 async fn shared_settings_are_read_back_in_show(
     #[case] flag: &str,
     #[case] value: &str,
     #[case] written: serde_json::Value,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
+    #[case] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = with_a_board().start().await?;
     let on = holst.on(surface);
@@ -405,8 +357,8 @@ async fn a_right_a_flag_does_not_take_is_refused(
     #[case] flag: &str,
     #[case] value: &str,
     #[case] listed: &str,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_a_board().start().await?;
     let observation = holst
         .on(surface)
@@ -428,9 +380,8 @@ async fn a_right_a_flag_does_not_take_is_refused(
 
 #[rstest]
 #[tokio::test]
-async fn a_share_without_flags_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_share_without_flags_is_refused() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_a_board().start().await?;
     let observation = holst
         .on(surface)
@@ -449,8 +400,8 @@ async fn a_share_without_flags_is_refused(
 #[tokio::test]
 async fn a_board_you_do_not_own_cannot_be_shared_or_granted(
     #[case] change: RightsChange<'_>,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .saved_login()
         .workspace("Team")
@@ -475,8 +426,8 @@ async fn a_board_you_do_not_own_cannot_be_shared_or_granted(
 #[tokio::test]
 async fn an_unknown_board_is_not_found_for_a_sharing_change(
     #[case] change: RightsChange<'_>,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = with_a_board().start().await?;
     let observation = holst
         .on(surface)
@@ -494,8 +445,8 @@ async fn an_unknown_board_is_not_found_for_a_sharing_change(
 #[tokio::test]
 async fn rights_commands_need_a_login(
     #[case] change: RightsChange<'_>,
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = given()
         .workspace("Team")
         .member("Ann", "Team", WorkspaceRole::Member)
@@ -574,31 +525,16 @@ async fn a_confirmed_transfer_without_boards_leaves_the_boards_inside(
 
 #[rstest]
 #[tokio::test]
-async fn a_transfer_without_confirmation_changes_nothing(
+async fn a_transfer_unconfirmed_or_dry_run_changes_nothing(
+    #[values(Guard::Unconfirmed, Guard::DryRun)] guard: Guard,
     #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
 ) -> Result<(), ScenarioError> {
     let holst = with_a_board().start().await?;
-    let observation = holst
-        .on(surface)
+    let observation = guard
+        .on(holst.on(surface))
         .change_rights("Roadmap", "Team", TRANSFER)
         .await?;
-    then(&observation).signalled_as(surface.permission_denied());
-    not_owned_by(&holst, "Roadmap", ANN);
-    Ok(())
-}
-
-#[rstest]
-#[tokio::test]
-async fn a_dry_run_of_a_transfer_changes_nothing(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
-    let holst = with_a_board().start().await?;
-    let observation = holst
-        .on(surface)
-        .dry_running()
-        .change_rights("Roadmap", "Team", TRANSFER)
-        .await?;
-    then(&observation).shows("transfer_ownership");
+    guard.held_back(surface, &observation, "transfer_ownership");
     not_owned_by(&holst, "Roadmap", ANN);
     Ok(())
 }

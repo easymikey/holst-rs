@@ -28,10 +28,7 @@ pub(crate) fn forgotten(
                 }
                 Ok(LoginRemoval::Absent) => (gone, kept),
                 Err(error) => {
-                    let error = Error::NotForgotten {
-                        store: kind.as_str(),
-                        error,
-                    };
+                    let error = Error::NotForgotten { store: kind, error };
                     (gone, kept.or(Some(error)))
                 }
             },

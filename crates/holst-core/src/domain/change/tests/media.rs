@@ -15,7 +15,12 @@ use crate::{
         geometry::{Point, Size},
         response::PagesInfo,
     },
-    error::{Error, Result, board_change::BoardChangeError, input::InputError},
+    error::{
+        Error,
+        Result,
+        board_change::{BoardChangeError, ObjectField},
+        input::InputError,
+    },
 };
 
 fn upload(original: &str) -> Upload {
@@ -122,7 +127,7 @@ fn a_sticker_has_no_name() -> Result<()> {
     assert!(matches!(
         refused,
         Err(Error::BoardChange(BoardChangeError::NotChangeable {
-            field: "name",
+            field: ObjectField::Name,
             ..
         }))
     ));
@@ -546,7 +551,7 @@ fn a_sticker_takes_no_new_picture() -> Result<()> {
     assert!(matches!(
         refused,
         Err(Error::BoardChange(BoardChangeError::NotChangeable {
-            field: "path",
+            field: ObjectField::Path,
             ..
         }))
     ));
@@ -626,8 +631,8 @@ fn a_start_page_needs_the_page_count() {
     );
     assert!(matches!(
         refused,
-        Err(Error::BoardChange(BoardChangeError::NotChangeable {
-            field: "start_page",
+        Err(Error::BoardChange(BoardChangeError::UnshownFile {
+            field: ObjectField::StartPage,
             ..
         }))
     ));
@@ -658,8 +663,8 @@ fn details_of_a_video_shown_as_a_stamp_are_refused() {
     );
     assert!(matches!(
         refused,
-        Err(Error::BoardChange(BoardChangeError::NotChangeable {
-            field: "hide_details",
+        Err(Error::BoardChange(BoardChangeError::UnshownFile {
+            field: ObjectField::HideDetails,
             ..
         }))
     ));
@@ -679,8 +684,8 @@ fn content_needs_the_info_its_kind_shows(#[case] name: &str, #[case] extra: Valu
     );
     assert!(matches!(
         refused,
-        Err(Error::BoardChange(BoardChangeError::NotChangeable {
-            field: "display",
+        Err(Error::BoardChange(BoardChangeError::UnshownFile {
+            field: ObjectField::Display,
             ..
         }))
     ));
@@ -713,7 +718,7 @@ fn a_sticker_has_no_file_view() {
     assert!(matches!(
         refused,
         Err(Error::BoardChange(BoardChangeError::NotChangeable {
-            field: "display",
+            field: ObjectField::Display,
             ..
         }))
     ));
@@ -747,8 +752,8 @@ fn pages_that_cannot_be_shown_are_not_shown_as_content() {
     let refused = media::fits(&ObjectKind::File, Some(&fields), &counted(1, false));
     assert!(matches!(
         refused,
-        Err(Error::BoardChange(BoardChangeError::NotChangeable {
-            field: "display",
+        Err(Error::BoardChange(BoardChangeError::UnshownFile {
+            field: ObjectField::Display,
             ..
         }))
     ));

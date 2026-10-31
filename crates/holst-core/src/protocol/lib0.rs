@@ -1,6 +1,10 @@
 //! lib0 variable-length encoding: integers, bytes and strings, no I/O.
 
-use crate::error::{Error, Result, board_socket::BoardSocketError};
+use crate::error::{
+    Error,
+    Result,
+    board_socket::{BoardSocketError, FrameFault},
+};
 
 #[must_use]
 pub(crate) fn var_uint(value: u64) -> Vec<u8> {
@@ -42,7 +46,7 @@ pub(crate) fn read_var_uint(input: &[u8]) -> Result<(u64, &[u8])> {
         .position(|byte| byte & 0x80 == 0)
         .filter(|end| *end < 10)
         .ok_or(Error::BoardSocket(BoardSocketError::MalformedFrame {
-            what: "a cut varint",
+            what: FrameFault::CutVarint,
         }))?;
     let (head, rest) = input.split_at(end + 1);
     let wide = head
@@ -53,7 +57,7 @@ pub(crate) fn read_var_uint(input: &[u8]) -> Result<(u64, &[u8])> {
         });
     u64::try_from(wide).map(|value| (value, rest)).map_err(|_| {
         Error::BoardSocket(BoardSocketError::MalformedFrame {
-            what: "a varint over 64 bits",
+            what: FrameFault::VarintOver64Bits,
         })
     })
 }
@@ -66,7 +70,7 @@ pub(crate) fn read_var_uint(input: &[u8]) -> Result<(u64, &[u8])> {
 pub(crate) fn read_var_int(input: &[u8]) -> Result<(i64, &[u8])> {
     let (first, after) = input.split_first().ok_or(Error::BoardSocket(
         BoardSocketError::MalformedFrame {
-            what: "a cut signed varint",
+            what: FrameFault::CutSignedVarint,
         },
     ))?;
     let low = i64::from(first & 0x3f);
@@ -78,7 +82,7 @@ pub(crate) fn read_var_int(input: &[u8]) -> Result<(i64, &[u8])> {
                 .and_then(|high| high.checked_mul(64))
                 .map(|high| (high, rest))
                 .ok_or(Error::BoardSocket(BoardSocketError::MalformedFrame {
-                    what: "a signed varint over 63 bits",
+                    what: FrameFault::SignedVarintOver63Bits,
                 }))
         })?,
     };
@@ -102,7 +106,7 @@ pub(crate) fn read_var_bytes(input: &[u8]) -> Result<(&[u8], &[u8])> {
         .filter(|len| *len <= rest.len())
         .map(|len| rest.split_at(len))
         .ok_or(Error::BoardSocket(BoardSocketError::MalformedFrame {
-            what: "bytes longer than the frame",
+            what: FrameFault::BytesPastFrame,
         }))
 }
 
@@ -117,7 +121,7 @@ pub(crate) fn read_var_string(input: &[u8]) -> Result<(&str, &[u8])> {
         .map(|text| (text, rest))
         .map_err(|_| {
             Error::BoardSocket(BoardSocketError::MalformedFrame {
-                what: "a string that is not UTF-8",
+                what: FrameFault::StringNotUtf8,
             })
         })
 }

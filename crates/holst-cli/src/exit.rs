@@ -118,7 +118,7 @@ pub(crate) fn report(error: &Error) -> ExitCode {
         | Error::Unconfirmed(_)
         | Error::QueryNoEquals { .. }
         | Error::BodyFile { .. }
-        | Error::ItemsNotJson(_) => print(error, code),
+        | Error::ItemsNotJson { .. } => print(error, code),
     }
 }
 
@@ -144,7 +144,7 @@ pub(crate) fn code(error: &Error) -> u8 {
         | Error::SvgToTerminal
         | Error::McpAlias { .. }
         | Error::QueryNoEquals { .. } => EX_USAGE,
-        Error::Render(_) | Error::InvalidAnswer { .. } | Error::ItemsNotJson(_) => {
+        Error::Render(_) | Error::InvalidAnswer { .. } | Error::ItemsNotJson { .. } => {
             EX_DATAERR
         }
         Error::NoInput { .. } | Error::NoAccount { .. } | Error::BodyFile { .. } => {
@@ -196,7 +196,11 @@ fn http_code(error: &HttpError) -> u8 {
         HttpError::Status { status, .. } => status_code(*status),
         HttpError::NoResponse { .. }
         | HttpError::RateLimited { .. }
-        | HttpError::Transport(_) => EX_TEMPFAIL,
+        | HttpError::Timeout(_)
+        | HttpError::Connect(_)
+        | HttpError::CutOff(_)
+        | HttpError::Build(_)
+        | HttpError::Network(_) => EX_TEMPFAIL,
         HttpError::HtmlInsteadOfJson { .. }
         | HttpError::ResponseTooLarge { .. }
         | HttpError::ForeignRedirect { .. }
@@ -258,6 +262,7 @@ fn input_code(error: &InputError) -> u8 {
         | InputError::NotArgument { .. }
         | InputError::NoArgument { .. }
         | InputError::NotArgumentValue { .. }
+        | InputError::NotJsonObject { .. }
         | InputError::ReplyNotFound { .. }
         | InputError::NotCommandArguments(_)
         | InputError::ImportBoardLeft { .. }
@@ -362,9 +367,12 @@ fn board_write_code(error: &BoardChangeError) -> u8 {
         | BoardChangeError::NotYours { .. } => EX_NOPERM,
         BoardChangeError::NoObject { .. }
         | BoardChangeError::NotChangeable { .. }
+        | BoardChangeError::CroppedImage { .. }
+        | BoardChangeError::UnshownFile { .. }
         | BoardChangeError::NotSpinnable { .. }
         | BoardChangeError::NotMovable { .. }
         | BoardChangeError::PlacedByContainer { .. }
+        | BoardChangeError::SizedByContainer { .. }
         | BoardChangeError::NothingToChange
         | BoardChangeError::NoTag { .. }
         | BoardChangeError::TagTaken { .. }
@@ -374,6 +382,7 @@ fn board_write_code(error: &BoardChangeError) -> u8 {
         | BoardChangeError::OffBoard { .. }
         | BoardChangeError::NotSize { .. }
         | BoardChangeError::NotColor { .. }
+        | BoardChangeError::NotShade { .. }
         | BoardChangeError::NotArrowLook { .. }
         | BoardChangeError::BadValue { .. }
         | BoardChangeError::StickerSize { .. }
@@ -445,13 +454,8 @@ mod tests {
     }
 
     fn refused(code: u16) -> holst_core::Error {
-        HttpError::Status {
-            method: "GET",
-            path: "/gapi/current_user".into(),
-            status: code,
-            detail: String::new(),
-        }
-        .into()
+        holst_core::fake::http_status(code, holst_core::error::http::ReplyBody::Empty)
+            .into()
     }
 
     fn status(code: u16) -> Error {

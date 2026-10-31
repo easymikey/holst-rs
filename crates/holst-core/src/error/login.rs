@@ -1,16 +1,20 @@
 //! Signing in and the shape of a login.
 
-use crate::error::{Error, hint::Hint};
+use holst_macros::Hint;
+
+use crate::error::{Error, http::HttpMethod};
 
 /// A login that is missing, refused or not a login at all.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Hint)]
 #[cfg_attr(test, derive(strum::EnumDiscriminants))]
 #[cfg_attr(test, strum_discriminants(derive(strum::EnumIter, PartialOrd, Ord)))]
 pub enum LoginError {
     #[error("no login found")]
+    #[hint(LoginAgain)]
     NoSavedLogin,
 
     #[error("the saved login was revoked or has expired")]
+    #[hint(LoginAgain)]
     SessionRevoked,
 
     #[error(
@@ -24,6 +28,7 @@ pub enum LoginError {
     NotSavedLogin,
 
     #[error("the saved login is for {saved}, not {current}")]
+    #[hint(LoginAgain)]
     OtherServer { saved: String, current: String },
 
     #[error("login did not finish: the reply has no {field}")]
@@ -32,23 +37,8 @@ pub enum LoginError {
     #[error(
         "the saved login is an old bare token, which the server refuses: it works only together with the session cookies"
     )]
-    BareToken { method: &'static str, path: String },
-}
-
-impl LoginError {
-    /// What to do next, decided for every variant.
-    #[must_use]
-    pub const fn hint(&self) -> Option<Hint> {
-        match self {
-            LoginError::NoSavedLogin
-            | LoginError::SessionRevoked
-            | LoginError::OtherServer { .. } => Some(Hint::LoginAgain),
-            LoginError::BareToken { .. } => Some(Hint::FullLogin),
-            LoginError::NotEmail { .. }
-            | LoginError::NotSavedLogin
-            | LoginError::Incomplete { .. } => None,
-        }
-    }
+    #[hint(FullLogin)]
+    BareToken { method: HttpMethod, path: String },
 }
 
 impl Error {
@@ -62,31 +52,26 @@ impl Error {
 #[cfg(test)]
 pub(super) mod tests {
     use crate::error::{
-        hint::{Hint, decided::assert_every_variant},
+        hint::decided::assert_all_listed,
+        http::HttpMethod,
         login::{LoginError, LoginErrorDiscriminants},
     };
 
-    pub(in crate::error) fn samples() -> Vec<(LoginError, Option<Hint>)> {
+    pub(in crate::error) fn samples() -> Vec<LoginError> {
         vec![
-            (LoginError::NoSavedLogin, Some(Hint::LoginAgain)),
-            (LoginError::SessionRevoked, Some(Hint::LoginAgain)),
-            (
-                LoginError::OtherServer {
-                    saved: "a".into(),
-                    current: "b".into(),
-                },
-                Some(Hint::LoginAgain),
-            ),
-            (LoginError::NotEmail { raw: "x".into() }, None),
-            (LoginError::NotSavedLogin, None),
-            (LoginError::Incomplete { field: "code" }, None),
-            (
-                LoginError::BareToken {
-                    method: "GET",
-                    path: "/x".into(),
-                },
-                Some(Hint::FullLogin),
-            ),
+            LoginError::NoSavedLogin,
+            LoginError::SessionRevoked,
+            LoginError::OtherServer {
+                saved: "a".into(),
+                current: "b".into(),
+            },
+            LoginError::NotEmail { raw: "x".into() },
+            LoginError::NotSavedLogin,
+            LoginError::Incomplete { field: "code" },
+            LoginError::BareToken {
+                method: HttpMethod::Get,
+                path: "/x".into(),
+            },
         ]
     }
 
@@ -96,17 +81,15 @@ pub(super) mod tests {
     #[case::forbidden(403, true)]
     #[case::server_error(500, false)]
     fn only_a_refusal_is_a_wrong_secret(#[case] status: u16, #[case] wrong: bool) {
-        let err = crate::Error::Http(crate::error::http::HttpError::Status {
-            method: "POST",
-            path: "/gapi/login/with_email".into(),
+        let err = crate::Error::Http(crate::fake::http_status(
             status,
-            detail: String::new(),
-        });
+            crate::error::http::ReplyBody::Empty,
+        ));
         assert_eq!(err.is_wrong_secret(), wrong);
     }
 
     #[test]
     fn every_variant_has_a_hint_decision() {
-        assert_every_variant::<_, LoginErrorDiscriminants>(samples(), LoginError::hint);
+        assert_all_listed::<_, LoginErrorDiscriminants>(&samples());
     }
 }

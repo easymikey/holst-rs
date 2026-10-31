@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 
-use crate::error::hint::{Hint, Surface};
+use crate::error::hint::Hint;
 
 /// What a confirmation guards against; the refusal names it after the action.
 #[derive(
@@ -19,20 +19,13 @@ pub enum ChangeRisk {
     Contents,
 }
 
-/// A change without its confirmation: the change, the risk, how to confirm.
+/// A change without its confirmation: the change and the risk.
 ///
 /// ```
-/// use holst_core::error::{
-///     confirmation::{ChangeRisk, Unconfirmed},
-///     hint::Surface,
-/// };
+/// use holst_core::error::confirmation::{ChangeRisk, Unconfirmed};
 ///
 /// let err = Unconfirmed::new("deleting a template", ChangeRisk::Irreversible);
 /// assert_eq!(err.to_string(), "deleting a template cannot be undone");
-/// assert_eq!(
-///     err.on(Surface::Cli),
-///     "deleting a template cannot be undone; confirm with --yes"
-/// );
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{change} {risk}")]
@@ -42,30 +35,13 @@ pub struct Unconfirmed {
 }
 
 impl Unconfirmed {
-    /// A refusal whose flag word a shell adds with [`Unconfirmed::on`].
+    /// A refusal of `change`, which carries `risk`.
     #[must_use]
     pub fn new(change: impl Into<Cow<'static, str>>, risk: ChangeRisk) -> Self {
         Self {
             change: change.into(),
             risk,
         }
-    }
-
-    /// The refusal worded the way `surface` confirms.
-    #[must_use]
-    pub fn on(&self, surface: Surface) -> String {
-        format!(
-            "{} {}; confirm with {}",
-            self.change,
-            self.risk,
-            surface.confirmation()
-        )
-    }
-
-    /// The change and its risk as one phrase, for a report that holds it.
-    #[must_use]
-    pub fn needs(&self) -> String {
-        self.to_string()
     }
 
     /// Advice for every unconfirmed action.
@@ -81,7 +57,7 @@ mod tests {
 
     use crate::error::{
         confirmation::{ChangeRisk, Unconfirmed},
-        hint::{Hint, Surface},
+        hint::Hint,
     };
 
     #[test]
@@ -91,34 +67,15 @@ mod tests {
     }
 
     #[test]
-    fn a_held_change_needs_its_change_and_risk() {
-        let err = Unconfirmed::new("deleting permanently", ChangeRisk::Irreversible);
-        assert_eq!(err.needs(), "deleting permanently cannot be undone");
-    }
-
-    #[test]
-    fn the_shell_chooses_the_wording() {
-        let err = Unconfirmed::new("deleting permanently", ChangeRisk::Irreversible);
-        assert_eq!(
-            err.on(Surface::Mcp),
-            "deleting permanently cannot be undone; confirm with confirm: true"
-        );
-        assert_eq!(
-            err.on(Surface::Cli),
-            "deleting permanently cannot be undone; confirm with --yes"
-        );
-    }
-
-    #[test]
     fn each_risk_has_its_words() {
         let said: Vec<String> = ChangeRisk::iter()
-            .map(|risk| Unconfirmed::new("granting a right", risk).on(Surface::Mcp))
+            .map(|risk| Unconfirmed::new("granting a right", risk).to_string())
             .collect();
         let undone = said.iter().filter(|text| text.contains("cannot be undone"));
         assert_eq!(undone.count(), 1, "{said:?}");
         assert!(
             said.iter()
-                .all(|text| text.ends_with("; confirm with confirm: true")),
+                .all(|text| text.starts_with("granting a right ")),
             "{said:?}"
         );
     }

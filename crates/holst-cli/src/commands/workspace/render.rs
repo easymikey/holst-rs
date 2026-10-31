@@ -91,7 +91,12 @@ fn part_text(part: ShowPart, fetched: &PartRead) -> String {
     let listed =
         |body: String| format!("{name}:\n{}", joined(body.lines().map(indented), "\n"));
     match fetched {
-        PartRead::NotRead { error } => format!("{name}: could not be read: {error}"),
+        PartRead::NotRead { error } => {
+            format!(
+                "{name}: could not be read: {}",
+                holst_core::error::chained(error)
+            )
+        }
         PartRead::NeedsAdmin { error } => format!("{name}: {error}"),
         PartRead::Hidden { reason } => format!("{name}: {reason}"),
         PartRead::Members(members) => listed(members_text(members)),

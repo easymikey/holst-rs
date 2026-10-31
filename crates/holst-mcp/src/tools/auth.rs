@@ -1,19 +1,21 @@
 //! The `auth` tool: the saved login, the account and its workspaces.
 
 use holst_core::{
-    command::auth::{
-        AccountStatus,
-        AuthVerb,
-        StatusArgs,
-        StatusReport,
-        WorkspaceStatus,
-        status,
+    command::{
+        auth::{
+            AccountStatus,
+            AuthVerb,
+            StatusArgs,
+            StatusReport,
+            WorkspaceStatus,
+            status,
+        },
+        table::CommandName,
     },
     domain::{
         access::{Session, Token},
         text::counted,
     },
-    error::hint::Surface,
 };
 use rmcp::model::CallToolResult;
 use serde_json::{Map, Value};
@@ -33,11 +35,8 @@ impl McpServer {
     ) -> CallToolResult {
         match verb {
             // `login` and `logout` are CLI-only; the table gives no tool.
-            AuthVerb::Login => self.fail(&Error::CliOnly {
-                command: "auth login".to_owned(),
-            }),
-            AuthVerb::Logout => self.fail(&Error::CliOnly {
-                command: "auth logout".to_owned(),
+            AuthVerb::Login | AuthVerb::Logout => self.fail(&Error::CliOnly {
+                command: CommandName::Auth(verb).command(),
             }),
             AuthVerb::Status => {
                 self.parsed(arguments, async |args: StatusArgs| {
@@ -107,7 +106,7 @@ impl McpServer {
                 counted(counts.boards, "board"),
                 counted(counts.folders, "folder")
             ),
-            Err(err) => format!("{name} · not counted: {}\n", err.on(Surface::Mcp)),
+            Err(err) => format!("{name} · not counted: {}\n", reply::line(err)),
         }
     }
 }
@@ -125,6 +124,6 @@ fn listed<T>(
             .fold(format!("{label}: {}\n", rows.len()), |text, row| {
                 text + "  " + &line(row) + "\n"
             }),
-        Some(Err(err)) => format!("{label}: not read: {}\n", err.on(Surface::Mcp)),
+        Some(Err(err)) => format!("{label}: not read: {}\n", reply::line(&err)),
     }
 }

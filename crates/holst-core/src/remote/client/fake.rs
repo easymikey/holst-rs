@@ -18,7 +18,11 @@ use crate::{
         clock::FixedClock,
         http::{BoxFuture, HttpRequest, HttpResponse, Transport},
     },
-    error::{Error, Result, http::HttpError},
+    error::{
+        Error,
+        Result,
+        http::{HttpError, HttpMethod},
+    },
     remote::client::Client,
 };
 
@@ -164,7 +168,7 @@ pub(crate) fn reply(
 
 pub(crate) fn lost(path: &str) -> Result<HttpResponse> {
     Err(Error::Http(HttpError::NoResponse {
-        method: "POST",
+        method: HttpMethod::Post,
         path: path.to_owned(),
     }))
 }

@@ -35,7 +35,7 @@ use crate::{
         board_change::BoardChangeError,
         board_socket::BoardSocketError,
         confirmation::{ChangeRisk, Unconfirmed},
-        http::{HTML_BODY, HttpError},
+        http::{HttpError, ReplyBody},
         input::InputError,
         lookup::{LookupError, LookupKind, LookupMiss},
     },
@@ -470,23 +470,27 @@ async fn fetch(client: &Client, key: &str, provider: &str) -> Result<Backup> {
     api::backup::download(client, key, provider)
         .await
         .and_then(Backup::try_from)
-        .map_err(|error| match error {
-            // An HTML 404 is a wrong address, not a missing backup.
-            Error::Http(HttpError::Status {
-                status: 404,
-                detail: ref body,
-                ..
-            }) if body != HTML_BODY => missing(key),
-            other @ (Error::Login(_)
-            | Error::Http(_)
-            | Error::Input(_)
-            | Error::LocalData(_)
-            | Error::Lookup(_)
-            | Error::BoardSocket(_)
-            | Error::BoardChange(_)
-            | Error::Picture(_)
-            | Error::StoredFile(_)) => other,
-        })
+        .map_err(|error| not_found_as_missing(key, error))
+}
+
+fn not_found_as_missing(key: &str, error: Error) -> Error {
+    match error {
+        // An HTML 404 is a wrong address, not a missing backup.
+        Error::Http(HttpError::Status {
+            status: 404,
+            body: ReplyBody::Empty | ReplyBody::Text(_),
+            ..
+        }) => missing(key),
+        other @ (Error::Login(_)
+        | Error::Http(_)
+        | Error::Input(_)
+        | Error::LocalData(_)
+        | Error::Lookup(_)
+        | Error::BoardSocket(_)
+        | Error::BoardChange(_)
+        | Error::Picture(_)
+        | Error::StoredFile(_)) => other,
+    }
 }
 
 #[cfg(test)]
@@ -803,5 +807,25 @@ mod tests {
         assert_eq!(updates(&socket), 1);
         assert_eq!(memory.load_document(BOARD), None);
         Ok(())
+    }
+
+    #[test]
+    fn a_404_is_a_missing_backup_unless_the_body_is_an_html_page() {
+        use super::not_found_as_missing;
+        use crate::error::http::ReplyBody;
+
+        let refused = |body| Error::Http(crate::fake::http_status(404, body));
+        assert!(matches!(
+            not_found_as_missing("k", refused(ReplyBody::Empty)),
+            Error::Lookup(_)
+        ));
+        assert!(matches!(
+            not_found_as_missing("k", refused(ReplyBody::Text("gone".into()))),
+            Error::Lookup(_)
+        ));
+        assert!(matches!(
+            not_found_as_missing("k", refused(ReplyBody::Html)),
+            Error::Http(_)
+        ));
     }
 }

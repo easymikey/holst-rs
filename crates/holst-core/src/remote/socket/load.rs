@@ -25,7 +25,11 @@ use crate::{
         board_write::LoadSource,
         socket::{BoardSocket, SocketConnector, SocketSession},
     },
-    error::{Error, Result, board_socket::BoardSocketError},
+    error::{
+        Error,
+        Result,
+        board_socket::{BoardSocketError, FrameFault},
+    },
     protocol::{
         hud,
         hud::{DocumentResponse, SocketFrame, UpdatePayload},
@@ -290,7 +294,7 @@ fn advance(
         hud::SocketMessage::Ack(_) => Ok(progress),
         hud::SocketMessage::Unknown { .. } => {
             Err(Error::BoardSocket(BoardSocketError::MalformedFrame {
-                what: "an unknown message type",
+                what: FrameFault::UnknownMessageType,
             }))
         }
     }

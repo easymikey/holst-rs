@@ -26,7 +26,11 @@ use crate::{
         geometry::Point,
         id_source::SequentialIds,
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{
+        Error,
+        Result,
+        board_change::{BoardChangeError, ObjectField},
+    },
 };
 
 fn apply(document: &Doc, change: &BoardChange) -> Result<ChangeUpdate> {
@@ -242,7 +246,7 @@ fn an_empty_list_clears_the_tags_and_only_stickers_have_them() -> Result<()> {
             matches!(
                 refused,
                 Some(Error::BoardChange(BoardChangeError::NotChangeable {
-                    field: "tags",
+                    field: ObjectField::Tags,
                     ..
                 }))
             )

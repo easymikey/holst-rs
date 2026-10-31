@@ -867,7 +867,7 @@ async fn workspace_rename_without_confirm_sends_nothing() {
     )
     .await;
     assert!(failed, "{text}");
-    assert!(text.contains("; confirm with confirm: true"), "{text}");
+    assert!(text.contains("again with confirm: true"), "{text}");
     assert_eq!(
         network.seen().len(),
         1,

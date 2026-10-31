@@ -103,7 +103,7 @@ impl Client {
     /// the time by `clock` and numbering new objects by `ids`.
     ///
     /// # Errors
-    /// [`crate::error::http::HttpError::Transport`] if the HTTP client cannot
+    /// [`crate::error::http::HttpError::Build`] if the HTTP client cannot
     /// be built.
     pub fn new(
         session: Option<Session>,
@@ -141,7 +141,7 @@ impl Client {
     /// `limit` bytes of a reply within `timeout`: a larger reply stops early.
     ///
     /// # Errors
-    /// [`crate::error::http::HttpError::Transport`] if the HTTP client cannot
+    /// [`crate::error::http::HttpError::Build`] if the HTTP client cannot
     /// be built.
     pub fn with_response_limit(self, timeout: Duration, limit: usize) -> Result<Self> {
         let transport = Arc::clone(&self.transport).limited(timeout, limit)?;
@@ -332,7 +332,7 @@ impl Client {
             .map(|(cache, account)| act(&**cache, &account));
         kept.and_then(std::result::Result::err)
             .iter()
-            .for_each(|err| tracing::debug!(%err, "account cache: not updated"));
+            .for_each(|err| tracing::debug!(err = %crate::error::chained(err), "account cache: not updated"));
     }
 
     /// Where the login stands.

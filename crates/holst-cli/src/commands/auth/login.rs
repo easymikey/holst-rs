@@ -26,7 +26,7 @@ use secrecy::SecretString;
 use serde_json::json;
 
 use crate::{
-    error::{Error, InvalidAnswer, Result, SecretKind},
+    error::{Error, Result, SecretKind},
     form::{
         Form,
         Question,
@@ -37,7 +37,7 @@ use crate::{
     output,
     output::{
         OutputFormat,
-        coloring::Coloring,
+        color_choice::ColorChoice,
         view::{self, display_name},
     },
     run::RunSettings,
@@ -70,7 +70,7 @@ fn cancel<T: Terminal>(form: &Form<T>, error: &Error) -> Result<()> {
                         .into_owned(),
                     view::form_cause_lines(
                         error,
-                        Coloring::colored_if(form.terminal().has_color()),
+                        ColorChoice::colored_if(form.terminal().has_color()),
                     ),
                 )
             },
@@ -178,13 +178,9 @@ async fn ask_and_log_in<T: Terminal>(
     let logged_in = form
         .ask_until(
             question(secret),
-            &reason_of(parse_secret),
+            &parse_secret,
             async |typed: &SecretString| awaiting.log_in(typed).await,
-            |error| {
-                error
-                    .is_wrong_secret()
-                    .then_some(secret.wrong_answer().reason())
-            },
+            |error| error.is_wrong_secret().then_some(secret.wrong_answer()),
             ATTEMPTS,
         )
         .await?;
@@ -223,9 +219,9 @@ impl Done {
             .map(|stale| {
                 let hint = stale
                     .hint()
-                    .map(|hint| format!("; {}", hint.on(Surface::Cli)))
+                    .map(|hint| format!("; {}", hint.text(Surface::Cli)))
                     .unwrap_or_default();
-                format!("{stale}{hint}")
+                format!("{}{hint}", holst_core::error::chained(stale))
             });
         Self {
             name: display_name(&done.account).to_owned(),
@@ -289,27 +285,20 @@ async fn log_in_by_email<T: Terminal>(
     given: Option<Email>,
 ) -> Result<Client> {
     let email = given.map_or_else(
-        || form.ask("Email", QuestionKind::Text, &reason_of(parse_email)),
+        || form.ask("Email", QuestionKind::Text, &parse_email),
         |email| form.step("Email", email.as_str()).map(|()| email),
     )?;
     let awaiting = prepare(EmailLogin::new(client, email), form).await?;
     ask_and_log_in(&awaiting, form).await
 }
 
-// The form shows the reason as text; the command keeps the enum.
-fn reason_of<V>(
-    parse: impl Fn(&str) -> Result<V, InvalidAnswer>,
-) -> impl Fn(&str) -> Result<V, Reason> {
-    move |text| parse(text).map_err(InvalidAnswer::reason)
+fn parse_email(text: &str) -> Result<Email, Reason> {
+    text.parse().map_err(|_| Reason::NotEmail)
 }
 
-fn parse_email(text: &str) -> Result<Email, InvalidAnswer> {
-    text.parse().map_err(|_| InvalidAnswer::NotEmail)
-}
-
-fn parse_secret(text: &str) -> Result<SecretString, InvalidAnswer> {
+fn parse_secret(text: &str) -> Result<SecretString, Reason> {
     if text.is_empty() {
-        Err(InvalidAnswer::Empty)
+        Err(Reason::Empty)
     } else {
         Ok(SecretString::from(text))
     }

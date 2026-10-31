@@ -10,7 +10,11 @@ use crate::{
         http::{HttpBody, HttpMethod},
         request::{ApiRequest, Authorization},
     },
-    error::{Error, Result, http::HttpError},
+    error::{
+        Error,
+        Result,
+        http::{HttpError, ReplyBody},
+    },
     protocol::upload::multipart_body,
     remote::client::Client,
 };
@@ -182,12 +186,15 @@ fn said_by_service(err: Error) -> Error {
             method,
             path,
             status,
-            detail,
+            body,
         }) => Error::Http(HttpError::Status {
             method,
             path,
             status,
-            detail: coded(&detail).unwrap_or(detail),
+            body: match body {
+                ReplyBody::Text(text) => ReplyBody::Text(coded(&text).unwrap_or(text)),
+                other @ (ReplyBody::Empty | ReplyBody::Html) => other,
+            },
         }),
         other @ (Error::Login(_)
         | Error::Http(_)

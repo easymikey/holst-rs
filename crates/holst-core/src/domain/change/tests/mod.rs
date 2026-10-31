@@ -71,7 +71,11 @@ use crate::{
         id_source::SequentialIds,
         time::Timestamp,
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{
+        Error,
+        Result,
+        board_change::{BoardChangeError, ObjectField},
+    },
 };
 
 fn add(new: NewObject) -> BoardChange {
@@ -436,7 +440,7 @@ fn copy(document: &Doc) -> Result<Doc> {
 #[derive(Debug, PartialEq, Eq)]
 enum Verdict {
     Allowed,
-    NoSuchField(&'static str),
+    NoSuchField(ObjectField),
     WrongStickerShape,
 }
 
@@ -473,7 +477,7 @@ fn edit_verdict(
 #[case::any_frame_size("frame", "300,100", Verdict::Allowed)]
 #[case::text_grows_by_scale("simple-text", "192,192", Verdict::Allowed)]
 #[case::stack_grows_by_scale("sticker-stack", "192,192", Verdict::Allowed)]
-#[case::arrow_has_no_size("arrow", "192,192", Verdict::NoSuchField("size"))]
+#[case::arrow_has_no_size("arrow", "192,192", Verdict::NoSuchField(ObjectField::Size))]
 fn an_edit_resizes_only_what_has_a_size(
     #[case] kind: &str,
     #[case] size: &str,
@@ -488,7 +492,7 @@ fn an_edit_resizes_only_what_has_a_size(
 #[case::shape("shape", Verdict::Allowed)]
 #[case::frame("frame", Verdict::Allowed)]
 #[case::arrow("arrow", Verdict::Allowed)]
-#[case::text_has_no_colour("simple-text", Verdict::NoSuchField("color"))]
+#[case::text_has_no_colour("simple-text", Verdict::NoSuchField(ObjectField::Color))]
 fn an_edit_recolours_only_what_has_a_colour(
     #[case] kind: &str,
     #[case] verdict: Verdict,

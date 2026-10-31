@@ -10,10 +10,13 @@ use crate::{
         change::{build::author_number, check::kind_of, write::WriteTransaction},
         kinds::{dice::DEFAULT_FACES, wheel::MIN_CHOICES},
     },
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{
+        Error,
+        Result,
+        board_change::{BoardChangeError, ObjectField},
+    },
 };
 
-pub(super) const ROLL: &str = "roll";
 pub(super) const FACES: &str = "faces";
 const VALUE: &str = "value";
 const SPIN_TIME: &str = "spinTime";
@@ -34,12 +37,12 @@ pub(super) fn check_roll(kind: &ObjectKind, fields: Option<&Value>) -> Result<()
         (false, true) => Err(Error::BoardChange(BoardChangeError::NotSpinnable {
             choices,
         })),
-        (false, false) => Err(not_changeable(kind, ROLL)),
+        (false, false) => Err(not_changeable(kind, ObjectField::Roll)),
     }
 }
 
 pub(super) fn check_faces(kind: &ObjectKind) -> Result<()> {
-    only(kind, &ObjectKind::Dice, FACES)
+    only(kind, &ObjectKind::Dice, ObjectField::Faces)
 }
 
 /// Rolls the die or spins wheel `id`, drawing a fresh id from the context.
@@ -182,7 +185,11 @@ mod tests {
             kinds::{dice, wheel},
             rich_text::TextFormat,
         },
-        error::{Error, Result, board_change::BoardChangeError},
+        error::{
+            Error,
+            Result,
+            board_change::{BoardChangeError, ObjectField},
+        },
     };
 
     fn board_with(new: NewObject) -> Result<Doc> {
@@ -328,11 +335,11 @@ mod tests {
             refused,
             [
                 Some(Error::BoardChange(BoardChangeError::NotChangeable {
-                    field: "roll",
+                    field: ObjectField::Roll,
                     ..
                 })),
                 Some(Error::BoardChange(BoardChangeError::NotChangeable {
-                    field: "faces",
+                    field: ObjectField::Faces,
                     ..
                 })),
             ]

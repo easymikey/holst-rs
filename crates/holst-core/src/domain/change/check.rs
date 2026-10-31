@@ -36,7 +36,7 @@ use crate::{
         },
         geometry,
         geometry::{Point, Rectangle, Size, StoredPoint},
-        kinds::{document, icon, stamp},
+        kinds::{document, icon, kanban, stamp},
         palette::Color,
         rich_text::{Editor, Kept, TextFormat, parse},
     },
@@ -50,6 +50,8 @@ use crate::{
             GivenSize,
             GroupRefusal,
             LockRefusal,
+            MoveRefusal,
+            ObjectField,
             OffBoardValue,
         },
     },
@@ -281,7 +283,7 @@ pub(crate) fn check<'a>(
                 unlocked(states, &id, &edit.object)?;
                 let kind = kind_of(states, &id);
                 let held = held_in(states, &id, &kind);
-                changeable_edit(states, &id, &kind, held, edit)?;
+                changeable_edit(states, &id, &kind, held.as_ref(), edit)?;
                 arrow_fits(states, &id, &edit.patch.arrow)?;
                 let link_to = edit
                     .patch
@@ -822,9 +824,9 @@ fn reparented(
         .transpose()
 }
 
-fn not_movable(kind: &ObjectKind, why: String) -> Error {
+fn not_movable(kind: &ObjectKind, why: MoveRefusal) -> Error {
     Error::BoardChange(BoardChangeError::NotMovable {
-        kind: kind.as_str().to_owned(),
+        kind: kind.clone(),
         why,
     })
 }
@@ -840,16 +842,11 @@ fn movable(
         .map(|up| kind_of(states, up))
         .filter(|up| *up != ObjectKind::Frame);
     match (kind, holder) {
-        (ObjectKind::Arrow, _) => {
-            Err(not_movable(kind, "it follows the objects it joins".into()))
-        }
+        (ObjectKind::Arrow, _) => Err(not_movable(kind, MoveRefusal::FollowsJoined)),
         (ObjectKind::Group, _) => {
-            Err(not_movable(kind, "it stands where its members do".into()))
+            Err(not_movable(kind, MoveRefusal::StandsWithMembers))
         }
-        (_, Some(up)) => Err(not_movable(
-            kind,
-            format!("it is held by a {}", up.as_str()),
-        )),
+        (_, Some(up)) => Err(not_movable(kind, MoveRefusal::HeldBy(up))),
         (_, None) => Ok(()),
     }
 }
@@ -864,7 +861,7 @@ fn frame_taking(
     let frame = open_frame(states, reference)?;
     (!subtree(states, id).contains(&frame))
         .then_some(frame)
-        .ok_or_else(|| not_movable(kind, "the frame lies inside it".into()))
+        .ok_or_else(|| not_movable(kind, MoveRefusal::FrameInside))
 }
 
 /// The id of the frame named, once it is a frame that shows its content.
@@ -1332,14 +1329,14 @@ fn changeable_edit(
     states: &HashMap<String, Value>,
     id: &str,
     kind: &ObjectKind,
-    held: Option<Held>,
+    held: Option<&Held>,
     edit: &ObjectEdit,
 ) -> Result<()> {
     let tags = match (&edit.tags, kind) {
         (None, _) | (Some(_), ObjectKind::Sticker | ObjectKind::Task) => Ok(()),
         (Some(_), _) => Err(Error::BoardChange(BoardChangeError::NotChangeable {
-            kind: kind.as_str().to_owned(),
-            field: "tags",
+            kind: kind.clone(),
+            field: ObjectField::Tags,
         })),
     };
     match (&edit.patch, edit.stacking, &edit.tags) {
@@ -1444,10 +1441,10 @@ fn link_text(states: &HashMap<String, Value>, link: &LinkTo) -> Result<String> {
 }
 
 /// An object and the container that places it.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct Held {
-    object: &'static str,
-    container: &'static str,
+    object: ObjectKind,
+    container: ObjectKind,
 }
 
 /// The object as named with the container that places it: a table cell sits
@@ -1463,12 +1460,12 @@ fn held_in(
         .is_some_and(Value::is_string);
     match kind {
         ObjectKind::TableCell => Some(Held {
-            object: "table-cell",
-            container: "table",
+            object: ObjectKind::TableCell,
+            container: ObjectKind::Table,
         }),
         ObjectKind::Task if in_column => Some(Held {
-            object: "task-card",
-            container: "kanban",
+            object: ObjectKind::Task,
+            container: ObjectKind::Other(kanban::STORED.into()),
         }),
         ObjectKind::Sticker
         | ObjectKind::StickerStack
@@ -1501,7 +1498,7 @@ fn framed(kind: &ObjectKind, patch: &ObjectPatch) -> Result<()> {
         .filter(|_| *kind != ObjectKind::Frame)
         .map_or(Ok(()), |field| {
             Err(Error::BoardChange(BoardChangeError::NotChangeable {
-                kind: kind.as_str().to_owned(),
+                kind: kind.clone(),
                 field,
             }))
         })
@@ -1511,8 +1508,8 @@ fn framed(kind: &ObjectKind, patch: &ObjectPatch) -> Result<()> {
 fn spins(kind: &ObjectKind, patch: &ObjectPatch) -> Result<()> {
     patch.rotation.filter(|_| !turns(kind)).map_or(Ok(()), |_| {
         Err(Error::BoardChange(BoardChangeError::NotChangeable {
-            kind: kind.as_str().to_owned(),
-            field: "rotation",
+            kind: kind.clone(),
+            field: ObjectField::Rotation,
         }))
     })
 }
@@ -1554,19 +1551,19 @@ fn resizable(kind: &ObjectKind) -> bool {
 
 /// Whether the kind takes the `scale` the patch asks for, and a task card in
 /// a kanban a new size at all: the kanban sizes it (main.a33651a4.js 114995).
-fn scales(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()> {
-    let refuse = |named: String, field| {
-        Err(Error::BoardChange(BoardChangeError::NotChangeable {
-            kind: named,
-            field,
-        }))
-    };
+fn scales(kind: &ObjectKind, held: Option<&Held>, patch: &ObjectPatch) -> Result<()> {
     match (held, patch.size.is_some() || patch.scale.is_some()) {
         (Some(Held { object, container }), true) if *kind == ObjectKind::Task => {
-            refuse(format!("{object} in a {container}"), "size")
+            Err(Error::BoardChange(BoardChangeError::SizedByContainer {
+                held: object.clone(),
+                container: container.clone(),
+            }))
         }
         _ if patch.scale.is_some() && !scaled(kind) => {
-            refuse(kind.as_str().to_owned(), "scale")
+            Err(Error::BoardChange(BoardChangeError::NotChangeable {
+                kind: kind.clone(),
+                field: ObjectField::Scale,
+            }))
         }
         _ => Ok(()),
     }
@@ -1591,10 +1588,10 @@ fn scaled(kind: &ObjectKind) -> bool {
 }
 
 /// Whether the kind has what the patch changes.
-fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()> {
+fn fits(kind: &ObjectKind, held: Option<&Held>, patch: &ObjectPatch) -> Result<()> {
     let refuse = |field| {
         Err(Error::BoardChange(BoardChangeError::NotChangeable {
-            kind: kind.as_str().to_owned(),
+            kind: kind.clone(),
             field,
         }))
     };
@@ -1603,7 +1600,7 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
     let size = resizable(kind);
     let color = takes_color(kind);
     match (patch, held) {
-        (ObjectPatch { text: Some(_), .. }, _) if !text => refuse("text"),
+        (ObjectPatch { text: Some(_), .. }, _) if !text => refuse(ObjectField::Text),
         (
             ObjectPatch {
                 text: Some(_),
@@ -1611,16 +1608,16 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
                 ..
             },
             _,
-        ) if !rich => refuse("text format"),
-        (ObjectPatch { at: Some(_), .. }, _) if !place => refuse("position"),
+        ) if !rich => refuse(ObjectField::TextFormat),
+        (ObjectPatch { at: Some(_), .. }, _) if !place => refuse(ObjectField::Position),
         (ObjectPatch { at: Some(_), .. }, Some(Held { object, container })) => {
             Err(Error::BoardChange(BoardChangeError::PlacedByContainer {
-                held: object,
-                container,
+                held: object.clone(),
+                container: container.clone(),
             }))
         }
-        (ObjectPatch { size: Some(_), .. }, _) if !size => refuse("size"),
-        (ObjectPatch { color: Some(_), .. }, _) if !color => refuse("color"),
+        (ObjectPatch { size: Some(_), .. }, _) if !size => refuse(ObjectField::Size),
+        (ObjectPatch { color: Some(_), .. }, _) if !color => refuse(ObjectField::Color),
         (
             ObjectPatch {
                 color: Some(asked), ..
@@ -1634,9 +1631,11 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
             }))
         }
         (ObjectPatch { width: Some(_), .. }, _) if *kind != ObjectKind::Text => {
-            refuse("width")
+            refuse(ObjectField::Width)
         }
-        (ObjectPatch { tick: Some(_), .. }, _) if !rich => refuse("checklist"),
+        (ObjectPatch { tick: Some(_), .. }, _) if !rich => {
+            refuse(ObjectField::Checklist)
+        }
         (ObjectPatch { shape, arrow, .. }, _)
             if let Some(field) = unfit_field(kind, shape, arrow) =>
         {
@@ -1648,14 +1647,14 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
                 ..
             },
             _,
-        ) if !rich => refuse("marks"),
+        ) if !rich => refuse(ObjectField::Marks),
         (
             ObjectPatch {
                 look: TextLook { color: Some(_), .. },
                 ..
             },
             _,
-        ) if !rich => refuse("text color"),
+        ) if !rich => refuse(ObjectField::TextColor),
         (
             ObjectPatch {
                 look:
@@ -1666,7 +1665,7 @@ fn fits(kind: &ObjectKind, held: Option<Held>, patch: &ObjectPatch) -> Result<()
                 ..
             },
             _,
-        ) if !rich => refuse("text background"),
+        ) if !rich => refuse(ObjectField::TextBackground),
         (
             ObjectPatch {
                 shape:
@@ -1795,8 +1794,8 @@ fn stamp_text(
         .then_some(())
         .ok_or_else(|| {
             Error::BoardChange(BoardChangeError::NotChangeable {
-                kind: kind.as_str().to_owned(),
-                field: "text",
+                kind: kind.clone(),
+                field: ObjectField::Text,
             })
         })
 }
@@ -1808,16 +1807,15 @@ fn unfit_field(
     kind: &ObjectKind,
     shape: &ShapeEdit,
     arrow: &ArrowEdit,
-) -> Option<&'static str> {
+) -> Option<ObjectField> {
     let line = arrow.fields().first().copied();
-    let outline_only = shape
-        .fields()
-        .into_iter()
-        .find(|field| !matches!(*field, "stroke-style" | "stroke-width"));
+    let outline_only = shape.fields().into_iter().find(|field| {
+        !matches!(*field, ObjectField::StrokeStyle | ObjectField::StrokeWidth)
+    });
     let fill = shape
         .fields()
         .into_iter()
-        .find(|field| matches!(*field, "shape" | "opacity"));
+        .find(|field| matches!(*field, ObjectField::Shape | ObjectField::Opacity));
     match (
         *kind == ObjectKind::Shape,
         *kind == ObjectKind::Arrow,

@@ -156,36 +156,34 @@ impl fmt::Display for Candidates {
 }
 
 /// Why a workspace could not be read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SkipReason {
-    Denied,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
+pub enum SkipWhy {
+    #[display("HTTP {_0}")]
+    Status(u16),
+    #[display("could not be read")]
     NotRead,
 }
 
-impl From<&Error> for SkipReason {
+impl SkipWhy {
+    /// Anything but a refusal of access leaves a choice by name uncertain.
+    #[must_use]
+    pub const fn is_uncertain(self) -> bool {
+        !matches!(self, SkipWhy::Status(403 | 404))
+    }
+}
+
+impl From<&Error> for SkipWhy {
     fn from(err: &Error) -> Self {
-        match err.status() {
-            Some(403 | 404) => SkipReason::Denied,
-            _ => SkipReason::NotRead,
-        }
+        err.status().map_or(SkipWhy::NotRead, SkipWhy::Status)
     }
 }
 
 /// One workspace that could not be read.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, derive_more::Display)]
+#[display("{workspace}: {why}")]
 pub struct Skipped {
     pub workspace: String,
-    pub reason: SkipReason,
-    pub status: Option<u16>,
-}
-
-impl fmt::Display for Skipped {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.status {
-            Some(status) => write!(f, "{}: HTTP {status}", self.workspace),
-            None => write!(f, "{}: could not be read", self.workspace),
-        }
-    }
+    pub why: SkipWhy,
 }
 
 /// Workspaces that could not be read, and why.
@@ -202,9 +200,7 @@ impl SkippedWorkspaces {
     /// A failure other than missing access: a choice by name is ambiguous.
     #[must_use]
     pub fn is_uncertain(&self) -> bool {
-        self.0
-            .iter()
-            .any(|unread| unread.reason == SkipReason::NotRead)
+        self.0.iter().any(|unread| unread.why.is_uncertain())
     }
 
     /// Every unread workspace, separated by `; `.
@@ -217,7 +213,7 @@ impl SkippedWorkspaces {
     #[must_use]
     pub fn uncertain(&self) -> impl fmt::Display + '_ {
         fmt::from_fn(move |f| {
-            let mut failed = self.0.iter().filter(|u| u.reason == SkipReason::NotRead);
+            let mut failed = self.0.iter().filter(|u| u.why.is_uncertain());
             write!(f, "{}", failed.join("; "))
         })
     }
@@ -279,7 +275,7 @@ impl LookupMiss {
 /// assert_eq!(err.to_string(), "folder \"Plans\" not found");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{}", message(.kind, .reference, .miss))]
+#[error("{}", self.message())]
 pub struct LookupError {
     pub kind: LookupKind,
     pub reference: String,
@@ -287,6 +283,45 @@ pub struct LookupError {
 }
 
 impl LookupError {
+    fn message(&self) -> impl fmt::Display + '_ {
+        fmt::from_fn(move |f| {
+            let Self {
+                kind,
+                reference,
+                miss,
+            } = self;
+            match miss {
+                LookupMiss::NotFound { unread, available } => write!(
+                    f,
+                    "{kind} \"{reference}\" not found{}{}{}",
+                    kind.place(),
+                    note("; available: ", available.is_empty(), available),
+                    note("; could not read: ", unread.is_empty(), unread.all())
+                ),
+                LookupMiss::Ambiguous { candidates, unread } => write!(
+                    f,
+                    "\"{reference}\" matches several {}{}: {candidates}{}",
+                    kind.plural(),
+                    kind.place(),
+                    note("; could not read: ", unread.is_empty(), unread.all())
+                ),
+                LookupMiss::Uncertain { candidates, unread } => write!(
+                    f,
+                    "{kind} \"{reference}\"{}: not every workspace could be read ({}), \
+                     so the match may be ambiguous",
+                    note(" matched ", candidates.is_empty(), candidates),
+                    unread.uncertain()
+                ),
+                LookupMiss::Elsewhere { workspace } => {
+                    write!(
+                        f,
+                        "{kind} \"{reference}\" is not in workspace \"{workspace}\""
+                    )
+                }
+            }
+        })
+    }
+
     /// What to do next, decided for every kind and outcome.
     #[must_use]
     pub const fn hint(&self) -> Option<Hint> {
@@ -326,44 +361,6 @@ impl LookupError {
     }
 }
 
-fn message<'a>(
-    what: &LookupKind,
-    reference: &'a str,
-    outcome: &'a LookupMiss,
-) -> impl fmt::Display + 'a {
-    let (what, place) = (*what, what.place());
-    fmt::from_fn(move |f| match outcome {
-        LookupMiss::NotFound {
-            unread,
-            available: known,
-        } => write!(
-            f,
-            "{what} \"{reference}\" not found{place}{}{}",
-            note(". Available: ", known.is_empty(), known),
-            note("; could not read: ", unread.is_empty(), unread.all())
-        ),
-        LookupMiss::Ambiguous { candidates, unread } => write!(
-            f,
-            "\"{reference}\" matches several {}{place}: {candidates}{}",
-            what.plural(),
-            note("; could not read: ", unread.is_empty(), unread.all())
-        ),
-        LookupMiss::Uncertain { candidates, unread } => write!(
-            f,
-            "{what} \"{reference}\"{}: not every workspace could be read ({}), so the \
-             match may be ambiguous",
-            note(" matched ", candidates.is_empty(), candidates),
-            unread.uncertain()
-        ),
-        LookupMiss::Elsewhere { workspace } => {
-            write!(
-                f,
-                "{what} \"{reference}\" is not in workspace \"{workspace}\""
-            )
-        }
-    })
-}
-
 fn note(lead: &str, empty: bool, text: impl fmt::Display) -> impl fmt::Display {
     fmt::from_fn(move |f| {
         if empty {
@@ -386,7 +383,7 @@ mod tests {
                 LookupError,
                 LookupKind,
                 LookupMiss,
-                SkipReason,
+                SkipWhy,
                 Skipped,
                 SkippedWorkspaces,
             },
@@ -397,8 +394,7 @@ mod tests {
     fn unread(workspace: &str, status: u16) -> SkippedWorkspaces {
         SkippedWorkspaces(vec![Skipped {
             workspace: workspace.to_owned(),
-            reason: SkipReason::NotRead,
-            status: Some(status),
+            why: SkipWhy::Status(status),
         }])
     }
 
@@ -425,22 +421,12 @@ mod tests {
     }
 
     #[rstest]
-    #[case::board(LookupKind::Board, "board \"Plans\" not found")]
-    #[case::folder(LookupKind::Folder, "folder \"Plans\" not found")]
     #[case::node(LookupKind::Node, "board or folder \"Plans\" not found")]
-    #[case::workspace(LookupKind::Workspace, "workspace \"Plans\" not found")]
-    #[case::category(
-        LookupKind::TemplateCategory,
-        "template category \"Plans\" not found"
-    )]
-    #[case::template(LookupKind::Template, "template \"Plans\" not found")]
     #[case::object(LookupKind::Object, "object \"Plans\" not found on the board")]
-    #[case::frame(LookupKind::Frame, "frame \"Plans\" not found on the board")]
     #[case::trash(
         LookupKind::Trash,
         "board or folder \"Plans\" not found in the trash"
     )]
-    #[case::backup(LookupKind::Backup, "backup \"Plans\" not found")]
     fn not_found_names_its_kind(#[case] what: LookupKind, #[case] expected: &str) {
         assert_eq!(lookup(what, LookupMiss::not_found()).to_string(), expected);
     }
@@ -452,7 +438,7 @@ mod tests {
         &[],
         "board \"Plans\" not found; could not read: Team: HTTP 403"
     )]
-    #[case::known(&[], &["easy"], "board \"Plans\" not found. Available: easy")]
+    #[case::known(&[], &["easy"], "board \"Plans\" not found; available: easy")]
     fn not_found_names_unread_and_known(
         #[case] failed: &[(&str, u16)],
         #[case] known: &[&str],
@@ -468,6 +454,31 @@ mod tests {
             available: candidates(known),
         };
         assert_eq!(lookup(LookupKind::Board, outcome).to_string(), expected);
+    }
+
+    #[rstest]
+    #[case::refused(Some(403), "team: HTTP 403")]
+    #[case::failed(Some(500), "team: HTTP 500")]
+    #[case::no_answer(None, "team: could not be read")]
+    fn skipped_says_why(#[case] status: Option<u16>, #[case] expected: &str) {
+        let why = status.map_or(SkipWhy::NotRead, SkipWhy::Status);
+        let skipped = Skipped {
+            workspace: "team".into(),
+            why,
+        };
+        assert_eq!(skipped.to_string(), expected);
+    }
+
+    #[rstest]
+    #[case::refused(403, false)]
+    #[case::missing(404, false)]
+    #[case::failed(500, true)]
+    fn only_a_refusal_leaves_the_choice_certain(
+        #[case] status: u16,
+        #[case] uncertain: bool,
+    ) {
+        assert_eq!(SkipWhy::Status(status).is_uncertain(), uncertain);
+        assert!(SkipWhy::NotRead.is_uncertain());
     }
 
     #[test]

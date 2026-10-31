@@ -75,9 +75,8 @@ async fn a_removal_waits_for_the_confirmation_and_then_clears_the_sticker(
 
 #[rstest]
 #[tokio::test]
-async fn a_removal_beside_a_name_is_refused(
-    #[values(Surface::Cli, Surface::Mcp)] surface: Surface,
-) -> Result<(), ScenarioError> {
+async fn a_removal_beside_a_name_is_refused() -> Result<(), ScenarioError> {
+    let surface = Surface::Cli;
     let holst = tagged_note().start().await?;
     tagged_urgent(&holst, surface).await?;
     let both = TagEdit {

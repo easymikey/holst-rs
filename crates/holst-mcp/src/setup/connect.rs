@@ -203,9 +203,10 @@ fn replace<T: Terminal>(
             &format!("Could not replace the {SERVER} entry of {label}"),
             ran.stderr.trim(),
         )?),
-        Err(err) => {
-            Ok(form.step(&format!("Could not run {program}"), &err.to_string())?)
-        }
+        Err(err) => Ok(form.step(
+            &format!("Could not run {program}"),
+            &holst_core::error::chained(&err).to_string(),
+        )?),
     }
 }
 
@@ -249,7 +250,10 @@ fn add<T: Terminal>(
     Ok(match programs.run(program, &cli.add(binary)) {
         Ok(ran) if ran.success => form.step(&format!("Connected {label}."), ""),
         Ok(ran) => form.step(&format!("Could not connect {label}"), ran.stderr.trim()),
-        Err(err) => form.step(&format!("Could not run {program}"), &err.to_string()),
+        Err(err) => form.step(
+            &format!("Could not run {program}"),
+            &holst_core::error::chained(&err).to_string(),
+        ),
     }?)
 }
 

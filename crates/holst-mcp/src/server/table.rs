@@ -14,40 +14,16 @@ use holst_core::{
 use rmcp::model::{Tool, ToolAnnotations};
 use serde_json::{Map, Value, json};
 
-use crate::tools::output::Output;
+use crate::{
+    error::{CallError, Verbs},
+    tools::output::Output,
+};
 
 const CONFIRM: &str = "confirm";
 const DRY_RUN: &str = "dry_run";
 
 /// Hidden names: (alias, the key a command takes in its place).
 const ALIASES: [(&str, &str); 2] = [("into", "frame"), ("to", "side")];
-
-/// Why a call to a table tool names no command, in words for the model.
-#[derive(Debug, PartialEq, Eq, thiserror::Error)]
-pub(crate) enum CallError {
-    #[error("`{tool}` needs `action`: {actions}")]
-    NoAction { tool: String, actions: String },
-
-    #[error("`{tool}` has no action {action}; it has: {actions}")]
-    NotAction {
-        tool: String,
-        action: Value,
-        actions: String,
-    },
-
-    #[error("`{tool}` has no action {action}; {action} is a `{other}` action")]
-    OtherTool {
-        tool: String,
-        action: String,
-        other: String,
-    },
-
-    #[error("`{alias}` is another name for `{key}`: give one of them, not both")]
-    BothNames {
-        alias: &'static str,
-        key: &'static str,
-    },
-}
 
 /// One MCP tool: the commands of a group that share its permission prompt.
 #[derive(Debug)]
@@ -101,7 +77,7 @@ impl TableTool {
     fn no_action(&self) -> CallError {
         CallError::NoAction {
             tool: self.name.clone(),
-            actions: self.verbs().join(", "),
+            actions: self.verbs(),
         }
     }
 
@@ -117,7 +93,7 @@ impl TableTool {
             (_, action) => CallError::NotAction {
                 tool,
                 action,
-                actions: self.verbs().join(", "),
+                actions: self.verbs(),
             },
         }
     }
@@ -136,11 +112,13 @@ impl TableTool {
             .map(|each| each.name)
     }
 
-    fn verbs(&self) -> Vec<&'static str> {
-        self.commands
-            .iter()
-            .filter_map(|name| name.command().verb)
-            .collect()
+    fn verbs(&self) -> Verbs {
+        Verbs(
+            self.commands
+                .iter()
+                .filter_map(|name| name.command().verb)
+                .collect(),
+        )
     }
 
     pub(crate) fn tool(&self) -> Tool {
@@ -166,7 +144,7 @@ impl TableTool {
         let action = (commands.len() > 1).then(|| {
             (
                 "action".to_owned(),
-                json!({ "type": "string", "enum": self.verbs() }),
+                json!({ "type": "string", "enum": self.verbs().0 }),
             )
         });
         // The last of a name wins, so a name that takes one or many goes last.
@@ -378,13 +356,13 @@ mod tests {
 
     #[rstest]
     #[case::unknown(json!({ "action": "rm" }), CallError::NotAction {
-        tool: "auth".into(), action: json!("rm"), actions: "status, logout".into()
+        tool: "auth".into(), action: json!("rm"), actions: Verbs(vec!["status", "logout"])
     })]
     #[case::not_text(json!({ "action": 3 }), CallError::NotAction {
-        tool: "auth".into(), action: json!(3), actions: "status, logout".into()
+        tool: "auth".into(), action: json!(3), actions: Verbs(vec!["status", "logout"])
     })]
     #[case::missing(json!({}), CallError::NoAction {
-        tool: "auth".into(), actions: "status, logout".into()
+        tool: "auth".into(), actions: Verbs(vec!["status", "logout"])
     })]
     fn a_call_without_a_known_action_says_what_the_tool_has(
         #[case] arguments: Value,
@@ -392,6 +370,11 @@ mod tests {
     ) {
         let mut arguments = arguments.as_object().cloned().unwrap_or_default();
         assert_eq!(two_actions().pick(&mut arguments), Err(error));
+    }
+
+    #[test]
+    fn verbs_read_as_a_comma_list() {
+        assert_eq!(two_actions().verbs().to_string(), "status, logout");
     }
 
     #[test]
@@ -456,7 +439,7 @@ mod tests {
             Some(Err(CallError::NotAction {
                 tool: "object".to_owned(),
                 action: json!("zap"),
-                actions: "ls".to_owned(),
+                actions: Verbs(vec!["ls"]),
             }))
         );
     }

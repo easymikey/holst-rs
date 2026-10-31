@@ -1,7 +1,7 @@
 //! Prompts as pure machines: a key gives the next [`Step`]; no IO, no clock.
 
 use crate::{
-    coloring::Coloring,
+    color_choice::ColorChoice,
     line::{Cancellation, Keystroke},
 };
 
@@ -21,7 +21,7 @@ pub trait Prompt: Sized {
 
     /// Rows under the label while the prompt is active; no escapes for moves.
     #[must_use]
-    fn view(&self, coloring: Coloring, width: Option<usize>) -> Vec<String>;
+    fn view(&self, color: ColorChoice, width: Option<usize>) -> Vec<String>;
 
     /// The text of the line that stays once the prompt is submitted.
     #[must_use]
@@ -82,16 +82,16 @@ impl Prompt for Confirm {
         }
     }
 
-    fn view(&self, coloring: Coloring, _width: Option<usize>) -> Vec<String> {
+    fn view(&self, color: ColorChoice, _width: Option<usize>) -> Vec<String> {
         let option = |on: bool, label: &str| {
-            let lit = format!("{} {label}", coloring.green("●"));
-            pick(on, [coloring.dim(&format!("○ {label}")), lit])
+            let lit = format!("{} {label}", color.green("●"));
+            pick(on, [color.dim(&format!("○ {label}")), lit])
         };
         vec![format!(
             "{}  {} {} {}",
-            coloring.cyan("│"),
+            color.cyan("│"),
             option(self.yes, "Yes"),
-            coloring.dim("/"),
+            color.dim("/"),
             option(!self.yes, "No")
         )]
     }
@@ -163,7 +163,7 @@ fn wrapped(cursor: usize, step: usize, count: usize) -> usize {
 
 /// The rows that show: at most `rows`, the cursor inside, `…` where more hide.
 fn scrolled(
-    coloring: Coloring,
+    color: ColorChoice,
     options: &[Choice],
     (cursor, rows): (usize, usize),
     row: impl Fn(usize, &Choice) -> String,
@@ -174,7 +174,7 @@ fn scrolled(
     let end = start.saturating_add(rows).min(options.len());
     let more = |hidden: bool| {
         hidden
-            .then(|| format!("{}  {}", coloring.cyan("│"), coloring.dim("…")))
+            .then(|| format!("{}  {}", color.cyan("│"), color.dim("…")))
             .into_iter()
     };
     let shown = options
@@ -223,22 +223,22 @@ impl Prompt for Select {
         }
     }
 
-    fn view(&self, coloring: Coloring, _width: Option<usize>) -> Vec<String> {
-        let bar = coloring.cyan("│");
+    fn view(&self, color: ColorChoice, _width: Option<usize>) -> Vec<String> {
+        let bar = color.cyan("│");
         scrolled(
-            coloring,
+            color,
             &self.options,
             (self.cursor, self.rows),
             |at, option| {
                 let active = format!(
                     "{bar}  {} {}{}",
-                    coloring.green("●"),
+                    color.green("●"),
                     option.label,
-                    option.hinted(|hint| coloring.dim(hint))
+                    option.hinted(|hint| color.dim(hint))
                 );
                 let idle = format!(
                     "{bar}  {}",
-                    coloring.dim(&format!(
+                    color.dim(&format!(
                         "○ {}{}",
                         option.label,
                         option.hinted(str::to_owned)
@@ -411,35 +411,35 @@ impl Prompt for MultiSelect {
     }
 
     /// Picked rows show `◼`; under Plain the cursor row shows `›`.
-    fn view(&self, coloring: Coloring, _width: Option<usize>) -> Vec<String> {
-        let bar = coloring.cyan("│");
+    fn view(&self, color: ColorChoice, _width: Option<usize>) -> Vec<String> {
+        let bar = color.cyan("│");
         let rows = scrolled(
-            coloring,
+            color,
             &self.options,
             (self.cursor, self.rows),
             |at, option| {
                 let here = at == self.cursor;
-                let lead = match (coloring, here) {
-                    (Coloring::Plain, true) => " ›",
-                    (Coloring::Plain | Coloring::Colored, _) => "  ",
+                let lead = match (color, here) {
+                    (ColorChoice::Plain, true) => " ›",
+                    (ColorChoice::Plain | ColorChoice::Colored, _) => "  ",
                 };
                 let boxed = match (self.picked.get(at), here) {
-                    (Some(true), _) => coloring.green("◼"),
-                    (_, true) => coloring.cyan("◻"),
-                    (_, false) => coloring.dim("◻"),
+                    (Some(true), _) => color.green("◼"),
+                    (_, true) => color.cyan("◻"),
+                    (_, false) => color.dim("◻"),
                 };
                 format!(
                     "{bar}{lead}{boxed} {}{}",
                     option.label,
-                    option.hinted(|hint| coloring.dim(hint))
+                    option.hinted(|hint| color.dim(hint))
                 )
             },
         );
         let warning = self.warned.then(|| {
             format!(
                 "{}  {}",
-                coloring.yellow("│"),
-                coloring.yellow("▲ Please select at least one option.")
+                color.yellow("│"),
+                color.yellow("▲ Please select at least one option.")
             )
         });
         rows.into_iter().chain(warning).collect()
@@ -502,7 +502,7 @@ mod tests {
 
     use super::{Choice, Confirm, MultiSelect, Prompt, Select, Step};
     use crate::{
-        coloring::Coloring,
+        color_choice::ColorChoice,
         line::{Cancellation, Keystroke},
     };
 
@@ -563,7 +563,7 @@ mod tests {
         #[case] summary: &str,
     ) {
         let confirm = Confirm::new(default);
-        assert_eq!(confirm.view(Coloring::Plain, Some(80)), [row]);
+        assert_eq!(confirm.view(ColorChoice::Plain, Some(80)), [row]);
         assert_eq!(confirm.summary(), summary);
     }
 
@@ -640,7 +640,7 @@ mod tests {
             cursor,
             rows: 3,
         };
-        assert_eq!(select.view(Coloring::Plain, Some(80)), rows);
+        assert_eq!(select.view(ColorChoice::Plain, Some(80)), rows);
     }
 
     #[test]
@@ -818,7 +818,7 @@ mod tests {
             warned,
             ..multi(count, picked, true)
         };
-        assert_eq!(select.view(Coloring::Plain, Some(80)), rows);
+        assert_eq!(select.view(ColorChoice::Plain, Some(80)), rows);
     }
 
     #[rstest]

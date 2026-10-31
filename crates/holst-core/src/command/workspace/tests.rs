@@ -182,6 +182,13 @@ fn a_licence_is_held_by_the_listed_users_with_one() -> Result<()> {
     Ok(())
 }
 
+/// An error has no equality, so a part compares by the JSON it writes.
+impl PartialEq for PartRead {
+    fn eq(&self, other: &Self) -> bool {
+        serde_json::to_value(self).ok() == serde_json::to_value(other).ok()
+    }
+}
+
 #[test]
 fn no_list_of_licences_is_no_licence_information() -> Result<()> {
     let unknown = members_of(licensed(&Value::Null))?;
@@ -196,7 +203,7 @@ async fn part_of(part: ShowPart, reply: Value) -> Result<(Vec<String>, PartRead)
     let (fake, client) = served(&[me(), roster(), reply])?;
     let mut shown = show(&client, &shown_with(vec![part], None)).await?;
     let read = shown.parts.remove(&part).unwrap_or(PartRead::NotRead {
-        error: "missing".to_owned(),
+        error: Error::Login(crate::error::login::LoginError::NoSavedLogin),
     });
     Ok((sent(&fake).into_iter().skip(2).collect(), read))
 }

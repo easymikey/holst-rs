@@ -17,7 +17,7 @@ use serde_json::{Map, Value, json};
 
 use crate::{
     cli,
-    error::ScenarioError,
+    error::{Mismatch, ScenarioError},
     given::given,
     holst::{Holst, fields},
     mcp::text_of,
@@ -74,11 +74,6 @@ pub struct Seen<'a> {
     after: &'a Snapshot,
 }
 
-/// Why a check refuses a run.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{0}")]
-pub struct Mismatch(String);
-
 type Check = fn(&Seen<'_>) -> Result<(), Mismatch>;
 
 /// One task: what the user says, the fewest calls that do it, and the check.
@@ -90,12 +85,6 @@ pub struct Task {
     pub ideal: usize,
     pub calls: Vec<Call>,
     check: Check,
-}
-
-#[derive(Debug, Clone)]
-pub struct Verdict {
-    pub correct: bool,
-    pub reason: String,
 }
 
 #[derive(Debug)]
@@ -333,8 +322,10 @@ fn checkbox_states(export: &[u8]) -> String {
         .collect()
 }
 
-fn ensure(holds: bool, what: impl Into<String>) -> Result<(), Mismatch> {
-    holds.then_some(()).ok_or_else(|| Mismatch(what.into()))
+fn ensure(holds: bool, expected: &'static str, found: Value) -> Result<(), Mismatch> {
+    holds
+        .then_some(())
+        .ok_or(Mismatch::Unexpected { expected, found })
 }
 
 fn text(object: &Value) -> &str {
@@ -388,8 +379,7 @@ impl Seen<'_> {
     }
 
     fn fixture(&self, number: u32) -> Result<&Value, Mismatch> {
-        self.object(number)
-            .ok_or_else(|| Mismatch(format!("fixture object {number} is gone")))
+        self.object(number).ok_or(Mismatch::FixtureGone { number })
     }
 
     fn export(&self, board: &str) -> &[u8] {
@@ -429,10 +419,11 @@ impl Seen<'_> {
             .collect();
         match wanted.as_slice() {
             [only] => Ok(only),
-            _ => Err(Mismatch(format!(
-                "expected one new {kind} on {board}, found {}",
-                Value::Array(added.iter().map(|object| (*object).clone()).collect())
-            ))),
+            _ => Err(Mismatch::NotOneAdded {
+                kind: kind.to_owned(),
+                board: board.to_owned(),
+                found: json!(added),
+            }),
         }
     }
 
@@ -458,25 +449,16 @@ impl Seen<'_> {
                         without_stamps(candidate) == without_stamps(object)
                     })
                 });
-            ensure(
-                renamed || (kept && (free || now.len() == objects.len())),
-                format!("the board {name} changed"),
-            )
+            (renamed || (kept && (free || now.len() == objects.len())))
+                .then_some(())
+                .ok_or_else(|| Mismatch::BoardChanged { name: name.clone() })
         })?;
-        ensure(
-            touched.names || self.before.names == self.after.names,
-            "the boards were renamed or moved",
-        )?;
-        ensure(
-            touched.threads || self.before.threads == self.after.threads,
-            "the comment threads changed",
-        )
-    }
-}
-
-impl Verdict {
-    fn into_result(self) -> Result<(), Mismatch> {
-        self.correct.then_some(()).ok_or(Mismatch(self.reason))
+        (touched.names || self.before.names == self.after.names)
+            .then_some(())
+            .ok_or(Mismatch::BoardsRenamed)?;
+        (touched.threads || self.before.threads == self.after.threads)
+            .then_some(())
+            .ok_or(Mismatch::ThreadsChanged)
     }
 }
 
@@ -498,14 +480,11 @@ impl Task {
     }
 
     /// Judges the run that took `before` to `after`.
-    #[must_use]
-    pub fn judge(&self, before: &Snapshot, after: &Snapshot) -> Verdict {
-        let seen = Seen { before, after };
-        let outcome = (self.check)(&seen);
-        Verdict {
-            correct: outcome.is_ok(),
-            reason: outcome.err().map(|why| why.to_string()).unwrap_or_default(),
-        }
+    ///
+    /// # Errors
+    /// [`Mismatch`] when the run did not do what the task asked.
+    pub fn judge(&self, before: &Snapshot, after: &Snapshot) -> Result<(), Mismatch> {
+        (self.check)(&Seen { before, after })
     }
 }
 
@@ -534,11 +513,13 @@ fn added_in_frame(seen: &Seen<'_>) -> Result<(), Mismatch> {
     let sticker = seen.one_added(ROADMAP, "sticker")?;
     ensure(
         text(sticker) == "Call Ann",
-        format!("sticker text {sticker}"),
+        "the sticker to read Call Ann",
+        json!(sticker),
     )?;
     ensure(
         named(sticker, "/parentId", seen.id(Q3)),
-        format!("not inside Q3: {sticker}"),
+        "the sticker inside Q3",
+        json!(sticker),
     )?;
     seen.rest_unchanged(ROADMAP_ONLY)
 }
@@ -619,7 +600,8 @@ fn task_2(ctx: &Ctx) -> Task {
             ensure(
                 named(arrow, "/start/objectId", seen.id(ASK_DESIGN))
                     && named(arrow, "/end/objectId", seen.id(SHIP)),
-                format!("the arrow does not join them: {arrow}"),
+                "the arrow to join the two objects",
+                json!(arrow),
             )?;
             seen.rest_unchanged(ROADMAP_ONLY)
         },
@@ -645,7 +627,8 @@ fn task_3(ctx: &Ctx) -> Task {
             let frame = seen.fixture(Q4)?;
             ensure(
                 named(idea, "/parentId", seen.id(Q4)),
-                format!("not inside Q4: {idea}"),
+                "the idea inside Q4",
+                json!(idea),
             )?;
             let inside = number(idea, "/position/x") >= number(frame, "/position/x")
                 && number(idea, "/position/y") >= number(frame, "/position/y")
@@ -653,7 +636,7 @@ fn task_3(ctx: &Ctx) -> Task {
                     <= number(frame, "/position/x") + number(frame, "/width")
                 && number(idea, "/position/y") + number(idea, "/height")
                     <= number(frame, "/position/y") + number(frame, "/height");
-            ensure(inside, format!("outside the box of Q4: {idea}"))?;
+            ensure(inside, "the idea inside the box of Q4", json!(idea))?;
             seen.rest_unchanged(on_roadmap_touching(&[OLD_IDEA]))
         },
     )
@@ -676,7 +659,8 @@ fn task_4(ctx: &Ctx) -> Task {
         |seen| {
             ensure(
                 seen.object(Q4).is_none() && seen.object(SHIP).is_none(),
-                "Q4 or Ship is still there",
+                "Q4 and Ship gone",
+                json!([seen.object(Q4), seen.object(SHIP)]),
             )?;
             seen.rest_unchanged(on_roadmap_touching(&[Q4, SHIP]))
         },
@@ -707,7 +691,8 @@ fn task_5(_ctx: &Ctx) -> Task {
                     .iter()
                     .any(|name| name == "Budget 2026 (old)")
                     && !seen.after.names.iter().any(|name| name == BUDGET),
-                format!("the boards are {:?}", seen.after.names),
+                "Budget 2026 renamed to Budget 2026 (old)",
+                json!(seen.after.names),
             )?;
             seen.rest_unchanged(Touched {
                 names: true,
@@ -734,10 +719,8 @@ fn task_6(_ctx: &Ctx) -> Task {
             ensure(
                 text(sticker) == "Plan\nBuild\nShip"
                     && checkbox_states(seen.export(RETRO)) == "xyy",
-                format!(
-                    "the checklist reads {sticker}, boxes {}",
-                    checkbox_states(seen.export(RETRO))
-                ),
+                "the checklist Plan, Build, Ship with boxes xyy",
+                json!([sticker, checkbox_states(seen.export(RETRO))]),
             )?;
             seen.rest_unchanged(RETRO_ONLY)
         },
@@ -782,7 +765,11 @@ fn locked_group_of_both(seen: &Seen<'_>) -> Result<(), Mismatch> {
         .collect();
     let top_id = match locked.as_slice() {
         [top] => Ok(id_of(top)),
-        _ => Err(Mismatch(format!("not one new locked group: {added:?}"))),
+        _ => Err(Mismatch::NotOneAdded {
+            kind: "locked group".to_owned(),
+            board: ROADMAP.to_owned(),
+            found: json!(added),
+        }),
     }?;
     let parent = |object: &Value| {
         object
@@ -802,7 +789,8 @@ fn locked_group_of_both(seen: &Seen<'_>) -> Result<(), Mismatch> {
     };
     ensure(
         all_groups && reaches(ASK_DESIGN) && reaches(SHIP),
-        format!("not one locked group of both: {top_id}"),
+        "one locked group of both",
+        json!(top_id),
     )
 }
 
@@ -829,7 +817,8 @@ fn task_8(ctx: &Ctx) -> Task {
                 named(shape, "/shapeType", "ellipse")
                     && named(shape, "/strokeStyle", "dashed")
                     && red,
-                format!("the shape is {shape}"),
+                "a dashed red ellipse",
+                json!(shape),
             )?;
             seen.rest_unchanged(on_roadmap_touching(&[START]))
         },
@@ -862,7 +851,8 @@ fn task_9(ctx: &Ctx) -> Task {
                 lefts
                     .windows(2)
                     .all(|pair| matches!(pair, [a, b] if (a - b).abs() < 0.5)),
-                format!("left edges {lefts:?}"),
+                "equal left edges",
+                json!(lefts),
             )?;
             seen.rest_unchanged(on_roadmap_touching(&[ASK_DESIGN, SHIP, OLD_IDEA]))
         },
@@ -891,7 +881,8 @@ fn task_10(ctx: &Ctx) -> Task {
                     && named(arrow, "/start/objectId", seen.id(ASK_DESIGN))
                     && named(arrow, "/end/objectId", seen.id(SHIP))
                     && arrow.to_string().contains("yes"),
-                format!("the arrow is {arrow}"),
+                "a curved arrow joining the two objects and labelled yes",
+                json!(arrow),
             )?;
             seen.rest_unchanged(ROADMAP_ONLY)
         },
@@ -915,10 +906,7 @@ fn task_11(_ctx: &Ctx) -> Task {
             let todo = find(export, b"To do", 0);
             let doing = todo.and_then(|at| find(export, b"Doing", at));
             let done = doing.and_then(|at| find(export, b"Done", at));
-            ensure(
-                done.is_some(),
-                format!("the columns are not in order: {kanban}"),
-            )?;
+            ensure(done.is_some(), "the columns in order", json!(kanban))?;
             seen.rest_unchanged(RETRO_ONLY)
         },
     )
@@ -968,7 +956,8 @@ fn task_12(_ctx: &Ctx) -> Task {
                 texts == ["Name", "Owner", "Due"]
                     && at(table, "/listed/detail/rows") == Some(&json!(4))
                     && at(table, "/listed/detail/columns") == Some(&json!(3)),
-                format!("the table is {table}, row 1 {texts:?}"),
+                "a table of 4 rows and 3 columns headed Name, Owner, Due",
+                json!([table, texts]),
             )?;
             seen.rest_unchanged(RETRO_ONLY)
         },
@@ -992,7 +981,8 @@ fn task_13(_ctx: &Ctx) -> Task {
                 text(task) == "Release 0.3"
                     && named(task, "/schedule/end/date", "2026-11-15")
                     && named(task, "/statusId", "in-progress"),
-                format!("the task is {task}"),
+                "a task card Release 0.3 ending 2026-11-15 in progress",
+                json!(task),
             )?;
             seen.rest_unchanged(RETRO_ONLY)
         },
@@ -1031,10 +1021,8 @@ fn task_14(_ctx: &Ctx) -> Task {
             });
             ensure(
                 nodes.len() == 3 && branches,
-                format!(
-                    "the nodes are {}",
-                    nodes.iter().map(|node| (*node).clone()).collect::<Value>()
-                ),
+                "three nodes joined in branches",
+                json!(nodes),
             )?;
             seen.rest_unchanged(RETRO_ONLY)
         },
@@ -1059,7 +1047,8 @@ fn task_15(ctx: &Ctx) -> Task {
             let ship = seen.fixture(SHIP)?;
             ensure(
                 at(ship, "/listed/reactions/👍") == Some(&json!(1)),
-                format!("no reaction on Ship: {ship}"),
+                "one thumbs-up reaction on Ship",
+                json!(ship),
             )?;
             seen.rest_unchanged(on_roadmap_touching(&[SHIP]))
         },
@@ -1085,7 +1074,8 @@ fn task_16(ctx: &Ctx) -> Task {
             ensure(
                 (number(logo, "/cropTransform/4") - 1.0).abs() < f64::EPSILON
                     && named(logo, "/originalName", "Logo.png"),
-                format!("the image is {logo}"),
+                "the cropped image Logo.png",
+                json!(logo),
             )?;
             seen.rest_unchanged(on_roadmap_touching(&[LOGO]))
         },
@@ -1123,7 +1113,8 @@ fn task_17(_ctx: &Ctx) -> Task {
                 (number(drawing, "/alpha") - 0.5).abs() < f64::EPSILON
                     && (number(drawing, "/position/y") - bottom).abs() <= 20.0
                     && span >= 0.8 * number(ship, "/width"),
-                format!("the drawing is {drawing}"),
+                "the drawing at half alpha along Ship",
+                json!(drawing),
             )?;
             seen.rest_unchanged(ROADMAP_ONLY)
         },
@@ -1146,7 +1137,8 @@ fn task_18(ctx: &Ctx) -> Task {
             ensure(
                 named(file, "/displayType", "content")
                     && (number(file, "/pinnedPage") - 2.0).abs() < f64::EPSILON,
-                format!("the file is {file}"),
+                "the file shown as content on page 2",
+                json!(file),
             )?;
             seen.rest_unchanged(on_roadmap_touching(&[SPEC]))
         },
@@ -1182,7 +1174,14 @@ fn task_19(ctx: &Ctx) -> Task {
                 .is_some_and(|color| color.starts_with("red"));
             let on_ship = thread
                 .is_some_and(|thread| thread.anchor == ThreadAnchor::Object(SHIP));
-            ensure(red && on_ship, format!("the thread is {thread:?}"))?;
+            ensure(
+                red && on_ship,
+                "the thread red and pinned on Ship",
+                json!({
+                    "color": thread.and_then(|thread| thread.color.as_deref()),
+                    "on_ship": on_ship,
+                }),
+            )?;
             seen.rest_unchanged(Touched {
                 threads: true,
                 ..Touched::default()
@@ -1219,7 +1218,8 @@ fn task_20(_ctx: &Ctx) -> Task {
                 .collect();
             ensure(
                 messages == [THREAD, "agreed"],
-                format!("the messages are {messages:?}"),
+                "the messages to be the first and agreed",
+                json!(messages),
             )?;
             seen.rest_unchanged(Touched {
                 threads: true,
@@ -1255,8 +1255,10 @@ async fn prove_on(holst: &Holst, task: &Task) -> Result<OracleLine, ScenarioErro
         .iter()
         .zip(&task.calls)
         .find(|(outcome, _)| outcome.is_error)
-        .map(|(outcome, sent)| {
-            format!("{} {}: {}", sent.tool, sent.arguments, outcome.text)
+        .map(|(outcome, sent)| Mismatch::CallRefused {
+            tool: sent.tool,
+            arguments: sent.arguments.clone(),
+            text: outcome.text.clone(),
         });
     let after = Snapshot::take(holst).await?;
     let verdict = task.judge(&before, &after);
@@ -1265,9 +1267,8 @@ async fn prove_on(holst: &Holst, task: &Task) -> Result<OracleLine, ScenarioErro
         number: task.number,
         calls: task.calls.len(),
         ideal: task.ideal,
-        right_answer: failed
-            .map_or_else(|| verdict.into_result(), |why| Err(Mismatch(why))),
-        untouched_fixture: untouched.into_result(),
+        right_answer: failed.map_or(verdict, Err),
+        untouched_fixture: untouched,
     })
 }
 
@@ -1402,7 +1403,7 @@ pub struct Scored {
     pub run: usize,
     pub ideal: usize,
     pub uses: Vec<ToolUse>,
-    pub verdict: Verdict,
+    pub verdict: Result<(), Mismatch>,
 }
 
 impl Scored {
@@ -1422,8 +1423,8 @@ impl Scored {
             "ideal": self.ideal,
             "calls": self.uses.len(),
             "first_write_ok": self.first_write_ok(),
-            "correct": self.verdict.correct,
-            "reason": self.verdict.reason,
+            "correct": self.verdict.is_ok(),
+            "reason": self.verdict.as_ref().err().map_or_else(String::new, ToString::to_string),
             "tools": self.uses.iter().map(|used| json!({
                 "tool": used.tool,
                 "arguments": used.arguments,
@@ -1504,7 +1505,7 @@ fn summary(scored: &[Scored]) -> String {
             scored.iter().filter(|run| run.number == *number).collect();
         let (covers, ideal) =
             own.first().map_or(("", 0), |run| (run.covers, run.ideal));
-        let correct = own.iter().filter(|run| run.verdict.correct).count();
+        let correct = own.iter().filter(|run| run.verdict.is_ok()).count();
         let first_ok = own
             .iter()
             .filter(|run| run.first_write_ok() == Some(true))
@@ -1522,7 +1523,7 @@ fn summary(scored: &[Scored]) -> String {
         )
     });
     let total = scored.len();
-    let correct = scored.iter().filter(|run| run.verdict.correct).count();
+    let correct = scored.iter().filter(|run| run.verdict.is_ok()).count();
     let first = scored
         .iter()
         .filter(|run| run.first_write_ok().is_some())
@@ -1626,27 +1627,25 @@ mod tests {
         assert!(check("elsewhere").is_err());
     }
 
-    async fn broken_checks() -> Vec<String> {
-        oracle().await.map_or_else(
-            |error| vec![error.to_string()],
-            |lines| {
-                (lines.len() != TASKS)
-                    .then(|| format!("{} tasks proven of {TASKS}", lines.len()))
-                    .into_iter()
-                    .chain(
-                        lines
-                            .iter()
-                            .filter(|line| !line.proven())
-                            .map(|line| format!("{line:?}")),
-                    )
-                    .collect()
-            },
-        )
-    }
+    const _: () = assert!(TASKS == 20, "one oracle test per task below");
 
+    #[rstest::rstest]
     #[tokio::test]
-    async fn the_oracle_proves_every_check() {
-        let broken = broken_checks().await;
-        assert!(broken.is_empty(), "{}", broken.join("\n"));
+    async fn the_oracle_proves_every_check(
+        #[values(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19)]
+        index: usize,
+    ) {
+        let verdict = prove(index)
+            .await
+            .map_err(|error| holst_core::error::chained(&error).to_string())
+            .and_then(|line| {
+                line.ok_or_else(|| format!("task {index} of {TASKS} has no proof"))
+            })
+            .and_then(|line| {
+                line.proven()
+                    .then_some(())
+                    .ok_or_else(|| format!("{line:?}"))
+            });
+        assert_eq!(verdict, Ok(()));
     }
 }

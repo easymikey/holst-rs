@@ -187,7 +187,9 @@ fn an_unknown_client_name_lists_the_known_ones() {
         .map(|err| err.to_string());
     assert_eq!(
         shown.as_deref(),
-        Some("unknown client gemini: --clients takes claude or codex, comma-separated")
+        Some(
+            "unknown client gemini: `--clients` takes `claude` or `codex`, comma-separated"
+        )
     );
 }
 

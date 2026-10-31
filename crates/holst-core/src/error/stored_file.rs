@@ -1,16 +1,19 @@
 //! Files of a board: the originals of images and file objects.
 
-use crate::error::hint::Hint;
+use holst_macros::Hint;
+
+use crate::domain::board::ObjectKind;
 
 /// A file that cannot be named or fetched.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Hint)]
 #[cfg_attr(test, derive(strum::EnumDiscriminants))]
 #[cfg_attr(test, strum_discriminants(derive(strum::EnumIter, PartialOrd, Ord)))]
 pub enum StoredFileError {
     #[error(
-        "the {kind} {object} has no file to download: only images and files have one"
+        "the {} {object} has no file to download: only images and files have one",
+        kind.short_name()
     )]
-    NoFile { object: String, kind: String },
+    NoFile { object: String, kind: ObjectKind },
 
     #[error(
         "\"{reference}\" names no object: give the link of the image or file, with ?objectId="
@@ -23,55 +26,34 @@ pub enum StoredFileError {
     ForeignStorage { address: String, storage: String },
 }
 
-impl StoredFileError {
-    /// What to do next, decided for every variant: the message says it all.
-    #[must_use]
-    pub const fn hint(&self) -> Option<Hint> {
-        match self {
-            StoredFileError::NoFile { .. }
-            | StoredFileError::NoObject { .. }
-            | StoredFileError::ForeignStorage { .. } => None,
-        }
-    }
-}
-
 #[cfg(test)]
 pub(super) mod tests {
-    use crate::error::{
-        hint::{Hint, decided::assert_every_variant},
-        stored_file::{StoredFileError, StoredFileErrorDiscriminants},
+    use crate::{
+        domain::board::ObjectKind,
+        error::{
+            hint::decided::assert_all_listed,
+            stored_file::{StoredFileError, StoredFileErrorDiscriminants},
+        },
     };
 
-    pub(in crate::error) fn samples() -> Vec<(StoredFileError, Option<Hint>)> {
+    pub(in crate::error) fn samples() -> Vec<StoredFileError> {
         vec![
-            (
-                StoredFileError::NoFile {
-                    object: "o1".into(),
-                    kind: "sticker".into(),
-                },
-                None,
-            ),
-            (
-                StoredFileError::NoObject {
-                    reference: "b1".into(),
-                },
-                None,
-            ),
-            (
-                StoredFileError::ForeignStorage {
-                    address: "https://evil.test/a.png".into(),
-                    storage: "https://storage-edge.app.holst.so/storage/".into(),
-                },
-                None,
-            ),
+            StoredFileError::NoFile {
+                object: "o1".into(),
+                kind: ObjectKind::Sticker,
+            },
+            StoredFileError::NoObject {
+                reference: "b1".into(),
+            },
+            StoredFileError::ForeignStorage {
+                address: "https://evil.test/a.png".into(),
+                storage: "https://storage-edge.app.holst.so/storage/".into(),
+            },
         ]
     }
 
     #[test]
     fn every_variant_has_a_hint_decision() {
-        assert_every_variant::<_, StoredFileErrorDiscriminants>(
-            samples(),
-            StoredFileError::hint,
-        );
+        assert_all_listed::<_, StoredFileErrorDiscriminants>(&samples());
     }
 }

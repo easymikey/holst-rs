@@ -1,7 +1,7 @@
 //! Printing: results to stdout, notes to stderr under one set of labels.
 
 pub(crate) mod board;
-pub(crate) mod coloring;
+pub(crate) mod color_choice;
 pub(crate) mod view;
 
 use std::{
@@ -19,7 +19,7 @@ use serde_json::Value;
 
 use crate::{
     error::{Error, Result},
-    output::coloring::Coloring,
+    output::color_choice::ColorChoice,
     terminal::detect::StreamKind,
 };
 
@@ -83,11 +83,11 @@ pub(crate) enum DiagnosticLabel {
 
 impl DiagnosticLabel {
     #[must_use]
-    fn painted(self, coloring: Coloring) -> String {
+    fn painted(self, color: ColorChoice) -> String {
         let text = self.to_string();
         match self {
-            DiagnosticLabel::Error => coloring.red(&text),
-            DiagnosticLabel::Warning => coloring.yellow(&text),
+            DiagnosticLabel::Error => color.red(&text),
+            DiagnosticLabel::Warning => color.yellow(&text),
             DiagnosticLabel::Note => text,
         }
     }
@@ -109,22 +109,25 @@ pub(crate) fn warn_with(headline: impl Display, error: &Error) {
     ));
 }
 
-fn warning_text(headline: &str, error: &Error, coloring: Coloring) -> String {
+fn warning_text(headline: &str, error: &Error, color: ColorChoice) -> String {
     let first = format!(
-        "{} {headline}: {}",
-        DiagnosticLabel::Warning.painted(coloring),
-        printable(&error.to_string())
+        "{} {}",
+        DiagnosticLabel::Warning.painted(color),
+        view::spans(
+            &format!("{headline}: {}", printable(&error.to_string())),
+            color
+        )
     );
     let advice = format!("run `{LOGIN}` if the next command is refused");
-    view::report_with(first, error, coloring, Some(advice))
+    view::report_with(first, error, color, Some(advice))
 }
 
-pub(crate) fn stderr_coloring() -> Coloring {
-    Coloring::colored_if(console::colors_enabled_stderr())
+pub(crate) fn stderr_coloring() -> ColorChoice {
+    ColorChoice::colored_if(console::colors_enabled_stderr())
 }
 
-pub(crate) fn stdout_coloring() -> Coloring {
-    Coloring::colored_if(console::colors_enabled())
+pub(crate) fn stdout_coloring() -> ColorChoice {
+    ColorChoice::colored_if(console::colors_enabled())
 }
 
 pub(crate) fn value(format: OutputFormat, value: &Value) -> Result<()> {
@@ -221,7 +224,7 @@ mod tests {
         output::{
             OutputFormat,
             OutputTarget,
-            coloring::Coloring,
+            color_choice::ColorChoice,
             rendered,
             stdout_error,
             warning_text,
@@ -257,7 +260,7 @@ mod tests {
 
     #[test]
     fn warning_says_what_to_do() {
-        let coloring = Coloring::Plain;
+        let color = ColorChoice::Plain;
         let failed = Error::Holst(holst_core::Error::LocalData(
             holst_core::error::local_data::LocalDataError::FileWrite {
                 path: "/h/token".into(),
@@ -265,14 +268,14 @@ mod tests {
             },
         ));
         assert_eq!(
-            warning_text("the login was not saved", &failed, coloring),
+            warning_text("the login was not saved", &failed, color),
             "warning: the login was not saved: could not write /h/token\n  cause: permission denied\nhint: run `holst \
              auth login` if the next command is refused"
         );
         let locked = Error::Holst(holst_core::Error::LocalData(
             holst_core::error::local_data::LocalDataError::KeychainLocked,
         ));
-        let text = warning_text("the login was not saved", &locked, coloring);
+        let text = warning_text("the login was not saved", &locked, color);
         assert!(text.ends_with("hint: unlock the keychain and allow access, or keep the login in `HOLST_HOME`"), "{text}");
     }
 
