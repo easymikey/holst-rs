@@ -69,7 +69,7 @@ pub struct EditArgs {
     #[argument(
         value_name = "file",
         help = "Many in one write: a JSON array or JSON lines file, - for stdin; its keys are the flags of one call",
-        tool_doc = "Many at once, each with one call's arguments; at most 100 per call."
+        tool_doc = "Many at once, each one call's arguments; max 100."
     )]
     #[serde(default)]
     pub items: Items<EditItem>,
@@ -98,8 +98,7 @@ pub struct EditFields {
     pub text: Option<String>,
     #[argument(
         value_name = "name",
-        help = "The name an image or a file shows on the board; the extension of the old name is kept when left out; unchanged by default",
-        tool_doc = "Image or file name."
+        help = "The name an image or a file shows on the board; the extension of the old name is kept when left out; unchanged by default"
     )]
     pub name: Option<String>,
     #[argument(
@@ -224,7 +223,7 @@ pub struct EditFields {
     #[argument(
         value_name = "start,end",
         help = "An arrow's heads, e.g. none,triangle-filled: none, figma, miro, arc, triangle-filled, triangle, circle-filled, circle, rhombus-filled, rhombus, stick, stick-stick, triadius, triadius-stick, triadius-circle, stick-circle or slash; an empty side keeps that end; unchanged by default",
-        tool_doc = "start,end heads, an empty side keeps that end: none, figma, miro, arc, triangle[-filled], circle[-filled], rhombus[-filled], stick, stick-stick, triadius[-stick|-circle], stick-circle, slash."
+        tool_doc = "start,end heads, an empty side keeps it: none, figma, miro, arc, triangle[-filled], circle[-filled], rhombus[-filled], stick, stick-stick, triadius[-stick|-circle], stick-circle, slash."
     )]
     pub heads: Option<String>,
     #[argument(
@@ -248,7 +247,7 @@ pub struct EditFields {
     #[argument(
         value_name = "text[@pos]",
         help = "An arrow's labels, repeat for several; they replace the ones it has; text@0.25 puts one a quarter of the way from the start, in the middle by default; unchanged by default",
-        tool_doc = "Arrow labels text[@0..1]; an edit replaces the old."
+        tool_doc = "Arrow labels text[@0..1]; edit replaces."
     )]
     pub label: Vec<String>,
     #[argument(
@@ -258,8 +257,7 @@ pub struct EditFields {
     pub ratio: Option<FrameRatio>,
     #[argument(
         value_name = "style",
-        help = "A frame's background: fill, border or outline; unchanged by default",
-        tool_doc = "Frame background."
+        help = "A frame's background: fill, border or outline; unchanged by default"
     )]
     pub background: Option<FrameBackground>,
     #[argument(
@@ -277,7 +275,7 @@ pub struct EditFields {
     #[argument(
         value_name = "deg",
         help = "Turn to this angle in clockwise degrees, any number taken modulo 360; the corner moves so that the object turns about its centre; not for a frame, a table, a table cell, a group or an arrow; unchanged by default",
-        tool_doc = "Degrees clockwise; not frame, table, group, arrow."
+        tool_doc = "Degrees clockwise; not frame/table/group/arrow."
     )]
     pub rotate: Option<f64>,
     #[argument(
@@ -333,7 +331,7 @@ pub struct EditFields {
     #[argument(
         value_name = "row,column",
         help = "A table's cell, counted from 1 in reading order, e.g. 2,3, or a block r1,c1,r2,c2: --text is written into the cell, -c colours the cells, a cell made for either when it has none; unchanged by default",
-        tool_doc = "Table cell row,column or r1,c1,r2,c2 from 1; takes text or -c."
+        tool_doc = "Cell row,column or r1,c1,r2,c2 from 1; takes text or -c."
     )]
     pub cell: Option<String>,
     #[argument(
@@ -388,8 +386,7 @@ pub struct EditFields {
     pub clear: Option<String>,
     #[argument(
         value_name = "text",
-        help = "A task's description, written in the --text-format; none empties it; unchanged by default",
-        tool_doc = "Task description."
+        help = "A task's description, written in the --text-format; none empties it; unchanged by default"
     )]
     pub description: Option<String>,
     #[argument(
@@ -447,14 +444,12 @@ pub struct EditFields {
     pub kanban: Option<String>,
     #[argument(
         value_name = "text",
-        help = "The title of the column a task card moves to, in --kanban or the kanban it is in; the first by default for another kanban",
-        tool_doc = "Kanban columns."
+        help = "The title of the column a task card moves to, in --kanban or the kanban it is in; the first by default for another kanban"
     )]
     pub column: Vec<String>,
     #[argument(
         value_name = "text",
-        help = "The title of the swimlane a task card moves to, in --kanban or the kanban it is in; the first by default for another kanban",
-        tool_doc = "Kanban swimlanes."
+        help = "The title of the swimlane a task card moves to, in --kanban or the kanban it is in; the first by default for another kanban"
     )]
     pub swimlane: Vec<String>,
 }

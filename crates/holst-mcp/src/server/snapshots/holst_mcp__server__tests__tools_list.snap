@@ -5,7 +5,7 @@ expression: "*holst.tools"
 [
   {
     "name": "auth",
-    "description": "The account and its workspaces. Start here. No login: ask the user to run `holst-mcp setup` in a terminal, then call auth again.",
+    "description": "Account and workspaces. Start here. No login: ask the user to run `holst-mcp setup` in a terminal, then retry.",
     "inputSchema": {
       "properties": {
         "with": {
@@ -83,7 +83,7 @@ expression: "*holst.tools"
           "type": "array"
         },
         "workspace": {
-          "description": "Id, @N or part of its name; the only one by default.",
+          "description": "Id, @N or name part; the only one by default.",
           "type": "string"
         }
       },
@@ -739,7 +739,6 @@ expression: "*holst.tools"
           "type": "string"
         },
         "background": {
-          "description": "Frame background.",
           "enum": [
             "fill",
             "border",
@@ -755,7 +754,7 @@ expression: "*holst.tools"
           "type": "string"
         },
         "cell": {
-          "description": "Table cell row,column or r1,c1,r2,c2 from 1; takes text or -c.",
+          "description": "Cell row,column or r1,c1,r2,c2 from 1; takes text or -c.",
           "type": "string"
         },
         "check": {
@@ -778,7 +777,6 @@ expression: "*holst.tools"
           "type": "string"
         },
         "column": {
-          "description": "Kanban columns.",
           "items": {
             "type": "string"
           },
@@ -808,7 +806,6 @@ expression: "*holst.tools"
           "type": "integer"
         },
         "description": {
-          "description": "Task description.",
           "type": "string"
         },
         "dir": {
@@ -832,7 +829,7 @@ expression: "*holst.tools"
           "type": "string"
         },
         "distribute": {
-          "description": "Spread evenly; or align by side: left, center, right, top, middle, bottom.",
+          "description": "Spread evenly, or align: left, center, right, top, middle, bottom.",
           "enum": [
             "horizontal",
             "vertical"
@@ -855,7 +852,7 @@ expression: "*holst.tools"
           "type": "integer"
         },
         "file": {
-          "description": "Where to save it.",
+          "description": "Save to.",
           "type": "string"
         },
         "flip": {
@@ -878,7 +875,7 @@ expression: "*holst.tools"
           "type": "string"
         },
         "heads": {
-          "description": "start,end heads, an empty side keeps that end: none, figma, miro, arc, triangle[-filled], circle[-filled], rhombus[-filled], stick, stick-stick, triadius[-stick|-circle], stick-circle, slash.",
+          "description": "start,end heads, an empty side keeps it: none, figma, miro, arc, triangle[-filled], circle[-filled], rhombus[-filled], stick, stick-stick, triadius[-stick|-circle], stick-circle, slash.",
           "type": "string"
         },
         "hide_author": {
@@ -912,7 +909,7 @@ expression: "*holst.tools"
           "type": "string"
         },
         "items": {
-          "description": "Many at once, each with one call's arguments; at most 100 per call.",
+          "description": "Many at once, each one call's arguments; max 100.",
           "items": {
             "type": "object"
           },
@@ -950,7 +947,7 @@ expression: "*holst.tools"
           "type": "string"
         },
         "label": {
-          "description": "Arrow labels text[@0..1]; an edit replaces the old.",
+          "description": "Arrow labels text[@0..1]; edit replaces.",
           "items": {
             "type": "string"
           },
@@ -1010,7 +1007,6 @@ expression: "*holst.tools"
           "type": "string"
         },
         "name": {
-          "description": "Image or file name.",
           "type": "string"
         },
         "no_preview": {
@@ -1024,7 +1020,7 @@ expression: "*holst.tools"
           "type": "array"
         },
         "on": {
-          "description": "Object a reaction stamp sticks to.",
+          "description": "Target of a reaction stamp.",
           "type": "string"
         },
         "only": {
@@ -1063,7 +1059,7 @@ expression: "*holst.tools"
               "type": "array"
             }
           ],
-          "description": "Stroke points x,y, 2 to 10000; its stroke_width is 1..30."
+          "description": "Stroke points x,y, 2 to 10000; stroke_width 1..30."
         },
         "radius": {
           "type": "integer"
@@ -1092,7 +1088,7 @@ expression: "*holst.tools"
           "type": "boolean"
         },
         "rotate": {
-          "description": "Degrees clockwise; not frame, table, group, arrow.",
+          "description": "Degrees clockwise; not frame/table/group/arrow.",
           "type": "number"
         },
         "rows": {
@@ -1215,7 +1211,6 @@ expression: "*holst.tools"
           "type": "number"
         },
         "swimlane": {
-          "description": "Kanban swimlanes.",
           "items": {
             "type": "string"
           },
@@ -1273,7 +1268,6 @@ expression: "*holst.tools"
           "type": "string"
         },
         "weight": {
-          "description": "Icon weight.",
           "enum": [
             "thin",
             "light",

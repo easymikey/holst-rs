@@ -129,7 +129,7 @@ pub struct AddArgs {
     #[argument(
         value_name = "file",
         help = "Many in one write: a JSON array or JSON lines file, - for stdin; its keys are the flags of one call",
-        tool_doc = "Many at once, each with one call's arguments; at most 100 per call."
+        tool_doc = "Many at once, each one call's arguments; max 100."
     )]
     pub items: Option<Items<AddItem>>,
     #[argument(letter = 'n', help = "Show what would change; change nothing")]
@@ -252,7 +252,7 @@ pub struct AddFields {
     #[argument(
         value_name = "start,end",
         help = "An arrow's heads, e.g. none,triangle-filled: none, figma, miro, arc, triangle-filled, triangle, circle-filled, circle, rhombus-filled, rhombus, stick, stick-stick, triadius, triadius-stick, triadius-circle, stick-circle or slash; an empty side keeps that end; none,miro by default",
-        tool_doc = "start,end heads, an empty side keeps that end: none, figma, miro, arc, triangle[-filled], circle[-filled], rhombus[-filled], stick, stick-stick, triadius[-stick|-circle], stick-circle, slash.",
+        tool_doc = "start,end heads, an empty side keeps it: none, figma, miro, arc, triangle[-filled], circle[-filled], rhombus[-filled], stick, stick-stick, triadius[-stick|-circle], stick-circle, slash.",
         kinds = [arrow]
     )]
     pub heads: Option<String>,
@@ -272,7 +272,7 @@ pub struct AddFields {
     #[argument(
         value_name = "text[@pos]",
         help = "An arrow's label, repeat for several; text@0.25 puts it a quarter of the way from the start, in the middle by default",
-        tool_doc = "Arrow labels text[@0..1]; an edit replaces the old.",
+        tool_doc = "Arrow labels text[@0..1]; edit replaces.",
         kinds = [arrow]
     )]
     pub label: Vec<String>,
@@ -285,7 +285,6 @@ pub struct AddFields {
     #[argument(
         value_name = "style",
         help = "A frame's background: fill, border or outline; border by default",
-        tool_doc = "Frame background.",
         kinds = [frame]
     )]
     pub background: Option<FrameBackground>,
@@ -322,7 +321,7 @@ pub struct AddFields {
     #[argument(
         value_name = "object",
         help = "The object a reaction stamp sticks to and goes onto: a shape, sticker, document, task or image; id, link, @N or the first 8 characters of its id; --at counts from its corner, else the stamp goes to its middle; a loose stamp without it",
-        tool_doc = "Object a reaction stamp sticks to.",
+        tool_doc = "Target of a reaction stamp.",
         kinds = [reaction_stamp]
     )]
     pub on: Option<String>,
@@ -336,14 +335,12 @@ pub struct AddFields {
     #[argument(
         value_name = "weight",
         help = "An icon's weight: thin, light, regular, bold, fill or duotone; duotone by default",
-        tool_doc = "Icon weight.",
         kinds = [icon]
     )]
     pub weight: Option<Weight>,
     #[argument(
         value_name = "text",
         help = "A task's description; the text is its title",
-        tool_doc = "Task description.",
         kinds = [task]
     )]
     pub description: Option<String>,
@@ -370,14 +367,12 @@ pub struct AddFields {
     #[argument(
         value_name = "text",
         help = "A kanban's column, repeat for each, in order; To do, In progress and Done by default; a task's: the title of its column in --kanban, the first by default",
-        tool_doc = "Kanban columns.",
         kinds = [kanban, task]
     )]
     pub column: Vec<String>,
     #[argument(
         value_name = "text",
         help = "A kanban's swimlane, repeat for each, in order; one, Untitled, by default; a task's: the title of its swimlane in --kanban, the first by default",
-        tool_doc = "Kanban swimlanes.",
         kinds = [kanban, task]
     )]
     pub swimlane: Vec<String>,
@@ -390,7 +385,7 @@ pub struct AddFields {
     #[argument(
         value_name = "x,y",
         help = "A drawing's point, repeat for each, in order: at least 2; with --frame from its corner",
-        tool_doc = "Stroke points x,y, 2 to 10000; its stroke_width is 1..30.",
+        tool_doc = "Stroke points x,y, 2 to 10000; stroke_width 1..30.",
         kinds = [drawing]
     )]
     pub point: Option<OneOrMany<String>>,

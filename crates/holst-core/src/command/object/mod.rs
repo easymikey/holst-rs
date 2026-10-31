@@ -360,7 +360,7 @@ pub struct AlignArgs {
     #[argument(
         value_name = "axis",
         help = "Spread the objects so that the gaps between them are equal: horizontal or vertical; use instead of --side",
-        tool_doc = "Spread evenly; or align by side: left, center, right, top, middle, bottom."
+        tool_doc = "Spread evenly, or align: left, center, right, top, middle, bottom."
     )]
     pub distribute: Option<Axis>,
     #[argument(
@@ -428,7 +428,7 @@ pub struct GetArgs {
         value_name = "file",
         positional,
         help = "A new file, never overwritten, - for stdout; the object's own name in ~/Downloads by default",
-        tool_doc = "Where to save it."
+        tool_doc = "Save to."
     )]
     pub file: Option<NewFile>,
     #[argument(

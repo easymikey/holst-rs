@@ -99,7 +99,7 @@ pub struct ShowArgs {
         positional,
         value_name = "ws",
         help = "The workspace: id or part of its name; your only workspace if left out",
-        tool_doc = "Id, @N or part of its name; the only one by default."
+        tool_doc = "Id, @N or name part; the only one by default."
     )]
     pub workspace: Option<String>,
     #[argument(
@@ -179,7 +179,7 @@ pub struct RenameArgs {
         positional,
         value_name = "ws",
         help = "The workspace: id or part of its name",
-        tool_doc = "Id, @N or part of its name; the only one by default."
+        tool_doc = "Id, @N or name part; the only one by default."
     )]
     pub workspace: String,
     #[argument(positional, help = "The new name")]
@@ -210,7 +210,7 @@ pub struct LogArgs {
         positional,
         value_name = "ws",
         help = "The workspace: id or part of its name; your only workspace if left out",
-        tool_doc = "Id, @N or part of its name; the only one by default."
+        tool_doc = "Id, @N or name part; the only one by default."
     )]
     pub workspace: Option<String>,
     #[argument(
