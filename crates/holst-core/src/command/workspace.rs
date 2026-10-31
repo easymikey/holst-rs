@@ -326,6 +326,10 @@ pub enum PartRead {
     NeedsAdmin {
         error: &'static str,
     },
+    /// The reply to a guest names no members.
+    Hidden {
+        reason: &'static str,
+    },
 }
 
 /// A workspace with the parts asked for; a guest's nulls are left out.
@@ -462,6 +466,7 @@ pub async fn show(client: &Client, args: &ShowArgs) -> Result<WorkspaceBrief> {
     let reply: WorkspaceReply =
         serde_json::from_value(api::workspace::get(client, &workspace.id).await?)?;
     let roster = members_in(&reply);
+    let hidden = members_hidden(&reply);
     let who = args
         .user
         .as_deref()
@@ -471,7 +476,7 @@ pub async fn show(client: &Client, args: &ShowArgs) -> Result<WorkspaceBrief> {
     let fetched = join_all(
         wanted
             .iter()
-            .map(|part| fetch(client, &workspace.id, &roster, who, *part)),
+            .map(|part| fetch(client, &workspace.id, (&roster, hidden), who, *part)),
     )
     .await;
     Ok(WorkspaceBrief {
@@ -513,6 +518,12 @@ fn refuses_licence_management(error: &crate::Error) -> bool {
 /// A reply that is not a workspace.
 pub(crate) fn members_of(reply: Value) -> Result<Vec<Member>> {
     Ok(members_in(&serde_json::from_value(reply)?))
+}
+
+/// A reply that names no member and counts none is a guest's: everyone else
+/// sees at least themselves.
+fn members_hidden(reply: &WorkspaceReply) -> bool {
+    reply.member_count.is_none() && reply.users.as_deref().is_none_or(<[_]>::is_empty)
 }
 
 fn members_in(reply: &WorkspaceReply) -> Vec<Member> {
@@ -613,7 +624,7 @@ fn not_one_member(command: &str, expected: String) -> crate::Error {
 async fn fetch(
     client: &Client,
     workspace_id: &str,
-    roster: &[Member],
+    (roster, hidden): (&[Member], bool),
     who: Option<&Member>,
     part: ShowPart,
 ) -> Result<PartRead> {
@@ -623,6 +634,9 @@ async fn fetch(
             .filter(move |member| who.is_none_or(|only| only.id == member.id))
     };
     match part {
+        ShowPart::Members if hidden => Ok(PartRead::Hidden {
+            reason: "hidden, you are a guest",
+        }),
         ShowPart::Members => Ok(PartRead::Members(chosen().cloned().collect())),
         ShowPart::Requests => api::workspace::join_requests(client, workspace_id)
             .await

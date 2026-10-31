@@ -93,6 +93,7 @@ fn part_text(part: ShowPart, fetched: &PartRead) -> String {
     match fetched {
         PartRead::NotRead { error } => format!("{name}: could not be read: {error}"),
         PartRead::NeedsAdmin { error } => format!("{name}: {error}"),
+        PartRead::Hidden { reason } => format!("{name}: {reason}"),
         PartRead::Members(members) => listed(members_text(members)),
         PartRead::Requests(rows) => listed(requests_text(rows)),
         PartRead::Plan(plan) => plan_text(plan),
@@ -341,6 +342,17 @@ mod tests {
         assert_eq!(
             super::part_text(holst_core::command::workspace::ShowPart::Plan, &read),
             "plan: needs admin rights"
+        );
+    }
+
+    #[test]
+    fn hidden_members_are_not_an_empty_list() {
+        let read = holst_core::command::workspace::PartRead::Hidden {
+            reason: "hidden, you are a guest",
+        };
+        assert_eq!(
+            super::part_text(holst_core::command::workspace::ShowPart::Members, &read),
+            "members: hidden, you are a guest"
         );
     }
 

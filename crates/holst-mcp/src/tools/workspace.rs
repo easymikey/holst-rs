@@ -170,6 +170,7 @@ impl McpServer {
                     PartRead::Requests(rows) => self.part_text(&label, json!(rows)),
                     PartRead::Plan(plan) => self.part_text(&label, json!(plan)),
                     PartRead::NeedsAdmin { error } => format!("{label}: {error}\n"),
+                    PartRead::Hidden { reason } => format!("{label}: {reason}\n"),
                     PartRead::NotRead { error } => {
                         format!("{label}: not read: {error}\n")
                     }
@@ -214,7 +215,12 @@ pub(super) fn joined_by_dots(
 mod tests {
     use std::collections::BTreeMap;
 
-    use holst_core::command::workspace::{WorkspaceBrief, WorkspaceRow};
+    use holst_core::command::workspace::{
+        PartRead,
+        ShowPart,
+        WorkspaceBrief,
+        WorkspaceRow,
+    };
 
     use crate::server::McpServer;
 
@@ -237,5 +243,26 @@ mod tests {
         };
         assert_eq!(holst.listing_text(&[row]), "Te\u{fffd}am @1\n");
         assert_eq!(holst.shown_text(&brief), "Te\u{fffd}[2Jam @1\n");
+    }
+
+    #[test]
+    fn hidden_members_are_worded_as_in_the_cli() {
+        let holst = McpServer::offline();
+        let brief = WorkspaceBrief {
+            id: "w1".to_owned(),
+            name: "Team".to_owned(),
+            member_count: None,
+            guest_count: None,
+            parts: BTreeMap::from([(
+                ShowPart::Members,
+                PartRead::Hidden {
+                    reason: "hidden, you are a guest",
+                },
+            )]),
+        };
+        assert_eq!(
+            holst.shown_text(&brief),
+            "Team @1\nmembers: hidden, you are a guest\n"
+        );
     }
 }

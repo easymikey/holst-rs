@@ -342,13 +342,20 @@ async fn ls_joinable_reads_the_joinable_list_only() -> Result<()> {
     Ok(())
 }
 
+const HIDDEN: PartRead = PartRead::Hidden {
+    reason: "hidden, you are a guest",
+};
+
+#[rstest]
+#[case::nulls(json!({
+    "id": "w1", "name": null, "members_count": null,
+    "users": null, "workspace_users": null,
+}))]
+#[case::missing(json!({ "id": "w1" }))]
+#[case::empty_lists(json!({ "id": "w1", "users": [], "workspace_users": [] }))]
 #[tokio::test]
-async fn show_renders_what_a_guest_reply_has() -> Result<()> {
-    let nulls = json!({
-        "id": "w1", "name": null, "members_count": null,
-        "users": null, "workspace_users": null,
-    });
-    let (_, client) = served(&[me(), nulls])?;
+async fn a_guest_is_told_the_members_are_hidden(#[case] reply: Value) -> Result<()> {
+    let (_, client) = served(&[me(), reply])?;
     let shown = show(&client, &shown_with(vec![ShowPart::Members], None)).await?;
     assert_eq!(
         (
@@ -356,7 +363,64 @@ async fn show_renders_what_a_guest_reply_has() -> Result<()> {
             shown.member_count,
             shown.parts.get(&ShowPart::Members)
         ),
-        ("easy", None, Some(&PartRead::Members(Vec::new())))
+        ("easy", None, Some(&HIDDEN))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_admin_of_a_workspace_of_one_sees_itself() -> Result<()> {
+    let alone = json!({
+        "id": "w1", "name": "easy", "members_count": 1,
+        "users": [{ "id": "u1", "name": "Ann", "email": "ann@x.io" }],
+        "workspace_users": [{ "user_id": "u1", "role": "admin" }],
+    });
+    let (_, client) = served(&[me(), alone])?;
+    let shown = show(&client, &shown_with(vec![ShowPart::Members], None)).await?;
+    assert_eq!(
+        shown.parts.get(&ShowPart::Members),
+        Some(&PartRead::Members(vec![member(
+            "u1",
+            "Ann",
+            "admin",
+            Some("ann@x.io")
+        )]))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_admin_sees_the_members() -> Result<()> {
+    let (_, client) = served(&[me(), roster()])?;
+    let shown = show(&client, &shown_with(vec![ShowPart::Members], None)).await?;
+    let ids: Vec<&str> = match shown.parts.get(&ShowPart::Members) {
+        Some(PartRead::Members(members)) => {
+            members.iter().map(|each| each.id.as_str()).collect()
+        }
+        _ => Vec::new(),
+    };
+    assert_eq!(ids, ["u1", "u2"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_member_sees_the_members() -> Result<()> {
+    let as_member = json!({
+        "id": "w1", "name": "easy", "members_count": 2,
+        "users": [{ "id": "u1", "name": "Ann" }, { "id": "u2", "name": "Bob" }],
+        "workspace_users": [
+            { "user_id": "u1", "role": "admin" },
+            { "user_id": "u2", "role": "member" },
+        ],
+    });
+    let (_, client) = served(&[me(), as_member])?;
+    let shown = show(&client, &shown_with(vec![ShowPart::Members], None)).await?;
+    assert_eq!(
+        shown.parts.get(&ShowPart::Members),
+        Some(&PartRead::Members(vec![
+            member("u1", "Ann", "admin", None),
+            member("u2", "Bob", "member", None),
+        ]))
     );
     Ok(())
 }
