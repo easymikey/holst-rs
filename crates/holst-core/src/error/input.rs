@@ -2,7 +2,15 @@
 
 use holst_macros::Hint;
 
-use crate::error::{Error, lookup::Candidates};
+use crate::{
+    command::{
+        board::{PictureFormat, rights::Right},
+        object::add_args::AddKind,
+        table::ValueKind,
+    },
+    domain::{board::ObjectKind, change::value::Alignment},
+    error::{Error, flag::Flag, lookup::Candidates},
+};
 
 /// Characters of the offending line kept on each side of the column.
 const SPOT_REACH: usize = 40;
@@ -238,6 +246,320 @@ pub enum InputError {
     #[error("there are several workspaces; choose one: {workspaces}")]
     #[hint(NarrowDown)]
     WorkspaceNotChosen { workspaces: Candidates },
+
+    #[error("`{flag}` cannot be used with `{other}`")]
+    Conflict { flag: Flag, other: Flag },
+
+    #[error("`{flag}` needs `{needs}`")]
+    Requires { flag: Flag, needs: Flag },
+
+    #[error("give one of {}", flag_list(.flags))]
+    OneOf { flags: &'static [Flag] },
+
+    /// `slot` counts from 1.
+    #[error("{error}, in item {slot}")]
+    InItem { slot: usize, error: Box<InputError> },
+
+    #[error("`{flag}` cannot be used for {kind}")]
+    NotFor { flag: Flag, kind: AddKind },
+
+    #[error("`{flag}` is empty: give a visible value")]
+    Blank { flag: Flag },
+
+    #[error("there is no home directory: give `{flag}`")]
+    NoHomeDirectory { flag: Flag },
+
+    /// `slot` counts from 1.
+    #[error("`{flag}` #{slot} is not an earlier item")]
+    NoEarlierItem { flag: Flag, slot: usize },
+
+    #[error("`{flag}` must be {kind}")]
+    NotKind { flag: Flag, kind: ValueKind },
+
+    #[error(
+        "\"{raw}\" is not a side: give one of {}",
+        <Alignment as strum::VariantNames>::VARIANTS.join(", ")
+    )]
+    NotAlignSide { raw: String },
+
+    #[error("`{flag}` cannot be used with several objects")]
+    NotForSeveralObjects { flag: Flag },
+
+    #[error("arrow {arrow} is stuck to an object left out of the copy")]
+    ArrowEndLeftOut { arrow: String },
+
+    #[error("{} {object} cannot be copied", .kind.short_name())]
+    NotCopyable { object: String, kind: ObjectKind },
+
+    #[error(
+        "`{flag}` must be the board of the objects while {} {object} is among them",
+        .kind.short_name()
+    )]
+    FileStaysOnBoard {
+        flag: Flag,
+        object: String,
+        kind: ObjectKind,
+    },
+
+    #[error("`{flag}` must be one of {}", right_list(.allowed))]
+    NotRight {
+        flag: Flag,
+        allowed: &'static [Right],
+    },
+
+    #[error("`{flag}` must be hud or hocuspocus")]
+    NotProvider { flag: Flag },
+
+    #[error("output must be one of text, json")]
+    NotOutput,
+    #[error(
+        "`--stroke-width` must be a whole number 0 to 10 (a drawing 1 to 30), or for an arrow 1, 1.5, 2, 4, 5, 6, 9, 13 or 17"
+    )]
+    StrokeWidth,
+
+    #[error("`--opacity` must be a number 0.1 to 1")]
+    Opacity,
+
+    #[error("`--rotate` must be a number of degrees")]
+    RotateNotFinite,
+
+    #[error("`--scale` must be a number above 0")]
+    ScaleNotPositive,
+
+    #[error("`--width` must be auto or a number above 0")]
+    WidthNotAutoOrPositive,
+
+    #[error("`--text-size` must be auto or a whole number 4 to 64")]
+    TextSizeRange,
+
+    #[error("`{flag}` must be row,column from 1, e.g. 2,3")]
+    NotRowColumn { flag: Flag },
+
+    #[error(
+        "`{flag}` must be r1,c1,r2,c2 from 1, the first row and column not after the last, e.g. 1,1,2,2"
+    )]
+    NotBlock { flag: Flag },
+
+    #[error("`--cell` needs `--text` or `--color`")]
+    CellNeedsTextOrColor,
+
+    #[error("`--text` is written into one cell: give `--cell` as row,column, e.g. 2,3")]
+    CellTextNeedsOneCell,
+
+    #[error("`--cell` takes `--text` or `--color`, not both")]
+    CellTextAndColor,
+
+    #[error("`--faces` must be one of 2, 4, 6, 8, 10, 12 or 20")]
+    FacesNotDie,
+
+    #[error("`--reaction` takes reaction ids, or none alone")]
+    ReactionsMixed,
+
+    #[error("`--reaction` takes at most {most} different reactions")]
+    TooManyReactions { most: usize },
+
+    #[error("`{flag}` must be an item number from 1")]
+    NotItemNumber { flag: Flag },
+
+    #[error("`{flag}` must be a day as YYYY-MM-DD, e.g. 2026-11-06")]
+    NotDay { flag: Flag },
+
+    #[error("`--start` must be on or before the `--due` day")]
+    StartAfterDue,
+
+    #[error("`{flag}` takes one title")]
+    OneTitle { flag: Flag },
+
+    #[error("`{flag}` cannot be used with `--kanban` none")]
+    KanbanNone { flag: Flag },
+
+    #[error("`--roll` is for at most {most} objects at once")]
+    TooManyRolls { most: usize },
+
+    #[error("`--path` must be a file with a png, jpg, gif or webp picture")]
+    PathNotPicture,
+
+    #[error(
+        "`--assignee` is for members of the workspace: a guest cannot assign people"
+    )]
+    AssigneeNeedsMember,
+
+    #[error("`--object` is needed: give it, or link an object in `--board`")]
+    ItemNeedsObject,
+
+    #[error("`--path` is for one object: give one `--object`")]
+    PathWithSeveralObjects,
+    #[error("an offline search needs a board given by id or link")]
+    OfflineNeedsBoardId,
+    #[error("a board is searched for its text: leave it out with mode names")]
+    BoardWithNamesMode,
+    #[error("mode names takes the kind board, folder or any")]
+    KindNotNodeInNamesMode,
+    #[error("mode board_text takes an object kind (sticker, text, shape, frame…)")]
+    KindNotObjectInTextMode,
+    #[error("only names look into the trash: leave it out with mode board_text")]
+    TrashWithBoardText,
+    #[error("a board is given: the kind must be an object kind")]
+    KindNotObjectWithBoard,
+    #[error(
+        "only names look into the trash: leave it out with a board or an object kind"
+    )]
+    TrashWithBoardOrObjectKind,
+    #[error("the cover must be a png, jpg, gif or webp picture, or reset")]
+    CoverNotPicture,
+    #[error("the cover must be a picture drawn in memory")]
+    CoverNotInMemory,
+    #[error("an object list is saved beside a file: give a file, not -")]
+    ObjectListToStdout,
+    #[error("the file's name gives no board name: give a name")]
+    ImportNameNotFromFile,
+    #[error("the file must be named with .svg or .png")]
+    FileNotPictureName,
+    #[error("the picture format must be {found}, as the file's name says")]
+    PictureFormatNotName { found: PictureFormat },
+    #[error("this build draws no PNG: the picture format must be svg")]
+    NoPng,
+    #[error("a folder is listed in the tree and both views only")]
+    FolderWithView,
+    #[error("the cursor must be one a previous page printed")]
+    CursorUnknown,
+    #[error("`{flag}` cannot be used with several boards")]
+    SeveralBoards { flag: Flag },
+    #[error("the note format applies to the note: add note to the parts shown")]
+    NoteFormatWithoutNote,
+    #[error("a category is listed in the standard view only")]
+    CategoryWithoutStandardView,
+    #[error("only a reply of your own can be removed; another author's reply stays")]
+    OthersReply,
+    #[error("the point must be two numbers like 120,80")]
+    AtNotPoint,
+    #[error("the time must be ISO 8601, e.g. 2026-10-27T09:30:00Z")]
+    TimeNotIso,
+    #[error("`{flag}` must name {wanted}")]
+    WrongObject { flag: Flag, wanted: &'static str },
+
+    #[error("`{flag}` must be one of {}", .titles.join(", "))]
+    NotATitle { flag: Flag, titles: Vec<String> },
+
+    #[error(
+        "`{flag}` must be one of {}, or the title of a status of the board",
+        .ids.join(", ")
+    )]
+    UnknownStatus { flag: Flag, ids: Vec<&'static str> },
+
+    #[error("`{flag}` \"{raw}\" is not #N, the number of an earlier item")]
+    NotItemRef { flag: Flag, raw: String },
+
+    /// `slot` counts from 1.
+    #[error("`{flag}` #{slot} is not a frame")]
+    ItemNotFrame { flag: Flag, slot: usize },
+
+    /// `slot` counts from 1.
+    #[error("`{flag}` #{slot} is an arrow, which cannot be an arrow end")]
+    ArrowEndIsArrow { flag: Flag, slot: usize },
+
+    #[error("`{flag}` must be one of {}", .allowed.join(", "))]
+    NotAmong {
+        flag: Flag,
+        allowed: Vec<&'static str>,
+    },
+
+    #[error("`{flag}` must be one of {}", number_list(.allowed))]
+    NotAmongNumbers { flag: Flag, allowed: &'static [u32] },
+
+    #[error("`{flag}` must be at least {least}")]
+    Below { flag: Flag, least: u32 },
+
+    #[error("`{flag}` needs at least {least} values")]
+    TooFew { flag: Flag, least: usize },
+
+    #[error("`{flag}` takes {least} to {most} values")]
+    ValueCount {
+        flag: Flag,
+        least: usize,
+        most: usize,
+    },
+
+    #[error("`{flag}` labels are at most {most} characters long")]
+    LabelTooLong { flag: Flag, most: usize },
+
+    #[error("`{flag}` must be a whole number from {least} to {most}")]
+    NotWhole { flag: Flag, least: u32, most: u32 },
+
+    #[error("`{flag}` times `{other}` is at most {limit} cells")]
+    TooManyCells { flag: Flag, other: Flag, limit: u32 },
+
+    #[error("`{flag}` must be a day as YYYY-MM-DD, e.g. 2026-11-06")]
+    NotADay { flag: Flag },
+
+    #[error("`{flag}` must be on or before `{other}`")]
+    NotBefore { flag: Flag, other: Flag },
+
+    #[error(
+        "`{flag}` must be an icon name: lower-case letters, digits and dashes, e.g. rocket-launch"
+    )]
+    NotIconName { flag: Flag },
+
+    #[error("`{flag}` must be square, e.g. 48,48")]
+    NotSquare { flag: Flag },
+
+    #[error("`{flag}` must be 192,192 or 384,192")]
+    NotStackSize { flag: Flag },
+
+    #[error("`{flag}` takes one value here")]
+    OneValue { flag: Flag },
+
+    #[error("`{flag}` must be a file")]
+    NotFile { flag: Flag },
+
+    #[error("`{flag}` must be a png, jpg, gif or webp picture")]
+    NotPicture { flag: Flag },
+
+    #[error("`{flag}` needs a file with pages: {id} has none counted")]
+    NoPagesCounted { flag: Flag, id: String },
+
+    #[error("`{flag}` needs a file with pages: {name} has no valid pages")]
+    NoValidPages { flag: Flag, name: String },
+
+    #[error("`{flag}` needs a file with pages: {id} is {}", .kind.short_name())]
+    NotAPageFile {
+        flag: Flag,
+        id: String,
+        kind: ObjectKind,
+    },
+
+    #[error("`{flag}` must be all, or pages and ranges such as 1-3,5, from page 1")]
+    NotPages { flag: Flag },
+
+    #[error("`{flag}` takes at most {most} pages")]
+    TooManyPages { flag: Flag, most: usize },
+
+    #[error("`{flag}` needs a file with a box on the board")]
+    FileHasNoBox { flag: Flag },
+}
+
+fn number_list(numbers: &[u32]) -> String {
+    numbers
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn right_list(rights: &[Right]) -> String {
+    rights
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn flag_list(flags: &[Flag]) -> String {
+    flags
+        .iter()
+        .map(|flag| format!("`{flag}`"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn close_list(close: &[String]) -> String {
@@ -265,11 +587,20 @@ fn joined(errors: &[Error]) -> String {
 
 #[cfg(test)]
 pub(super) mod tests {
-    use crate::error::{
-        Error,
-        hint::decided::assert_all_listed,
-        input::{InputError, InputErrorDiscriminants, JsonSpot},
-        lookup::Candidates,
+    use crate::{
+        command::{
+            board::{PictureFormat, rights::Right},
+            object::add_args::AddKind,
+            table::ValueKind,
+        },
+        domain::board::ObjectKind,
+        error::{
+            Error,
+            flag::Flag,
+            hint::decided::assert_all_listed,
+            input::{InputError, InputErrorDiscriminants, JsonSpot},
+            lookup::Candidates,
+        },
     };
 
     pub(in crate::error) fn samples() -> Vec<InputError> {
@@ -362,6 +693,220 @@ pub(super) mod tests {
             },
             InputError::WorkspaceNotChosen {
                 workspaces: Candidates::default(),
+            },
+        ]
+        .into_iter()
+        .chain(flag_samples())
+        .chain(value_samples())
+        .collect()
+    }
+
+    #[expect(clippy::too_many_lines, reason = "one sample per variant")]
+    fn flag_samples() -> Vec<InputError> {
+        vec![
+            InputError::Conflict {
+                flag: Flag::Offline,
+                other: Flag::Refresh,
+            },
+            InputError::Requires {
+                flag: Flag::Color,
+                needs: Flag::Cell,
+            },
+            InputError::OneOf {
+                flags: &[Flag::Name, Flag::Color],
+            },
+            InputError::InItem {
+                slot: 2,
+                error: Box::new(InputError::FullUrl),
+            },
+            InputError::NotFor {
+                flag: Flag::From,
+                kind: AddKind::Sticker,
+            },
+            InputError::Blank { flag: Flag::Name },
+            InputError::NoHomeDirectory { flag: Flag::File },
+            InputError::NoEarlierItem {
+                flag: Flag::Frame,
+                slot: 3,
+            },
+            InputError::NotKind {
+                flag: Flag::Cell,
+                kind: ValueKind::Integer,
+            },
+            InputError::NotAlignSide {
+                raw: String::from("x"),
+            },
+            InputError::NotForSeveralObjects { flag: Flag::File },
+            InputError::ArrowEndLeftOut {
+                arrow: String::from("x"),
+            },
+            InputError::NotCopyable {
+                object: String::from("x"),
+                kind: ObjectKind::Group,
+            },
+            InputError::FileStaysOnBoard {
+                flag: Flag::Into,
+                object: String::from("x"),
+                kind: ObjectKind::Image,
+            },
+            InputError::NotRight {
+                flag: Flag::Right,
+                allowed: &[Right::Viewer, Right::Editor],
+            },
+            InputError::NotProvider {
+                flag: Flag::Provider,
+            },
+            InputError::NotOutput,
+            InputError::StrokeWidth,
+            InputError::Opacity,
+            InputError::RotateNotFinite,
+            InputError::ScaleNotPositive,
+            InputError::WidthNotAutoOrPositive,
+            InputError::TextSizeRange,
+            InputError::NotRowColumn { flag: Flag::Cell },
+            InputError::NotBlock { flag: Flag::Merge },
+            InputError::CellNeedsTextOrColor,
+            InputError::CellTextNeedsOneCell,
+            InputError::CellTextAndColor,
+            InputError::FacesNotDie,
+            InputError::ReactionsMixed,
+            InputError::TooManyReactions { most: 8 },
+            InputError::NotItemNumber { flag: Flag::Check },
+            InputError::NotDay { flag: Flag::Due },
+            InputError::StartAfterDue,
+            InputError::OneTitle { flag: Flag::Column },
+            InputError::KanbanNone {
+                flag: Flag::Swimlane,
+            },
+            InputError::TooManyRolls { most: 50 },
+            InputError::PathNotPicture,
+            InputError::AssigneeNeedsMember,
+            InputError::ItemNeedsObject,
+            InputError::PathWithSeveralObjects,
+            InputError::OfflineNeedsBoardId,
+            InputError::BoardWithNamesMode,
+            InputError::KindNotNodeInNamesMode,
+            InputError::KindNotObjectInTextMode,
+            InputError::TrashWithBoardText,
+            InputError::KindNotObjectWithBoard,
+            InputError::TrashWithBoardOrObjectKind,
+            InputError::CoverNotPicture,
+            InputError::CoverNotInMemory,
+            InputError::ObjectListToStdout,
+            InputError::ImportNameNotFromFile,
+            InputError::FileNotPictureName,
+            InputError::PictureFormatNotName {
+                found: PictureFormat::Svg,
+            },
+            InputError::NoPng,
+            InputError::FolderWithView,
+            InputError::CursorUnknown,
+            InputError::SeveralBoards { flag: Flag::Frame },
+            InputError::NoteFormatWithoutNote,
+            InputError::CategoryWithoutStandardView,
+            InputError::OthersReply,
+            InputError::AtNotPoint,
+            InputError::TimeNotIso,
+        ]
+    }
+
+    fn value_samples() -> Vec<InputError> {
+        let text = || String::from("x");
+        vec![
+            InputError::WrongObject {
+                flag: Flag::Kanban,
+                wanted: "a kanban",
+            },
+            InputError::NotATitle {
+                flag: Flag::Column,
+                titles: vec![text()],
+            },
+            InputError::UnknownStatus {
+                flag: Flag::Status,
+                ids: vec!["done"],
+            },
+            InputError::NotItemRef {
+                flag: Flag::Frame,
+                raw: text(),
+            },
+            InputError::ItemNotFrame {
+                flag: Flag::Frame,
+                slot: 2,
+            },
+            InputError::ArrowEndIsArrow {
+                flag: Flag::From,
+                slot: 2,
+            },
+            InputError::NotAmong {
+                flag: Flag::Reaction,
+                allowed: vec!["heart"],
+            },
+            InputError::NotAmongNumbers {
+                flag: Flag::Faces,
+                allowed: &[2, 4],
+            },
+            InputError::Below {
+                flag: Flag::Rows,
+                least: 1,
+            },
+            InputError::TooFew {
+                flag: Flag::Point,
+                least: 2,
+            },
+            InputError::ValueCount {
+                flag: Flag::Choice,
+                least: 2,
+                most: 20,
+            },
+            InputError::LabelTooLong {
+                flag: Flag::Choice,
+                most: 40,
+            },
+            InputError::NotWhole {
+                flag: Flag::StrokeWidth,
+                least: 1,
+                most: 30,
+            },
+            InputError::TooManyCells {
+                flag: Flag::Rows,
+                other: Flag::Columns,
+                limit: 2500,
+            },
+            InputError::NotADay { flag: Flag::Due },
+            InputError::NotBefore {
+                flag: Flag::Start,
+                other: Flag::Due,
+            },
+            InputError::NotIconName { flag: Flag::Text },
+            InputError::NotSquare { flag: Flag::Size },
+            InputError::NotStackSize { flag: Flag::Size },
+            InputError::OneValue {
+                flag: Flag::Reaction,
+            },
+            InputError::NotFile { flag: Flag::Path },
+            InputError::NotPicture { flag: Flag::Path },
+            InputError::NoPagesCounted {
+                flag: Flag::Extract,
+                id: text(),
+            },
+            InputError::NoValidPages {
+                flag: Flag::Extract,
+                name: text(),
+            },
+            InputError::NotAPageFile {
+                flag: Flag::Extract,
+                id: text(),
+                kind: ObjectKind::Sticker,
+            },
+            InputError::NotPages {
+                flag: Flag::Extract,
+            },
+            InputError::TooManyPages {
+                flag: Flag::Extract,
+                most: 50,
+            },
+            InputError::FileHasNoBox {
+                flag: Flag::Extract,
             },
         ]
     }

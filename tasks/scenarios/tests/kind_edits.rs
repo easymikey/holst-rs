@@ -458,7 +458,7 @@ async fn a_task_is_assigned_to_a_workspace_member_and_cleared(
     holst.on(surface).object("Plans", assign("none")).await?;
     let cleared = holst.on(surface).objects("Plans").await?;
     then(&unknown)
-        .failed_saying("a member of the workspace")
+        .failed_saying("workspace member \"Zed\" not found")
         .signalled_as(surface.usage());
     then(&dry).succeeded();
     then(&untouched).lists_object_detail("task", &["assignees=0"]);

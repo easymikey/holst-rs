@@ -35,6 +35,7 @@ use crate::{
         board_change::BoardChangeError,
         board_socket::BoardSocketError,
         confirmation::{ChangeRisk, Unconfirmed},
+        flag::Flag,
         http::{HttpError, ReplyBody},
         input::InputError,
         lookup::{LookupError, LookupKind, LookupMiss},
@@ -211,7 +212,7 @@ pub async fn get(
         .map(|file| compression::file_name(&file.0, packing))
         .transpose()?;
     let provider = match args.provider.as_deref() {
-        Some(given) => known_provider("backup get", given)?,
+        Some(given) => known_provider(given)?,
         None => DEFAULT_PROVIDER,
     };
     let backup = download(client, &args.key, provider, packing).await?;
@@ -393,23 +394,14 @@ async fn restored(
 
 /// The provider as the server names them: `hud`, or `hocuspocus` for the
 /// older boards.
-fn known_provider<'a>(command: &str, given: &'a str) -> Result<&'a str> {
+fn known_provider(given: &str) -> Result<&str> {
     match given {
         DEFAULT_PROVIDER | OTHER_PROVIDER => Ok(given),
-        _ => Err(provider_error(
-            command,
-            format!("{DEFAULT_PROVIDER} or {OTHER_PROVIDER}"),
-        )),
+        _ => Err(InputError::NotProvider {
+            flag: Flag::Provider,
+        }
+        .into()),
     }
-}
-
-fn provider_error(command: &str, expected: String) -> Error {
-    InputError::NotArgumentValue {
-        command: command.to_owned(),
-        name: "provider",
-        expected,
-    }
-    .into()
 }
 
 /// Only `hud` keeps Yjs v2, the format this version reads and writes.
@@ -625,13 +617,7 @@ mod tests {
     }
 
     fn wrong_provider(error: Option<&Error>) -> bool {
-        matches!(
-            error,
-            Some(Error::Input(InputError::NotArgumentValue {
-                name: "provider",
-                ..
-            }))
-        )
+        matches!(error, Some(Error::Input(InputError::NotProvider { .. })))
     }
 
     #[tokio::test]

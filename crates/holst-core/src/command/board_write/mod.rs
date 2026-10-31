@@ -21,7 +21,7 @@ use crate::{
         },
     },
     domain::{
-        board::EditRight,
+        board::{EditRight, role::BoardRole},
         change::{
             receipt::{BoardStatus, ChangeReport, Delivery},
             value::{BoardChange, ChangeSources, RemoveRight},
@@ -50,7 +50,7 @@ use crate::{
 
 /// A right a write needs: its `who_can_*` setting and the error for a refusal.
 pub(in crate::command) type Guard =
-    (&'static str, fn(String, &'static str) -> BoardChangeError);
+    (&'static str, fn(BoardRole, BoardRole) -> BoardChangeError);
 
 /// Refuses on `board` when `guard` is above the caller's permit role.
 pub(in crate::command) async fn refuse_withheld(

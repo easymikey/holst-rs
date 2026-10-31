@@ -136,23 +136,21 @@ async fn the_limit_keeps_the_best_and_zero_keeps_all() -> Result<()> {
 }
 
 #[rstest]
-#[case(json!({ "query": "x", "mode": "names", "board": "Plans" }), "board of `search` must be left out with --mode names")]
-#[case(json!({ "query": "x", "mode": "names", "kind": "sticker" }), "kind of `search` must be board, folder or any with --mode names")]
-#[case(json!({ "query": "x", "mode": "board_text", "trash": true }), "trash of `search` must be left out with --mode board_text")]
-#[case(json!({ "query": "x", "mode": "board_text", "kind": "folder" }), "kind of `search` must be an object kind")]
-#[case(json!({ "query": "x", "board": "Plans", "kind": "folder" }), "kind of `search` must be an object kind when --board is given")]
-#[case(json!({ "query": "x", "board": "Plans", "trash": true }), "trash of `search` must be left out with --board")]
+#[case(json!({ "query": "x", "mode": "names", "board": "Plans" }), "a board is searched for its text: leave it out with mode names")]
+#[case(json!({ "query": "x", "mode": "names", "kind": "sticker" }), "mode names takes the kind board, folder or any")]
+#[case(json!({ "query": "x", "mode": "board_text", "trash": true }), "only names look into the trash: leave it out with mode board_text")]
+#[case(json!({ "query": "x", "mode": "board_text", "kind": "folder" }), "mode board_text takes an object kind (sticker, text, shape, frame…)")]
+#[case(json!({ "query": "x", "board": "Plans", "kind": "folder" }), "a board is given: the kind must be an object kind")]
+#[case(json!({ "query": "x", "board": "Plans", "trash": true }), "only names look into the trash: leave it out with a board or an object kind")]
 fn arguments_that_do_not_fit_the_mode_are_refused_in_our_words(
     #[case] given: Value,
     #[case] wanted: &str,
-) -> Result<()> {
-    let args = arguments(&given)?;
-    let reported = Plan::of(&args)
+) {
+    let reported = arguments(&given)
         .err()
         .map(|error| error.to_string())
         .unwrap_or_default();
-    assert!(reported.contains(wanted), "{given}: {reported}");
-    Ok(())
+    assert_eq!(reported, wanted, "{given}");
 }
 
 #[test]
@@ -273,25 +271,20 @@ fn offline<'a>(sockets: &'a Counted, memory: &'a MemoryCache) -> Loading<'a> {
 }
 
 #[rstest]
-#[case::no_board(json!({ "query": "x" }))]
-#[case::a_name(json!({ "query": "x", "board": "Retro" }))]
+#[case::no_board(json!({ "query": "x", "offline": true }))]
+#[case::a_name(json!({ "query": "x", "board": "Retro", "offline": true }))]
 #[tokio::test]
 async fn offline_names_and_boards_by_name_are_refused_before_any_request(
     #[case] given: Value,
 ) -> Result<()> {
-    let memory = MemoryCache::new(1 << 20, FixedClock { unix_millis: 1 });
-    let (fake, client) = on_tree()?;
-    let refused = searched(
-        &client,
-        offline(&Counted::default(), &memory),
-        &arguments(&given)?,
-    )
-    .await
-    .err()
-    .map(|error| error.to_string())
-    .unwrap_or_default();
-    assert!(refused.contains("offline of `search`"), "{refused}");
-    assert_eq!(fake.requests().len(), 0);
+    let refused = arguments(&given)
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+    assert_eq!(
+        refused,
+        "an offline search needs a board given by id or link"
+    );
     Ok(())
 }
 
@@ -316,18 +309,12 @@ async fn online_text_search_reads_the_board_over_the_connector() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn refresh_with_offline_is_refused() -> Result<()> {
+#[test]
+fn refresh_with_offline_is_refused() {
     let given = json!({ "query": "x", "refresh": true, "offline": true });
-    let refused = search(
-        &on_tree()?.1,
-        &CacheSettings::default(),
-        &arguments(&given)?,
-    )
-    .await
-    .err()
-    .map(|error| error.to_string())
-    .unwrap_or_default();
-    assert!(refused.contains("offline of `search`"), "{refused}");
-    Ok(())
+    let refused = arguments(&given)
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+    assert_eq!(refused, "`--offline` cannot be used with `--refresh`");
 }

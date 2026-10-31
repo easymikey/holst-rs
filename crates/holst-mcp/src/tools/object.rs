@@ -20,7 +20,7 @@ use holst_core::{
             list::{self, Listing},
             lock,
         },
-        table::{Changes, CommandName, parse},
+        table::{Changes, parse},
     },
     domain::{
         change::receipt::ChangeReport,
@@ -158,8 +158,7 @@ impl McpServer {
     }
 
     async fn list_objects(&self, mut arguments: Map<String, Value>) -> CallToolResult {
-        let taken =
-            super::output::take(&mut arguments, CommandName::Object(ObjectVerb::Ls));
+        let taken = super::output::take(&mut arguments);
         let read = taken.and_then(|output| Ok((output, parse::<LsArgs>(arguments)?)));
         match read {
             Ok((output, args)) => {

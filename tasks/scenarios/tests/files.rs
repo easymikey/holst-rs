@@ -234,7 +234,7 @@ async fn an_unknown_backup_provider_is_a_usage_error() -> Result<(), ScenarioErr
         .download_backup("snap-1", "elsewhere.ydoc", Some("elsewhere"), false)
         .await?;
     then(&observation)
-        .failed_saying("provider of `backup get` must be hud or hocuspocus")
+        .failed_saying("`--provider` must be hud or hocuspocus")
         .signalled_as(surface.usage());
     assert_eq!(downloaded(&holst, "elsewhere.ydoc"), None);
     Ok(())
@@ -908,7 +908,7 @@ async fn a_crop_beside_a_size_is_refused() -> Result<(), ScenarioError> {
         .with("size", "100,100");
     let observation = holst.on(surface).object("Plans", call).await?;
     then(&observation)
-        .failed_saying("left out with --crop")
+        .failed_saying("`--size` cannot be used with `--crop`")
         .signalled_as(surface.usage());
     board_of(&holst).got_no_update();
     Ok(())
@@ -1322,7 +1322,7 @@ async fn extract_takes_no_other_field() -> Result<(), ScenarioError> {
     let call = extract_call(&holst, "all")?.with("color", "yellow4");
     let observation = holst.on(surface).object("Plans", call).await?;
     then(&observation)
-        .failed_saying("left out with --extract")
+        .failed_saying("cannot be used with `--extract`")
         .signalled_as(surface.usage());
     assert_eq!(holst.page_runs(), runs(&[]));
     board_of(&holst).got_no_update();
@@ -1338,7 +1338,7 @@ async fn more_than_fifty_pages_are_refused_before_any_run() -> Result<(), Scenar
     let call = extract_call(&holst, "1-51")?;
     let observation = holst.on(surface).object("Plans", call).await?;
     then(&observation)
-        .failed_saying("must be at most 50 pages")
+        .failed_saying("takes at most 50 pages")
         .signalled_as(surface.usage());
     assert_eq!(holst.page_runs(), runs(&[]));
     board_of(&holst).got_no_update();

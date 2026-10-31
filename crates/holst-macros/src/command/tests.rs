@@ -7,6 +7,7 @@ use crate::{
         ARGUMENT_KEYS,
         COMMAND_KEYS,
         FLATTEN_ALONE,
+        GROUP_KEYS,
         KINDS_NEED_SUBCOMMAND,
         NAMED_FIELDS,
         NO_NESTED_GROUP,
@@ -43,12 +44,21 @@ fn two_fields_become_the_command_entry() {
         text(&quote!(
             surfaces: &[crate::error::hint::Surface::Cli, crate::error::hint::Surface::Mcp]
         )),
-        text(&quote!(name: "with", letter: ::core::option::Option::None)),
+        text(&quote!(
+            name: "with",
+            flag: crate::error::flag::Flag::With,
+            letter: ::core::option::Option::None
+        )),
+        text(&quote!(impl crate::command::table::Validate for StatusArgs)),
         text(
             &quote!(kind: <Vec<StatusPart> as crate::command::table::ArgumentValue>::KIND),
         ),
         text(&quote!(value_name: "parts")),
-        text(&quote!(name: "workspace", letter: ::core::option::Option::Some('w'))),
+        text(&quote!(
+            name: "workspace",
+            flag: crate::error::flag::Flag::Workspace,
+            letter: ::core::option::Option::Some('w')
+        )),
         text(&quote!(value_name: "workspace")),
         text(&quote!(tool_doc: ::core::option::Option::Some("Where."))),
     ];
@@ -71,6 +81,7 @@ fn a_flattened_group_is_joined_in_field_order() {
     .map(|tokens| tokens.to_string())
     .unwrap_or_default();
     let wanted = [
+        text(&quote!(crate::command::table::Validate::validate(&self.selection)?;)),
         text(&quote!(const PARTS: &[&[crate::command::table::Argument]])),
         text(&quote!(
             <Selection as crate::command::table::ArgumentGroup>::ARGUMENTS
@@ -92,11 +103,16 @@ fn a_group_is_its_arguments() {
     .map(|tokens| tokens.to_string())
     .unwrap_or_default();
     let wanted = [
+        text(&quote!(impl crate::command::table::Validate for Selection {})),
         text(&quote!(impl crate::command::table::ArgumentGroup for Selection)),
-        text(&quote!(name: "rectangle", letter: ::core::option::Option::None)),
+        text(&quote!(
+            name: "rectangle",
+            flag: crate::error::flag::Flag::Rectangle,
+            letter: ::core::option::Option::None
+        )),
         text(&quote!(value_name: "x,y,w,h")),
         text(&quote!((
-            "rectangle",
+            crate::error::flag::Flag::Rectangle,
             crate::command::table::Given::given(&self.rectangle)
         ))),
         text(&quote!(fn first_given(&self))),
@@ -331,4 +347,55 @@ fn changes_are_emitted_where_there_is_a_dry_run(
         impl crate::command::table::Changes for MoveArgs
     ));
     assert_eq!(out.contains(&wanted), emitted, "{out}");
+}
+
+#[test]
+fn a_flag_is_the_pascal_case_of_the_field_name() {
+    let out = expand(quote! {
+        #[holst_command(group = Board, verb = "x", risk = Read, about = "a", help = "b")]
+        struct XArgs { #[argument(help = "c")] note_format: Option<String> }
+    })
+    .map(|tokens| tokens.to_string())
+    .unwrap_or_default();
+    assert!(
+        out.contains(&text(&quote!(crate::error::flag::Flag::NoteFormat))),
+        "{out}"
+    );
+}
+
+#[test]
+fn opting_out_leaves_the_validate_impl_to_the_struct() {
+    let command = expand(quote! {
+        #[holst_command(group = Board, verb = "x", risk = Read, validate, about = "a", help = "b")]
+        struct XArgs { #[argument(help = "c")] name: Option<String> }
+    })
+    .map(|tokens| tokens.to_string())
+    .unwrap_or_default();
+    let group = expand_group(quote! {
+        #[argument_group(validate)]
+        struct Selection { #[argument(help = "c")] name: Option<String> }
+    })
+    .map(|tokens| tokens.to_string())
+    .unwrap_or_default();
+    let validate = text(&quote!(crate::command::table::Validate));
+    assert_eq!(
+        (
+            command.is_empty(),
+            group.is_empty(),
+            command.contains(&validate),
+            group.contains(&validate)
+        ),
+        (false, false, false, false)
+    );
+}
+
+#[test]
+fn a_group_attribute_takes_validate_only() {
+    let error = expand_group(quote! {
+        #[argument_group(check)]
+        struct Selection { #[argument(help = "c")] name: Option<String> }
+    })
+    .err()
+    .map(|error| error.to_string());
+    assert_eq!(error.as_deref(), Some(GROUP_KEYS));
 }

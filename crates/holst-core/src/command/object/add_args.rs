@@ -25,7 +25,15 @@ use crate::{
 
 /// What `object add` makes.
 #[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, strum::VariantNames,
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    Deserialize,
+    strum::VariantNames,
+    strum::Display,
 )]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
@@ -70,6 +78,7 @@ impl EnumArgument for Weight {}
     group = Object,
     verb = "add",
     risk = Write,
+    validate,
     block = Commands,
     about = "Add stickers, texts, shapes, frames, arrows, links, images, files, dice, a spinner wheel, sticker stacks, flip cards, mind-map nodes, documents, text stamps, code blocks, tables, reaction stamps, icons, task cards, kanbans or freehand strokes to a board",
     help = "Add objects of one kind to a board; the kind word is the default kind of every --items item.\n\
@@ -450,6 +459,7 @@ mod tests {
             object::{AddArgs, AddKind},
             table::{ArgumentGroup as _, CommandArgs},
         },
+        error::flag::Flag,
     };
 
     #[test]
@@ -488,7 +498,7 @@ mod tests {
     }
 
     #[test]
-    fn the_first_given_field_is_named_by_its_argument() {
+    fn the_first_given_field_is_its_flag() {
         let fields = AddFields {
             stroke_width: Some(4.0),
             no_preview: true,
@@ -496,7 +506,7 @@ mod tests {
         };
         assert_eq!(
             (fields.first_given(), AddFields::default().first_given()),
-            (Some("no_preview"), None)
+            (Some(Flag::NoPreview), None)
         );
     }
 
@@ -684,8 +694,8 @@ mod tests {
     #[test]
     fn an_add_reads_its_kind_items_and_kind_only_arguments() -> Result<()> {
         let arrow: AddArgs = arguments(json!({
-            "kind": "arrow", "board": "A", "from": "@1", "to": "@2",
-            "items": [{"kind": "frame", "text": "Q4"}, {"text": "x"}]
+            "kind": "arrow", "board": "A",
+            "items": [{"kind": "frame", "text": "Q4"}, {"kind": "arrow"}]
         }))?;
         let plain: AddArgs = arguments(json!({ "board": "A" }))?;
         assert_eq!(

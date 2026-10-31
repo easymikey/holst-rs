@@ -16,7 +16,7 @@ use holst_core::{
             tree_change::{self, Changed},
         },
         change::ChangeReport,
-        table::{CommandName, parse},
+        table::parse,
     },
     domain::{
         node::NodeKind,
@@ -140,8 +140,7 @@ impl McpServer {
     }
 
     async fn list_boards(&self, mut arguments: Map<String, Value>) -> CallToolResult {
-        let taken =
-            super::output::take(&mut arguments, CommandName::Board(BoardVerb::Ls));
+        let taken = super::output::take(&mut arguments);
         let read = taken.and_then(|output| Ok((output, parse::<LsArgs>(arguments)?)));
         match read {
             Ok((output, mut args)) => {

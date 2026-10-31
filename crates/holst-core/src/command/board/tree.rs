@@ -10,7 +10,7 @@ use crate::{
         board::{ListView, LsArgs},
         lookup,
         node,
-        table::not_value,
+        table::Validate,
     },
     domain::{
         account::Workspace,
@@ -23,11 +23,10 @@ use crate::{
             walk::TrashWalk,
         },
     },
-    error::{Error, Result},
+    error::{Error, Result, input::InputError},
     remote::{api, client::Client},
 };
 
-const COMMAND: &str = "board ls";
 /// How many recent boards one page holds when `-l` is left out.
 const RECENT_PAGE: u32 = 20;
 /// The most recent boards the server gives in one page.
@@ -100,7 +99,6 @@ pub struct ListedNode {
 /// of the requests.
 pub async fn ls(client: &Client, args: &LsArgs) -> Result<Listing> {
     let view = args.view.unwrap_or_default();
-    folder_fits(view, args.folder.as_deref())?;
     match view {
         ListView::Recent => recent(client, args).await,
         ListView::Tree
@@ -111,28 +109,27 @@ pub async fn ls(client: &Client, args: &LsArgs) -> Result<Listing> {
     }
 }
 
-fn folder_fits(view: ListView, folder: Option<&str>) -> Result<()> {
-    match (view, folder) {
-        (
-            ListView::Trash
-            | ListView::Favorites
-            | ListView::Recent
-            | ListView::Sidebar,
-            Some(_),
-        ) => Err(not_value(
-            COMMAND,
-            "folder",
-            "left out with this view; only tree and both look into a folder",
-        )),
-        (
-            ListView::Tree
-            | ListView::Trash
-            | ListView::Both
-            | ListView::Favorites
-            | ListView::Recent
-            | ListView::Sidebar,
-            _,
-        ) => Ok(()),
+/// Only the tree and both views look into a folder.
+impl Validate for LsArgs {
+    fn validate(&self) -> std::result::Result<(), InputError> {
+        match (self.view.unwrap_or_default(), self.folder.as_deref()) {
+            (
+                ListView::Trash
+                | ListView::Favorites
+                | ListView::Recent
+                | ListView::Sidebar,
+                Some(_),
+            ) => Err(InputError::FolderWithView),
+            (
+                ListView::Tree
+                | ListView::Trash
+                | ListView::Both
+                | ListView::Favorites
+                | ListView::Recent
+                | ListView::Sidebar,
+                _,
+            ) => Ok(()),
+        }
     }
 }
 
@@ -198,9 +195,9 @@ fn paged(
 
 fn cursor_start(cursor: Option<&str>) -> Result<usize> {
     cursor.map_or(Ok(0), |text| {
-        text.trim().parse().map_err(|_| {
-            not_value(COMMAND, "cursor", "the cursor a previous page printed")
-        })
+        text.trim()
+            .parse()
+            .map_err(|_| Error::from(InputError::CursorUnknown))
     })
 }
 
@@ -587,7 +584,7 @@ mod tests {
         .map(|error| error.to_string());
         assert_eq!(
             refused.as_deref(),
-            Some("cursor of `board ls` must be the cursor a previous page printed")
+            Some("the cursor must be one a previous page printed")
         );
     }
 
@@ -638,9 +635,7 @@ mod tests {
             .map(|error| error.to_string());
         assert_eq!(
             refused.as_deref(),
-            Some(
-                "folder of `board ls` must be left out with this view; only tree and both look into a folder"
-            )
+            Some("a folder is listed in the tree and both views only")
         );
     }
 }

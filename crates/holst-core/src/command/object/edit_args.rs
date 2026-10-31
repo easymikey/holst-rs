@@ -29,6 +29,7 @@ use crate::{
     group = Object,
     verb = "edit",
     risk = Destroy,
+    validate,
     block = Commands,
     about = "Change text, corner, size, color, order or tags of objects",
     help = "Change text, corner, size, color, order or tags of objects. The objects are the linked object and every --object.\n\
@@ -88,6 +89,7 @@ pub struct EditArgs {
     reason = "a switch per flag: show and hide content, show and hide author, roll, flip"
 )]
 #[derive(Debug, Clone, PartialEq, Default, Deserialize, ArgumentGroup)]
+#[argument_group(validate)]
 #[serde(default)]
 pub struct EditFields {
     #[argument(
@@ -627,7 +629,7 @@ mod tests {
         };
         assert_eq!(
             (fields.first_given(), EditFields::default().first_given()),
-            (Some("stroke_width"), None)
+            (Some(crate::error::flag::Flag::StrokeWidth), None)
         );
     }
 }

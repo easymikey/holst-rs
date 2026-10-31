@@ -9,7 +9,7 @@ use holst_core::{
         input::InputError,
         local_data::{KeychainError, LocalDataError},
         login::LoginError,
-        lookup::{LookupError, LookupMiss},
+        lookup::{LookupError, LookupKind, LookupMiss},
         picture::PictureError,
         stored_file::StoredFileError,
     },
@@ -220,11 +220,13 @@ fn status_code(status: u16) -> u8 {
     }
 }
 
+#[expect(clippy::too_many_lines, reason = "one arm per argument error")]
 fn input_code(error: &InputError) -> u8 {
     match error {
         InputError::Several { errors: problems } => {
             problems.first().map_or(EX_DATAERR, core_code)
         }
+        InputError::InItem { error, .. } => input_code(error),
         InputError::BaseNotOrigin { .. }
         | InputError::BaseNotUrl { .. }
         | InputError::BaseNotHttps { .. }
@@ -266,7 +268,97 @@ fn input_code(error: &InputError) -> u8 {
         | InputError::ReplyNotFound { .. }
         | InputError::NotCommandArguments(_)
         | InputError::ImportBoardLeft { .. }
-        | InputError::CoverChanged => EX_USAGE,
+        | InputError::CoverChanged
+        | InputError::Conflict { .. }
+        | InputError::Requires { .. }
+        | InputError::OneOf { .. }
+        | InputError::NotFor { .. }
+        | InputError::Blank { .. }
+        | InputError::NoHomeDirectory { .. }
+        | InputError::NoEarlierItem { .. }
+        | InputError::NotKind { .. }
+        | InputError::NotAlignSide { .. }
+        | InputError::NotForSeveralObjects { .. }
+        | InputError::ArrowEndLeftOut { .. }
+        | InputError::NotCopyable { .. }
+        | InputError::FileStaysOnBoard { .. }
+        | InputError::NotRight { .. }
+        | InputError::NotProvider { .. }
+        | InputError::NotOutput
+        | InputError::StrokeWidth
+        | InputError::Opacity
+        | InputError::RotateNotFinite
+        | InputError::ScaleNotPositive
+        | InputError::WidthNotAutoOrPositive
+        | InputError::TextSizeRange
+        | InputError::NotRowColumn { .. }
+        | InputError::NotBlock { .. }
+        | InputError::CellNeedsTextOrColor
+        | InputError::CellTextNeedsOneCell
+        | InputError::CellTextAndColor
+        | InputError::FacesNotDie
+        | InputError::ReactionsMixed
+        | InputError::TooManyReactions { .. }
+        | InputError::NotItemNumber { .. }
+        | InputError::NotDay { .. }
+        | InputError::StartAfterDue
+        | InputError::OneTitle { .. }
+        | InputError::KanbanNone { .. }
+        | InputError::TooManyRolls { .. }
+        | InputError::PathNotPicture
+        | InputError::AssigneeNeedsMember
+        | InputError::ItemNeedsObject
+        | InputError::PathWithSeveralObjects
+        | InputError::OfflineNeedsBoardId
+        | InputError::BoardWithNamesMode
+        | InputError::KindNotNodeInNamesMode
+        | InputError::KindNotObjectInTextMode
+        | InputError::TrashWithBoardText
+        | InputError::KindNotObjectWithBoard
+        | InputError::TrashWithBoardOrObjectKind
+        | InputError::CoverNotPicture
+        | InputError::CoverNotInMemory
+        | InputError::ObjectListToStdout
+        | InputError::ImportNameNotFromFile
+        | InputError::FileNotPictureName
+        | InputError::PictureFormatNotName { .. }
+        | InputError::NoPng
+        | InputError::FolderWithView
+        | InputError::CursorUnknown
+        | InputError::SeveralBoards { .. }
+        | InputError::NoteFormatWithoutNote
+        | InputError::CategoryWithoutStandardView
+        | InputError::OthersReply
+        | InputError::AtNotPoint
+        | InputError::TimeNotIso
+        | InputError::WrongObject { .. }
+        | InputError::NotATitle { .. }
+        | InputError::UnknownStatus { .. }
+        | InputError::NotItemRef { .. }
+        | InputError::ItemNotFrame { .. }
+        | InputError::ArrowEndIsArrow { .. }
+        | InputError::NotAmong { .. }
+        | InputError::NotAmongNumbers { .. }
+        | InputError::Below { .. }
+        | InputError::TooFew { .. }
+        | InputError::ValueCount { .. }
+        | InputError::LabelTooLong { .. }
+        | InputError::NotWhole { .. }
+        | InputError::TooManyCells { .. }
+        | InputError::NotADay { .. }
+        | InputError::NotBefore { .. }
+        | InputError::NotIconName { .. }
+        | InputError::NotSquare { .. }
+        | InputError::NotStackSize { .. }
+        | InputError::OneValue { .. }
+        | InputError::NotFile { .. }
+        | InputError::NotPicture { .. }
+        | InputError::NoPagesCounted { .. }
+        | InputError::NoValidPages { .. }
+        | InputError::NotAPageFile { .. }
+        | InputError::NotPages { .. }
+        | InputError::TooManyPages { .. }
+        | InputError::FileHasNoBox { .. } => EX_USAGE,
     }
 }
 
@@ -319,6 +411,7 @@ fn keychain_code(error: &KeychainError) -> u8 {
 
 fn lookup_code(error: &LookupError) -> u8 {
     match error.miss {
+        LookupMiss::NotFound { .. } if error.kind == LookupKind::Member => EX_USAGE,
         LookupMiss::NotFound { .. } | LookupMiss::Elsewhere { .. } => EX_NOINPUT,
         LookupMiss::Ambiguous { .. } | LookupMiss::Uncertain { .. } => EX_USAGE,
     }

@@ -42,6 +42,8 @@ pub enum LookupKind {
     Backup,
     #[display("comment thread")]
     Thread,
+    #[display("workspace member")]
+    Member,
 }
 
 impl LookupKind {
@@ -59,6 +61,7 @@ impl LookupKind {
             LookupKind::Frame => "frames",
             LookupKind::Backup => "backups",
             LookupKind::Thread => "comment threads",
+            LookupKind::Member => "workspace members",
         }
     }
 
@@ -75,7 +78,8 @@ impl LookupKind {
             | LookupKind::Workspace
             | LookupKind::TemplateCategory
             | LookupKind::Template
-            | LookupKind::Backup => "",
+            | LookupKind::Backup
+            | LookupKind::Member => "",
         }
     }
 }
@@ -343,7 +347,8 @@ impl LookupError {
                 LookupKind::Workspace
                 | LookupKind::TemplateCategory
                 | LookupKind::Thread
-                | LookupKind::Template,
+                | LookupKind::Template
+                | LookupKind::Member,
             ) => None,
             (LookupMiss::Ambiguous { .. }, LookupKind::Board | LookupKind::Node)
             | (LookupMiss::Uncertain { .. }, _) => Some(Hint::NarrowDown),
@@ -355,7 +360,8 @@ impl LookupError {
                 | LookupKind::Workspace
                 | LookupKind::TemplateCategory
                 | LookupKind::Thread
-                | LookupKind::Template,
+                | LookupKind::Template
+                | LookupKind::Member,
             ) => Some(Hint::ChooseId),
         }
     }
@@ -541,6 +547,7 @@ mod tests {
                     | LookupKind::TemplateCategory
                     | LookupKind::Thread
                     | LookupKind::Template
+                    | LookupKind::Member
             ) && text.contains("not found")),
             "{silent:?}"
         );

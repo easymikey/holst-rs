@@ -11,6 +11,7 @@ use serde_json::{Map, Value, json};
 use crate::{
     command::{
         auth::{LogoutMode, StatusArgs, StatusPart},
+        board::Caching,
         storage::CleanArgs,
         table::{
             Argument,
@@ -22,12 +23,13 @@ use crate::{
             EnumArgument,
             GroupTools,
             Items,
+            Validate,
             ValueKind,
             parse,
         },
     },
     effect::board_write::WriteMode,
-    error::hint::Surface,
+    error::{Error, flag::Flag, hint::Surface, input::InputError},
     fake::assert_none,
 };
 
@@ -73,7 +75,7 @@ struct KindProbe {
     #[argument(help = "The kind", subcommand)]
     kind: Option<Pick>,
     #[argument(help = "Only a shape", kinds = [shape])]
-    outline: Option<String>,
+    radius: Option<String>,
     #[argument(help = "Many in one")]
     #[serde(default)]
     items: Items<Value>,
@@ -225,20 +227,20 @@ fn a_dry_run_field_gives_the_mode() -> crate::Result<()> {
 #[case::wrong_json_type(
     json!({ "name": 1, "local_only": "yes" }),
     &[
-        "name of `auth probe` must be text",
-        "local_only of `auth probe` must be true or false",
+        "`--name` must be text",
+        "`--local-only` must be true or false",
     ]
 )]
 #[case::value_not_a_choice(
     json!({ "name": "x", "with": ["tokens", "cookies"] }),
-    &["with of `auth probe` must be a list, each one of sessions, tokens"]
+    &["`--with` must be a list, each one of sessions, tokens"]
 )]
 #[case::all_at_once(
     json!({ "with": "tokens", "cover": true }),
     &[
         "\"cover\" is not an argument of `auth probe`: it takes name, with, local_only",
         "name is required by `auth probe`",
-        "with of `auth probe` must be a list, each one of sessions, tokens",
+        "`--with` must be a list, each one of sessions, tokens",
     ]
 )]
 fn wrong_arguments_are_reported_in_our_words(
@@ -268,7 +270,7 @@ fn items_are_a_list_of_objects() -> crate::Result<()> {
         .map(|error| error.to_string());
     assert_eq!(
         wrong.as_deref(),
-        Some("items of `object probe` must be a list of objects, one per call")
+        Some("`--items` must be a list of objects, one per call")
     );
     Ok(())
 }
@@ -276,24 +278,24 @@ fn items_are_a_list_of_objects() -> crate::Result<()> {
 #[test]
 fn an_argument_for_one_kind_is_refused_for_another() -> crate::Result<()> {
     let shape: KindProbe =
-        parse(arguments(&json!({ "kind": "shape", "outline": "x" })))?;
-    let unsaid: KindProbe = parse(arguments(&json!({ "outline": "x" })))?;
+        parse(arguments(&json!({ "kind": "shape", "radius": "x" })))?;
+    let unsaid: KindProbe = parse(arguments(&json!({ "radius": "x" })))?;
     assert_eq!(
         (
-            shape.outline.as_deref(),
-            unsaid.outline.as_deref(),
+            shape.radius.as_deref(),
+            unsaid.radius.as_deref(),
             unsaid.kind.is_none()
         ),
         (Some("x"), Some("x"), true)
     );
     let refused =
-        parse::<KindProbe>(arguments(&json!({ "kind": "sticker", "outline": "x" })))
+        parse::<KindProbe>(arguments(&json!({ "kind": "sticker", "radius": "x" })))
             .err()
             .map(|error| error.to_string());
     assert_eq!(
         refused.as_deref(),
         Some(
-            "\"outline\" is not an argument of `object probe sticker`: it takes kind, items"
+            "\"radius\" is not an argument of `object probe sticker`: it takes kind, items"
         )
     );
     Ok(())
@@ -593,4 +595,90 @@ fn a_command_is_on_both_surfaces_unless_marked_with_a_reason() {
         });
     let offenders: Vec<String> = unmarked.chain(stale).collect();
     assert_none("a surface", &offenders);
+}
+
+#[derive(Debug, Deserialize, CommandArgs)]
+#[holst_command(
+    group = Auth,
+    verb = "checked",
+    risk = Read,
+    about = "Check the parse",
+    help = "Refuses a name with a color.",
+    validate
+)]
+struct CheckedArgs {
+    #[argument(help = "A name")]
+    name: Option<String>,
+    #[argument(help = "A color")]
+    color: Option<String>,
+}
+
+impl Validate for CheckedArgs {
+    fn validate(&self) -> Result<(), InputError> {
+        match (&self.name, &self.color) {
+            (Some(_), Some(_)) => Err(InputError::Conflict {
+                flag: Flag::Name,
+                other: Flag::Color,
+            }),
+            _ => Ok(()),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, CommandArgs)]
+#[holst_command(
+    group = Auth,
+    verb = "cached",
+    risk = Read,
+    about = "Check the group",
+    help = "Takes the caching flags."
+)]
+struct CachedArgs {
+    #[serde(flatten)]
+    #[argument(flatten)]
+    caching: Caching,
+}
+
+#[test]
+fn parse_runs_the_validate_of_a_command_that_writes_its_own() {
+    let refused =
+        parse::<CheckedArgs>(arguments(&json!({ "name": "x", "color": "y" })));
+    let allowed = parse::<CheckedArgs>(arguments(&json!({ "name": "x" })));
+    assert!(matches!(
+        (refused, allowed),
+        (
+            Err(Error::Input(InputError::Conflict {
+                flag: Flag::Name,
+                other: Flag::Color
+            })),
+            Ok(_)
+        )
+    ));
+}
+
+#[test]
+fn parse_runs_the_validate_of_a_flattened_group() {
+    let refused =
+        parse::<CachedArgs>(arguments(&json!({ "refresh": true, "offline": true })))
+            .err()
+            .map(|error| error.to_string());
+    assert_eq!(
+        refused.as_deref(),
+        Some("`--offline` cannot be used with `--refresh`")
+    );
+}
+
+#[test]
+fn an_item_that_fails_validate_is_named_by_its_place() {
+    struct Entry(bool);
+    impl Validate for Entry {
+        fn validate(&self) -> Result<(), InputError> {
+            self.0.then_some(()).ok_or(InputError::RelativePath)
+        }
+    }
+    let items = Items(vec![Entry(true), Entry(false), Entry(true)]);
+    assert_eq!(
+        items.validate().err().map(|error| error.to_string()),
+        Some(format!("{}, in item 2", InputError::RelativePath))
+    );
 }

@@ -16,10 +16,10 @@ use crate::{
             AddFields,
             AddItem,
             AddKind,
+            add_check::rich_kind,
             change::{load_board_read, refuse_hiding},
         },
         stored_file::download,
-        table::{ArgumentGroup as _, not_value},
     },
     domain::{
         area::scene::Scene,
@@ -77,6 +77,7 @@ use crate::{
         Error,
         Result,
         board_change::BoardChangeError,
+        flag::Flag,
         http::HttpError,
         input::InputError,
     },
@@ -403,14 +404,19 @@ fn cell_of(
     let holder = scene
         .get(&id)
         .filter(|object| kanban::is_kanban(object))
-        .ok_or_else(|| not_value(COMMAND, "kanban", "a kanban"))?;
+        .ok_or_else(|| {
+            Error::from(InputError::WrongObject {
+                flag: Flag::Kanban,
+                wanted: "a kanban",
+            })
+        })?;
     let column = titled(
-        "column",
+        Flag::Column,
         ask.column.as_deref(),
         &kanban::columns(document, holder),
     )?;
     let swimlane = titled(
-        "swimlane",
+        Flag::Swimlane,
         ask.swimlane.as_deref(),
         &kanban::swimlanes(document, holder),
     )?;
@@ -449,7 +455,7 @@ fn cell_of(
 
 /// Id of the cell `given` titles, ignoring case; the first if none is given.
 fn titled(
-    name: &'static str,
+    flag: Flag,
     given: Option<&str>,
     cells: &[(String, String)],
 ) -> Result<String> {
@@ -462,18 +468,18 @@ fn titled(
         },
     );
     found.map(|(id, _)| id.clone()).ok_or_else(|| {
-        let titles: Vec<&str> = cells.iter().map(|(_, known)| known.as_str()).collect();
-        not_value(COMMAND, name, &format!("one of {}", titles.join(", ")))
+        Error::from(InputError::NotATitle {
+            flag,
+            titles: cells.iter().map(|(_, known)| known.clone()).collect(),
+        })
     })
 }
 
 fn unknown_status() -> Error {
-    let ids = task::STATUSES.map(|(id, _)| id).join(", ");
-    not_value(
-        COMMAND,
-        "status",
-        &format!("one of {ids}, or the title of a status of the board"),
-    )
+    Error::from(InputError::UnknownStatus {
+        flag: Flag::Status,
+        ids: task::STATUSES.map(|(id, _)| id).to_vec(),
+    })
 }
 
 /// A card for each link whose page gave no preview.
@@ -629,21 +635,7 @@ fn fitted(pixels: Size) -> Result<Size> {
 fn read_items(args: &AddArgs, ids: &dyn Fn() -> String) -> Result<Vec<Item>> {
     let kind = args.kind.unwrap_or_default();
     let listed = args.items.as_ref().map(|items| items.0.as_slice());
-    match listed {
-        Some([]) => Err(not_value(
-            COMMAND,
-            "items",
-            "a list of at least one object: --items holds no objects",
-        )),
-        _ => Ok(()),
-    }?;
     let many = listed.is_some();
-    args.add
-        .first_given()
-        .filter(|_| many)
-        .map_or(Ok(()), |name| {
-            Err(not_value(COMMAND, name, "left out with --items"))
-        })?;
     let own = [AddItem {
         kind: None,
         frame: None,
@@ -667,85 +659,6 @@ fn read_items(args: &AddArgs, ids: &dyn Fn() -> String) -> Result<Vec<Item>> {
         })
 }
 
-impl AddFields {
-    /// The keys only a code block takes, each with whether it is given.
-    fn code_keys(&self) -> [(&'static str, bool); 2] {
-        [
-            ("language", self.language.is_some()),
-            ("theme", self.theme.is_some()),
-        ]
-    }
-
-    /// The keys only a table takes, each with whether it is given.
-    fn table_keys(&self) -> [(&'static str, bool); 2] {
-        [
-            ("rows", self.rows.is_some()),
-            ("columns", self.columns.is_some()),
-        ]
-    }
-
-    /// The keys only an arrow takes, each with whether it is given.
-    fn arrow_keys(&self) -> [(&'static str, bool); 6] {
-        [
-            ("from", self.from.is_some()),
-            ("to", self.to.is_some()),
-            ("line", self.line.is_some()),
-            ("heads", self.heads.is_some()),
-            ("stroke_style", self.stroke_style.is_some()),
-            ("label", !self.label.is_empty()),
-        ]
-    }
-
-    /// The keys only a drawing takes, each with whether it is given.
-    fn drawing_keys(&self) -> [(&'static str, bool); 2] {
-        [
-            ("point", self.point.is_some()),
-            ("highlighter", self.highlighter),
-        ]
-    }
-
-    /// The keys only a reaction stamp takes, each with whether it is given.
-    fn reaction_keys(&self) -> [(&'static str, bool); 2] {
-        [
-            ("on", self.on.is_some()),
-            ("reaction", !self.reaction.is_empty()),
-        ]
-    }
-
-    /// The keys only an icon takes, each with whether it is given.
-    fn icon_keys(&self) -> [(&'static str, bool); 1] {
-        [("weight", self.weight.is_some())]
-    }
-
-    /// The keys only a task takes, each with whether it is given.
-    fn task_keys(&self) -> [(&'static str, bool); 5] {
-        [
-            ("description", self.description.is_some()),
-            ("status", self.status.is_some()),
-            ("start", self.start.is_some()),
-            ("due", self.due.is_some()),
-            ("kanban", self.kanban.is_some()),
-        ]
-    }
-
-    /// The keys only a kanban takes, each with whether it is given.
-    fn kanban_keys(&self) -> [(&'static str, bool); 2] {
-        [
-            ("column", !self.column.is_empty()),
-            ("swimlane", !self.swimlane.is_empty()),
-        ]
-    }
-
-    /// The keys only a frame takes, each with whether it is given.
-    fn frame_keys(&self) -> [(&'static str, bool); 3] {
-        [
-            ("ratio", self.ratio.is_some()),
-            ("background", self.background.is_some()),
-            ("hide_content", self.hide_content),
-        ]
-    }
-}
-
 /// Reads the values of one item, which is the `slot`-th of `--items` if `many`.
 struct Reader<'a> {
     many: bool,
@@ -756,90 +669,22 @@ struct Reader<'a> {
 }
 
 impl Reader<'_> {
-    fn bad(&self, name: &'static str, expected: &str) -> Error {
-        let place = self.many.then(|| format!(", in item {}", self.slot + 1));
-        not_value(
-            COMMAND,
-            name,
-            &format!("{expected}{}", place.unwrap_or_default()),
-        )
-    }
-
-    /// Whether the kind holds rich text; markdown for another kind alone is
-    /// refused.
-    fn rich(&self, kind: AddKind, word: &str) -> Result<bool> {
-        let rich = matches!(
-            kind,
-            AddKind::Sticker
-                | AddKind::Text
-                | AddKind::Shape
-                | AddKind::MindMap
-                | AddKind::Document
-        );
-        match (rich, self.many, self.format) {
-            (false, false, TextFormat::Markdown) => {
-                Err(self.bad("text_format", &format!("left out for {word}")))
-            }
-            _ => Ok(rich),
-        }
-    }
-
-    /// Refuses the first given key of `keys`, which only the `owner` kind
-    /// takes.
-    fn refuse_foreign(
-        &self,
-        kind: AddKind,
-        owner: AddKind,
-        keys: &[(&'static str, bool)],
-    ) -> Result<()> {
-        keys.iter()
-            .find(|(_, given)| *given)
-            .filter(|_| kind != owner)
-            .map_or(Ok(()), |(name, _)| {
-                Err(self.bad(name, &format!("left out for {}", word(kind))))
-            })
-    }
-
-    /// Refuses the first key a parent or direction breaks: another kind, a
-    /// corner or frame by a parent, a direction without one.
-    fn refuse_node_keys(
-        &self,
-        kind: AddKind,
-        fields: &AddFields,
-        framed: bool,
-    ) -> Result<()> {
-        let node = kind == AddKind::MindMap;
-        let hanging = node && fields.parent.is_some();
-        let foreign = format!("left out for {}", word(kind));
-        [
-            ("parent", !node && fields.parent.is_some(), foreign.as_str()),
-            (
-                "direction",
-                !node && fields.direction.is_some(),
-                foreign.as_str(),
-            ),
-            ("at", hanging && fields.at.is_some(), "left out with parent"),
-            ("frame", hanging && framed, "left out with parent"),
-            (
-                "direction",
-                node && !hanging && fields.direction.is_some(),
-                "left out without parent",
-            ),
-        ]
-        .into_iter()
-        .find(|(_, given, _)| *given)
-        .map_or(Ok(()), |(name, _, why)| Err(self.bad(name, why)))
+    /// `error` as this item raises it: with its number when there are many.
+    fn fail(&self, error: InputError) -> Error {
+        Error::from(match self.many.then_some(self.slot + 1) {
+            Some(slot) => InputError::InItem {
+                slot,
+                error: Box::new(error),
+            },
+            None => error,
+        })
     }
 
     fn missing(&self, name: &'static str) -> Error {
-        if self.many {
-            self.bad(name, "given")
-        } else {
-            Error::from(InputError::NoArgument {
-                command: COMMAND.to_owned(),
-                name,
-            })
-        }
+        self.fail(InputError::NoArgument {
+            command: COMMAND.to_owned(),
+            name,
+        })
     }
 
     fn item(
@@ -851,8 +696,7 @@ impl Reader<'_> {
     ) -> Result<Item> {
         let kind = item.kind.unwrap_or(kind);
         let fields = &item.add;
-        self.refuse_misplaced(kind, item, frame)?;
-        let rich = self.rich(kind, word(kind))?;
+        let rich = rich_kind(kind);
         let at = fields.at.as_deref().map(str::parse).transpose()?;
         let size = fields.size.as_deref().map(str::parse).transpose()?;
         let color: Option<Color> = fields
@@ -881,8 +725,8 @@ impl Reader<'_> {
             },
             AddKind::Frame => frame_of(fields, (at, size))?,
             AddKind::Arrow => What::Arrow {
-                from: self.end("from", fields.from.as_deref(), earlier)?,
-                to: self.end("to", fields.to.as_deref(), earlier)?,
+                from: self.end(Flag::From, fields.from.as_deref(), earlier)?,
+                to: self.end(Flag::To, fields.to.as_deref(), earlier)?,
                 look: arrow_look(fields)?,
             },
             AddKind::Link => What::Link {
@@ -892,18 +736,18 @@ impl Reader<'_> {
             },
             AddKind::Image => self.image(fields.path.as_deref(), at, size)?,
             AddKind::File => self.file(fields.path.as_deref(), at)?,
-            AddKind::Dice => self.die(fields.faces, color.as_ref(), at)?,
+            AddKind::Dice => die(fields.faces, color.as_ref(), at),
             AddKind::StickerStack => self.stack(fields, size, color.as_ref(), at)?,
             AddKind::Flipcard => self.card(fields, color.as_ref(), at)?,
             AddKind::Document => self.document(fields, color.as_ref(), at)?,
-            AddKind::Wheel => self.wheel(&fields.choice, at)?,
+            AddKind::Wheel => self.wheel(&fields.choice, at),
             AddKind::Stamp => self.stamp(fields.text.as_deref(), at)?,
             AddKind::Code => self.code(fields, at)?,
-            AddKind::Table => self.table(fields, at)?,
-            AddKind::ReactionStamp => self.reaction_stamp(item, frame, at)?,
+            AddKind::Table => table_of(fields, at),
+            AddKind::ReactionStamp => self.reaction_stamp(fields, at),
             AddKind::Icon => self.icon(fields, size, color.as_ref(), at)?,
             AddKind::Task => self.task(fields, at)?,
-            AddKind::Drawing => self.drawing(fields, color.as_ref())?,
+            AddKind::Drawing => drawing(fields, color.as_ref())?,
             AddKind::Kanban => What::Made {
                 made: kanban::made(&fields.column, &fields.swimlane, self.ids),
                 at,
@@ -929,122 +773,27 @@ impl Reader<'_> {
 
     /// Refuses a frame `#N` that is not an earlier frame of the list.
     fn refuse_frame_slot(&self, frame: Option<&str>, earlier: &[Item]) -> Result<()> {
-        frame
-            .filter(|reference| reference.starts_with('#'))
-            .filter(|reference| {
-                !slot_of(reference)
-                    .and_then(|slot| earlier.get(slot))
-                    .is_some_and(|before| matches!(before.what, What::Frame { .. }))
-            })
-            .map_or(Ok(()), |_| Err(self.bad("frame", "#N of an earlier frame")))
-    }
-
-    /// Refuses each key given for a kind that does not take it.
-    fn refuse_misplaced(
-        &self,
-        kind: AddKind,
-        item: &AddItem,
-        frame: Option<&str>,
-    ) -> Result<()> {
-        let fields = &item.add;
-        let word = word(kind);
-        let refuse = |name: &'static str, given: bool| {
-            given
-                .then(|| self.bad(name, &format!("left out for {word}")))
-                .map_or(Ok(()), Err)
-        };
-        let arrow = kind == AddKind::Arrow;
-        let drawing = kind == AddKind::Drawing;
-        self.refuse_foreign(kind, AddKind::Arrow, &fields.arrow_keys())?;
-        self.refuse_foreign(kind, AddKind::Drawing, &fields.drawing_keys())?;
-        refuse(
-            "stroke_width",
-            !(arrow || drawing) && fields.stroke_width.is_some(),
-        )?;
-        let linked = kind == AddKind::Link;
-        let uploaded = matches!(kind, AddKind::Image | AddKind::File);
-        let wheel = kind == AddKind::Wheel;
-        refuse("text", textless(kind) && fields.text.is_some())?;
-        refuse("faces", kind != AddKind::Dice && fields.faces.is_some())?;
-        refuse("choice", !wheel && !fields.choice.is_empty())?;
-        refuse("back", kind != AddKind::Flipcard && fields.back.is_some())?;
-        self.refuse_node_keys(kind, fields, item.frame.is_some() || frame.is_some())?;
-        refuse("at", (arrow || drawing) && fields.at.is_some())?;
-        refuse("size", sizeless(kind) && fields.size.is_some())?;
-        refuse("shape", kind != AddKind::Shape && fields.shape.is_some())?;
-        refuse("color", colourless(kind) && fields.color.is_some())?;
-        refuse("url", !linked && fields.url.is_some())?;
-        refuse("path", !uploaded && fields.path.is_some())?;
-        refuse("no_preview", !linked && fields.no_preview)?;
-        self.refuse_foreign(kind, AddKind::Frame, &fields.frame_keys())?;
-        self.refuse_foreign(kind, AddKind::Code, &fields.code_keys())?;
-        self.refuse_foreign(kind, AddKind::Table, &fields.table_keys())?;
-        self.refuse_foreign(kind, AddKind::ReactionStamp, &fields.reaction_keys())?;
-        self.refuse_foreign(kind, AddKind::Icon, &fields.icon_keys())?;
-        self.refuse_foreign(kind, AddKind::Task, &fields.task_keys())?;
-        // A task takes the keys of a kanban's cells, for the cell it goes into.
-        let cell_keys = fields
-            .kanban_keys()
-            .map(|(name, given)| (name, given && kind != AddKind::Task));
-        self.refuse_foreign(kind, AddKind::Kanban, &cell_keys)?;
-        [
-            ("at", fields.at.is_some()),
-            ("frame", item.frame.is_some() || frame.is_some()),
-        ]
-        .into_iter()
-        .find(|(_, given)| *given && fields.kanban.is_some())
-        .map_or(Ok(()), |(name, _)| {
-            Err(self.bad(name, "left out with kanban"))
-        })?;
-        Ok(())
-    }
-
-    /// Stroke through the points, with pen or highlighter defaults; the color
-    /// is a palette token written as its RGB number.
-    fn drawing(&self, fields: &AddFields, color: Option<&Color>) -> Result<What> {
-        let points = fields
-            .point
-            .iter()
-            .flat_map(|given| &given.0)
-            .map(|raw| raw.parse())
-            .collect::<Result<Vec<Point>>>()?;
-        (points.len() >= 2).then_some(()).ok_or_else(|| {
-            self.bad(
-                "point",
-                "at least 2 points, e.g. --point 10,20 --point 120,80",
-            )
-        })?;
-        let (width, rgb, alpha) = [PEN, HIGHLIGHTER]
-            .get(usize::from(fields.highlighter))
-            .copied()
-            .unwrap_or(PEN);
-        let width = fields.stroke_width.unwrap_or(width);
-        ((1.0..=30.0).contains(&width) && (width - width.round()).abs() < f64::EPSILON)
-            .then_some(())
-            .ok_or_else(|| self.bad("stroke_width", "a whole number from 1 to 30"))?;
-        let color = color
-            .and_then(|token| palette::hex(token.as_str()))
-            .and_then(|hex| u32::from_str_radix(hex.trim_start_matches('#'), 16).ok())
-            .unwrap_or(rgb);
-        Ok(What::Drawing(NewObject::Drawing {
-            points,
-            color,
-            width,
-            alpha,
-        }))
-    }
-
-    /// The faces asked for, or the default, which the web client offers.
-    fn die(
-        &self,
-        faces: Option<u32>,
-        color: Option<&Color>,
-        at: Option<Point>,
-    ) -> Result<What> {
-        Ok(What::Made {
-            made: dice::made(self.faces(faces)?, color),
-            at,
-        })
+        frame.filter(|reference| reference.starts_with('#')).map_or(
+            Ok(()),
+            |reference| match slot_of(reference)
+                .map(|index| (index, earlier.get(index)))
+            {
+                Some((
+                    _,
+                    Some(Item {
+                        what: What::Frame { .. },
+                        ..
+                    }),
+                )) => Ok(()),
+                Some((index, Some(_))) => Err(self.fail(InputError::ItemNotFrame {
+                    flag: Flag::Frame,
+                    slot: index + 1,
+                })),
+                Some((_, None)) | None => {
+                    Err(self.fail(no_earlier(Flag::Frame, reference)))
+                }
+            },
+        )
     }
 
     fn stamp(&self, text: Option<&str>, at: Option<Point>) -> Result<What> {
@@ -1056,32 +805,16 @@ impl Reader<'_> {
     }
 
     /// A reaction stamp tilted by a draw, stuck to `on` when given.
-    fn reaction_stamp(
-        &self,
-        item: &AddItem,
-        frame: Option<&str>,
-        at: Option<Point>,
-    ) -> Result<What> {
-        let fields = &item.add;
-        let key = self.reaction_key(&fields.reaction)?;
+    fn reaction_stamp(&self, fields: &AddFields, at: Option<Point>) -> What {
+        let key = fields
+            .reaction
+            .first()
+            .map_or(reaction_stamp::DEFAULT_KEY, String::as_str);
         let draw = f64::from(author_number(&(self.ids)(), 0)) / f64::from(DRAWS);
         let made = reaction_stamp::made(key, draw);
         match fields.on.clone() {
-            Some(_) if item.frame.is_some() || frame.is_some() => {
-                Err(self.bad("frame", "left out with on"))
-            }
-            Some(on) => Ok(What::Stuck { made, on, at }),
-            None => Ok(What::Made { made, at }),
-        }
-    }
-
-    /// The stamp asked for or the default, from those the web client offers.
-    fn reaction_key<'k>(&self, given: &'k [String]) -> Result<&'k str> {
-        match given {
-            [] => Ok(reaction_stamp::DEFAULT_KEY),
-            [key] if reaction_stamp::KEYS.contains(&key.as_str()) => Ok(key),
-            [_] => Err(self.bad("reaction", &one_of(&reaction_stamp::KEYS))),
-            _ => Err(self.bad("reaction", "one key")),
+            Some(on) => What::Stuck { made, on, at },
+            None => What::Made { made, at },
         }
     }
 
@@ -1094,21 +827,20 @@ impl Reader<'_> {
         at: Option<Point>,
     ) -> Result<What> {
         let name = fields.text.as_deref().ok_or_else(|| self.missing("text"))?;
-        icon::is_name(name).then_some(()).ok_or_else(|| {
-            self.bad(
-                "text",
-                "lower-case letters, digits and dashes, e.g. rocket-launch",
-            )
-        })?;
         color
             .filter(|color| !icon::COLORS.contains(&color.as_str()))
-            .map_or(Ok(()), |_| Err(self.bad("color", &one_of(&icon::COLORS))))?;
+            .map_or(Ok(()), |_| {
+                Err(self.fail(InputError::NotAmong {
+                    flag: Flag::Color,
+                    allowed: icon::COLORS.to_vec(),
+                }))
+            })?;
         let edge = size.map_or(Ok(icon::DEFAULT_SIDE), |given| {
             Size::new(given.width(), given.width())
                 .ok()
                 .filter(|square| *square == given)
                 .map(|_| given.width())
-                .ok_or_else(|| self.bad("size", "square, e.g. 48,48"))
+                .ok_or_else(|| self.fail(InputError::NotSquare { flag: Flag::Size }))
         })?;
         Ok(What::Made {
             made: icon::made(name, fields.weight.unwrap_or_default(), color, edge),
@@ -1116,19 +848,11 @@ impl Reader<'_> {
         })
     }
 
-    fn wheel(&self, choices: &[String], at: Option<Point>) -> Result<What> {
-        Ok(What::Made {
-            made: wheel::made(self.choices(choices)?, self.ids),
+    fn wheel(&self, choices: &[String], at: Option<Point>) -> What {
+        What::Made {
+            made: wheel::made(choices, self.ids),
             at,
-        })
-    }
-
-    fn faces(&self, given: Option<u32>) -> Result<u32> {
-        let faces = given.unwrap_or(dice::DEFAULT_FACES);
-        dice::FACES
-            .contains(&faces)
-            .then_some(faces)
-            .ok_or_else(|| self.bad("faces", "one of 2, 4, 6, 8, 10, 12 or 20"))
+        }
     }
 
     /// A flip card of the text and the back the call gives.
@@ -1157,8 +881,10 @@ impl Reader<'_> {
         color
             .filter(|color| !document::COLORS.contains(&color.as_str()))
             .map_or(Ok(()), |_| {
-                Err(self
-                    .bad("color", &format!("one of {}", document::COLORS.join(", "))))
+                Err(self.fail(InputError::NotAmong {
+                    flag: Flag::Color,
+                    allowed: document::COLORS.to_vec(),
+                }))
             })?;
         Ok(What::Made {
             made: document::made(text, color),
@@ -1169,9 +895,6 @@ impl Reader<'_> {
     /// A code block of the text, in the language and theme the call gives.
     fn code(&self, fields: &AddFields, at: Option<Point>) -> Result<What> {
         let text = fields.text.as_deref().ok_or_else(|| self.missing("text"))?;
-        fields.color.as_ref().map_or(Ok(()), |_| {
-            Err(self.bad("color", "left out for a code block"))
-        })?;
         Ok(What::Made {
             made: code::made(text, fields.language, fields.theme.unwrap_or_default()),
             at,
@@ -1182,31 +905,35 @@ impl Reader<'_> {
     /// a start after the due day is refused.
     fn task(&self, fields: &AddFields, at: Option<Point>) -> Result<What> {
         let title = fields.text.as_deref().ok_or_else(|| self.missing("text"))?;
-        let day = |name: &'static str, given: Option<&str>| {
+        let day = |flag: Flag, given: Option<&str>| {
             given
                 .map(|raw| {
                     raw.parse::<Day>()
-                        .map_err(|expected| self.bad(name, &expected.to_string()))
+                        .map_err(|_| self.fail(InputError::NotADay { flag }))
                 })
                 .transpose()
         };
-        let start = day("start", fields.start.as_deref())?;
-        let due = day("due", fields.due.as_deref())?;
+        let start = day(Flag::Start, fields.start.as_deref())?;
+        let due = day(Flag::Due, fields.due.as_deref())?;
         start
             .iter()
             .zip(&due)
             .find(|(start, due)| start > due)
             .map_or(Ok(()), |_| {
-                Err(self.bad("start", "on or before the due day"))
+                Err(self.fail(InputError::NotBefore {
+                    flag: Flag::Start,
+                    other: Flag::Due,
+                }))
             })?;
-        let ask = self.ask(fields)?;
         let color = fields
             .color
             .as_deref()
             .map(|name| {
                 task::tint(name).ok_or_else(|| {
-                    let names = task::COLORS.map(|(known, _)| known);
-                    self.bad("color", &format!("one of {}", names.join(", ")))
+                    self.fail(InputError::NotAmong {
+                        flag: Flag::Color,
+                        allowed: task::COLORS.map(|(known, _)| known).to_vec(),
+                    })
                 })
             })
             .transpose()?;
@@ -1219,56 +946,9 @@ impl Reader<'_> {
                 (self.ids)(),
             ),
             status: fields.status.clone(),
-            ask,
+            ask: ask(fields),
             at,
         })
-    }
-
-    /// The kanban cell a task names: one title each, and only with a kanban.
-    fn ask(&self, fields: &AddFields) -> Result<Option<Ask>> {
-        let one = |name: &'static str, given: &[String]| match given {
-            [] => Ok(None),
-            [title] => Ok(Some(title.clone())),
-            _ => Err(self.bad(name, "one title for a task")),
-        };
-        let (column, swimlane) = (
-            one("column", &fields.column)?,
-            one("swimlane", &fields.swimlane)?,
-        );
-        [
-            ("column", column.is_some()),
-            ("swimlane", swimlane.is_some()),
-        ]
-        .into_iter()
-        .find(|(_, given)| *given && fields.kanban.is_none())
-        .map_or(Ok(()), |(name, _)| {
-            Err(self.bad(name, "left out without kanban"))
-        })?;
-        Ok(fields.kanban.clone().map(|kanban| Ask {
-            kanban,
-            column,
-            swimlane,
-        }))
-    }
-
-    /// A table of the rows and columns the call gives, within the cell limit.
-    fn table(&self, fields: &AddFields, at: Option<Point>) -> Result<What> {
-        let count = |name: &'static str, given: Option<u32>, default: u32| match given {
-            Some(0) => Err(self.bad(name, "at least 1")),
-            _ => Ok(given.unwrap_or(default)),
-        };
-        let rows = count("rows", fields.rows, table::DEFAULT_ROWS)?;
-        let columns = count("columns", fields.columns, table::DEFAULT_COLUMNS)?;
-        match rows.saturating_mul(columns) {
-            cells if cells > table::CELL_LIMIT => Err(self.bad(
-                "rows",
-                &format!("at most {} cells with the columns", table::CELL_LIMIT),
-            )),
-            _ => Ok(What::Made {
-                made: table::made(rows, columns),
-                at,
-            }),
-        }
     }
 
     /// A sticker stack titled by the text, of one of the two widths.
@@ -1296,33 +976,7 @@ impl Reader<'_> {
             .contains(&size.width())
             .then_some(size)
             .filter(|size| size.height() == sticker_stack::HEIGHT_OF)
-            .ok_or_else(|| self.bad("size", "192,192 or 384,192"))
-    }
-
-    /// The choices of a wheel: how many and how long the web client takes.
-    fn choices<'c>(&self, given: &'c [String]) -> Result<&'c [String]> {
-        match given {
-            _ if !(wheel::MIN_CHOICES..=wheel::MAX_CHOICES).contains(&given.len()) => {
-                Err(self.bad(
-                    "choice",
-                    &format!(
-                        "{} to {} choices",
-                        wheel::MIN_CHOICES,
-                        wheel::MAX_CHOICES
-                    ),
-                ))
-            }
-            _ if given
-                .iter()
-                .any(|label| label.chars().count() > wheel::MAX_LABEL) =>
-            {
-                Err(self.bad(
-                    "choice",
-                    &format!("labels of at most {} characters", wheel::MAX_LABEL),
-                ))
-            }
-            _ => Ok(given),
-        }
+            .ok_or_else(|| self.fail(InputError::NotStackSize { flag: Flag::Size }))
     }
 
     /// An image shown at `size` or at its pixels, fitted.
@@ -1334,7 +988,7 @@ impl Reader<'_> {
     ) -> Result<What> {
         let path = path.ok_or_else(|| self.missing("path"))?;
         let (file, pixels) =
-            local_picture(path, |expected| self.bad("path", expected))?;
+            local_picture(path, |fault| self.fail(fault.input(Flag::Path)))?;
         Ok(What::Image {
             size: size.map_or_else(|| fitted(pixels), Ok)?,
             pixels,
@@ -1345,7 +999,8 @@ impl Reader<'_> {
 
     fn file(&self, path: Option<&str>, at: Option<Point>) -> Result<What> {
         let path = path.ok_or_else(|| self.missing("path"))?;
-        let (name, bytes) = read_local(path, || self.bad("path", "a file"))?;
+        let (name, bytes) =
+            read_local(path, || self.fail(Refused::NoFileName.input(Flag::Path)))?;
         Ok(What::File {
             at,
             file: Local {
@@ -1358,26 +1013,107 @@ impl Reader<'_> {
 
     /// An arrow end: an object as given, or `#N`, an earlier item that is not
     /// an arrow.
-    fn end(
-        &self,
-        name: &'static str,
-        given: Option<&str>,
-        earlier: &[Item],
-    ) -> Result<String> {
-        let end = given.ok_or_else(|| self.missing(name))?;
-        match slot_of(end).and_then(|slot| earlier.get(slot)) {
-            Some(Item {
-                what: What::Arrow { .. },
-                ..
-            }) => Err(self.bad(
-                name,
-                "an object, or #N of an earlier item that is not an arrow",
-            )),
-            None if end.starts_with('#') => Err(self.bad(
-                name,
-                "an object, or #N of an earlier item that is not an arrow",
-            )),
-            Some(_) | None => Ok(end.to_owned()),
+    fn end(&self, flag: Flag, given: Option<&str>, earlier: &[Item]) -> Result<String> {
+        let end = given.ok_or_else(|| self.missing(<&'static str>::from(flag)))?;
+        match slot_of(end).map(|index| (index, earlier.get(index))) {
+            Some((
+                index,
+                Some(Item {
+                    what: What::Arrow { .. },
+                    ..
+                }),
+            )) => Err(self.fail(InputError::ArrowEndIsArrow {
+                flag,
+                slot: index + 1,
+            })),
+            Some((_, None)) | None if end.starts_with('#') => {
+                Err(self.fail(no_earlier(flag, end)))
+            }
+            Some((_, Some(_) | None)) | None => Ok(end.to_owned()),
+        }
+    }
+}
+
+/// The faces asked for, or the default, which the web client offers.
+fn die(faces: Option<u32>, color: Option<&Color>, at: Option<Point>) -> What {
+    What::Made {
+        made: dice::made(faces.unwrap_or(dice::DEFAULT_FACES), color),
+        at,
+    }
+}
+
+/// A table of the rows and columns the call gives, or the defaults.
+fn table_of(fields: &AddFields, at: Option<Point>) -> What {
+    What::Made {
+        made: table::made(
+            fields.rows.unwrap_or(table::DEFAULT_ROWS),
+            fields.columns.unwrap_or(table::DEFAULT_COLUMNS),
+        ),
+        at,
+    }
+}
+
+/// The kanban cell a task names, by one title each.
+fn ask(fields: &AddFields) -> Option<Ask> {
+    fields.kanban.clone().map(|kanban| Ask {
+        kanban,
+        column: fields.column.first().cloned(),
+        swimlane: fields.swimlane.first().cloned(),
+    })
+}
+
+/// Stroke through the points, with pen or highlighter defaults; the color
+/// is a palette token written as its RGB number.
+fn drawing(fields: &AddFields, color: Option<&Color>) -> Result<What> {
+    let points = fields
+        .point
+        .iter()
+        .flat_map(|given| &given.0)
+        .map(|raw| raw.parse())
+        .collect::<Result<Vec<Point>>>()?;
+    let (width, rgb, alpha) = [PEN, HIGHLIGHTER]
+        .get(usize::from(fields.highlighter))
+        .copied()
+        .unwrap_or(PEN);
+    let width = fields.stroke_width.unwrap_or(width);
+    let color = color
+        .and_then(|token| palette::hex(token.as_str()))
+        .and_then(|hex| u32::from_str_radix(hex.trim_start_matches('#'), 16).ok())
+        .unwrap_or(rgb);
+    Ok(What::Drawing(NewObject::Drawing {
+        points,
+        color,
+        width,
+        alpha,
+    }))
+}
+
+/// `#N` names no earlier item: a number past the list, or no number at all.
+fn no_earlier(flag: Flag, reference: &str) -> InputError {
+    slot_of(reference).map_or_else(
+        || InputError::NotItemRef {
+            flag,
+            raw: reference.to_owned(),
+        },
+        |index| InputError::NoEarlierItem {
+            flag,
+            slot: index + 1,
+        },
+    )
+}
+
+/// Why a local path is no file or no picture.
+pub(super) enum Refused {
+    NoFileName,
+    NotPicture,
+}
+
+impl Refused {
+    /// The error for the argument `flag` that gave the path.
+    pub(super) fn input(self, flag: Flag) -> InputError {
+        match self {
+            Self::NoFileName => InputError::NotFile { flag },
+            Self::NotPicture => InputError::NotPicture { flag },
         }
     }
 }
@@ -1399,16 +1135,16 @@ fn read_local(
 /// have been when it is no file or no PNG, JPEG, GIF or WebP picture.
 pub(super) fn local_picture(
     path: &str,
-    refused: impl Fn(&str) -> Error,
+    refused: impl Fn(Refused) -> Error,
 ) -> Result<(Local, Size)> {
-    let (name, bytes) = read_local(path, || refused("a file"))?;
+    let (name, bytes) = read_local(path, || refused(Refused::NoFileName))?;
     let (format, (width, height)) = match UploadKind::of(&bytes, true) {
         Some(UploadKind::Image(format)) => {
             pixel_size(&bytes).map(|pixels| (format, pixels))
         }
         Some(UploadKind::File) | None => None,
     }
-    .ok_or_else(|| refused("a png, jpg, gif or webp picture"))?;
+    .ok_or_else(|| refused(Refused::NotPicture))?;
     let pixels = Size::new(f64::from(width), f64::from(height))?;
     Ok((
         Local {
@@ -1465,94 +1201,6 @@ const HIGHLIGHTER: (f64, u32, f64) = (22.0, 0x00fb_f040, 0.5);
 
 /// What `author_number` is under: its draws are in `0..DRAWS`.
 const DRAWS: u32 = 0x8000_0000;
-
-/// `one of a, b or c`.
-fn one_of(words: &[&str]) -> String {
-    words.split_last().map_or_else(String::new, |(last, rest)| {
-        format!("one of {} or {last}", rest.join(", "))
-    })
-}
-
-/// Whether the kind has its own size calls cannot change, and takes no text.
-const fn textless(kind: AddKind) -> bool {
-    matches!(
-        kind,
-        AddKind::Arrow
-            | AddKind::Link
-            | AddKind::Image
-            | AddKind::File
-            | AddKind::Dice
-            | AddKind::Wheel
-            | AddKind::Table
-            | AddKind::ReactionStamp
-            | AddKind::Kanban
-            | AddKind::Drawing
-    )
-}
-
-/// Whether the kind takes no color.
-const fn colourless(kind: AddKind) -> bool {
-    matches!(
-        kind,
-        AddKind::Link
-            | AddKind::Image
-            | AddKind::File
-            | AddKind::Wheel
-            | AddKind::Stamp
-            | AddKind::Table
-            | AddKind::ReactionStamp
-            | AddKind::Kanban
-    )
-}
-
-const fn sizeless(kind: AddKind) -> bool {
-    matches!(
-        kind,
-        AddKind::Arrow
-            | AddKind::Text
-            | AddKind::Link
-            | AddKind::File
-            | AddKind::Dice
-            | AddKind::Wheel
-            | AddKind::Flipcard
-            | AddKind::MindMap
-            | AddKind::Document
-            | AddKind::Stamp
-            | AddKind::Code
-            | AddKind::Table
-            | AddKind::ReactionStamp
-            | AddKind::Task
-            | AddKind::Kanban
-            | AddKind::Drawing
-    )
-}
-
-const fn word(kind: AddKind) -> &'static str {
-    match kind {
-        AddKind::Sticker => "a sticker",
-        AddKind::Text => "a text",
-        AddKind::Shape => "a shape",
-        AddKind::Frame => "a frame",
-        AddKind::Arrow => "an arrow",
-        AddKind::Link => "a link",
-        AddKind::Image => "an image",
-        AddKind::File => "a file",
-        AddKind::Dice => "a die",
-        AddKind::Wheel => "a wheel",
-        AddKind::StickerStack => "a sticker stack",
-        AddKind::Flipcard => "a flip card",
-        AddKind::MindMap => "a mind-map node",
-        AddKind::Document => "a document",
-        AddKind::Stamp => "a stamp",
-        AddKind::Code => "a code block",
-        AddKind::Table => "a table",
-        AddKind::ReactionStamp => "a reaction stamp",
-        AddKind::Icon => "an icon",
-        AddKind::Task => "a task",
-        AddKind::Kanban => "a kanban",
-        AddKind::Drawing => "a drawing",
-    }
-}
 
 /// How the item draws an arrow: its line, heads, labels, dash and width.
 fn arrow_look(item: &AddFields) -> Result<ArrowLook> {
@@ -1643,7 +1291,12 @@ fn node_of<'a>(scene: &Scene<'a>, id: &str) -> Result<&'a Object> {
     scene
         .get(id)
         .filter(|object| mind_map::is_node(object))
-        .ok_or_else(|| not_value(COMMAND, "parent", "a mind-map node"))
+        .ok_or_else(|| {
+            Error::from(InputError::WrongObject {
+                flag: Flag::Parent,
+                wanted: "a mind-map node",
+            })
+        })
 }
 
 /// `made` stuck to the object `on` names.
@@ -1663,8 +1316,12 @@ fn stuck_target<'a>(scene: &Scene<'a>, reference: &str) -> Result<Target<'a>> {
         scene.objects().iter().map(|object| object.id.as_str()),
         reference,
     )?;
-    let refused =
-        || not_value(COMMAND, "on", "a shape, sticker, document, task or image");
+    let refused = || {
+        Error::from(InputError::WrongObject {
+            flag: Flag::On,
+            wanted: "a shape, sticker, document, task or image",
+        })
+    };
     let object = scene
         .get(&id)
         .filter(|object| {
@@ -1887,7 +1544,7 @@ fn frames_of<'a>(
         .map(|name| {
             slot_of(name)
                 .and_then(|slot| made.get(slot).copied().flatten())
-                .ok_or_else(|| not_value(COMMAND, "frame", "#N of an earlier frame"))
+                .ok_or_else(|| Error::from(no_earlier(Flag::Frame, name)))
         })
         .transpose()?;
     let named = item
@@ -2161,7 +1818,8 @@ mod tests {
     #[test]
     fn what_an_item_cannot_take_is_refused_with_its_number() -> Result<()> {
         let refused = |given: Value| -> Result<String> {
-            Ok(read(&args(given)?)
+            Ok(args(given)
+                .and_then(|args| read(&args))
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
@@ -2180,12 +1838,12 @@ mod tests {
                 refused(json!({"items": [{"kind": "frame"}, {"kind": "sticker"}]}))?,
             ],
             [
-                "text of `object add` must be left out with --items",
-                "from of `object add` must be an object, or #N of an earlier item that is not an arrow, in item 2",
-                "to of `object add` must be given, in item 1",
-                "from of `object add` must be left out for a sticker, in item 1",
-                "size of `object add` must be left out for a text, in item 1",
-                "text of `object add` must be given, in item 2",
+                "`--text` cannot be used with `--items`",
+                "`--from` #3 is not an earlier item, in item 2",
+                "to is required by `object add`, in item 1",
+                "`--from` cannot be used for sticker, in item 1",
+                "`--size` cannot be used for text, in item 1",
+                "text is required by `object add`, in item 2",
             ]
         );
         Ok(())
@@ -2194,15 +1852,13 @@ mod tests {
     #[test]
     fn a_stack_takes_only_its_two_widths() -> Result<()> {
         let refused = |size: &str| -> Result<String> {
-            Ok(read(&args(json!({"kind": "sticker-stack", "size": size}))?)
+            Ok(args(json!({"kind": "sticker-stack", "size": size}))
+                .and_then(|args| read(&args))
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
         };
-        assert_eq!(
-            refused("300,300")?,
-            "size of `object add` must be 192,192 or 384,192"
-        );
+        assert_eq!(refused("300,300")?, "`--size` must be 192,192 or 384,192");
         assert_eq!(
             read(&args(json!({
                 "kind": "sticker-stack", "text": "Ideas", "size": "384,192"
@@ -2217,7 +1873,8 @@ mod tests {
     #[test]
     fn a_flip_card_needs_its_back_and_no_other_kind_takes_one() -> Result<()> {
         let refused = |item: Value| -> Result<String> {
-            Ok(read(&args(json!({ "items": [item] }))?)
+            Ok(args(json!({ "items": [item] }))
+                .and_then(|args| read(&args))
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
@@ -2229,9 +1886,9 @@ mod tests {
                 refused(json!({"text": "a", "back": "A"}))?,
             ],
             [
-                "back of `object add` must be given, in item 1",
-                "text of `object add` must be given, in item 1",
-                "back of `object add` must be left out for a sticker, in item 1",
+                "back is required by `object add`, in item 1",
+                "text is required by `object add`, in item 1",
+                "`--back` cannot be used for sticker, in item 1",
             ]
         );
         Ok(())
@@ -2240,7 +1897,8 @@ mod tests {
     #[test]
     fn a_document_needs_its_text_and_takes_only_the_colors_of_the_card() -> Result<()> {
         let refused = |item: Value| -> Result<String> {
-            Ok(read(&args(json!({ "items": [item] }))?)
+            Ok(args(json!({ "items": [item] }))
+                .and_then(|args| read(&args))
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
@@ -2253,9 +1911,9 @@ mod tests {
                 refused(json!({"kind": "document", "text": "a", "color": "blue3"}))?,
             ],
             [
-                "color of `object add` must be one of white1, gray3, red3, orange3, yellow3, green3, blue3, violet3, in item 1",
-                "text of `object add` must be given, in item 1",
-                "size of `object add` must be left out for a document, in item 1",
+                "`--color` must be one of white1, gray3, red3, orange3, yellow3, green3, blue3, violet3, in item 1",
+                "text is required by `object add`, in item 1",
+                "`--size` cannot be used for document, in item 1",
                 "",
             ]
         );
@@ -2266,7 +1924,8 @@ mod tests {
     fn a_code_block_needs_its_text_and_takes_only_its_language_and_theme() -> Result<()>
     {
         let refused = |item: Value| -> Result<String> {
-            Ok(read(&args(json!({ "items": [item] }))?)
+            Ok(args(json!({ "items": [item] }))
+                .and_then(|args| read(&args))
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
@@ -2282,10 +1941,10 @@ mod tests {
                 )?,
             ],
             [
-                "text of `object add` must be given, in item 1",
-                "color of `object add` must be left out for a code block, in item 1",
-                "size of `object add` must be left out for a code block, in item 1",
-                "theme of `object add` must be left out for a sticker, in item 1",
+                "text is required by `object add`, in item 1",
+                "`--color` cannot be used for code, in item 1",
+                "`--size` cannot be used for code, in item 1",
+                "`--theme` cannot be used for sticker, in item 1",
                 "",
             ]
         );
@@ -2309,7 +1968,8 @@ mod tests {
     #[test]
     fn a_table_refuses_no_rows_too_many_cells_and_keys_of_other_kinds() -> Result<()> {
         let refused = |item: Value| -> Result<String> {
-            Ok(read(&args(json!({ "items": [item] }))?)
+            Ok(args(json!({ "items": [item] }))
+                .and_then(|args| read(&args))
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
@@ -2326,13 +1986,13 @@ mod tests {
                 refused(json!({"kind": "table", "rows": 50, "columns": 50}))?,
             ],
             [
-                "rows of `object add` must be at least 1, in item 1",
-                "columns of `object add` must be at least 1, in item 1",
-                "rows of `object add` must be at most 2500 cells with the columns, in item 1",
-                "size of `object add` must be left out for a table, in item 1",
-                "color of `object add` must be left out for a table, in item 1",
-                "text of `object add` must be left out for a table, in item 1",
-                "rows of `object add` must be left out for a sticker, in item 1",
+                "`--rows` must be at least 1, in item 1",
+                "`--columns` must be at least 1, in item 1",
+                "`--rows` times `--columns` is at most 2500 cells, in item 1",
+                "`--size` cannot be used for table, in item 1",
+                "`--color` cannot be used for table, in item 1",
+                "`--text` cannot be used for table, in item 1",
+                "`--rows` cannot be used for sticker, in item 1",
                 "",
             ]
         );
@@ -2365,7 +2025,8 @@ mod tests {
     #[test]
     fn a_kanban_refuses_a_size_a_text_a_color_and_keys_of_other_kinds() -> Result<()> {
         let refused = |item: Value| -> Result<String> {
-            Ok(read(&args(json!({ "items": [item] }))?)
+            Ok(args(json!({ "items": [item] }))
+                .and_then(|args| read(&args))
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
@@ -2383,12 +2044,12 @@ mod tests {
                 )?,
             ],
             [
-                "size of `object add` must be left out for a kanban, in item 1",
-                "text of `object add` must be left out for a kanban, in item 1",
-                "color of `object add` must be left out for a kanban, in item 1",
-                "status of `object add` must be left out for a kanban, in item 1",
-                "column of `object add` must be left out for a sticker, in item 1",
-                "swimlane of `object add` must be left out for a sticker, in item 1",
+                "`--size` cannot be used for kanban, in item 1",
+                "`--text` cannot be used for kanban, in item 1",
+                "`--color` cannot be used for kanban, in item 1",
+                "`--status` cannot be used for kanban, in item 1",
+                "`--column` cannot be used for sticker, in item 1",
+                "`--swimlane` cannot be used for sticker, in item 1",
                 "",
             ]
         );
@@ -2399,7 +2060,8 @@ mod tests {
     fn a_drawing_refuses_a_text_a_size_a_corner_and_keys_of_other_kinds() -> Result<()>
     {
         let refused = |item: Value| -> Result<String> {
-            Ok(read(&args(json!({ "items": [item] }))?)
+            Ok(args(json!({ "items": [item] }))
+                .and_then(|args| read(&args))
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
@@ -2423,16 +2085,16 @@ mod tests {
                 )?,
             ],
             [
-                "text of `object add` must be left out for a drawing, in item 1",
-                "size of `object add` must be left out for a drawing, in item 1",
-                "at of `object add` must be left out for a drawing, in item 1",
-                "faces of `object add` must be left out for a drawing, in item 1",
-                "point of `object add` must be left out for a sticker, in item 1",
-                "highlighter of `object add` must be left out for a sticker, in item 1",
-                "stroke_width of `object add` must be left out for a sticker, in item 1",
-                "point of `object add` must be at least 2 points, e.g. --point 10,20 --point 120,80, in item 1",
-                "stroke_width of `object add` must be a whole number from 1 to 30, in item 1",
-                "stroke_width of `object add` must be a whole number from 1 to 30, in item 1",
+                "`--text` cannot be used for drawing, in item 1",
+                "`--size` cannot be used for drawing, in item 1",
+                "`--at` cannot be used for drawing, in item 1",
+                "`--faces` cannot be used for drawing, in item 1",
+                "`--point` cannot be used for sticker, in item 1",
+                "`--highlighter` cannot be used for sticker, in item 1",
+                "`--stroke-width` cannot be used for sticker, in item 1",
+                "`--point` needs at least 2 values, in item 1",
+                "`--stroke-width` must be a whole number from 1 to 30, in item 1",
+                "`--stroke-width` must be a whole number from 1 to 30, in item 1",
             ]
         );
         Ok(())
@@ -2498,7 +2160,8 @@ mod tests {
     fn a_task_refuses_no_title_bad_days_a_late_start_and_keys_of_other_kinds()
     -> Result<()> {
         let refused = |item: Value| -> Result<String> {
-            Ok(read(&args(json!({ "items": [item] }))?)
+            Ok(args(json!({ "items": [item] }))
+                .and_then(|args| read(&args))
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
@@ -2520,14 +2183,14 @@ mod tests {
                 }))?,
             ],
             [
-                "text of `object add` must be given, in item 1",
-                "start of `object add` must be a day as YYYY-MM-DD, e.g. 2026-11-06, in item 1",
-                "due of `object add` must be a day as YYYY-MM-DD, e.g. 2026-11-06, in item 1",
-                "start of `object add` must be on or before the due day, in item 1",
-                "color of `object add` must be one of gray, green, yellow, orange, red, violet, blue, sky, lime, pink, in item 1",
-                "size of `object add` must be left out for a task, in item 1",
-                "status of `object add` must be left out for a sticker, in item 1",
-                "due of `object add` must be left out for a sticker, in item 1",
+                "text is required by `object add`, in item 1",
+                "`--start` must be a day as YYYY-MM-DD, e.g. 2026-11-06, in item 1",
+                "`--due` must be a day as YYYY-MM-DD, e.g. 2026-11-06, in item 1",
+                "`--start` must be on or before `--due`, in item 1",
+                "`--color` must be one of gray, green, yellow, orange, red, violet, blue, sky, lime, pink, in item 1",
+                "`--size` cannot be used for task, in item 1",
+                "`--status` cannot be used for sticker, in item 1",
+                "`--due` cannot be used for sticker, in item 1",
                 "",
             ]
         );
@@ -2604,7 +2267,7 @@ mod tests {
         assert_eq!(
             status_of("later", &[("s9", "In review")])?,
             json!(
-                "status of `object add` must be one of backlog, to-do, in-progress, done, canceled, or the title of a status of the board"
+                "`--status` must be one of backlog, to-do, in-progress, done, canceled, or the title of a status of the board"
             )
         );
         Ok(())
@@ -2773,9 +2436,9 @@ mod tests {
                 carded(&json!([{"kind": "task", "text": "a", "kanban": "s1"}]))?,
             ],
             [
-                json!("column of `object add` must be one of To do, Done"),
-                json!("swimlane of `object add` must be one of Untitled"),
-                json!("kanban of `object add` must be a kanban"),
+                json!("`--column` must be one of To do, Done"),
+                json!("`--swimlane` must be one of Untitled"),
+                json!("`--kanban` must name a kanban"),
             ]
         );
         Ok(())
@@ -2785,7 +2448,8 @@ mod tests {
     fn a_task_refuses_a_kanban_beside_a_corner_a_frame_or_a_second_title() -> Result<()>
     {
         let refused = |item: Value| -> Result<String> {
-            Ok(read(&args(json!({ "items": [item] }))?)
+            Ok(args(json!({ "items": [item] }))
+                .and_then(|args| read(&args))
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
@@ -2814,14 +2478,14 @@ mod tests {
                 }))?,
             ],
             [
-                "kanban of `object add` must be left out for a sticker, in item 1",
-                "kanban of `object add` must be left out for a kanban, in item 1",
-                "at of `object add` must be left out with kanban, in item 1",
-                "frame of `object add` must be left out with kanban, in item 1",
-                "column of `object add` must be left out without kanban, in item 1",
-                "swimlane of `object add` must be left out without kanban, in item 1",
-                "column of `object add` must be one title for a task, in item 1",
-                "swimlane of `object add` must be one title for a task, in item 1",
+                "`--kanban` cannot be used for sticker, in item 1",
+                "`--kanban` cannot be used for kanban, in item 1",
+                "`--at` cannot be used with `--kanban`, in item 1",
+                "`--frame` cannot be used with `--kanban`, in item 1",
+                "`--column` needs `--kanban`, in item 1",
+                "`--swimlane` needs `--kanban`, in item 1",
+                "`--column` takes one value here, in item 1",
+                "`--swimlane` takes one value here, in item 1",
                 "",
             ]
         );
@@ -2831,7 +2495,8 @@ mod tests {
     #[test]
     fn a_die_refuses_a_size_a_text_and_faces_the_web_does_not_offer() -> Result<()> {
         let refused = |item: Value| -> Result<String> {
-            Ok(read(&args(json!({ "items": [item] }))?)
+            Ok(args(json!({ "items": [item] }))
+                .and_then(|args| read(&args))
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
@@ -2844,10 +2509,10 @@ mod tests {
                 refused(json!({"text": "a", "faces": 6}))?,
             ],
             [
-                "size of `object add` must be left out for a die, in item 1",
-                "text of `object add` must be left out for a die, in item 1",
-                "faces of `object add` must be one of 2, 4, 6, 8, 10, 12 or 20, in item 1",
-                "faces of `object add` must be left out for a sticker, in item 1",
+                "`--size` cannot be used for dice, in item 1",
+                "`--text` cannot be used for dice, in item 1",
+                "`--faces` must be one of 2, 4, 6, 8, 10, 12, 20, in item 1",
+                "`--faces` cannot be used for sticker, in item 1",
             ]
         );
         Ok(())
@@ -2876,7 +2541,8 @@ mod tests {
     #[test]
     fn a_wheel_refuses_one_choice_too_many_and_a_long_label() -> Result<()> {
         let refused = |choices: Vec<String>| -> Result<String> {
-            Ok(read(&args(json!({"kind": "wheel", "choice": choices}))?)
+            Ok(args(json!({"kind": "wheel", "choice": choices}))
+                .and_then(|args| read(&args))
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
@@ -2890,9 +2556,9 @@ mod tests {
                 refused(many(20))?,
             ],
             [
-                "choice of `object add` must be 2 to 20 choices",
-                "choice of `object add` must be 2 to 20 choices",
-                "choice of `object add` must be labels of at most 40 characters",
+                "`--choice` takes 2 to 20 values",
+                "`--choice` takes 2 to 20 values",
+                "`--choice` labels are at most 40 characters long",
                 "",
             ]
         );
@@ -2903,7 +2569,8 @@ mod tests {
     fn a_wheel_refuses_a_text_a_size_a_color_and_choices_of_another_kind() -> Result<()>
     {
         let refused = |item: Value| -> Result<String> {
-            Ok(read(&args(json!({ "items": [item] }))?)
+            Ok(args(json!({ "items": [item] }))
+                .and_then(|args| read(&args))
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
@@ -2917,10 +2584,10 @@ mod tests {
                 refused(json!({"text": "a", "choice": two}))?,
             ],
             [
-                "text of `object add` must be left out for a wheel, in item 1",
-                "size of `object add` must be left out for a wheel, in item 1",
-                "color of `object add` must be left out for a wheel, in item 1",
-                "choice of `object add` must be left out for a sticker, in item 1",
+                "`--text` cannot be used for wheel, in item 1",
+                "`--size` cannot be used for wheel, in item 1",
+                "`--color` cannot be used for wheel, in item 1",
+                "`--choice` cannot be used for sticker, in item 1",
             ]
         );
         Ok(())
@@ -3081,10 +2748,7 @@ mod tests {
             .map(|error| error.to_string())
             .unwrap_or_default())
         };
-        assert_eq!(
-            refused("s1")?,
-            "parent of `object add` must be a mind-map node"
-        );
+        assert_eq!(refused("s1")?, "`--parent` must name a mind-map node");
         assert_ne!(refused("nowhere")?, "");
         Ok(())
     }
@@ -3092,7 +2756,8 @@ mod tests {
     #[test]
     fn a_mind_map_refuses_what_it_cannot_take_and_what_only_it_takes() -> Result<()> {
         let refused = |item: Value| -> Result<String> {
-            Ok(read(&args(json!({ "items": [item] }))?)
+            Ok(args(json!({ "items": [item] }))
+                .and_then(|args| read(&args))
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
@@ -3118,12 +2783,12 @@ mod tests {
                 ))?,
             ],
             [
-                "at of `object add` must be left out with parent, in item 1",
-                "frame of `object add` must be left out with parent, in item 1",
-                "direction of `object add` must be left out without parent, in item 1",
-                "size of `object add` must be left out for a mind-map node, in item 1",
-                "parent of `object add` must be left out for a sticker, in item 1",
-                "direction of `object add` must be left out for a sticker, in item 1",
+                "`--at` cannot be used with `--parent`, in item 1",
+                "`--frame` cannot be used with `--parent`, in item 1",
+                "`--direction` needs `--parent`, in item 1",
+                "`--size` cannot be used for mind-map, in item 1",
+                "`--parent` cannot be used for sticker, in item 1",
+                "`--direction` cannot be used for sticker, in item 1",
                 "",
             ]
         );
@@ -3134,7 +2799,8 @@ mod tests {
     fn a_reaction_stamp_refuses_what_it_cannot_take_and_what_only_it_takes()
     -> Result<()> {
         let refused = |item: Value| -> Result<String> {
-            Ok(read(&args(json!({ "items": [item] }))?)
+            Ok(args(json!({ "items": [item] }))
+                .and_then(|args| read(&args))
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
@@ -3160,14 +2826,14 @@ mod tests {
                 refused(stamp(json!({"on": "s1", "at": "1,2", "reaction": ["+1"]})))?,
             ],
             [
-                "text of `object add` must be left out for a reaction stamp, in item 1",
-                "size of `object add` must be left out for a reaction stamp, in item 1",
-                "color of `object add` must be left out for a reaction stamp, in item 1",
-                "frame of `object add` must be left out with on, in item 1",
-                "reaction of `object add` must be one key, in item 1",
-                "reaction of `object add` must be one of like, heart, star, +1, dislike, figma-question, check or cross, in item 1",
-                "on of `object add` must be left out for a sticker, in item 1",
-                "reaction of `object add` must be left out for a sticker, in item 1",
+                "`--text` cannot be used for reaction-stamp, in item 1",
+                "`--size` cannot be used for reaction-stamp, in item 1",
+                "`--color` cannot be used for reaction-stamp, in item 1",
+                "`--frame` cannot be used with `--on`, in item 1",
+                "`--reaction` takes one value here, in item 1",
+                "`--reaction` must be one of like, heart, star, +1, dislike, figma-question, check, cross, in item 1",
+                "`--on` cannot be used for sticker, in item 1",
+                "`--reaction` cannot be used for sticker, in item 1",
                 "",
             ]
         );
@@ -3241,7 +2907,7 @@ mod tests {
         };
         assert_eq!(
             refused("f1")?,
-            "on of `object add` must be a shape, sticker, document, task or image"
+            "`--on` must name a shape, sticker, document, task or image"
         );
         assert_ne!(refused("nowhere")?, "");
         assert_eq!(refused("s1")?, "");
@@ -3302,7 +2968,8 @@ mod tests {
     fn an_icon_refuses_a_name_a_color_a_size_and_a_weight_it_cannot_take() -> Result<()>
     {
         let refused = |item: Value| -> Result<String> {
-            Ok(read(&args(json!({ "items": [item] }))?)
+            Ok(args(json!({ "items": [item] }))
+                .and_then(|args| read(&args))
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
@@ -3328,12 +2995,12 @@ mod tests {
                 ))?,
             ],
             [
-                "text of `object add` must be lower-case letters, digits and dashes, e.g. rocket-launch, in item 1",
-                "text of `object add` must be lower-case letters, digits and dashes, e.g. rocket-launch, in item 1",
-                "text of `object add` must be given, in item 1",
-                "color of `object add` must be one of gray12, gray8, red9, orange9, yellow9, lime9, green9, mint9, blue9, indigo9, violet9 or pink9, in item 1",
-                "size of `object add` must be square, e.g. 48,48, in item 1",
-                "weight of `object add` must be left out for a sticker, in item 1",
+                "`--text` must be an icon name: lower-case letters, digits and dashes, e.g. rocket-launch, in item 1",
+                "`--text` must be an icon name: lower-case letters, digits and dashes, e.g. rocket-launch, in item 1",
+                "text is required by `object add`, in item 1",
+                "`--color` must be one of gray12, gray8, red9, orange9, yellow9, lime9, green9, mint9, blue9, indigo9, violet9, pink9, in item 1",
+                "`--size` must be square, e.g. 48,48, in item 1",
+                "`--weight` cannot be used for sticker, in item 1",
                 "",
             ]
         );
@@ -3342,9 +3009,7 @@ mod tests {
             .map(|error| error.to_string());
         assert_eq!(
             heavy.as_deref(),
-            Some(
-                "weight of `object add icon` must be one of thin, light, regular, bold, fill, duotone"
-            )
+            Some("`--weight` must be one of thin, light, regular, bold, fill, duotone")
         );
         Ok(())
     }
@@ -3410,28 +3075,37 @@ mod tests {
     #[test]
     fn a_frame_hash_n_must_name_an_earlier_frame() -> Result<()> {
         let refused = |given: Value| -> Result<String> {
-            Ok(read(&args(given)?)
+            Ok(args(given)
+                .and_then(|args| read(&args))
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default())
         };
-        let expected = "frame of `object add` must be #N of an earlier frame, in item";
         let found = [
             refused(json!({"items": [{"text": "a", "frame": "#1"}]}))?,
             refused(json!({"items": [{"text": "a"}, {"text": "b", "frame": "#1"}]}))?,
             refused(json!({"items": [{"text": "b", "frame": "#1x"}]}))?,
         ];
-        assert_eq!(found, [1, 2, 1].map(|slot| format!("{expected} {slot}")));
+        assert_eq!(
+            found,
+            [
+                "`--frame` #1 is not an earlier item, in item 1",
+                "`--frame` #1 is not a frame, in item 2",
+                "`--frame` \"#1x\" is not #N, the number of an earlier item, in item 1",
+            ]
+        );
         Ok(())
     }
 
     #[test]
     fn items_given_but_empty_are_refused() -> Result<()> {
-        let refused = read(&args(json!({"text": "hi", "items": []}))?)
+        let refused = args(json!({"text": "hi", "items": []}))
             .err()
-            .map(|error| error.to_string())
-            .unwrap_or_default();
-        assert!(refused.contains("--items holds no objects"), "{refused}");
+            .map(|error| error.to_string());
+        assert_eq!(
+            refused.as_deref(),
+            Some("`--items` is empty: give a visible value")
+        );
         assert_eq!(read(&args(json!({"text": "hi"}))?)?.len(), 1);
         Ok(())
     }
@@ -3843,10 +3517,7 @@ mod tests {
         assert_eq!(
             (error_of(refused), fake.requests().len()),
             (
-                Some(
-                    "path of `object add` must be a png, jpg, gif or webp picture"
-                        .to_owned()
-                ),
+                Some("`--path` must be a png, jpg, gif or webp picture".to_owned()),
                 0
             )
         );

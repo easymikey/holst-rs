@@ -94,7 +94,7 @@ pub fn command_args(item: TokenStream) -> TokenStream {
 
 /// Arguments several commands share: `const ARGUMENTS: &[Argument]`, which
 /// `#[argument(flatten)]` on a field of a `CommandArgs` struct joins in.
-#[proc_macro_derive(ArgumentGroup, attributes(argument))]
+#[proc_macro_derive(ArgumentGroup, attributes(argument, argument_group))]
 pub fn argument_group(item: TokenStream) -> TokenStream {
     command::expand_group(item.into())
         .unwrap_or_else(syn::Error::into_compile_error)

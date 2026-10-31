@@ -13,7 +13,7 @@ use crate::{
         board_load::{self, CacheUse, RemoteBoard},
         change::{ChangeReport, gate},
         lookup,
-        table::{Command, CommandArgs, Confirmation, EnumArgument, not_value, visible},
+        table::{Command, CommandArgs, Confirmation, EnumArgument, Validate, visible},
     },
     domain::{
         board::{
@@ -38,6 +38,7 @@ use crate::{
         Result,
         board_change::BoardChangeError,
         confirmation::{ChangeRisk, Unconfirmed},
+        flag::Flag,
         input::InputError,
         lookup::{
             Candidate,
@@ -108,6 +109,7 @@ pub struct LsArgs {
 #[holst_command(
     group = Comment,
     verb = "add",
+    validate,
     risk = Write,
     about = "Start a comment thread",
     help = "Start a comment thread, at a corner or on an object.\n\
@@ -251,6 +253,7 @@ impl EnumArgument for ThreadColor {}
 #[holst_command(
     group = Comment,
     verb = "edit",
+    validate,
     risk = Write,
     about = "Colour a thread or move it",
     help = "Give a comment thread a color, or move it to a point or onto an object; one of --color, --at and --object is needed.\n\
@@ -600,9 +603,8 @@ async fn started(
     loading: Loading<'_>,
     args: &AddArgs,
 ) -> Result<CommentReport> {
-    let text = visible("comment add", "text", &args.text)?;
-    let placement =
-        placement("comment add", args.at.as_deref(), args.object.as_deref())?;
+    let text = visible(Flag::Text, &args.text)?;
+    let placement = placement(args.at.as_deref(), args.object.as_deref())?;
     let open = opened(client, &args.board, args.workspace.as_deref()).await?;
     let anchor = match placement {
         Placement::Point(x, y) => ThreadAnchor::Point { x, y },
@@ -630,7 +632,7 @@ async fn started(
 /// A blank text, a board or thread that is not found, a board that is
 /// read-only for the user, and errors of the requests.
 pub async fn reply(client: &Client, args: &ReplyArgs) -> Result<CommentReport> {
-    let text = visible("comment reply", "text", &args.text)?;
+    let text = visible(Flag::Text, &args.text)?;
     let open = opened(client, &args.board, args.workspace.as_deref()).await?;
     let thread = found(&open.threads, &args.thread)?.id.clone();
     let message = new_message(client, &open, text);
@@ -741,13 +743,7 @@ async fn removed_reply(
     let reply = replied(found, reference)?.clone();
     (open.room.author_of(&open.me) == Some(reply.author))
         .then_some(())
-        .ok_or_else(|| {
-            not_value(
-                "comment rm",
-                "reply",
-                "a reply of your own; another author's reply stays",
-            )
-        })?;
+        .ok_or_else(|| Error::from(InputError::OthersReply))?;
     let first = reply.text.lines().next().unwrap_or_default();
     let change_text: Cow<'static, str> = format!(
         "deleting the reply {} \"{first}\" of thread {}",
@@ -810,11 +806,7 @@ async fn edited(
     loading: Loading<'_>,
     args: &EditArgs,
 ) -> Result<CommentReport> {
-    let placement =
-        placement("comment edit", args.at.as_deref(), args.object.as_deref())?;
-    (args.color.is_some() || placement != Placement::Free)
-        .then_some(())
-        .ok_or_else(|| not_value("comment edit", "color", "given, or at or object"))?;
+    let placement = placement(args.at.as_deref(), args.object.as_deref())?;
     let open = opened(client, &args.board, args.workspace.as_deref()).await?;
     let thread = found(&open.threads, &args.thread)?.id.clone();
     let anchor = match placement {
@@ -868,13 +860,7 @@ pub async fn read(client: &Client, args: &ReadArgs) -> Result<CommentReport> {
         None => client.now_iso8601(),
         Some(text) => Timestamp::parse_iso8601(text)
             .map(|_| text.to_owned())
-            .ok_or_else(|| {
-                not_value(
-                    "comment read",
-                    "time",
-                    "ISO 8601, e.g. 2026-10-27T09:30:00Z",
-                )
-            })?,
+            .ok_or(InputError::TimeNotIso)?,
     };
     let open = opened(client, &args.board, args.workspace.as_deref()).await?;
     let thread = found(&open.threads, &args.thread)?.id.clone();
@@ -946,6 +932,39 @@ async fn released(
     })
 }
 
+/// A thread sits at a point or on an object, not both.
+fn at_or_object(
+    at: Option<&str>,
+    object: Option<&str>,
+) -> std::result::Result<(), InputError> {
+    match (at, object) {
+        (Some(_), Some(_)) => Err(InputError::Conflict {
+            flag: Flag::Object,
+            other: Flag::At,
+        }),
+        (Some(_), None) | (None, _) => Ok(()),
+    }
+}
+
+impl Validate for AddArgs {
+    fn validate(&self) -> std::result::Result<(), InputError> {
+        at_or_object(self.at.as_deref(), self.object.as_deref())
+    }
+}
+
+/// Something to change: a color, a point or an object.
+impl Validate for EditArgs {
+    fn validate(&self) -> std::result::Result<(), InputError> {
+        at_or_object(self.at.as_deref(), self.object.as_deref())?;
+        if self.color.is_none() && self.at.is_none() && self.object.is_none() {
+            return Err(InputError::OneOf {
+                flags: &[Flag::Color, Flag::At, Flag::Object],
+            });
+        }
+        Ok(())
+    }
+}
+
 /// Where `comment add` puts a thread.
 #[derive(Debug, PartialEq)]
 enum Placement<'a> {
@@ -954,20 +973,17 @@ enum Placement<'a> {
     Object(&'a str),
 }
 
+/// `--at` and `--object` do not go together; `validate` refuses both given.
 fn placement<'a>(
-    command: &str,
     at: Option<&str>,
     object: Option<&'a str>,
-) -> Result<Placement<'a>> {
+) -> std::result::Result<Placement<'a>, InputError> {
     match (at, object) {
-        (Some(_), Some(_)) => {
-            Err(not_value(command, "object", "left out when --at is given"))
-        }
-        (Some(at), None) => at
+        (Some(at), _) => at
             .split_once(',')
             .and_then(|(x, y)| Some((x.trim().parse().ok()?, y.trim().parse().ok()?)))
             .map(|(x, y)| Placement::Point(x, y))
-            .ok_or_else(|| not_value(command, "at", "two numbers like 120,80")),
+            .ok_or(InputError::AtNotPoint),
         (None, Some(object)) => Ok(Placement::Object(object)),
         (None, None) => Ok(Placement::Free),
     }

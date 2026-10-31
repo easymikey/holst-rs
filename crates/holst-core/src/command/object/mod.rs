@@ -2,6 +2,7 @@
 
 pub mod add;
 pub mod add_args;
+mod add_check;
 pub mod align;
 pub mod change;
 pub mod copy;
@@ -304,6 +305,7 @@ pub struct LockArgs {
 #[holst_command(
     group = Object,
     verb = "unlock",
+    validate,
     risk = Write,
     block = Commands,
     about = "Unlock locked groups, frames and tables",
@@ -336,6 +338,7 @@ pub struct UnlockArgs {
 #[holst_command(
     group = Object,
     verb = "align",
+    validate,
     risk = Write,
     block = Commands,
     about = "Align objects to a side or spread them evenly",
@@ -412,6 +415,7 @@ pub struct RemoveArgs {
 #[holst_command(
     group = Object,
     verb = "get",
+    validate,
     risk = Write,
     block = Commands,
     local_files,

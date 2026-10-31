@@ -25,7 +25,7 @@ use crate::{
         board::{AreaArgs, ShowArgs, ShowPart, rights::Right},
         board_load::{self, RemoteBoard},
         lookup,
-        table::not_value,
+        table::Validate,
     },
     domain::{
         area::{Area, listed_area, scene::Scene},
@@ -37,7 +37,7 @@ use crate::{
         sharing::Sharing,
     },
     effect::settings::CacheSettings,
-    error::{Error, Result, input::InputError},
+    error::{Error, Result, flag::Flag, input::InputError},
     protocol::sharing::{self, HeldRole},
     remote::{api, client::Client},
 };
@@ -112,7 +112,7 @@ pub async fn show(
     cache: &CacheSettings,
     args: &ShowArgs,
 ) -> Result<Briefs> {
-    let cache_use = cache_use(&args.caching, COMMAND)?;
+    let cache_use = cache_use(&args.caching);
     through_cache(client, cache, cache_use, async |loading| {
         shown(client, loading, args).await
     })
@@ -174,23 +174,34 @@ async fn shown(
 /// The area and padding asked for, when the flags fit the number of boards.
 fn asked(args: &ShowArgs) -> Result<(Area, Option<BoardLength>)> {
     let selection = &args.selection;
-    let noted = args.with.contains(&ShowPart::Note);
-    match (args.board.0.len(), area_flag(selection), args.note_format) {
-        (0, _, _) => Err(InputError::NoArgument {
+    match args.board.0.len() {
+        0 => Err(InputError::NoArgument {
             command: COMMAND.to_owned(),
             name: "board",
         }
         .into()),
-        (2.., Some(flag), _) => {
-            Err(not_value(COMMAND, flag, "left out with several boards"))
-        }
-        (_, _, Some(_)) if !noted => {
-            Err(not_value(COMMAND, "note_format", "given with note in with"))
-        }
-        (_, _, _) => Ok((
+        1.. => Ok((
             explicit_area(selection)?,
             BoardLength::optional(selection.padding)?,
         )),
+    }
+}
+
+/// The area flags need exactly one board; the note format needs the note.
+impl Validate for ShowArgs {
+    fn validate(&self) -> std::result::Result<(), InputError> {
+        self.caching.validate()?;
+        match (
+            self.board.0.len(),
+            area_flag(&self.selection),
+            self.note_format,
+        ) {
+            (2.., Some(flag), _) => Err(InputError::SeveralBoards { flag }),
+            (_, _, Some(_)) if !self.with.contains(&ShowPart::Note) => {
+                Err(InputError::NoteFormatWithoutNote)
+            }
+            (_, _, _) => Ok(()),
+        }
     }
 }
 
@@ -198,12 +209,12 @@ fn is_missing(error: &Error) -> bool {
     matches!(error, Error::Lookup(_)) || error.is_board_closed()
 }
 
-fn area_flag(selection: &AreaArgs) -> Option<&'static str> {
+fn area_flag(selection: &AreaArgs) -> Option<Flag> {
     [
-        ("rectangle", selection.rectangle.is_some()),
-        ("frame", selection.frame.is_some()),
-        ("object", !selection.object.is_empty()),
-        ("padding", selection.padding.is_some()),
+        (Flag::Rectangle, selection.rectangle.is_some()),
+        (Flag::Frame, selection.frame.is_some()),
+        (Flag::Object, !selection.object.is_empty()),
+        (Flag::Padding, selection.padding.is_some()),
     ]
     .into_iter()
     .find_map(|(name, given)| given.then_some(name))
@@ -345,7 +356,7 @@ mod tests {
         command::{
             board::{
                 ShowArgs,
-                show::{Briefs, Loading, cache_use, shown},
+                show::{Briefs, Loading, shown},
             },
             board_load::CacheUse,
             fixture::{arguments, client},
@@ -451,8 +462,8 @@ mod tests {
         assert_eq!(
             wrong.map(|error| error.problem_texts()),
             Some(vec![
-                "board of `board show` must be text or a list of them".to_owned(),
-                "padding of `board show` must be a number".to_owned()
+                "`--board` must be text or a list of them".to_owned(),
+                "`--padding` must be a number".to_owned()
             ])
         );
         Ok(())
@@ -522,18 +533,12 @@ mod tests {
             (refused, fake.requests().len()),
             (
                 vec![
-                    Some(
-                        "frame of `board show` must be left out with several boards"
-                            .to_owned()
-                    ),
-                    Some(
-                        "padding of `board show` must be left out with several boards"
-                            .to_owned()
-                    ),
+                    Some("`--frame` cannot be used with several boards".to_owned()),
+                    Some("`--padding` cannot be used with several boards".to_owned()),
                     Some(crate::error::picture::PictureError::SeveralAreas.to_string()),
                     Some("board is required by `board show`".to_owned()),
                     Some(
-                        "note_format of `board show` must be given with note in with"
+                        "the note format applies to the note: add note to the parts shown"
                             .to_owned()
                     ),
                 ],
@@ -544,18 +549,16 @@ mod tests {
     }
 
     #[test]
-    fn refresh_and_offline_do_not_go_together() -> Result<()> {
-        let both = arguments::<ShowArgs>(
+    fn refresh_and_offline_do_not_go_together() {
+        let refused = arguments::<ShowArgs>(
             json!({ "board": "A", "refresh": true, "offline": true }),
-        )?;
-        let refused = cache_use(&both.caching, "board show")
-            .err()
-            .map(|error| error.to_string());
+        )
+        .err()
+        .map(|error| error.to_string());
         assert_eq!(
             refused.as_deref(),
-            Some("offline of `board show` must be left out with --refresh")
+            Some("`--offline` cannot be used with `--refresh`")
         );
-        Ok(())
     }
 
     #[tokio::test]

@@ -68,7 +68,7 @@ async fn a_file_that_is_neither_svg_nor_png_is_refused() -> Result<(), ScenarioE
         .snap_to_file_with("Plans", "plans.jpg", &Look::new())
         .await?;
     then(&observation)
-        .failed_saying("must be a name that ends in .svg or .png")
+        .failed_saying("the file must be named with .svg or .png")
         .signalled_as(Surface::Cli.usage());
     Ok(())
 }

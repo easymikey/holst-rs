@@ -407,7 +407,7 @@ async fn a_stroke_in_a_frame_counts_from_its_corner(
 }
 
 #[rstest]
-#[case::one_point(&["10,20"], "at least 2 points")]
+#[case::one_point(&["10,20"], "needs at least 2 values")]
 #[case::bad_point(&["10,20", "x"], "\"x\" is not a point: expected x,y")]
 #[tokio::test]
 async fn a_stroke_with_one_point_or_a_bad_point_is_refused(

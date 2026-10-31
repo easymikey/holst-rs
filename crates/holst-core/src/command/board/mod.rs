@@ -91,6 +91,7 @@ impl BoardVerb {
 #[holst_command(
     group = Board,
     verb = "ls",
+    validate,
     risk = Read,
     block = General,
     about = "List boards and folders as a tree or another view",
@@ -211,6 +212,7 @@ impl EnumArgument for NewKind {}
 #[holst_command(
     group = Board,
     verb = "show",
+    validate,
     risk = Read,
     block = Look,
     about = "Show boards, or a part of one, with details",
@@ -289,6 +291,7 @@ pub struct AreaArgs {
 
 /// How a board is read: from the cache or the network.
 #[derive(Debug, Deserialize, ArgumentGroup)]
+#[argument_group(validate)]
 pub struct Caching {
     #[argument(help = "Ignore the cached copy and download the board again")]
     pub refresh: bool,
@@ -352,7 +355,15 @@ pub struct SnapArgs {
 
 /// The format of a picture.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::VariantNames,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    strum::VariantNames,
+    strum::Display,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
@@ -413,6 +424,7 @@ pub struct SaveArgs {
 #[holst_command(
     group = Board,
     verb = "export",
+    validate,
     risk = Write,
     block = Look,
     local_files,
@@ -450,6 +462,7 @@ pub struct ExportArgs {
 #[holst_command(
     group = Board,
     verb = "import",
+    validate,
     risk = Destroy,
     block = Look,
     about = "Create a board from a board file, or write it into one",
@@ -504,6 +517,7 @@ pub struct ImportArgs {
 #[holst_command(
     group = Board,
     verb = "edit",
+    validate,
     risk = Write,
     block = Change,
     about = "Change a board's cover or note",
@@ -555,6 +569,7 @@ impl EnumArgument for NoteTemplate {}
     group = Board,
     verb = "tag",
     risk = Destroy,
+    validate,
     block = Change,
     about = "Rename, recolour or remove a tag of a board",
     help = "Rename or recolour a tag of the board, or with --remove delete it: its id comes off every object and task card that carries it.\n\

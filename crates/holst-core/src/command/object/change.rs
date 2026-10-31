@@ -32,7 +32,7 @@ use crate::{
             add::{Local, local_picture, uploaded},
             extract::extracted,
         },
-        table::{ArgumentGroup as _, Confirmation, not_value},
+        table::{ArgumentGroup as _, Confirmation, Validate},
         workspace::{Member, find_member, members_of},
     },
     domain::{
@@ -70,7 +70,7 @@ use crate::{
             },
         },
         geometry::Size,
-        id,
+        id::{self, ObjectId},
         kinds::{
             dice,
             task::{self, Day},
@@ -96,6 +96,7 @@ use crate::{
         Result,
         board_change::BoardChangeError,
         confirmation::{ChangeRisk, Unconfirmed},
+        flag::Flag,
         input::InputError,
     },
     remote::{
@@ -133,17 +134,22 @@ impl Serialize for Removed {
 
 /// The objects a call names: the one its board link names, then each
 /// `--object`, once each.
+fn objects_named(board: &str, objects: &[String]) -> Vec<String> {
+    id::object_in(board)
+        .map(|linked| linked.as_str().to_owned())
+        .into_iter()
+        .chain(objects.iter().cloned())
+        .unique()
+        .collect()
+}
+
+/// The objects a call names, and at least one.
 pub(super) fn named(
     board: &str,
     objects: &[String],
     command: &str,
 ) -> Result<Vec<String>> {
-    let named: Vec<String> = id::object_in(board)
-        .map(|linked| linked.as_str().to_owned())
-        .into_iter()
-        .chain(objects.iter().cloned())
-        .unique()
-        .collect();
+    let named = objects_named(board, objects);
     if named.is_empty() {
         Err(Error::from(InputError::NoArgument {
             command: command.to_owned(),
@@ -213,32 +219,11 @@ async fn edit_fields(
     .await
 }
 
-/// `--path` cannot be with `--items`, a mask, a name, or several objects.
-fn refuse_path_beside(args: &EditArgs) -> Result<()> {
-    args.path.as_ref().map_or(Ok(()), |_| {
-        match (
-            args.items.0.is_empty(),
-            args.edit.crop.is_some(),
-            args.edit.name.is_some(),
-        ) {
-            (false, _, _) => Err(not_value(EDIT, "path", "left out with --items")),
-            (true, true, _) => Err(not_value(EDIT, "crop", "left out with --path")),
-            (true, false, true) => Err(not_value(EDIT, "name", "left out with --path")),
-            (true, false, false) => match named(&args.board, &args.object, EDIT)?.len()
-            {
-                1 => Ok(()),
-                _ => Err(not_value(EDIT, "path", "left out with several objects")),
-            },
-        }
-    })
-}
-
 /// The picture of `--path` and its pixels.
 fn picture_of(args: &EditArgs) -> Result<Option<(Local, Size)>> {
-    refuse_path_beside(args)?;
     args.path
         .as_deref()
-        .map(|path| local_picture(path, |expected| not_value(EDIT, "path", expected)))
+        .map(|path| local_picture(path, |fault| Error::from(fault.input(Flag::Path))))
         .transpose()
 }
 
@@ -256,7 +241,6 @@ async fn edited(
     )
     .await?;
     let edits = read_edits(args, &client.base_url().share_link(&board))?;
-    refuse_many_rolls(&edits)?;
     let edits = match assigning(&edits) {
         Some(()) => assigned(client, &board, edits).await?,
         None => edits,
@@ -447,16 +431,13 @@ fn read_edits(args: &EditArgs, share: &str) -> Result<Vec<ObjectEdit>> {
             })
             .collect()
     } else {
-        refuse_with_items(args)?;
         args.items
             .0
             .iter()
-            .enumerate()
-            .map(|(slot, item)| {
+            .map(|item| {
                 item_edit(
                     item,
                     linked.as_deref(),
-                    slot,
                     (args.text_format.unwrap_or_default(), share),
                 )
             })
@@ -539,11 +520,7 @@ async fn assignable(client: &Client, board: &str) -> Result<Vec<Member>> {
         .and_then(|member| member.role.as_deref())
     {
         Some("member" | "admin" | "owner") => Ok(members),
-        _ => Err(not_value(
-            EDIT,
-            "assignee",
-            "left out: only a member of the workspace assigns people",
-        )),
+        _ => Err(Error::from(InputError::AssigneeNeedsMember)),
     }
 }
 
@@ -554,51 +531,237 @@ fn member_ids(task: TaskEdit, members: &[Member]) -> Result<TaskEdit> {
         .map(|named| {
             named
                 .iter()
-                .map(|each| {
-                    find_member(members, each, EDIT).map(|member| member.id.clone())
-                })
+                .map(|each| find_member(members, each).map(|member| member.id.clone()))
                 .collect::<Result<Vec<_>>>()
         })
         .transpose()?;
     Ok(TaskEdit { assignees, ..task })
 }
 
-/// Refuses a call that rolls more than [`MOST_ROLLED`] objects.
-fn refuse_many_rolls(edits: &[ObjectEdit]) -> Result<()> {
-    let rolled = edits
-        .iter()
-        .filter(|edit| edit.patch.kind_edits.contains(&KindEdit::Roll))
-        .count();
-    (rolled <= MOST_ROLLED)
-        .then_some(())
-        .ok_or_else(|| not_value(EDIT, "roll", "left out for more than 50 objects"))
+/// The checks of arguments raise an [`InputError`] and nothing else.
+type Checked<T> = std::result::Result<T, InputError>;
+
+/// The first of `flags` that is given, when `other` is given too: the two
+/// cannot go together.
+fn beside(flags: &[(Flag, bool)], (other, with): (Flag, bool)) -> Checked<()> {
+    match flags.iter().find(|(_, given)| *given && with) {
+        Some((flag, _)) => Err(InputError::Conflict { flag: *flag, other }),
+        None => Ok(()),
+    }
 }
 
-/// What the flags of one call cannot say beside `--items`.
-fn refuse_with_items(args: &EditArgs) -> Result<()> {
-    (!args.object.is_empty())
-        .then_some("object")
-        .or_else(|| args.edit.first_given())
-        .map_or(Ok(()), |name| {
-            Err(not_value(EDIT, name, "left out with --items"))
-        })
+/// What the flags of one call cannot say beside `--items`, and the files and
+/// objects `--path` cannot share a call with.
+impl Validate for EditArgs {
+    fn validate(&self) -> Checked<()> {
+        self.path_beside()?;
+        if !self.items.0.is_empty() {
+            let given = (!self.object.is_empty())
+                .then_some(Flag::Object)
+                .or_else(|| self.edit.first_given());
+            if let Some(flag) = given {
+                return Err(InputError::Conflict {
+                    flag,
+                    other: Flag::Items,
+                });
+            }
+        }
+        self.edit.validate()?;
+        self.items.validate()?;
+        let linked = id::object_in(&self.board);
+        let linked = linked.as_ref().map(ObjectId::as_str);
+        for (index, item) in self.items.0.iter().enumerate() {
+            object_of(item, linked).map_err(|error| InputError::InItem {
+                slot: index + 1,
+                error: Box::new(error),
+            })?;
+        }
+        let rolled = if self.items.0.is_empty() {
+            if self.edit.roll {
+                objects_named(&self.board, &self.object).len()
+            } else {
+                0
+            }
+        } else {
+            self.items.0.iter().filter(|item| item.edit.roll).count()
+        };
+        if rolled > MOST_ROLLED {
+            return Err(InputError::TooManyRolls { most: MOST_ROLLED });
+        }
+        Ok(())
+    }
+}
+
+impl EditArgs {
+    /// `--path` cannot be with `--items`, a mask, a name, or several objects.
+    fn path_beside(&self) -> Checked<()> {
+        if self.path.is_none() {
+            return Ok(());
+        }
+        match (
+            self.items.0.is_empty(),
+            self.edit.crop.is_some(),
+            self.edit.name.is_some(),
+        ) {
+            (false, _, _) => Err(InputError::Conflict {
+                flag: Flag::Path,
+                other: Flag::Items,
+            }),
+            (true, true, _) => Err(InputError::Conflict {
+                flag: Flag::Crop,
+                other: Flag::Path,
+            }),
+            (true, false, true) => Err(InputError::Conflict {
+                flag: Flag::Name,
+                other: Flag::Path,
+            }),
+            (true, false, false)
+                if objects_named(&self.board, &self.object).len() > 1 =>
+            {
+                Err(InputError::PathWithSeveralObjects)
+            }
+            (true, false, false) => Ok(()),
+        }
+    }
+}
+
+/// An item holds no flag that is the business of the whole call.
+impl Validate for EditItem {
+    fn validate(&self) -> Checked<()> {
+        if self.edit.extract.is_some() {
+            return Err(InputError::Conflict {
+                flag: Flag::Extract,
+                other: Flag::Items,
+            });
+        }
+        self.edit.validate()
+    }
+}
+
+/// What the flags of one edit say among themselves: each value on its own, and
+/// the flags that cannot go together.
+impl Validate for EditFields {
+    fn validate(&self) -> Checked<()> {
+        self.look()?;
+        self.place()?;
+        self.kinds()
+    }
+}
+
+impl EditFields {
+    /// The look: outline, opacity, frame, link and hidden content.
+    fn look(&self) -> Checked<()> {
+        // The kind decides later: a shape takes 0 to 10, an arrow its nine
+        // widths.
+        if let Some(width) = self.stroke_width {
+            let shape =
+                width.fract() == 0.0 && (0.0..=MAX_STROKE_WIDTH).contains(&width);
+            if !(shape || ARROW_WIDTHS.contains(&width)) {
+                return Err(InputError::StrokeWidth);
+            }
+        }
+        if self
+            .opacity
+            .is_some_and(|opacity| !(MIN_OPACITY..=1.0).contains(&opacity))
+        {
+            return Err(InputError::Opacity);
+        }
+        beside(
+            &[(Flag::ShowContent, self.show_content)],
+            (Flag::HideContent, self.hide_content),
+        )?;
+        self.frame.as_deref().map(reparent_of).transpose()?;
+        self.link_to
+            .as_deref()
+            .map(|raw| link_of(raw, ""))
+            .transpose()?;
+        Ok(())
+    }
+
+    /// The place: corner, size, turn, scale, width and the flags that set them.
+    fn place(&self) -> Checked<()> {
+        beside(
+            &[
+                (Flag::At, self.at.is_some()),
+                (Flag::Size, self.size.is_some()),
+                (Flag::Rotate, self.rotate.is_some()),
+            ],
+            (Flag::Crop, self.crop.is_some()),
+        )?;
+        if self.rotate.is_some_and(|degrees| !degrees.is_finite()) {
+            return Err(InputError::RotateNotFinite);
+        }
+        beside(
+            &[(Flag::Scale, self.scale.is_some())],
+            (Flag::Size, self.size.is_some()),
+        )?;
+        if self
+            .scale
+            .is_some_and(|scale| !(scale.is_finite() && scale > 0.0))
+        {
+            return Err(InputError::ScaleNotPositive);
+        }
+        // The width is read as drawn, so a size given beside it would change
+        // what it means.
+        beside(
+            &[(Flag::Width, self.width.is_some())],
+            (Flag::Size, self.size.is_some()),
+        )?;
+        self.width.as_deref().map(width_of).transpose()?;
+        beside(&placed(self), (Flag::Flip, self.flip))?;
+        beside(
+            &[(Flag::ShowDetails, self.show_details)],
+            (Flag::HideDetails, self.hide_details),
+        )
+    }
+
+    /// The flags of the kinds: sticker, die, table, task and card.
+    fn kinds(&self) -> Checked<()> {
+        self.text_size.as_deref().map(text_size_of).transpose()?;
+        beside(
+            &[(Flag::ShowAuthor, self.show_author)],
+            (Flag::HideAuthor, self.hide_author),
+        )?;
+        reactions_of(&self.reaction)?;
+        faces_of(self)?;
+        beside(
+            &[(Flag::ShowChildren, self.show_children)],
+            (Flag::HideChildren, self.hide_children),
+        )?;
+        tick_of(self)?;
+        tabled(self)?;
+        task_settings(self)?;
+        card_move_of(self)?;
+        Ok(())
+    }
+}
+
+/// The flags that place an object: a corner, a turn, a size or a scale.
+fn placed(item: &EditFields) -> [(Flag, bool); 4] {
+    [
+        (Flag::At, item.at.is_some()),
+        (Flag::Rotate, item.rotate.is_some()),
+        (Flag::Size, item.size.is_some()),
+        (Flag::Scale, item.scale.is_some()),
+    ]
+}
+
+/// The object an item edits: its own, or the one the board link names.
+fn object_of<'a>(item: &'a EditItem, linked: Option<&'a str>) -> Checked<&'a str> {
+    item.object
+        .as_deref()
+        .or(linked)
+        .ok_or(InputError::ItemNeedsObject)
 }
 
 /// The edit one item asks for; an item with no object takes the linked one.
 fn item_edit(
     item: &EditItem,
     linked: Option<&str>,
-    slot: usize,
     (format, share): (TextFormat, &str),
 ) -> Result<ObjectEdit> {
-    let object = item.object.as_deref().or(linked).ok_or_else(|| {
-        not_value(EDIT, "object", &format!("given, in item {}", slot + 1))
-    })?;
-    item.edit.extract.as_ref().map_or(Ok(()), |_| {
-        Err(not_value(EDIT, "extract", "left out in --items"))
-    })?;
     Ok(ObjectEdit {
-        object: object.to_owned(),
+        object: object_of(item, linked)?.to_owned(),
         patch: patch_of(&item.edit, format, share)?,
         stacking: item.edit.order,
         tags: tags_of(&item.edit.tag),
@@ -610,29 +773,6 @@ fn patch_of(
     format: TextFormat,
     address: &str,
 ) -> Result<ObjectPatch> {
-    // The kind decides later: a shape takes 0 to 10, an arrow its nine widths.
-    let stroke_width = item
-        .stroke_width
-        .map(|width| {
-            let shape = width.fract() == 0.0 && (0.0..=MAX_STROKE_WIDTH).contains(&width);
-            (shape || ARROW_WIDTHS.contains(&width)).then_some(width).ok_or_else(|| {
-                not_value(
-                    EDIT,
-                    "stroke-width",
-                    "a whole number 0 to 10 (a drawing 1 to 30), or for an arrow 1, 1.5, 2, 4, 5, 6, 9, 13 or 17",
-                )
-            })
-        })
-        .transpose()?;
-    let opacity = item
-        .opacity
-        .map(|opacity| {
-            (MIN_OPACITY..=1.0)
-                .contains(&opacity)
-                .then_some(opacity)
-                .ok_or_else(|| not_value(EDIT, "opacity", "a number 0.1 to 1"))
-        })
-        .transpose()?;
     Ok(ObjectPatch {
         text: item.text.clone().filter(|_| item.cell.is_none()),
         format,
@@ -646,31 +786,23 @@ fn patch_of(
             .filter(|raw| task::tint(raw).is_none())
             .map(str::parse)
             .transpose()?,
-        rotation: item
-            .rotate
-            .map(|degrees| {
-                degrees
-                    .is_finite()
-                    .then_some(degrees)
-                    .ok_or_else(|| not_value(EDIT, "rotate", "a number of degrees"))
-            })
-            .transpose()?,
-        scale: scale_of(item)?,
+        rotation: item.rotate,
+        scale: item.scale,
         kind_edits: kind_edits_of(item, format)?,
         link_to: item
             .link_to
             .as_deref()
             .map(|raw| link_of(raw, address))
             .transpose()?,
-        width: width_of(item)?,
+        width: item.width.as_deref().map(width_of).transpose()?,
         tick: tick_of(item)?,
         shape: ShapeEdit {
             kind: item.shape,
             stroke: item.stroke_color.as_deref().map(str::parse).transpose()?,
-            stroke_width,
+            stroke_width: item.stroke_width,
             stroke_style: item.stroke_style,
             radius: item.radius,
-            opacity,
+            opacity: item.opacity,
         },
         arrow: ArrowEdit {
             line: item.line,
@@ -692,83 +824,39 @@ fn patch_of(
         frame: FrameEdit {
             ratio: item.ratio,
             background: item.background,
-            hidden: hidden_of(EDIT, Some(item.hide_content), Some(item.show_content))?,
+            hidden: switched(item.hide_content, item.show_content),
         },
         reparent: item.frame.as_deref().map(reparent_of).transpose()?,
-        media: media_of(item)?,
+        media: media_of(item),
     })
 }
 
+/// `Some(true)` for `on`, `Some(false)` for `off`, else `None`.
+fn switched(on: bool, off: bool) -> Option<bool> {
+    on.then_some(true).or(off.then_some(false))
+}
+
 /// What `--name`, `--crop` and other media flags say; a mask sets corner, size.
-fn media_of(item: &EditFields) -> Result<MediaEdit> {
-    item.crop
-        .and_then(|_| {
-            [
-                ("at", item.at.is_some()),
-                ("size", item.size.is_some()),
-                ("rotate", item.rotate.is_some()),
-            ]
-            .into_iter()
-            .find_map(|(name, given)| given.then_some(name))
-        })
-        .map_or(Ok(()), |name| {
-            Err(not_value(EDIT, name, "left out with --crop"))
-        })?;
-    Ok(MediaEdit {
+fn media_of(item: &EditFields) -> MediaEdit {
+    MediaEdit {
         name: item.name.clone(),
         crop: item.crop,
         flip: item.flip_image,
         replace: None,
         display: item.display,
         start_page: item.start_page,
-        hide_details: match (item.hide_details, item.show_details) {
-            (true, true) => Err(not_value(
-                EDIT,
-                "show_details",
-                "left out with hide_details",
-            )),
-            (hide, show) => Ok(hide.then_some(true).or(show.then_some(false))),
-        }?,
+        hide_details: switched(item.hide_details, item.show_details),
         pages: None,
-    })
-}
-
-/// What `--scale` says: a factor above 0, not beside a size that says the same.
-fn scale_of(item: &EditFields) -> Result<Option<f64>> {
-    item.scale
-        .map(|scale| match (item.size.is_some(), scale) {
-            (true, _) => Err(not_value(EDIT, "scale", "left out with size")),
-            (false, scale) if scale.is_finite() && scale > 0.0 => Ok(scale),
-            (false, _) => Err(not_value(EDIT, "scale", "a number above 0")),
-        })
-        .transpose()
-}
-
-/// What `--frame` says: `none` for the board, else a frame.
-fn reparent_of(raw: &str) -> Result<Reparent> {
-    let raw = raw.trim();
-    match raw {
-        "" => Err(not_value(EDIT, "frame", "a frame or none")),
-        "none" => Ok(Reparent::Board),
-        _ => Ok(Reparent::Frame(raw.to_owned())),
     }
 }
 
-/// Whether the flags hide the content of a frame, show it, or leave it.
-pub(super) fn hidden_of(
-    command: &str,
-    hide: Option<bool>,
-    show: Option<bool>,
-) -> Result<Option<bool>> {
-    match (hide == Some(true), show == Some(true)) {
-        (true, true) => Err(not_value(
-            command,
-            "show_content",
-            "left out with hide_content",
-        )),
-        (true, false) => Ok(Some(true)),
-        (false, true) => Ok(Some(false)),
-        (false, false) => Ok(None),
+/// What `--frame` says: `none` for the board, else a frame.
+fn reparent_of(raw: &str) -> Checked<Reparent> {
+    let raw = raw.trim();
+    match raw {
+        "" => Err(InputError::Blank { flag: Flag::Frame }),
+        "none" => Ok(Reparent::Board),
+        _ => Ok(Reparent::Frame(raw.to_owned())),
     }
 }
 
@@ -789,46 +877,31 @@ const HIDING: Guard = ("who_can_manage_frame_hide_content", |needs, holds| {
     BoardChangeError::HideWithheld { needs, holds }
 });
 
-/// What `--width` says: `auto`, or a width above 0. The width is read as
-/// drawn, so a size given beside it would change what it means.
-fn width_of(item: &EditFields) -> Result<Option<TextWidth>> {
-    item.width
-        .as_deref()
-        .map(|raw| match (item.size.is_some(), raw.trim()) {
-            (true, _) => Err(not_value(EDIT, "width", "left out with size")),
-            (false, "auto") => Ok(TextWidth::Auto),
-            (false, number) => number
-                .parse::<f64>()
-                .ok()
-                .filter(|width| width.is_finite() && *width > 0.0)
-                .map(TextWidth::Fixed)
-                .ok_or_else(|| not_value(EDIT, "width", "auto or a number above 0")),
-        })
-        .transpose()
+/// What `--width` says: `auto`, or a width above 0.
+fn width_of(raw: &str) -> Checked<TextWidth> {
+    match raw.trim() {
+        "auto" => Ok(TextWidth::Auto),
+        number => number
+            .parse::<f64>()
+            .ok()
+            .filter(|width| width.is_finite() && *width > 0.0)
+            .map(TextWidth::Fixed)
+            .ok_or(InputError::WidthNotAutoOrPositive),
+    }
 }
 
 /// What the kind flags (`--text-size` to `--swimlane`) say.
 fn kind_edits_of(item: &EditFields, format: TextFormat) -> Result<Vec<KindEdit>> {
     let text_size = item.text_size.as_deref().map(text_size_of).transpose()?;
-    let author = match (item.hide_author, item.show_author) {
-        (true, true) => {
-            Err(not_value(EDIT, "show_author", "left out with hide_author"))
-        }
-        (true, false) => Ok(Some(false)),
-        (false, true) => Ok(Some(true)),
-        (false, false) => Ok(None),
-    }?;
+    let author = switched(item.show_author, item.hide_author);
     Ok((text_size.is_some() || author.is_some())
         .then_some(KindEdit::Sticker(StickerEdit { text_size, author }))
         .into_iter()
         .chain(reactions_of(&item.reaction)?)
         .chain(item.roll.then_some(KindEdit::Roll))
         .chain(faces_of(item)?)
-        .chain(
-            hidden_of(EDIT, Some(item.hide_children), Some(item.show_children))?
-                .map(KindEdit::Children),
-        )
-        .chain(placed_beside(item, "flip", item.flip)?.then_some(KindEdit::Flip))
+        .chain(switched(item.hide_children, item.show_children).map(KindEdit::Children))
+        .chain(item.flip.then_some(KindEdit::Flip))
         .chain(item.back.clone().map(|text| KindEdit::Back(text, format)))
         .chain((item.language.is_some() || item.theme.is_some()).then_some(
             KindEdit::Code {
@@ -842,32 +915,56 @@ fn kind_edits_of(item: &EditFields, format: TextFormat) -> Result<Vec<KindEdit>>
         .collect())
 }
 
-/// What `--cell` with `--text` or a row or column flag says; one per call.
-fn table_edit_of(item: &EditFields, format: TextFormat) -> Result<Option<KindEdit>> {
-    let spanned =
-        |name: &'static str, raw: Option<&str>, make: fn(Span) -> TableEdit| {
-            raw.map(|raw| span_of(name, raw).map(|span| (name, make(span))))
-                .transpose()
-        };
-    let structural: Vec<(&'static str, TableEdit)> = [
+/// What the table flags of one item ask for.
+enum Tabled<'a> {
+    Nothing,
+    /// A cell or a block, with what goes into it.
+    Cell(Span, Filling<'a>),
+    /// A row or column to insert or delete, or a block to merge, split or
+    /// clear.
+    Structural(TableEdit),
+}
+
+/// What `--cell` writes: the text of one cell, or a colour for the cells.
+enum Filling<'a> {
+    Text(&'a str),
+    Color(&'a str),
+}
+
+/// The table flags, checked: `--cell` with `--text` or a colour, or one
+/// structural flag.
+fn tabled(item: &EditFields) -> Checked<Tabled<'_>> {
+    let structural: Vec<(Flag, TableEdit)> = [
         item.insert_row
-            .map(|at| ("insert_row", TableEdit::Insert(Track::Row, at))),
+            .map(|at| (Flag::InsertRow, TableEdit::Insert(Track::Row, at))),
         item.insert_column
-            .map(|at| ("insert_column", TableEdit::Insert(Track::Column, at))),
+            .map(|at| (Flag::InsertColumn, TableEdit::Insert(Track::Column, at))),
         item.delete_row
-            .map(|at| ("delete_row", TableEdit::Delete(Track::Row, at))),
+            .map(|at| (Flag::DeleteRow, TableEdit::Delete(Track::Row, at))),
         item.delete_column
-            .map(|at| ("delete_column", TableEdit::Delete(Track::Column, at))),
-        spanned("merge", item.merge.as_deref(), TableEdit::Merge)?,
+            .map(|at| (Flag::DeleteColumn, TableEdit::Delete(Track::Column, at))),
+        item.merge
+            .as_deref()
+            .map(|raw| {
+                span_of(Flag::Merge, raw)
+                    .map(|span| (Flag::Merge, TableEdit::Merge(span)))
+            })
+            .transpose()?,
         item.unmerge
             .as_deref()
             .map(|raw| {
-                pair_of("unmerge", raw).map(|(row, column)| {
-                    ("unmerge", TableEdit::Unmerge { row, column })
+                pair_of(Flag::Unmerge, raw).map(|(row, column)| {
+                    (Flag::Unmerge, TableEdit::Unmerge { row, column })
                 })
             })
             .transpose()?,
-        spanned("clear", item.clear.as_deref(), TableEdit::Clear)?,
+        item.clear
+            .as_deref()
+            .map(|raw| {
+                span_of(Flag::Clear, raw)
+                    .map(|span| (Flag::Clear, TableEdit::Clear(span)))
+            })
+            .transpose()?,
     ]
     .into_iter()
     .flatten()
@@ -875,37 +972,65 @@ fn table_edit_of(item: &EditFields, format: TextFormat) -> Result<Option<KindEdi
     let cell = item
         .cell
         .as_deref()
-        .map(|raw| cell_of(raw, (item.text.as_deref(), item.color.as_deref()), format))
+        .map(|raw| cell_of(raw, (item.text.as_deref(), item.color.as_deref())))
         .transpose()?;
     match (cell, structural.as_slice()) {
-        (None, []) => Ok(None),
-        (Some(edit), []) => Ok(Some(KindEdit::Table(edit))),
-        (None, [(_, edit)]) => Ok(Some(KindEdit::Table(edit.clone()))),
-        (Some(_), [(name, _), ..]) => Err(not_value(EDIT, name, "left out with cell")),
-        (None, [_, (name, _), ..]) => Err(not_value(
-            EDIT,
-            name,
-            "left out with another of insert_row, insert_column, delete_row, delete_column, merge, unmerge and clear",
-        )),
+        (None, []) => Ok(Tabled::Nothing),
+        (Some((span, filling)), []) => Ok(Tabled::Cell(span, filling)),
+        (None, [(_, edit)]) => Ok(Tabled::Structural(edit.clone())),
+        (Some(_), [(flag, _), ..]) => Err(InputError::Conflict {
+            flag: *flag,
+            other: Flag::Cell,
+        }),
+        (None, [(other, _), (flag, _), ..]) => Err(InputError::Conflict {
+            flag: *flag,
+            other: *other,
+        }),
     }
 }
 
-/// Task flags (`--status` to `--assignee`); `none` clears; assignees stay refs.
-fn task_edit_of(item: &EditFields, format: TextFormat) -> Result<Option<KindEdit>> {
-    let day = |name: &'static str, given: Option<&str>| {
+/// What `--cell` with `--text` or a row or column flag says; one per call.
+fn table_edit_of(item: &EditFields, format: TextFormat) -> Result<Option<KindEdit>> {
+    Ok(match tabled(item)? {
+        Tabled::Nothing => None,
+        Tabled::Structural(edit) => Some(KindEdit::Table(edit)),
+        Tabled::Cell(span, Filling::Text(text)) => {
+            Some(KindEdit::Table(TableEdit::Cell {
+                row: span.first.0,
+                column: span.first.1,
+                text: text.to_owned(),
+                format,
+            }))
+        }
+        Tabled::Cell(span, Filling::Color(color)) => {
+            Some(KindEdit::Table(TableEdit::Fill(span, color.parse()?)))
+        }
+    })
+}
+
+/// The status, start and due day of a task edit, checked.
+struct Settings {
+    status: Option<Setting<String>>,
+    start: Option<Setting<Day>>,
+    due: Option<Setting<Day>>,
+}
+
+/// What `--status`, `--start` and `--due` say; `none` clears.
+fn task_settings(item: &EditFields) -> Checked<Settings> {
+    let day = |flag: Flag, given: Option<&str>| {
         setting_of(given, |raw| {
             raw.trim()
                 .parse::<Day>()
-                .map_err(|expected| not_value(EDIT, name, &expected.to_string()))
+                .map_err(|_| InputError::NotDay { flag })
         })
     };
     let (start, due) = (
-        day("start", item.start.as_deref())?,
-        day("due", item.due.as_deref())?,
+        day(Flag::Start, item.start.as_deref())?,
+        day(Flag::Due, item.due.as_deref())?,
     );
     match (&start, &due) {
         (Some(Setting::To(start)), Some(Setting::To(due))) if start > due => {
-            Err(not_value(EDIT, "start", "on or before the due day"))
+            Err(InputError::StartAfterDue)
         }
         _ => Ok(()),
     }?;
@@ -913,8 +1038,14 @@ fn task_edit_of(item: &EditFields, format: TextFormat) -> Result<Option<KindEdit
         Some(raw.trim())
             .filter(|status| !status.is_empty())
             .map(str::to_owned)
-            .ok_or_else(|| not_value(EDIT, "status", "a status or none"))
+            .ok_or(InputError::Blank { flag: Flag::Status })
     })?;
+    Ok(Settings { status, start, due })
+}
+
+/// Task flags (`--status` to `--assignee`); `none` clears; assignees stay refs.
+fn task_edit_of(item: &EditFields, format: TextFormat) -> Result<Option<KindEdit>> {
+    let Settings { status, start, due } = task_settings(item)?;
     let description =
         setting_of(item.description.as_deref(), |raw| Ok(raw.to_owned()))?;
     let assignees = tags_of(&item.assignee);
@@ -941,60 +1072,45 @@ fn task_edit_of(item: &EditFields, format: TextFormat) -> Result<Option<KindEdit
 }
 
 /// What `--kanban`, `--column`, `--swimlane` say; `none` takes the card out.
-fn card_move_of(item: &EditFields) -> Result<Option<KindEdit>> {
-    let title = |name: &'static str, given: &[String]| match given {
+fn card_move_of(item: &EditFields) -> Checked<Option<KindEdit>> {
+    let title = |flag: Flag, given: &[String]| match given {
         [] => Ok(None),
         [one] => Ok(Some(one.clone())),
-        _ => Err(not_value(EDIT, name, "one title")),
+        _ => Err(InputError::OneTitle { flag }),
     };
     let (column, swimlane) = (
-        title("column", &item.column)?,
-        title("swimlane", &item.swimlane)?,
+        title(Flag::Column, &item.column)?,
+        title(Flag::Swimlane, &item.swimlane)?,
     );
     let moved = match (item.kanban.as_deref().map(str::trim), column, swimlane) {
         (None, None, None) => Ok(None),
-        (Some(""), ..) => Err(not_value(EDIT, "kanban", "a kanban or none")),
-        (Some(_), ..) if item.frame.is_some() => {
-            Err(not_value(EDIT, "frame", "left out with kanban"))
-        }
+        (Some(""), ..) => Err(InputError::Blank { flag: Flag::Kanban }),
+        (Some(_), ..) if item.frame.is_some() => Err(InputError::Conflict {
+            flag: Flag::Frame,
+            other: Flag::Kanban,
+        }),
         (Some("none"), None, None) => Ok(Some(KindEdit::Card(CardMove::Out))),
         (Some("none"), Some(_), _) => {
-            Err(not_value(EDIT, "column", "left out with kanban none"))
+            Err(InputError::KanbanNone { flag: Flag::Column })
         }
-        (Some("none"), None, Some(_)) => {
-            Err(not_value(EDIT, "swimlane", "left out with kanban none"))
-        }
+        (Some("none"), None, Some(_)) => Err(InputError::KanbanNone {
+            flag: Flag::Swimlane,
+        }),
         (kanban, column, swimlane) => Ok(Some(KindEdit::Card(CardMove::Into {
             kanban: kanban.map(str::to_owned),
             column,
             swimlane,
         }))),
     }?;
-    placed_beside(item, "kanban", moved.is_some())?;
+    beside(&placed(item), (Flag::Kanban, moved.is_some()))?;
     Ok(moved)
-}
-
-/// `given` unless `--at`, `--rotate`, `--size` or `--scale` come beside it.
-fn placed_beside(item: &EditFields, other: &str, given: bool) -> Result<bool> {
-    [
-        ("at", item.at.is_some()),
-        ("rotate", item.rotate.is_some()),
-        ("size", item.size.is_some()),
-        ("scale", item.scale.is_some()),
-    ]
-    .into_iter()
-    .filter(|(_, placed)| *placed && given)
-    .try_for_each(|(name, _)| {
-        Err(not_value(EDIT, name, &format!("left out with {other}")))
-    })
-    .map(|()| given)
 }
 
 /// `none` is [`Setting::Clear`], anything else is parsed.
 fn setting_of<T>(
     given: Option<&str>,
-    parse: impl FnOnce(&str) -> Result<T>,
-) -> Result<Option<Setting<T>>> {
+    parse: impl FnOnce(&str) -> Checked<T>,
+) -> Checked<Option<Setting<T>>> {
     given
         .map(|raw| match raw.trim() {
             "none" => Ok(Setting::Clear),
@@ -1004,21 +1120,21 @@ fn setting_of<T>(
 }
 
 /// A row and column from 1, e.g. `2,3`.
-fn pair_of(name: &'static str, raw: &str) -> Result<(u32, u32)> {
+fn pair_of(flag: Flag, raw: &str) -> Checked<(u32, u32)> {
     raw.split_once(',')
         .and_then(|(row, column)| {
             Some((row.trim().parse().ok()?, column.trim().parse().ok()?))
         })
-        .ok_or_else(|| not_value(EDIT, name, "row,column, e.g. 2,3"))
+        .ok_or(InputError::NotRowColumn { flag })
 }
 
 /// A block of cells `r1,c1,r2,c2` from 1, the first not after the last.
-fn span_of(name: &'static str, raw: &str) -> Result<Span> {
+fn span_of(flag: Flag, raw: &str) -> Checked<Span> {
     let numbers: Vec<u32> = raw
         .split(',')
         .map(|part| part.trim().parse())
         .collect::<std::result::Result<_, _>>()
-        .map_err(|_| span_hint(name))?;
+        .map_err(|_| InputError::NotBlock { flag })?;
     match numbers.as_slice() {
         &[row, column, to_row, to_column] if row <= to_row && column <= to_column => {
             Ok(Span {
@@ -1026,64 +1142,49 @@ fn span_of(name: &'static str, raw: &str) -> Result<Span> {
                 last: (to_row, to_column),
             })
         }
-        _ => Err(span_hint(name)),
+        _ => Err(InputError::NotBlock { flag }),
     }
 }
 
-fn span_hint(name: &'static str) -> Error {
-    not_value(
-        EDIT,
-        name,
-        "r1,c1,r2,c2 from 1, the first row and column not after the last, e.g. 1,1,2,2",
-    )
-}
-
 /// What `--cell` says: a cell or block, for its text (one cell) or colour.
-fn cell_of(
+fn cell_of<'a>(
     raw: &str,
-    (text, color): (Option<&str>, Option<&str>),
-    format: TextFormat,
-) -> Result<TableEdit> {
+    (text, color): (Option<&'a str>, Option<&'a str>),
+) -> Checked<(Span, Filling<'a>)> {
     let span = match raw.matches(',').count() {
-        3 => span_of("cell", raw),
-        _ => pair_of("cell", raw).map(|place| Span {
+        3 => span_of(Flag::Cell, raw),
+        _ => pair_of(Flag::Cell, raw).map(|place| Span {
             first: place,
             last: place,
         }),
     }?;
     match (text, color) {
-        (Some(text), None) if span.first == span.last => Ok(TableEdit::Cell {
-            row: span.first.0,
-            column: span.first.1,
-            text: text.to_owned(),
-            format,
-        }),
-        (Some(_), None) => {
-            Err(not_value(EDIT, "cell", "row,column, e.g. 2,3, with text"))
+        (Some(text), None) if span.first == span.last => {
+            Ok((span, Filling::Text(text)))
         }
-        (None, Some(color)) => Ok(TableEdit::Fill(span, color.parse()?)),
-        (None, None) => Err(not_value(EDIT, "cell", "given with text or color")),
-        (Some(_), Some(_)) => {
-            Err(not_value(EDIT, "color", "left out with text beside cell"))
-        }
+        (Some(_), None) => Err(InputError::CellTextNeedsOneCell),
+        (None, Some(color)) => Ok((span, Filling::Color(color))),
+        (None, None) => Err(InputError::CellNeedsTextOrColor),
+        (Some(_), Some(_)) => Err(InputError::CellTextAndColor),
     }
 }
 
 /// What `--faces` says: a web face count; not beside `--roll`, which clamps it.
-fn faces_of(item: &EditFields) -> Result<Option<KindEdit>> {
+fn faces_of(item: &EditFields) -> Checked<Option<KindEdit>> {
     item.faces
         .map(|faces| match (item.roll, dice::FACES.contains(&faces)) {
-            (true, _) => Err(not_value(EDIT, "faces", "left out with roll")),
+            (true, _) => Err(InputError::Conflict {
+                flag: Flag::Faces,
+                other: Flag::Roll,
+            }),
             (false, true) => Ok(KindEdit::Faces(faces)),
-            (false, false) => {
-                Err(not_value(EDIT, "faces", "one of 2, 4, 6, 8, 10, 12 or 20"))
-            }
+            (false, false) => Err(InputError::FacesNotDie),
         })
         .transpose()
 }
 
 /// What `--reaction` says: the ids to leave, or `none` alone for no reaction.
-fn reactions_of(given: &[String]) -> Result<Option<KindEdit>> {
+fn reactions_of(given: &[String]) -> Checked<Option<KindEdit>> {
     let ids: Vec<String> = given
         .iter()
         .map(|id| id.trim().to_owned())
@@ -1093,17 +1194,17 @@ fn reactions_of(given: &[String]) -> Result<Option<KindEdit>> {
         [] => Ok(None),
         [none] if none == "none" => Ok(Some(KindEdit::Reaction(Vec::new()))),
         many if many.iter().any(|id| id.is_empty() || id == "none") => {
-            Err(not_value(EDIT, "reaction", "reaction ids, or none alone"))
+            Err(InputError::ReactionsMixed)
         }
         many if many.len() > MOST_KINDS => {
-            Err(not_value(EDIT, "reaction", "at most 8 different reactions"))
+            Err(InputError::TooManyReactions { most: MOST_KINDS })
         }
         _ => Ok(Some(KindEdit::Reaction(ids))),
     }
 }
 
 /// What `--text-size` says: `auto`, or a whole number 4 to 64.
-fn text_size_of(raw: &str) -> Result<TextSize> {
+fn text_size_of(raw: &str) -> Checked<TextSize> {
     match raw.trim() {
         "auto" => Ok(TextSize::Auto),
         number => number
@@ -1111,35 +1212,36 @@ fn text_size_of(raw: &str) -> Result<TextSize> {
             .ok()
             .filter(|points| TextSize::RANGE.contains(points))
             .map(TextSize::Points)
-            .ok_or_else(|| {
-                not_value(EDIT, "text-size", "auto or a whole number 4 to 64")
-            }),
+            .ok_or(InputError::TextSizeRange),
     }
 }
 
 /// What `--check` and `--uncheck` say: one checklist item, from 1.
-fn tick_of(item: &EditFields) -> Result<Option<Tick>> {
+fn tick_of(item: &EditFields) -> Checked<Option<Tick>> {
     let asked = match (item.check, item.uncheck) {
-        (Some(_), Some(_)) => Err(not_value(EDIT, "check", "left out with uncheck")),
-        (Some(number), None) => Ok(Some((number, true, "check"))),
-        (None, Some(number)) => Ok(Some((number, false, "uncheck"))),
+        (Some(_), Some(_)) => Err(InputError::Conflict {
+            flag: Flag::Check,
+            other: Flag::Uncheck,
+        }),
+        (Some(number), None) => Ok(Some((number, true, Flag::Check))),
+        (None, Some(number)) => Ok(Some((number, false, Flag::Uncheck))),
         (None, None) => Ok(None),
     }?;
     asked
-        .map(|(number, done, name)| {
+        .map(|(number, done, flag)| {
             NonZeroU32::new(number)
                 .map(|nth| Tick { item: nth, done })
-                .ok_or_else(|| not_value(EDIT, name, "an item number from 1"))
+                .ok_or(InputError::NotItemNumber { flag })
         })
         .transpose()
 }
 
 /// What `--link-to` says: `none`, an address, or an object of the board.
-fn link_of(raw: &str, share: &str) -> Result<LinkTo> {
+fn link_of(raw: &str, share: &str) -> Checked<LinkTo> {
     let raw = raw.trim();
     let address = raw.contains(['.', ':', '/']);
     match raw {
-        "" => Err(not_value(EDIT, "link-to", "an address, an object or none")),
+        "" => Err(InputError::Blank { flag: Flag::LinkTo }),
         "none" => Ok(LinkTo::Clear),
         _ if address => Ok(LinkTo::Url(with_scheme(raw))),
         _ => Ok(LinkTo::Object {
@@ -1294,8 +1396,9 @@ mod tests {
                 EditArgs,
                 EditFields,
                 RemoveArgs,
-                change::{assigned, edited, patch_of, refuse_path_beside, removed},
+                change::{assigned, edited, patch_of, removed},
             },
+            table::Validate as _,
         },
         domain::{
             change::{
@@ -1406,7 +1509,7 @@ mod tests {
         .map(|error| error.to_string());
         assert_eq!(
             refused.as_deref(),
-            Some("text of `object edit` must be left out with --items")
+            Some("`--text` cannot be used with `--items`")
         );
         Ok(())
     }
@@ -1422,13 +1525,8 @@ mod tests {
         assert_eq!(
             refused,
             [
-                Some(
-                    "object of `object edit` must be left out with --items".to_owned()
-                ),
-                Some(
-                    "hide_content of `object edit` must be left out with --items"
-                        .to_owned()
-                )
+                Some("`--object` cannot be used with `--items`".to_owned()),
+                Some("`--hide-content` cannot be used with `--items`".to_owned())
             ]
         );
         Ok(())
@@ -1442,7 +1540,7 @@ mod tests {
             .map(|error| error.to_string());
         assert_eq!(
             refused.as_deref(),
-            Some("uncheck of `object edit` must be an item number from 1")
+            Some("`--uncheck` must be an item number from 1")
         );
         Ok(())
     }
@@ -1483,22 +1581,10 @@ mod tests {
         assert_eq!(
             shown,
             vec![
-                Some(
-                    "show_author of `object edit` must be left out with hide_author"
-                        .to_owned()
-                ),
-                Some(
-                    "text-size of `object edit` must be auto or a whole number 4 to 64"
-                        .to_owned()
-                ),
-                Some(
-                    "text-size of `object edit` must be auto or a whole number 4 to 64"
-                        .to_owned()
-                ),
-                Some(
-                    "text-size of `object edit` must be auto or a whole number 4 to 64"
-                        .to_owned()
-                ),
+                Some("`--show-author` cannot be used with `--hide-author`".to_owned()),
+                Some("`--text-size` must be auto or a whole number 4 to 64".to_owned()),
+                Some("`--text-size` must be auto or a whole number 4 to 64".to_owned()),
+                Some("`--text-size` must be auto or a whole number 4 to 64".to_owned()),
             ]
         );
         Ok(())
@@ -1538,14 +1624,8 @@ mod tests {
             (
                 vec![one.clone(), one],
                 vec![
-                    Some(
-                        "reaction of `object edit` must be reaction ids, or none alone"
-                            .to_owned()
-                    ),
-                    Some(
-                        "reaction of `object edit` must be at most 8 different reactions"
-                            .to_owned()
-                    ),
+                    Some("`--reaction` takes reaction ids, or none alone".to_owned()),
+                    Some("`--reaction` takes at most 8 different reactions".to_owned()),
                 ]
             )
         );
@@ -1666,18 +1746,14 @@ mod tests {
                 ..EditFields::default()
             },
         ]
-        .map(|fields| {
-            patch_of(&fields, TextFormat::Plain, "")
-                .err()
-                .map(|error| error.to_string())
-        });
+        .map(|fields| fields.validate().err().map(|error| error.to_string()));
         assert_eq!(
             refused,
             [
-                "cell of `object edit` must be given with text or color",
-                "cell of `object edit` must be row,column, e.g. 2,3",
-                "insert_row of `object edit` must be left out with cell",
-                "delete_column of `object edit` must be left out with another of insert_row, insert_column, delete_row, delete_column, merge, unmerge and clear",
+                "`--cell` needs `--text` or `--color`",
+                "`--cell` must be row,column from 1, e.g. 2,3",
+                "`--insert-row` cannot be used with `--cell`",
+                "`--delete-column` cannot be used with `--insert-row`",
             ]
             .map(|text| Some(text.to_owned()))
         );
@@ -1905,11 +1981,8 @@ mod tests {
 
     #[test]
     fn the_kanban_flags_are_refused_beside_none_a_second_title_or_a_frame() {
-        let refusal = |fields: EditFields| {
-            patch_of(&fields, TextFormat::Plain, "")
-                .err()
-                .map(|error| error.to_string())
-        };
+        let refusal =
+            |fields: EditFields| fields.validate().err().map(|error| error.to_string());
         let kanban = |raw: &str| Some(raw.to_owned());
         let title = || vec!["Done".to_owned()];
         assert_eq!(
@@ -1939,17 +2012,11 @@ mod tests {
                 }),
             ],
             [
-                Some(
-                    "column of `object edit` must be left out with kanban none"
-                        .to_owned()
-                ),
-                Some(
-                    "swimlane of `object edit` must be left out with kanban none"
-                        .to_owned()
-                ),
-                Some("column of `object edit` must be one title".to_owned()),
-                Some("frame of `object edit` must be left out with kanban".to_owned()),
-                Some("kanban of `object edit` must be a kanban or none".to_owned()),
+                Some("`--column` cannot be used with `--kanban` none".to_owned()),
+                Some("`--swimlane` cannot be used with `--kanban` none".to_owned()),
+                Some("`--column` takes one title".to_owned()),
+                Some("`--frame` cannot be used with `--kanban`".to_owned()),
+                Some("`--kanban` is empty: give a visible value".to_owned()),
             ]
         );
     }
@@ -2032,7 +2099,7 @@ mod tests {
         assert_eq!(
             done.err().map(|error| error.to_string()),
             Some(
-                "user of `object edit` must be a member of the workspace: Ann (u1), Bob (u2)"
+                "workspace member \"Zed\" not found; available: Ann (u1), Bob (u2)"
                     .to_owned()
             )
         );
@@ -2088,7 +2155,7 @@ mod tests {
         assert_eq!(
             done.err().map(|error| error.to_string()),
             Some(
-                "assignee of `object edit` must be left out: only a member of the workspace assigns people"
+                "`--assignee` is for members of the workspace: a guest cannot assign people"
                     .to_owned()
             )
         );
@@ -2112,17 +2179,13 @@ mod tests {
                 ..EditFields::default()
             },
         ]
-        .map(|fields| {
-            patch_of(&fields, TextFormat::Plain, "")
-                .err()
-                .map(|error| error.to_string())
-        });
+        .map(|fields| fields.validate().err().map(|error| error.to_string()));
         assert_eq!(
             refused,
             [
-                "due of `object edit` must be a day as YYYY-MM-DD, e.g. 2026-11-06",
-                "status of `object edit` must be a status or none",
-                "start of `object edit` must be on or before the due day",
+                "`--due` must be a day as YYYY-MM-DD, e.g. 2026-11-06",
+                "`--status` is empty: give a visible value",
+                "`--start` must be on or before the `--due` day",
             ]
             .map(|text| Some(text.to_owned()))
         );
@@ -2155,19 +2218,15 @@ mod tests {
                 ..EditFields::default()
             },
         ]
-        .map(|fields| {
-            patch_of(&fields, TextFormat::Plain, "")
-                .err()
-                .map(|error| error.to_string())
-        });
+        .map(|fields| fields.validate().err().map(|error| error.to_string()));
         assert_eq!(
             refused,
             [
-                "merge of `object edit` must be r1,c1,r2,c2 from 1, the first row and column not after the last, e.g. 1,1,2,2",
-                "clear of `object edit` must be r1,c1,r2,c2 from 1, the first row and column not after the last, e.g. 1,1,2,2",
-                "unmerge of `object edit` must be row,column, e.g. 2,3",
-                "cell of `object edit` must be row,column, e.g. 2,3, with text",
-                "color of `object edit` must be left out with text beside cell",
+                "`--merge` must be r1,c1,r2,c2 from 1, the first row and column not after the last, e.g. 1,1,2,2",
+                "`--clear` must be r1,c1,r2,c2 from 1, the first row and column not after the last, e.g. 1,1,2,2",
+                "`--unmerge` must be row,column from 1, e.g. 2,3",
+                "`--text` is written into one cell: give `--cell` as row,column, e.g. 2,3",
+                "`--cell` takes `--text` or `--color`, not both",
             ]
             .map(|text| Some(text.to_owned()))
         );
@@ -2199,13 +2258,13 @@ mod tests {
         assert_eq!(
             shown,
             [
-                "at of `object edit` must be left out with flip",
-                "rotate of `object edit` must be left out with flip",
-                "size of `object edit` must be left out with flip",
-                "scale of `object edit` must be left out with flip",
-                "scale of `object edit` must be left out with kanban",
-                "at of `object edit` must be left out with kanban",
-                "size of `object edit` must be left out with kanban",
+                "`--at` cannot be used with `--flip`",
+                "`--rotate` cannot be used with `--flip`",
+                "`--size` cannot be used with `--flip`",
+                "`--scale` cannot be used with `--flip`",
+                "`--scale` cannot be used with `--kanban`",
+                "`--at` cannot be used with `--kanban`",
+                "`--size` cannot be used with `--kanban`",
             ]
             .map(|text| Some(text.to_owned()))
         );
@@ -2235,15 +2294,9 @@ mod tests {
         assert_eq!(
             shown,
             vec![
-                Some(
-                    "faces of `object edit` must be one of 2, 4, 6, 8, 10, 12 or 20"
-                        .to_owned()
-                ),
-                Some(
-                    "roll of `object edit` must be left out for more than 50 objects"
-                        .to_owned()
-                ),
-                Some("faces of `object edit` must be left out with roll".to_owned()),
+                Some("`--faces` must be one of 2, 4, 6, 8, 10, 12 or 20".to_owned()),
+                Some("`--roll` is for at most 50 objects at once".to_owned()),
+                Some("`--faces` cannot be used with `--roll`".to_owned()),
             ]
         );
         Ok(())
@@ -2259,7 +2312,7 @@ mod tests {
         .map(|error| error.to_string());
         assert_eq!(
             refused.as_deref(),
-            Some("stroke_width of `object edit` must be left out with --items")
+            Some("`--stroke-width` cannot be used with `--items`")
         );
         Ok(())
     }
@@ -2470,47 +2523,131 @@ mod tests {
                 ..crop
             },
         ]
-        .map(|fields| {
-            patch_of(&fields, TextFormat::Plain, "")
-                .err()
-                .map(|error| error.to_string())
-        });
+        .map(|fields| fields.validate().err().map(|error| error.to_string()));
         assert_eq!(
             refused,
-            ["at", "size", "rotate"].map(|name| Some(format!(
-                "{name} of `object edit` must be left out with --crop"
-            )))
+            ["at", "size", "rotate"]
+                .map(|name| Some(format!("`--{name}` cannot be used with `--crop`")))
         );
     }
 
     #[rstest::rstest]
     #[case::items(
         json!({"board": "B", "path": "d.png", "items": [{"object": "a1", "text": "x"}]}),
-        "path of `object edit` must be left out with --items"
+        "`--path` cannot be used with `--items`"
     )]
     #[case::crop(
         json!({"board": "B", "path": "d.png", "object": ["a1"], "crop": "circle"}),
-        "crop of `object edit` must be left out with --path"
+        "`--crop` cannot be used with `--path`"
     )]
     #[case::name(
         json!({"board": "B", "path": "d.png", "object": ["a1"], "name": "Logo"}),
-        "name of `object edit` must be left out with --path"
+        "`--name` cannot be used with `--path`"
     )]
     #[case::several(
         json!({"board": "B", "path": "d.png", "object": ["a1", "b2"]}),
-        "path of `object edit` must be left out with several objects"
+        "`--path` is for one object: give one `--object`"
     )]
     fn a_path_is_refused_beside_what_it_cannot_share_a_call_with(
         #[case] given: serde_json::Value,
         #[case] said: &str,
-    ) -> Result<()> {
-        let args: EditArgs = arguments(given)?;
+    ) {
+        assert_eq!(refused(given).as_deref(), Some(said));
+    }
+
+    /// What reading `given` as the arguments of an edit refuses.
+    fn refused(given: serde_json::Value) -> Option<String> {
+        arguments::<EditArgs>(given)
+            .err()
+            .map(|error| error.to_string())
+    }
+
+    #[rstest::rstest]
+    #[case::stroke_width(
+        json!({"object": ["a1"], "stroke_width": 7.5}),
+        "`--stroke-width` must be a whole number 0 to 10 (a drawing 1 to 30), or for an arrow 1, 1.5, 2, 4, 5, 6, 9, 13 or 17"
+    )]
+    #[case::opacity(
+        json!({"object": ["a1"], "opacity": 0.05}),
+        "`--opacity` must be a number 0.1 to 1"
+    )]
+    #[case::scale_with_size(
+        json!({"object": ["a1"], "scale": 2, "size": "10,10"}),
+        "`--scale` cannot be used with `--size`"
+    )]
+    #[case::scale(
+        json!({"object": ["a1"], "scale": 0}),
+        "`--scale` must be a number above 0"
+    )]
+    #[case::width_with_size(
+        json!({"object": ["a1"], "width": "auto", "size": "10,10"}),
+        "`--width` cannot be used with `--size`"
+    )]
+    #[case::width(
+        json!({"object": ["a1"], "width": "wide"}),
+        "`--width` must be auto or a number above 0"
+    )]
+    #[case::frame(
+        json!({"object": ["a1"], "frame": " "}),
+        "`--frame` is empty: give a visible value"
+    )]
+    #[case::link_to(
+        json!({"object": ["a1"], "link_to": ""}),
+        "`--link-to` is empty: give a visible value"
+    )]
+    #[case::content(
+        json!({"object": ["a1"], "show_content": true, "hide_content": true}),
+        "`--show-content` cannot be used with `--hide-content`"
+    )]
+    #[case::children(
+        json!({"object": ["a1"], "show_children": true, "hide_children": true}),
+        "`--show-children` cannot be used with `--hide-children`"
+    )]
+    #[case::details(
+        json!({"object": ["a1"], "show_details": true, "hide_details": true}),
+        "`--show-details` cannot be used with `--hide-details`"
+    )]
+    #[case::check(
+        json!({"object": ["a1"], "check": 1, "uncheck": 2}),
+        "`--check` cannot be used with `--uncheck`"
+    )]
+    #[case::extract_in_an_item(
+        json!({"board": "B", "items": [{"object": "a1", "text": "x"}, {"object": "a1", "extract": "all"}]}),
+        "`--extract` cannot be used with `--items`, in item 2"
+    )]
+    #[case::item_field(
+        json!({"board": "B", "items": [{"object": "a1", "opacity": 2}]}),
+        "`--opacity` must be a number 0.1 to 1, in item 1"
+    )]
+    #[case::item_without_object(
+        json!({"board": "B", "items": [{"object": "a1", "text": "x"}, {"text": "y"}]}),
+        "`--object` is needed: give it, or link an object in `--board`, in item 2"
+    )]
+    #[case::rolls(
+        json!({"board": "B", "items": (0..51).map(|n| json!({"object": format!("o{n}"), "roll": true})).collect::<Vec<_>>()}),
+        "`--roll` is for at most 50 objects at once"
+    )]
+    fn a_check_of_the_arguments_is_raised_when_they_are_read(
+        #[case] given: serde_json::Value,
+        #[case] said: &str,
+    ) {
+        assert_eq!(refused(given).as_deref(), Some(said));
+    }
+
+    #[test]
+    fn a_turn_that_is_not_a_number_is_refused() {
+        // JSON cannot carry it; the command line can ("nan").
+        let fields = EditFields {
+            rotate: Some(f64::NAN),
+            ..EditFields::default()
+        };
         assert_eq!(
-            refuse_path_beside(&args)
+            fields
+                .validate()
                 .err()
-                .map(|error| error.to_string()),
-            Some(said.to_owned())
+                .map(|error| error.to_string())
+                .as_deref(),
+            Some("`--rotate` must be a number of degrees")
         );
-        Ok(())
     }
 }

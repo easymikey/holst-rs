@@ -4,16 +4,30 @@ use crate::{
     command::{
         board_write::Guard,
         object::{LockArgs, UnlockArgs, change::named, group::written},
-        table::not_value,
+        table::Validate,
     },
     domain::change::{receipt::ChangeReport, value::BoardChange},
     effect::settings::CacheSettings,
-    error::{Result, board_change::BoardChangeError},
+    error::{Result, board_change::BoardChangeError, flag::Flag, input::InputError},
     remote::client::Client,
 };
 
 const LOCK: &str = "object lock";
 const UNLOCK: &str = "object unlock";
+
+/// `--all` unlocks everything, so no object is named beside it.
+impl Validate for UnlockArgs {
+    fn validate(&self) -> std::result::Result<(), InputError> {
+        if self.all && !self.object.is_empty() {
+            Err(InputError::Conflict {
+                flag: Flag::Object,
+                other: Flag::All,
+            })
+        } else {
+            Ok(())
+        }
+    }
+}
 
 /// Locking needs the role `who_can_manage_lock_content` asks for.
 const LOCKING: Guard = ("who_can_manage_lock_content", |needs, holds| {
@@ -74,9 +88,32 @@ pub async fn unlock(
 
 /// What `args` unlock: everything, or the objects named.
 fn unlock_change(args: &UnlockArgs) -> Result<BoardChange> {
-    match (args.all, args.object.is_empty()) {
-        (false, _) => named(&args.board, &args.object, UNLOCK).map(BoardChange::Unlock),
-        (true, true) => Ok(BoardChange::UnlockAll),
-        (true, false) => Err(not_value(UNLOCK, "object", "left out with all")),
+    if args.all {
+        Ok(BoardChange::UnlockAll)
+    } else {
+        named(&args.board, &args.object, UNLOCK).map(BoardChange::Unlock)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use crate::{
+        Error,
+        command::{fixture::arguments, object::UnlockArgs},
+        error::{flag::Flag, input::InputError},
+    };
+
+    #[test]
+    fn parse_refuses_all_beside_an_object() {
+        let error = arguments::<UnlockArgs>(json!({ "all": true, "object": ["a1"] }));
+        assert!(matches!(
+            error,
+            Err(Error::Input(InputError::Conflict {
+                flag: Flag::Object,
+                other: Flag::All
+            }))
+        ));
     }
 }

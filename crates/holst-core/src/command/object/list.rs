@@ -50,8 +50,6 @@ use crate::{
     remote::client::Client,
 };
 
-const COMMAND: &str = "object ls";
-
 /// A page of a board's objects that match the filters.
 #[derive(Debug, Serialize)]
 pub struct Listing {
@@ -299,7 +297,7 @@ pub async fn ls(
     cache: &CacheSettings,
     args: &LsArgs,
 ) -> Result<Listing> {
-    let cache_use = cache_use(&args.caching, COMMAND)?;
+    let cache_use = cache_use(&args.caching);
     through_cache(client, cache, cache_use, async |loading| {
         listing(client, loading, args).await
     })

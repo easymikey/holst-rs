@@ -15,7 +15,7 @@ use crate::{
         board_load::CacheUse,
         board_text,
         lookup::{self, Fresh, IndexedNodes},
-        table::{EnumArgument, not_value},
+        table::{EnumArgument, Validate},
     },
     domain::{
         account::Workspace,
@@ -43,14 +43,13 @@ use crate::{
         },
     },
     effect::settings::CacheSettings,
-    error::{Error, Result},
+    error::{Result, input::InputError},
     remote::client::Client,
 };
 
 /// The trees of workspaces that were read, each behind `I`.
 type Trees<I> = [(Workspace, I)];
 
-const COMMAND: &str = "search";
 /// How many matches `search` keeps when `-l` is left out.
 const DEFAULT_LIMIT: usize = 20;
 
@@ -81,6 +80,7 @@ impl EnumArgument for SearchMode {}
 #[holst_command(
     group = Search,
     risk = Read,
+    validate,
     about = "Find boards by name and text on boards",
     help = "Find boards by name and text on boards, the best match first.\n\
             It prints one line per match with @N and its link. Words match in any order; case and punctuation do not matter.",
@@ -286,6 +286,23 @@ impl Reads for Requests<'_> {
     }
 }
 
+impl SearchArgs {
+    fn caching(&self) -> Caching {
+        Caching {
+            refresh: self.refresh,
+            offline: self.offline,
+        }
+    }
+}
+
+impl Validate for SearchArgs {
+    fn validate(&self) -> std::result::Result<(), InputError> {
+        self.caching().validate()?;
+        offline_board(self)?;
+        Plan::of(self).map(drop)
+    }
+}
+
 /// Searches names, board text or both, best first; `--refresh` and `--offline`
 /// of `args` apply.
 ///
@@ -298,11 +315,7 @@ pub async fn search(
     cache: &CacheSettings,
     args: &SearchArgs,
 ) -> Result<Found> {
-    let caching = Caching {
-        refresh: args.refresh,
-        offline: args.offline,
-    };
-    let cache_use = cache_use(&caching, COMMAND)?;
+    let cache_use = cache_use(&args.caching());
     through_cache(client, cache, cache_use, async |loading| {
         searched(client, loading, args).await
     })
@@ -314,19 +327,17 @@ async fn searched(
     loading: Loading<'_>,
     args: &SearchArgs,
 ) -> Result<Found> {
-    offline_board(loading.cache_use, args)?;
     search_with(client, args, &Requests { client, loading }).await
 }
 
 /// Offline, only a board by id or link is searched; the rest need requests.
-fn offline_board(cache_use: CacheUse, args: &SearchArgs) -> Result<()> {
-    match (cache_use, args.board.as_deref().and_then(BoardId::find_in)) {
-        (CacheUse::Offline, None) => Err(not_value(
-            COMMAND,
-            "offline",
-            "left out, or used with --board and a board id or link",
-        )),
-        (CacheUse::Offline | CacheUse::Use | CacheUse::Refresh, _) => Ok(()),
+fn offline_board(args: &SearchArgs) -> std::result::Result<(), InputError> {
+    match (
+        args.offline,
+        args.board.as_deref().and_then(BoardId::find_in),
+    ) {
+        (true, None) => Err(InputError::OfflineNeedsBoardId),
+        (true, Some(_)) | (false, _) => Ok(()),
     }
 }
 
@@ -442,7 +453,7 @@ impl<'a> Plan<'a> {
     /// A `--board` or an object kind asks for the text, a board or folder
     /// kind for the names; the mode must agree, and with `both` they must not
     /// disagree among themselves.
-    fn of(args: &'a SearchArgs) -> Result<Self> {
+    fn of(args: &'a SearchArgs) -> std::result::Result<Self, InputError> {
         let mode = args.mode.unwrap_or_default();
         let board = args
             .board
@@ -478,38 +489,18 @@ fn conflict(
     trash: bool,
     (for_text, for_names): (bool, bool),
     board: Option<&str>,
-) -> Option<Error> {
+) -> Option<InputError> {
     match mode {
-        SearchMode::Names if board.is_some() => Some(not_value(
-            COMMAND,
-            "board",
-            "left out with --mode names; a board is searched for its text",
-        )),
-        SearchMode::Names if for_text => Some(not_value(
-            COMMAND,
-            "kind",
-            "board, folder or any with --mode names",
-        )),
-        SearchMode::BoardText if for_names => Some(not_value(
-            COMMAND,
-            "kind",
-            "an object kind (sticker, text, shape, frame…) with --mode board_text",
-        )),
-        SearchMode::BoardText if trash => Some(not_value(
-            COMMAND,
-            "trash",
-            "left out with --mode board_text; only names look into the trash",
-        )),
-        SearchMode::Both if for_text && for_names => Some(not_value(
-            COMMAND,
-            "kind",
-            "an object kind when --board is given",
-        )),
-        SearchMode::Both if for_text && trash => Some(not_value(
-            COMMAND,
-            "trash",
-            "left out with --board or an object kind; only names look into the trash",
-        )),
+        SearchMode::Names if board.is_some() => Some(InputError::BoardWithNamesMode),
+        SearchMode::Names if for_text => Some(InputError::KindNotNodeInNamesMode),
+        SearchMode::BoardText if for_names => Some(InputError::KindNotObjectInTextMode),
+        SearchMode::BoardText if trash => Some(InputError::TrashWithBoardText),
+        SearchMode::Both if for_text && for_names => {
+            Some(InputError::KindNotObjectWithBoard)
+        }
+        SearchMode::Both if for_text && trash => {
+            Some(InputError::TrashWithBoardOrObjectKind)
+        }
         SearchMode::Names | SearchMode::BoardText | SearchMode::Both => None,
     }
 }

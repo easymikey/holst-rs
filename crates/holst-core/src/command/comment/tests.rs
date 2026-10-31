@@ -11,6 +11,7 @@ use crate::{
             CommentAction,
             CommentPlan,
             CommentReport,
+            EditArgs,
             ListedThread,
             Placement,
             ThreadList,
@@ -23,6 +24,7 @@ use crate::{
     },
     domain::board::comment::{Thread, ThreadAnchor, ThreadMessage},
     effect::board_write::WriteMode,
+    error::{Error, flag::Flag, input::InputError},
 };
 
 fn thread(id: &str, anchor: ThreadAnchor) -> Thread {
@@ -44,8 +46,8 @@ fn add(given: &Value) -> crate::Result<AddArgs> {
     parse(given.as_object().cloned().unwrap_or_default())
 }
 
-fn placed(args: &AddArgs) -> crate::Result<Placement<'_>> {
-    placement("comment add", args.at.as_deref(), args.object.as_deref())
+fn placed(args: &AddArgs) -> Result<Placement<'_>, InputError> {
+    placement(args.at.as_deref(), args.object.as_deref())
 }
 
 fn changed(action: CommentAction, outcome: ChangeReport<CommentPlan>) -> CommentReport {
@@ -187,15 +189,44 @@ fn a_thread_line_shows_number_state_start_replies_and_read_mark() {
 }
 
 #[test]
-fn at_and_object_are_not_both_taken_and_at_is_two_numbers() -> crate::Result<()> {
-    let both = add(&json!({ "board": "b", "text": "t", "at": "1,2", "object": "o" }))?;
-    assert!(placed(&both).is_err());
+fn at_is_two_numbers() -> crate::Result<()> {
     let bad = add(&json!({ "board": "b", "text": "t", "at": "1;2" }))?;
-    assert!(placed(&bad).is_err());
+    assert!(matches!(placed(&bad), Err(InputError::AtNotPoint)));
     let good = add(&json!({ "board": "b", "text": "t", "at": " 120, 80.5 " }))?;
     assert_eq!(placed(&good)?, Placement::Point(120.0, 80.5));
     assert_eq!(good.dry_run, WriteMode::Send);
     Ok(())
+}
+
+fn args_of<T: crate::command::table::CommandArgs>(given: &Value) -> Result<T, Error> {
+    parse(given.as_object().cloned().unwrap_or_default())
+}
+
+#[test]
+fn parse_refuses_at_with_object_on_add_and_edit() {
+    let conflict = |error: Option<Error>| {
+        matches!(
+            error,
+            Some(Error::Input(InputError::Conflict {
+                flag: Flag::Object,
+                other: Flag::At,
+            }))
+        )
+    };
+    let added = json!({ "board": "b", "text": "t", "at": "1,2", "object": "o" });
+    let edited = json!({ "board": "b", "thread": "w", "at": "1,2", "object": "o" });
+    assert!(conflict(args_of::<AddArgs>(&added).err()));
+    assert!(conflict(args_of::<EditArgs>(&edited).err()));
+}
+
+#[test]
+fn parse_refuses_a_comment_edit_that_changes_nothing() {
+    let nothing = args_of::<EditArgs>(&json!({ "board": "b", "thread": "w" })).err();
+    assert!(matches!(
+        nothing,
+        Some(Error::Input(InputError::OneOf { flags }))
+            if flags == [Flag::Color, Flag::At, Flag::Object]
+    ));
 }
 
 #[test]

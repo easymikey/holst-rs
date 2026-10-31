@@ -112,14 +112,8 @@ async fn a_file_that_is_neither_svg_nor_png_is_refused() {
     assert_eq!(
         (error_text(gif), error_text(mismatch)),
         (
-            Some(
-                "file of `board snap` must be a name that ends in .svg or .png"
-                    .to_owned()
-            ),
-            Some(
-                "picture-format of `board snap` must be svg, as the file's name says"
-                    .to_owned()
-            )
+            Some("the file must be named with .svg or .png".to_owned()),
+            Some("the picture format must be svg, as the file's name says".to_owned())
         )
     );
 }
@@ -160,7 +154,7 @@ async fn a_folder_needs_a_directory_to_go_into() {
     let none = save(&json!({ "board": BOARD }), None).await.err();
     assert_eq!(
         none.map(|error| error.to_string()),
-        Some("dir of `board save` must be given: there is no home directory to find ~/Downloads in".to_owned())
+        Some("there is no home directory: give `--dir`".to_owned())
     );
 }
 

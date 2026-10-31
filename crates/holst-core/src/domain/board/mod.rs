@@ -6,6 +6,7 @@ pub mod detail;
 pub mod frame_look;
 pub mod media_look;
 pub mod query;
+pub mod role;
 pub mod shape;
 pub mod shape_type;
 pub mod state_vector;

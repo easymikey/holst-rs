@@ -1,21 +1,26 @@
 //! `object align`: line objects up against a side, or spread them evenly.
-use strum::VariantNames as _;
-
 use crate::{
     command::{
         object::{AlignArgs, change::named, group::written},
-        table::not_value,
+        table::Validate,
     },
     domain::change::{
         receipt::ChangeReport,
         value::{Alignment, Arrangement, BoardChange},
     },
     effect::settings::CacheSettings,
-    error::Result,
+    error::{Result, flag::Flag, input::InputError},
     remote::client::Client,
 };
 
 const ALIGN: &str = "object align";
+
+/// A side or a spread, not both and not neither; a side must be one there is.
+impl Validate for AlignArgs {
+    fn validate(&self) -> std::result::Result<(), InputError> {
+        arrangement(self).map(drop)
+    }
+}
 
 /// Aligns the objects to one side of the box they cover together, or spreads
 /// them so that the gaps between are equal; each moves with what it holds.
@@ -44,19 +49,59 @@ pub async fn align(
 }
 
 /// What `args` ask: a side, or a direction to spread in, not both.
-fn arrangement(args: &AlignArgs) -> Result<Arrangement> {
+fn arrangement(args: &AlignArgs) -> std::result::Result<Arrangement, InputError> {
     match (&args.side, args.distribute) {
         (Some(side), None) => side
             .trim()
             .parse::<Alignment>()
             .map(Arrangement::Align)
-            .map_err(|_| not_value(ALIGN, "side", &Alignment::VARIANTS.join(", "))),
+            .map_err(|_| InputError::NotAlignSide { raw: side.clone() }),
         (None, Some(axis)) => Ok(Arrangement::Distribute(axis)),
-        (None, None) => Err(not_value(
-            ALIGN,
-            "side",
-            "left, center, right, top, middle or bottom, unless distribute is given",
-        )),
-        (Some(_), Some(_)) => Err(not_value(ALIGN, "distribute", "left out with side")),
+        (None, None) => Err(InputError::OneOf {
+            flags: &[Flag::Side, Flag::Distribute],
+        }),
+        (Some(_), Some(_)) => Err(InputError::Conflict {
+            flag: Flag::Distribute,
+            other: Flag::Side,
+        }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Value, json};
+
+    use crate::{
+        Error,
+        command::{fixture::arguments, object::AlignArgs},
+        error::{flag::Flag, input::InputError},
+    };
+
+    fn refused(given: Value) -> Option<InputError> {
+        match arguments::<AlignArgs>(given) {
+            Err(Error::Input(error)) => Some(error),
+            Err(_) | Ok(_) => None,
+        }
+    }
+
+    #[test]
+    fn parse_refuses_neither_both_and_a_wrong_side() {
+        assert!(matches!(
+            refused(json!({ "object": ["a", "b"] })),
+            Some(InputError::OneOf { .. })
+        ));
+        assert!(matches!(
+            refused(
+                json!({ "object": ["a", "b"], "side": "left", "distribute": "horizontal" })
+            ),
+            Some(InputError::Conflict {
+                flag: Flag::Distribute,
+                other: Flag::Side
+            })
+        ));
+        assert!(matches!(
+            refused(json!({ "object": ["a", "b"], "side": "up" })),
+            Some(InputError::NotAlignSide { .. })
+        ));
     }
 }

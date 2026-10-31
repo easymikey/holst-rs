@@ -9,7 +9,7 @@ use crate::{
         board_load::{self, CacheUse, RemoteBoard},
         lookup,
         node::missing_field,
-        table::{Confirmation, not_value},
+        table::{Confirmation, Validate},
         workspace::{self, ListArgs},
     },
     domain::{
@@ -23,7 +23,14 @@ use crate::{
         template::Template,
     },
     effect::{board_write::WriteMode, socket::SocketConnector},
-    error::{Error, Result, http::HttpError, input::InputError, picture::PictureError},
+    error::{
+        Error,
+        Result,
+        flag::Flag,
+        http::HttpError,
+        input::InputError,
+        picture::PictureError,
+    },
     remote::{
         api::{
             self,
@@ -33,22 +40,29 @@ use crate::{
     },
 };
 
-const CREATE: &str = "template create";
-
 /// The longest side of a template's thumbnail in pixels.
 const THUMBNAIL_SIDE: f64 = 640.0;
 
 /// What a dry run shows where the uploaded thumbnail's name would be.
 const UPLOADED_LATER: &str = "(the uploaded thumbnail)";
 
+/// The name is not blank.
+impl Validate for CreateArgs {
+    fn validate(&self) -> std::result::Result<(), InputError> {
+        if self.name.trim().is_empty() {
+            Err(InputError::Blank { flag: Flag::Name })
+        } else {
+            Ok(())
+        }
+    }
+}
+
 pub(super) async fn created(
     client: &Client,
     connector: &dyn SocketConnector,
     args: &CreateArgs,
 ) -> Result<Changed> {
-    let name = Some(args.name.trim())
-        .filter(|name| !name.is_empty())
-        .ok_or_else(|| not_value(CREATE, "name", "text that is not blank"))?;
+    let name = args.name.trim();
     let board =
         lookup::board_id(client, &args.board, args.workspace.as_deref()).await?;
     // imperative: the flag is named `for`, a keyword

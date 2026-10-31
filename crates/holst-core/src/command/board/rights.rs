@@ -18,6 +18,7 @@ use crate::{
     error::{
         Result,
         confirmation::{ChangeRisk, Unconfirmed},
+        flag::Flag,
         input::InputError,
     },
     protocol::sharing::{self, HeldRole, SharingPatch, WireRole},
@@ -70,31 +71,15 @@ impl Right {
         }
     }
 
-    /// `self` when `allowed` has it; else the argument `name` of `command`
-    /// refused, with the rights it takes.
-    fn among(
-        self,
-        allowed: &[Right],
-        command: &'static str,
-        name: &'static str,
-    ) -> Result<Self> {
+    /// `self` when `allowed` has it; else `flag` refused, with the rights it
+    /// takes.
+    fn among(self, allowed: &'static [Right], flag: Flag) -> Result<Self> {
         if allowed.contains(&self) {
             Ok(self)
         } else {
-            let expected = one_of(allowed);
-            Err(InputError::NotArgumentValue {
-                command: command.to_owned(),
-                name,
-                expected,
-            }
-            .into())
+            Err(InputError::NotRight { flag, allowed }.into())
         }
     }
-}
-
-fn one_of(rights: &[Right]) -> String {
-    let words: Vec<String> = rights.iter().map(ToString::to_string).collect();
-    format!("one of {}", words.join(", "))
 }
 
 /// A switch with words, for `--template`.
@@ -438,9 +423,9 @@ impl Shared {
 /// A right that cannot be given (`none`), a board or user that is not found,
 /// and errors of the requests.
 pub async fn grant(client: &Client, args: &GrantArgs) -> Result<Shared> {
-    let right = args.right.among(GRANTABLE, "board grant", "right")?;
+    let right = args.right.among(GRANTABLE, Flag::Right)?;
     let board = board(client, &args.board, args.workspace.as_deref()).await?;
-    let user = user(client, &board, &args.user, "board grant").await?;
+    let user = user(client, &board, &args.user).await?;
     let request = api::access::set_member_right_request(&role_grant(
         &board.id,
         &user.id,
@@ -472,7 +457,7 @@ pub async fn grant(client: &Client, args: &GrantArgs) -> Result<Shared> {
 /// A board or user that is not found, and errors of the requests.
 pub async fn revoke(client: &Client, args: &RevokeArgs) -> Result<Shared> {
     let board = board(client, &args.board, args.workspace.as_deref()).await?;
-    let user = user(client, &board, &args.user, "board revoke").await?;
+    let user = user(client, &board, &args.user).await?;
     let holders = api::channel::users(client, &board.id).await?;
     if holds_right(holders, &user.id)? {
         let request = api::access::set_member_right_request(&role_grant(
@@ -511,7 +496,7 @@ pub async fn revoke(client: &Client, args: &RevokeArgs) -> Result<Shared> {
 /// A board or user that is not found, and errors of the requests.
 pub async fn transfer(client: &Client, args: &TransferArgs) -> Result<Shared> {
     let board = board(client, &args.board, args.workspace.as_deref()).await?;
-    let user = user(client, &board, &args.user, "board transfer").await?;
+    let user = user(client, &board, &args.user).await?;
     let subtree = if args.with_boards {
         SubtreeTransfer::Transfer
     } else {
@@ -686,31 +671,30 @@ fn role_of(holders: &[sharing::Holder], user: &str) -> Option<HeldRole> {
 }
 
 fn settings(args: &ShareArgs) -> Result<Settings> {
-    let command = "board share";
     let settings = Settings {
         link: args
             .link
-            .map(|link| link.among(BY_LINK, command, "link"))
+            .map(|link| link.among(BY_LINK, Flag::Link))
             .transpose()?,
         members: args
             .members
-            .map(|members| members.among(BY_MEMBERS, command, "members"))
+            .map(|members| members.among(BY_MEMBERS, Flag::Members))
             .transpose()?,
         copy: args
             .copy
-            .map(|copy| copy.among(TO_COPY, command, "copy"))
+            .map(|copy| copy.among(TO_COPY, Flag::Copy))
             .transpose()?,
         delete: args
             .delete
-            .map(|delete| delete.among(TO_MANAGE, command, "delete"))
+            .map(|delete| delete.among(TO_MANAGE, Flag::Delete))
             .transpose()?,
         tools: args
             .tools
-            .map(|tools| tools.among(TO_MANAGE, command, "tools"))
+            .map(|tools| tools.among(TO_MANAGE, Flag::Tools))
             .transpose()?,
         lock: args
             .lock
-            .map(|lock| lock.among(TO_MANAGE, command, "lock"))
+            .map(|lock| lock.among(TO_MANAGE, Flag::Lock))
             .transpose()?,
         template: args.template,
     };
@@ -801,14 +785,9 @@ async fn roster(client: &Client, board: &Board) -> Result<Value> {
 }
 
 /// The one member of the board's workspace `reference` names.
-async fn user(
-    client: &Client,
-    board: &Board,
-    reference: &str,
-    command: &str,
-) -> Result<BoardMember> {
+async fn user(client: &Client, board: &Board, reference: &str) -> Result<BoardMember> {
     let roster = members_of(roster(client, board).await?)?;
-    find_member(&roster, reference, command).map(BoardMember::of)
+    find_member(&roster, reference).map(BoardMember::of)
 }
 
 /// A change that needs its confirmation; the shell words how to give it.

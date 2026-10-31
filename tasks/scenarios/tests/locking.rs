@@ -223,7 +223,7 @@ async fn all_beside_an_object_is_refused() -> Result<(), ScenarioError> {
         .switched("all");
     let observation = holst.on(surface).object("Plans", call).await?;
     then(&observation)
-        .failed_saying("left out with all")
+        .failed_saying("`--object` cannot be used with `--all`")
         .signalled_as(surface.usage());
     board_of(&holst).got_no_update();
     Ok(())

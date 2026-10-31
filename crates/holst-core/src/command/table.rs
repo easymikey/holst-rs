@@ -1,6 +1,6 @@
 //! The command table: each command's group, verb, risk, help and arguments.
 
-use std::path::PathBuf;
+use std::{fmt, path::PathBuf};
 
 use serde::{
     Deserialize,
@@ -24,7 +24,7 @@ use crate::{
     },
     domain::login::Email,
     effect::{board_write::WriteMode, request::QueryParameter},
-    error::{Error, Result, hint::Surface, input::InputError},
+    error::{Error, Result, flag::Flag, hint::Surface, input::InputError},
 };
 
 /// A command: a group's verb on the command line, a tool's action on MCP.
@@ -79,6 +79,8 @@ impl Command {
 pub struct Argument {
     /// The field, the MCP name and, in kebab case, the long flag.
     pub name: &'static str,
+    /// The same name as errors show it.
+    pub flag: Flag,
     pub letter: Option<char>,
     pub kind: ValueKind,
     pub required: bool,
@@ -116,6 +118,27 @@ pub enum ValueKind {
     Items,
     /// `NAME=VALUE` query parameters, repeated or as one object.
     QueryParameter,
+}
+
+impl fmt::Display for ValueKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ValueKind::Switch => f.write_str("true or false"),
+            ValueKind::Text | ValueKind::TextOrFile | ValueKind::Scale(_) => {
+                f.write_str("text")
+            }
+            ValueKind::Integer => f.write_str("a whole number"),
+            ValueKind::Number => f.write_str("a number"),
+            ValueKind::NewFile => f.write_str("the path of a new file"),
+            ValueKind::Choice(values) => write!(f, "one of {}", values.join(", ")),
+            ValueKind::List(item) => write!(f, "a list, each {item}"),
+            ValueKind::OneOrMany(item) => write!(f, "{item} or a list of them"),
+            ValueKind::Items => f.write_str("a list of objects, one per call"),
+            ValueKind::QueryParameter => {
+                f.write_str("an object of text or number values")
+            }
+        }
+    }
 }
 
 impl ValueKind {
@@ -167,27 +190,6 @@ impl ValueKind {
                 | Value::Array(_)
                 | Value::Object(_),
             ) => false,
-        }
-    }
-
-    fn expected(self) -> String {
-        match self {
-            ValueKind::Switch => String::from("true or false"),
-            ValueKind::Text | ValueKind::TextOrFile | ValueKind::Scale(_) => {
-                String::from("text")
-            }
-            ValueKind::Integer => String::from("a whole number"),
-            ValueKind::Number => String::from("a number"),
-            ValueKind::NewFile => String::from("the path of a new file"),
-            ValueKind::Choice(values) => format!("one of {}", values.join(", ")),
-            ValueKind::List(item) => format!("a list, each {}", item.expected()),
-            ValueKind::OneOrMany(item) => {
-                format!("{} or a list of them", item.expected())
-            }
-            ValueKind::Items => String::from("a list of objects, one per call"),
-            ValueKind::QueryParameter => {
-                String::from("an object of text or number values")
-            }
         }
     }
 
@@ -544,8 +546,36 @@ impl CommandName {
 }
 
 /// The arguments of one command, on both surfaces.
-pub trait CommandArgs: DeserializeOwned {
+pub trait CommandArgs: DeserializeOwned + Validate {
     const COMMAND: Command;
+}
+
+/// Checks that need only the arguments the caller gave: conflicts,
+/// requirements, ranges and formats. A check that needs fetched data stays with
+/// the command.
+///
+/// `#[derive(CommandArgs)]` and `#[derive(ArgumentGroup)]` write the empty
+/// check (a command's also checks its flattened groups), unless the struct opts
+/// out with `#[holst_command(.., validate)]` / `#[argument_group(validate)]`
+/// and writes the impl itself, calling the `validate` of its groups and items.
+pub trait Validate {
+    /// # Errors
+    /// The first [`InputError`] among the arguments.
+    fn validate(&self) -> std::result::Result<(), InputError> {
+        Ok(())
+    }
+}
+
+/// Each entry on its own; an error names the entry, counted from 1.
+impl<T: Validate> Validate for Items<T> {
+    fn validate(&self) -> std::result::Result<(), InputError> {
+        self.0.iter().enumerate().try_for_each(|(index, item)| {
+            item.validate().map_err(|error| InputError::InItem {
+                slot: index + 1,
+                error: Box::new(error),
+            })
+        })
+    }
 }
 
 /// The arguments of a command that can be a dry run: how it is asked to run.
@@ -683,8 +713,8 @@ impl<T> ArgumentValue for Items<T> {
 pub trait ArgumentGroup {
     const ARGUMENTS: &'static [Argument];
 
-    /// The name of the first argument of the group that holds a value.
-    fn first_given(&self) -> Option<&'static str>;
+    /// The first argument of the group that holds a value.
+    fn first_given(&self) -> Option<Flag>;
 }
 
 /// Whether a field of an argument group holds a value the caller gave.
@@ -714,6 +744,8 @@ impl Argument {
     /// An argument with nothing set: the base for `..Argument::BLANK`.
     pub const BLANK: Self = Self {
         name: "",
+        // A placeholder: an argument built from BLANK sets its own.
+        flag: Flag::Name,
         letter: None,
         kind: ValueKind::Switch,
         required: false,
@@ -804,8 +836,8 @@ impl<T: ArgumentValue> ArgumentValue for Option<T> {
 ///
 /// # Errors
 /// Every [`InputError::NotArgument`], [`InputError::NoArgument`] and
-/// [`InputError::NotArgumentValue`] at once;
-/// [`InputError::NotCommandArguments`].
+/// [`InputError::NotKind`] at once;
+/// [`InputError::NotCommandArguments`]; the first of [`Validate::validate`].
 pub fn parse<A: CommandArgs>(arguments: Map<String, Value>) -> Result<A> {
     let command = &A::COMMAND;
     let given: Map<String, Value> = arguments
@@ -814,7 +846,9 @@ pub fn parse<A: CommandArgs>(arguments: Map<String, Value>) -> Result<A> {
         .collect();
     let problems = problems(command, &given);
     if problems.is_empty() {
-        read(command, given)
+        let args: A = read(command, given)?;
+        args.validate()?;
+        Ok(args)
     } else {
         Err(Error::several(problems))
     }
@@ -871,10 +905,9 @@ fn problems(command: &Command, given: &Map<String, Value>) -> Vec<Error> {
         given
             .get(argument.name)
             .filter(|value| !argument.kind.accepts(value))
-            .map(|_| InputError::NotArgumentValue {
-                command: path.clone(),
-                name: argument.name,
-                expected: argument.kind.expected(),
+            .map(|_| InputError::NotKind {
+                flag: argument.flag,
+                kind: argument.kind,
             })
     });
     unknown
@@ -903,28 +936,11 @@ fn read<A: DeserializeOwned>(
         .map_err(|error| Error::from(InputError::NotCommandArguments(error)))
 }
 
-/// The argument `name` of `command` has a value it cannot take.
-pub(in crate::command) fn not_value(
-    command: &str,
-    name: &'static str,
-    expected: &str,
-) -> Error {
-    Error::from(InputError::NotArgumentValue {
-        command: command.to_owned(),
-        name,
-        expected: expected.to_owned(),
-    })
-}
-
 /// `text` without its edges, unless it is blank.
-pub(in crate::command) fn visible(
-    command: &str,
-    name: &'static str,
-    text: &str,
-) -> Result<String> {
+pub(in crate::command) fn visible(flag: Flag, text: &str) -> Result<String> {
     let text = text.trim();
     if text.is_empty() {
-        Err(not_value(command, name, &format!("a visible {name}")))
+        Err(Error::from(InputError::Blank { flag }))
     } else {
         Ok(text.to_owned())
     }

@@ -1062,12 +1062,12 @@ async fn output_text_is_the_default_reply() -> holst_core::Result<()> {
 #[case::object(
     "object",
     serde_json::json!({ "board": "X", "output": "yaml" }),
-    "output of `object ls` must be one of text, json"
+    "output must be one of text, json"
 )]
 #[case::board_show(
     "board",
     serde_json::json!({ "action": "show", "board": "X", "output": "yaml" }),
-    "output of `board show` must be one of text, json"
+    "output must be one of text, json"
 )]
 #[case::board_snap(
     "board",

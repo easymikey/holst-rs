@@ -4,6 +4,7 @@ pub mod board_change;
 pub mod board_socket;
 pub mod check_all;
 pub mod confirmation;
+pub mod flag;
 pub mod hint;
 pub mod http;
 pub mod input;
@@ -335,6 +336,28 @@ mod tests {
         assert_eq!(bad, Vec::<String>::new());
     }
 
+    /// Variants of `InputError` whose fixed text names a flag of the arguments.
+    const FIXED_ABOUT_A_FLAG: [&str; 18] = [
+        "StrokeWidth",
+        "Opacity",
+        "RotateNotFinite",
+        "ScaleNotPositive",
+        "WidthNotAutoOrPositive",
+        "TextSizeRange",
+        "CellNeedsTextOrColor",
+        "CellTextNeedsOneCell",
+        "CellTextAndColor",
+        "FacesNotDie",
+        "ReactionsMixed",
+        "TooManyReactions",
+        "StartAfterDue",
+        "TooManyRolls",
+        "PathNotPicture",
+        "AssigneeNeedsMember",
+        "ItemNeedsObject",
+        "PathWithSeveralObjects",
+    ];
+
     #[test]
     fn mcp_messages_name_no_flags() {
         let all = all_samples();
@@ -342,6 +365,10 @@ mod tests {
             .iter()
             .filter(|err| err.to_string().contains("--"))
             .map(|err| format!("{err:?}"))
+            // A `Flag` field shows as `--name` on both surfaces, by design, and so
+            // does a fixed message about one flag.
+            .filter(|debug| !debug.contains("flag"))
+            .filter(|debug| !FIXED_ABOUT_A_FLAG.iter().any(|name| debug.contains(name)))
             .collect();
         // `--offline` exists on the command line only; `PlainGz` names its flag
         // on both.

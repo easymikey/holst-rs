@@ -19,7 +19,6 @@ use crate::{
             CopyArgs,
             change::{load_board_read, named},
         },
-        table::not_value,
     },
     domain::{
         area::scene::Scene,
@@ -33,7 +32,7 @@ use crate::{
         placement::free_spot_among,
     },
     effect::{confirmation::ALWAYS, settings::CacheSettings},
-    error::{Result, board_change::BoardChangeError},
+    error::{Result, board_change::BoardChangeError, flag::Flag, input::InputError},
     remote::client::Client,
 };
 
@@ -150,17 +149,15 @@ fn select(objects: &[Object], references: &[String]) -> Result<Chosen> {
     objects
         .iter()
         .find(|object| {
-            object.kind == ObjectKind::Arrow && asked.contains(&object.id) && !inside(object)
+            object.kind == ObjectKind::Arrow
+                && asked.contains(&object.id)
+                && !inside(object)
         })
-        .map_or(Ok(()), |arrow| {
-            Err(not_value(
-                COMMAND,
-                "object",
-                &format!(
-                    "an arrow with its ends: {} is stuck to an object left out of the copy",
-                    arrow.id
-                ),
-            ))
+        .map_or(Ok::<(), crate::Error>(()), |arrow| {
+            Err(InputError::ArrowEndLeftOut {
+                arrow: arrow.id.clone(),
+            }
+            .into())
         })?;
     let chosen: Vec<&Object> = objects
         .iter()
@@ -174,16 +171,12 @@ fn select(objects: &[Object], references: &[String]) -> Result<Chosen> {
     chosen
         .iter()
         .find(|object| !copyable(&object.kind))
-        .map_or(Ok(()), |object| {
-            Err(not_value(
-                COMMAND,
-                "object",
-                &format!(
-                    "an object that can be copied: {} is {}",
-                    object.id,
-                    object.kind.short_name()
-                ),
-            ))
+        .map_or(Ok::<(), crate::Error>(()), |object| {
+            Err(InputError::NotCopyable {
+                object: object.id.clone(),
+                kind: object.kind.clone(),
+            }
+            .into())
         })?;
     let scene = Scene::new(objects);
     let area = Rectangle::bounding(
@@ -270,16 +263,13 @@ fn refuse_files(chosen: &Chosen, elsewhere: bool) -> Result<()> {
         .find(|object| {
             elsewhere && matches!(object.kind, ObjectKind::Image | ObjectKind::File)
         })
-        .map_or(Ok(()), |object| {
-            Err(not_value(
-                COMMAND,
-                "into",
-                &format!(
-                    "the board of the objects while {} {} is among them",
-                    object.kind.short_name(),
-                    object.id
-                ),
-            ))
+        .map_or(Ok::<(), crate::Error>(()), |object| {
+            Err(InputError::FileStaysOnBoard {
+                flag: Flag::Into,
+                object: object.id.clone(),
+                kind: object.kind.clone(),
+            }
+            .into())
         })
 }
 
@@ -396,9 +386,7 @@ mod tests {
     fn an_arrow_stuck_outside_the_copy_is_refused() {
         assert_eq!(
             refusal(&[ARROW]).as_deref(),
-            Some(
-                "object of `object cp` must be an arrow with its ends: a1 is stuck to an object left out of the copy"
-            )
+            Some("arrow a1 is stuck to an object left out of the copy")
         );
     }
 
@@ -411,12 +399,7 @@ mod tests {
             select(&table.into_iter().collect::<Vec<_>>(), &["x1".to_owned()])
                 .err()
                 .map(|error| error.to_string());
-        assert_eq!(
-            refused.as_deref(),
-            Some(
-                "object of `object cp` must be an object that can be copied: x1 is table"
-            )
-        );
+        assert_eq!(refused.as_deref(), Some("table x1 cannot be copied"));
     }
 
     async fn copies(
@@ -496,7 +479,7 @@ mod tests {
         assert_eq!(
             refused.as_deref(),
             Some(
-                "into of `object cp` must be the board of the objects while image i1 is among them"
+                "`--into` must be the board of the objects while image i1 is among them"
             )
         );
         Ok(())

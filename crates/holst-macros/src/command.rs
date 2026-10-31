@@ -22,10 +22,11 @@ use syn::{
 
 pub(crate) const COMMAND_KEYS: &str = "expected `group = <Group>`, `verb = \"…\"`, `risk = <Risk>`, \
                                        `block = <HelpBlock>`, `about = \"…\"`, `help = \"…\"`, \
-                                       `example = \"…\"`, `surfaces = [..]`, `no_dry_run` or `local_files`";
+                                       `example = \"…\"`, `surfaces = [..]`, `no_dry_run`, `local_files` or `validate`";
 pub(crate) const ARGUMENT_KEYS: &str = "expected `help = \"…\"`, `value_name = \"…\"`, \
                                         `letter = 'x'`, `tool_doc = \"…\"`, `surfaces = [..]`, \
                                         `positional`, `subcommand`, `kinds = [..]` or `flatten`";
+pub(crate) const GROUP_KEYS: &str = "expected `validate`";
 pub(crate) const NAMED_FIELDS: &str = "`CommandArgs` takes a struct with named fields";
 pub(crate) const FLATTEN_ALONE: &str =
     "`flatten` takes no other key: the group's own fields carry their texts";
@@ -33,7 +34,7 @@ pub(crate) const NO_NESTED_GROUP: &str = "an argument group cannot hold a group"
 pub(crate) const ONE_SUBCOMMAND: &str = "a command takes one `subcommand` field";
 pub(crate) const KINDS_NEED_SUBCOMMAND: &str = "`kinds` limits a field to values of the command's `subcommand` field: give the command one, on another field";
 const COMMAND_ATTRIBUTE: &str = "holst_command";
-const COMMAND_WORDS: [&str; 10] = [
+const COMMAND_WORDS: [&str; 11] = [
     "group",
     "verb",
     "risk",
@@ -44,7 +45,9 @@ const COMMAND_WORDS: [&str; 10] = [
     SURFACES,
     NO_DRY_RUN,
     LOCAL_FILES,
+    VALIDATE,
 ];
+const GROUP_ATTRIBUTE: &str = "argument_group";
 const ARGUMENT_ATTRIBUTE: &str = "argument";
 const ARGUMENT_WORDS: [&str; 9] = [
     "help",
@@ -61,6 +64,7 @@ const EXAMPLE: &str = "example";
 const FLATTEN: &str = "flatten";
 const NO_DRY_RUN: &str = "no_dry_run";
 const LOCAL_FILES: &str = "local_files";
+const VALIDATE: &str = "validate";
 const SURFACES: &str = "surfaces";
 const SUBCOMMAND: &str = "subcommand";
 const KINDS: &str = "kinds";
@@ -114,10 +118,10 @@ fn keys(attributes: &[Attribute], name: &str, known: &[&str]) -> syn::Result<Vec
             all.extend(parsed?);
             Ok::<_, syn::Error>(all)
         })?;
-    let expected = if name == COMMAND_ATTRIBUTE {
-        COMMAND_KEYS
-    } else {
-        ARGUMENT_KEYS
+    let expected = match name {
+        COMMAND_ATTRIBUTE => COMMAND_KEYS,
+        GROUP_ATTRIBUTE => GROUP_KEYS,
+        _ => ARGUMENT_KEYS,
     };
     let unknown = keys
         .iter()
@@ -230,7 +234,10 @@ struct ArgumentField {
 enum Member {
     Plain(ArgumentField),
     /// `#[argument(flatten)]`: the type's [`ArgumentGroup`] arguments.
-    Group(Type),
+    Group {
+        ident: Ident,
+        ty: Type,
+    },
 }
 
 impl Member {
@@ -242,7 +249,14 @@ impl Member {
             Some(key) if keys.len() > 1 => {
                 Err(syn::Error::new(key.word.span(), FLATTEN_ALONE))
             }
-            Some(_) => Ok(Self::Group(field.ty.clone())),
+            Some(_) => field
+                .ident
+                .clone()
+                .map(|ident| Self::Group {
+                    ident,
+                    ty: field.ty.clone(),
+                })
+                .ok_or_else(|| syn::Error::new(Span::call_site(), NAMED_FIELDS)),
             None => ArgumentField::of(field, &keys).map(Self::Plain),
         }
     }
@@ -295,13 +309,34 @@ impl ArgumentField {
         })
     }
 
-    /// `("name", given)`: whether the field holds a value the caller gave.
+    /// `(Flag::Name, given)`: whether the field holds a value the caller gave.
     fn given(&self) -> Tokens {
-        let (name, ident) = (&self.name, &self.ident);
-        quote!((#name, crate::command::table::Given::given(&self.#ident)))
+        let (flag, ident) = (self.flag(), &self.ident);
+        quote!((
+            crate::error::flag::Flag::#flag,
+            crate::command::table::Given::given(&self.#ident)
+        ))
+    }
+
+    /// `Flag::NoteFormat` for the field `note_format`.
+    fn flag(&self) -> Ident {
+        let pascal: String = self
+            .name
+            .split('_')
+            .flat_map(|word| {
+                let mut letters = word.chars();
+                letters
+                    .next()
+                    .map(|first| first.to_ascii_uppercase())
+                    .into_iter()
+                    .chain(letters)
+            })
+            .collect();
+        Ident::new(&pascal, self.ident.span())
     }
 
     fn emit(&self) -> Tokens {
+        let flag = self.flag();
         let Self {
             name,
             ty,
@@ -321,6 +356,7 @@ impl ArgumentField {
         quote! {
             crate::command::table::Argument {
                 name: #name,
+                flag: crate::error::flag::Flag::#flag,
                 letter: #letter,
                 kind: <#ty as crate::command::table::ArgumentValue>::KIND,
                 required: <#ty as crate::command::table::ArgumentValue>::REQUIRED,
@@ -356,6 +392,8 @@ struct CommandItem {
     no_dry_run: bool,
     /// Writes new files on this computer only, never the board: no `dry_run`.
     local_files: bool,
+    /// The struct writes its own `Validate` impl.
+    validate: bool,
     members: Vec<Member>,
 }
 
@@ -377,6 +415,7 @@ impl CommandItem {
             surfaces: surfaces(&keys)?,
             no_dry_run: keys.iter().any(|key| key.word == NO_DRY_RUN),
             local_files: keys.iter().any(|key| key.word == LOCAL_FILES),
+            validate: keys.iter().any(|key| key.word == VALIDATE),
             members,
         })
     }
@@ -385,7 +424,7 @@ impl CommandItem {
     fn own(&self) -> impl Iterator<Item = &ArgumentField> {
         self.members.iter().filter_map(|member| match member {
             Member::Plain(argument) => Some(argument),
-            Member::Group(_) => None,
+            Member::Group { .. } => None,
         })
     }
 
@@ -474,8 +513,23 @@ impl CommandItem {
                 }
             }
         });
+        let validate = (!self.validate).then(|| {
+            let groups = self.members.iter().filter_map(|member| match member {
+                Member::Group { ident, .. } => Some(ident),
+                Member::Plain(_) => None,
+            });
+            quote! {
+                impl crate::command::table::Validate for #name {
+                    fn validate(&self) -> ::core::result::Result<(), crate::error::input::InputError> {
+                        #(crate::command::table::Validate::validate(&self.#groups)?;)*
+                        ::core::result::Result::Ok(())
+                    }
+                }
+            }
+        });
         quote! {
             #changes
+            #validate
             impl crate::command::table::CommandArgs for #name {
                 const COMMAND: crate::command::table::Command = crate::command::table::Command {
                     group: crate::command::table::CommandGroup::#group,
@@ -500,7 +554,7 @@ fn arguments(members: &[Member]) -> Tokens {
         .iter()
         .map(|member| match member {
             Member::Plain(argument) => Some(argument.emit()),
-            Member::Group(_) => None,
+            Member::Group { .. } => None,
         })
         .collect();
     own.map_or_else(
@@ -510,7 +564,7 @@ fn arguments(members: &[Member]) -> Tokens {
                     let argument = argument.emit();
                     quote!(&[#argument])
                 }
-                Member::Group(ty) => {
+                Member::Group { ty, .. } => {
                     quote!(<#ty as crate::command::table::ArgumentGroup>::ARGUMENTS)
                 }
             });
@@ -543,23 +597,31 @@ pub(crate) fn expand_group(item: Tokens) -> syn::Result<Tokens> {
     let members = named_fields(&item)?;
     let nested = members
         .iter()
-        .any(|member| matches!(member, Member::Group(_)));
+        .any(|member| matches!(member, Member::Group { .. }));
     (!nested)
         .then_some(())
         .ok_or_else(|| syn::Error::new(name.span(), NO_NESTED_GROUP))?;
     let arguments = arguments(&members);
     let given = members.iter().filter_map(|member| match member {
         Member::Plain(argument) => Some(argument.given()),
-        Member::Group(_) => None,
+        Member::Group { .. } => None,
     });
+    let validate = keys(&item.attrs, GROUP_ATTRIBUTE, &[VALIDATE])?
+        .is_empty()
+        .then(|| {
+            quote! {
+                impl crate::command::table::Validate for #name {}
+            }
+        });
     Ok(quote! {
+        #validate
         impl crate::command::table::ArgumentGroup for #name {
             const ARGUMENTS: &'static [crate::command::table::Argument] = #arguments;
 
-            fn first_given(&self) -> ::core::option::Option<&'static str> {
+            fn first_given(&self) -> ::core::option::Option<crate::error::flag::Flag> {
                 [#(#given),*]
                     .into_iter()
-                    .find_map(|(name, given)| given.then_some(name))
+                    .find_map(|(flag, given)| given.then_some(flag))
             }
         }
     })

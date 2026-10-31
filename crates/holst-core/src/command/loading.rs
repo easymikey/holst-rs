@@ -6,7 +6,7 @@ use crate::{
         board::{AreaArgs, Caching},
         board_load::CacheUse,
         lookup::{self, Fresh},
-        table::not_value,
+        table::Validate,
     },
     domain::{
         area::Area,
@@ -17,6 +17,7 @@ use crate::{
     error::{
         Error,
         Result,
+        flag::Flag,
         input::InputError,
         local_data::LocalDataError,
         lookup::{LookupError, LookupKind, LookupMiss},
@@ -34,15 +35,25 @@ pub(in crate::command) struct Loading<'a> {
     pub(in crate::command) cache_use: CacheUse,
 }
 
-pub(in crate::command) fn cache_use(
-    caching: &Caching,
-    command: &str,
-) -> Result<CacheUse> {
+/// How the flags ask for the cache; `--refresh` with `--offline` is refused by
+/// [`Caching::validate`] before this is asked.
+pub(in crate::command) fn cache_use(caching: &Caching) -> CacheUse {
     match (caching.refresh, caching.offline) {
-        (true, true) => Err(not_value(command, "offline", "left out with --refresh")),
-        (true, false) => Ok(CacheUse::Refresh),
-        (false, true) => Ok(CacheUse::Offline),
-        (false, false) => Ok(CacheUse::Use),
+        (true, _) => CacheUse::Refresh,
+        (false, true) => CacheUse::Offline,
+        (false, false) => CacheUse::Use,
+    }
+}
+
+impl Validate for Caching {
+    fn validate(&self) -> std::result::Result<(), InputError> {
+        match (self.refresh, self.offline) {
+            (true, true) => Err(InputError::Conflict {
+                flag: Flag::Offline,
+                other: Flag::Refresh,
+            }),
+            (true, false) | (false, _) => Ok(()),
+        }
     }
 }
 

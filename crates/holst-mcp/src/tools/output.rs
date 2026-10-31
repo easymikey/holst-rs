@@ -41,21 +41,13 @@ pub(crate) fn on(name: CommandName) -> bool {
 }
 
 /// Takes `output` out of the arguments of the command `name`.
-pub(crate) fn take(
-    arguments: &mut Map<String, Value>,
-    name: CommandName,
-) -> Result<Output, Error> {
+pub(crate) fn take(arguments: &mut Map<String, Value>) -> Result<Output, Error> {
     let given = arguments.remove("output").filter(|value| !value.is_null());
     match given.as_ref().map(Value::as_str) {
         None | Some(Some("text")) => Ok(Output::Text),
         Some(Some("json")) => Ok(Output::Json),
         Some(Some(_) | None) => {
-            Err(holst_core::Error::from(InputError::NotArgumentValue {
-                command: name.command().path(),
-                name: "output",
-                expected: "one of text, json".to_owned(),
-            })
-            .into())
+            Err(holst_core::Error::from(InputError::NotOutput).into())
         }
     }
 }

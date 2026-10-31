@@ -18,7 +18,7 @@ use crate::{
             Confirmation,
             EnumArgument,
             TextOrFile,
-            not_value,
+            Validate,
         },
     },
     domain::{
@@ -37,7 +37,6 @@ use crate::{
 };
 
 const EDIT: &str = "template edit";
-const LS: &str = "template ls";
 /// The verbs of `holst template`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumIter)]
 pub enum TemplateVerb {
@@ -65,6 +64,7 @@ impl TemplateVerb {
 #[holst_command(
     group = Template,
     verb = "ls",
+    validate,
     risk = Read,
     about = "List templates or their categories",
     help = "List templates or, with --view categories, their categories.\n\
@@ -136,6 +136,7 @@ pub struct ShowArgs {
 #[holst_command(
     group = Template,
     verb = "create",
+    validate,
     risk = Write,
     about = "Save a board or a part of it as a template",
     help = "Save a board or a part of it as a template.\n\
@@ -324,17 +325,19 @@ impl Changed {
 /// A workspace or category that is not found, `--category` outside the
 /// standard view, and errors of the requests.
 pub async fn ls(client: &Client, args: &LsArgs) -> Result<Listing> {
-    let view = args.view.unwrap_or_default();
-    match (view, &args.category) {
-        (TemplateView::Standard, _) | (_, None) => listing(client, view, args).await,
-        (
-            TemplateView::Mine | TemplateView::Workspace | TemplateView::Categories,
-            Some(_),
-        ) => Err(not_value(
-            LS,
-            "category",
-            "left out unless --view is standard",
-        )),
+    listing(client, args.view.unwrap_or_default(), args).await
+}
+
+/// A category is listed in the standard view only.
+impl Validate for LsArgs {
+    fn validate(&self) -> std::result::Result<(), InputError> {
+        match (self.view.unwrap_or_default(), &self.category) {
+            (TemplateView::Standard, _) | (_, None) => Ok(()),
+            (
+                TemplateView::Mine | TemplateView::Workspace | TemplateView::Categories,
+                Some(_),
+            ) => Err(InputError::CategoryWithoutStandardView),
+        }
     }
 }
 

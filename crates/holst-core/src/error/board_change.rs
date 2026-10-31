@@ -6,7 +6,10 @@ use holst_macros::Hint;
 use itertools::Itertools as _;
 
 use crate::{
-    domain::{board::ObjectKind, change::kind_edit::Track},
+    domain::{
+        board::{ObjectKind, role::BoardRole},
+        change::kind_edit::Track,
+    },
     error::Error,
 };
 
@@ -255,28 +258,28 @@ pub enum BoardChangeError {
          nothing was copied"
     )]
     #[hint(AskOwner)]
-    CopyWithheld { needs: String, holds: &'static str },
+    CopyWithheld { needs: BoardRole, holds: BoardRole },
 
     #[error(
         "locking and unlocking on this board is held to {needs} and above: your right here \
          is {holds}; nothing was changed"
     )]
     #[hint(AskOwner)]
-    LockWithheld { needs: String, holds: &'static str },
+    LockWithheld { needs: BoardRole, holds: BoardRole },
 
     #[error(
         "hiding and showing frame content on this board is held to {needs} and above: your \
          right here is {holds}; nothing was changed"
     )]
     #[hint(AskOwner)]
-    HideWithheld { needs: String, holds: &'static str },
+    HideWithheld { needs: BoardRole, holds: BoardRole },
 
     #[error(
         "removing objects on this board is held to {needs} and above: your right here is \
          {holds}; a restore removes what the backup lacks, so nothing was changed"
     )]
     #[hint(AskOwner)]
-    DeleteWithheld { needs: String, holds: &'static str },
+    DeleteWithheld { needs: BoardRole, holds: BoardRole },
 
     #[error(
         "the target board already has {objects} objects: only an empty board takes an import; \
@@ -494,7 +497,10 @@ pub(super) mod tests {
     use rstest::rstest;
 
     use crate::{
-        domain::{board::ObjectKind, change::kind_edit::Track},
+        domain::{
+            board::{ObjectKind, role::BoardRole},
+            change::kind_edit::Track,
+        },
         error::{
             Error,
             board_change::{
@@ -527,8 +533,8 @@ pub(super) mod tests {
         vec![
             BoardChangeError::ReadOnly,
             BoardChangeError::CopyWithheld {
-                needs: text(),
-                holds: "viewer",
+                needs: BoardRole::Owner,
+                holds: BoardRole::Viewer,
             },
             BoardChangeError::NotEmpty { objects: 1 },
             BoardChangeError::NoObject { reference: text() },
@@ -610,16 +616,16 @@ pub(super) mod tests {
             },
             BoardChangeError::NotGroup { reference: text() },
             BoardChangeError::LockWithheld {
-                needs: text(),
-                holds: "editor",
+                needs: BoardRole::Owner,
+                holds: BoardRole::Editor,
             },
             BoardChangeError::HideWithheld {
-                needs: text(),
-                holds: "editor",
+                needs: BoardRole::Owner,
+                holds: BoardRole::Editor,
             },
             BoardChangeError::DeleteWithheld {
-                needs: text(),
-                holds: "editor",
+                needs: BoardRole::Owner,
+                holds: BoardRole::Editor,
             },
             BoardChangeError::NotLockable {
                 reference: text(),

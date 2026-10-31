@@ -18,7 +18,7 @@ use crate::{
         change::{ChangeReport, PlannedRequest, gate},
         lookup,
         node,
-        table::{Confirmation, not_value},
+        table::{Confirmation, Validate},
     },
     domain::{
         board::Object,
@@ -36,14 +36,12 @@ use crate::{
         Error,
         Result,
         confirmation::{ChangeRisk, Unconfirmed},
+        flag::Flag,
         input::InputError,
     },
     remote::{api, client::Client},
     storage::file::{read, write_new},
 };
-
-const EXPORT: &str = "board export";
-const IMPORT: &str = "board import";
 
 /// The file name that asks for the document itself, not a file.
 pub const STDOUT: &str = "-";
@@ -94,6 +92,16 @@ pub async fn export(
     .await
 }
 
+/// An object list goes beside a file, not to stdout.
+impl Validate for ExportArgs {
+    fn validate(&self) -> std::result::Result<(), InputError> {
+        match self.file.as_deref() {
+            Some(STDOUT) if self.object_list => Err(InputError::ObjectListToStdout),
+            Some(_) | None => Ok(()),
+        }
+    }
+}
+
 async fn exported(
     client: &Client,
     loading: Loading<'_>,
@@ -102,19 +110,10 @@ async fn exported(
 ) -> Result<Exported> {
     let id = lookup::board_id(client, &args.board, args.workspace.as_deref()).await?;
     let place = match (args.file.as_deref(), downloads) {
-        (Some(STDOUT), _) if args.object_list => Err(not_value(
-            EXPORT,
-            "object_list",
-            "left out when the file is -",
-        ))?,
         (Some(STDOUT), _) => Wanted::Inline,
         (Some(file), _) => Wanted::File(Path::new(file)),
         (None, Some(dir)) => Wanted::Downloads(dir),
-        (None, None) => Err(not_value(
-            EXPORT,
-            "file",
-            "given: there is no home directory to find ~/Downloads in",
-        ))?,
+        (None, None) => Err(InputError::NoHomeDirectory { flag: Flag::File })?,
     };
     let (compression, extension) = if args.no_compress {
         (Compression::Plain, "ydoc")
@@ -234,7 +233,6 @@ async fn imported(
     loading: Loading<'_>,
     args: &ImportArgs,
 ) -> Result<Imported> {
-    refuse_stray(args)?;
     let file = read(&args.path)?;
     let state = compression::uncompressed(&file)?;
     let saved = document::saved_objects(&state)?;
@@ -245,21 +243,28 @@ async fn imported(
 }
 
 /// Refuses what only the other kind of import takes.
-fn refuse_stray(args: &ImportArgs) -> Result<()> {
-    let stray = match &args.into {
-        Some(_) => [
-            ("folder", args.folder.is_some()),
-            ("name", args.name.is_some()),
-        ]
-        .into_iter()
-        .find_map(|(name, given)| given.then_some((name, "left out with into"))),
-        None => args
-            .merge
-            .then_some(("merge", "left out unless into is given")),
-    };
-    stray.map_or(Ok(()), |(name, expected)| {
-        Err(not_value(IMPORT, name, expected))
-    })
+impl Validate for ImportArgs {
+    fn validate(&self) -> std::result::Result<(), InputError> {
+        match &self.into {
+            Some(_) => [
+                (Flag::Folder, self.folder.is_some()),
+                (Flag::Name, self.name.is_some()),
+            ]
+            .into_iter()
+            .find(|(_, given)| *given)
+            .map_or(Ok(()), |(flag, _)| {
+                Err(InputError::Conflict {
+                    flag,
+                    other: Flag::Into,
+                })
+            }),
+            None if self.merge => Err(InputError::Requires {
+                flag: Flag::Merge,
+                needs: Flag::Into,
+            }),
+            None => Ok(()),
+        }
+    }
 }
 
 async fn into_board(
@@ -426,7 +431,7 @@ fn named_after(file: &Path) -> Result<String> {
         .file_stem()
         .and_then(|stem| stem.to_str())
         .map(str::to_owned)
-        .ok_or_else(|| not_value(IMPORT, "name", "given: the file's name gives none"))
+        .ok_or_else(|| Error::from(InputError::ImportNameNotFromFile))
 }
 
 #[cfg(test)] mod tests;

@@ -20,7 +20,7 @@ use crate::{
         fixture::{after_channel, channel, channel_with},
     },
     domain::{
-        board::{EditRight, LoadedBoard, state_vector::ahead},
+        board::{EditRight, LoadedBoard, role::BoardRole, state_vector::ahead},
         board_text::index::BoardIndex,
     },
     effect::{
@@ -972,20 +972,17 @@ async fn every_load_registers_the_objects_root_of_the_format(
 }
 
 #[rstest::rstest]
-#[case::editor_under_co_owner(&["write"], "co_owner", Some(("co_owner", "editor")))]
+#[case::editor_under_co_owner(&["write"], "co_owner", Some((BoardRole::CoOwner, BoardRole::Editor)))]
 #[case::co_owner_under_editor(&["set_permits", "write"], "editor", None)]
 #[case::editor_under_editor(&["write"], "editor", None)]
-#[case::viewer_under_editor(&["read"], "editor", Some(("editor", "viewer")))]
+#[case::viewer_under_editor(&["read"], "editor", Some((BoardRole::Editor, BoardRole::Viewer)))]
 #[case::unknown_role(&["read"], "", None)]
 fn a_setting_above_the_callers_role_is_withheld(
     #[case] permits: &[&str],
     #[case] needs: &str,
-    #[case] expected: Option<(&str, &str)>,
+    #[case] expected: Option<(BoardRole, BoardRole)>,
 ) {
     let channel = json!({ "permits": permits, "who_can_delete_content": needs });
     let got = crate::command::board_load::withheld(&channel, "who_can_delete_content");
-    assert_eq!(
-        got.as_ref().map(|(least, holds)| (least.as_str(), *holds)),
-        expected
-    );
+    assert_eq!(got, expected);
 }

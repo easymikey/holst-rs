@@ -19,7 +19,7 @@ use crate::{
         change::ChangeReport,
         lookup,
         node,
-        table::{not_value, parse},
+        table::{Validate, parse},
     },
     domain::{
         board::EditRight,
@@ -28,7 +28,13 @@ use crate::{
         rich_text::{kept_note, template::NoteTemplate},
     },
     effect::{board_write::WriteMode, confirmation::ALWAYS, settings::CacheSettings},
-    error::{Error, Result, board_change::BoardChangeError, input::InputError},
+    error::{
+        Error,
+        Result,
+        board_change::BoardChangeError,
+        flag::Flag,
+        input::InputError,
+    },
     remote::{
         api::{
             self,
@@ -40,7 +46,6 @@ use crate::{
     storage::file,
 };
 
-const EDIT: &str = "board edit";
 /// The longest side of an automatic preview, in pixels.
 const PREVIEW_SIDE: u32 = 640;
 
@@ -147,12 +152,7 @@ async fn edited(
     args: &EditArgs,
 ) -> Result<Edited> {
     let cover = args.cover.as_deref().map(cover_of).transpose()?;
-    let (cover, note) = match (cover, note_of(args)?) {
-        (None, None) => {
-            Err(not_value(EDIT, "cover", "given, or note or note-template"))
-        }
-        given => Ok(given),
-    }?;
+    let note = note_of(args);
     let id = lookup::board_id(client, &args.board, args.workspace.as_deref()).await?;
     let sending = args.dry_run == WriteMode::Send;
     // Read before any upload; a sending reset reads it when it draws the board.
@@ -208,24 +208,40 @@ fn cover_changed(cover: Option<&CoverEdit>, error: Error) -> Error {
     }
 }
 
-/// The note as given, checked before anything is sent.
-fn note_of(args: &EditArgs) -> Result<Option<NoteContent>> {
-    match (&args.note, args.note_template, args.note_format) {
-        (Some(_), Some(_), _) => {
-            Err(not_value(EDIT, "note-template", "left out with note"))
+/// A change is asked for; the note comes from its text or a template, and a
+/// format goes with the text.
+impl Validate for EditArgs {
+    fn validate(&self) -> std::result::Result<(), InputError> {
+        match (&self.note, self.note_template, self.note_format) {
+            (Some(_), Some(_), _) => Err(InputError::Conflict {
+                flag: Flag::NoteTemplate,
+                other: Flag::Note,
+            }),
+            (None, Some(_), Some(_)) => Err(InputError::Conflict {
+                flag: Flag::NoteFormat,
+                other: Flag::NoteTemplate,
+            }),
+            (None, None, Some(_)) => Err(InputError::Requires {
+                flag: Flag::NoteFormat,
+                needs: Flag::Note,
+            }),
+            (None, None, None) if self.cover.is_none() => Err(InputError::OneOf {
+                flags: &[Flag::Cover, Flag::Note, Flag::NoteTemplate],
+            }),
+            (Some(_), None, _) | (None, Some(_) | None, None) => Ok(()),
         }
-        (None, Some(_), Some(_)) => Err(not_value(
-            EDIT,
-            "note-format",
-            "left out with note-template",
-        )),
-        (None, None, Some(_)) => Err(not_value(EDIT, "note-format", "given with note")),
-        (Some(text), None, format) => Ok(Some(NoteContent::Text {
+    }
+}
+
+/// The note as given; `validate` has refused the combinations.
+fn note_of(args: &EditArgs) -> Option<NoteContent> {
+    match (&args.note, args.note_template) {
+        (Some(text), _) => Some(NoteContent::Text {
             text: text.0.clone(),
-            format: format.unwrap_or_default(),
-        })),
-        (None, Some(template), None) => Ok(Some(NoteContent::Template(template))),
-        (None, None, None) => Ok(None),
+            format: args.note_format.unwrap_or_default(),
+        }),
+        (None, Some(template)) => Some(NoteContent::Template(template)),
+        (None, None) => None,
     }
 }
 
@@ -276,13 +292,7 @@ fn cover_of(given: &str) -> Result<Cover> {
                     bytes,
                     format,
                 })
-                .ok_or_else(|| {
-                    not_value(
-                        EDIT,
-                        "cover",
-                        "a png, jpg, gif or webp picture, or reset",
-                    )
-                })
+                .ok_or_else(|| Error::from(InputError::CoverNotPicture))
         }
     }
 }
@@ -445,7 +455,7 @@ async fn preview(
         (EditRight::ReadOnly, _) => Err(Error::BoardChange(BoardChangeError::ReadOnly)),
         (EditRight::Editable, Delivery::Inline { bytes }) => Ok((bytes, seen.channel)),
         (EditRight::Editable, Delivery::Written { .. }) => {
-            Err(not_value(EDIT, "cover", "a picture drawn in memory"))
+            Err(InputError::CoverNotInMemory.into())
         }
     }
 }
@@ -732,32 +742,32 @@ mod tests {
     #[rstest::rstest]
     #[case::nothing(
         json!({ "board": BOARD }),
-        "cover of `board edit` must be given, or note or note-template"
+        "give one of `--cover`, `--note`, `--note-template`"
     )]
     #[case::both(
         json!({ "board": BOARD, "note": "a", "note_template": "todo" }),
-        "note-template of `board edit` must be left out with note"
+        "`--note-template` cannot be used with `--note`"
     )]
     #[case::format_of_template(
         json!({ "board": BOARD, "note_template": "todo", "note_format": "markdown" }),
-        "note-format of `board edit` must be left out with note-template"
+        "`--note-format` cannot be used with `--note-template`"
     )]
     #[case::format_alone(
         json!({ "board": BOARD, "note_format": "markdown" }),
-        "note-format of `board edit` must be given with note"
+        "`--note-format` needs `--note`"
     )]
     #[tokio::test]
     async fn a_note_asked_wrongly_is_refused_before_any_request(
         #[case] given: Value,
         #[case] message: &str,
-    ) -> Result<()> {
-        let (fake, done) = run(&given, [], &editable()).await?;
+    ) {
         assert_eq!(
-            done.err().map(|error| error.to_string()).as_deref(),
+            arguments::<EditArgs>(given)
+                .err()
+                .map(|error| error.to_string())
+                .as_deref(),
             Some(message)
         );
-        assert!(fake.requests().is_empty());
-        Ok(())
     }
 
     #[tokio::test]

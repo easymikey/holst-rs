@@ -6,7 +6,6 @@ use base64::Engine as _;
 use holst_core::{
     command::{
         board::{
-            BoardVerb,
             ExportArgs,
             ImportArgs,
             PictureFormat,
@@ -18,7 +17,7 @@ use holst_core::{
             show::{self, BoardBrief, Briefs},
         },
         change::{ChangeReport, PlannedRequest},
-        table::{CommandName, parse},
+        table::parse,
     },
     domain::{
         picture::MAX_SIDE_MODEL,
@@ -43,8 +42,7 @@ impl McpServer {
         &self,
         mut arguments: Map<String, Value>,
     ) -> CallToolResult {
-        let taken =
-            super::output::take(&mut arguments, CommandName::Board(BoardVerb::Show));
+        let taken = super::output::take(&mut arguments);
         let read = taken.and_then(|output| Ok((output, parse::<ShowArgs>(arguments)?)));
         match read {
             Ok((output, args)) => {

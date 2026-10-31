@@ -17,7 +17,7 @@ use crate::{
             change::{load_board, named},
         },
         stored_file,
-        table::not_value,
+        table::Validate,
     },
     domain::{
         area::scene::Scene,
@@ -25,7 +25,13 @@ use crate::{
         lookup::rules::find_id,
     },
     effect::settings::CacheSettings,
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{
+        Error,
+        Result,
+        board_change::BoardChangeError,
+        flag::Flag,
+        input::InputError,
+    },
     remote::client::Client,
 };
 
@@ -172,6 +178,20 @@ where
     }
 }
 
+/// A file and a directory are two places for one download.
+impl Validate for GetArgs {
+    fn validate(&self) -> std::result::Result<(), InputError> {
+        if self.file.is_some() && self.dir.is_some() {
+            Err(InputError::Conflict {
+                flag: Flag::Dir,
+                other: Flag::File,
+            })
+        } else {
+            Ok(())
+        }
+    }
+}
+
 /// `None` for `-`: the bytes are returned. `stem` names a file in a directory.
 fn place_of<'a>(
     args: &'a GetArgs,
@@ -181,20 +201,17 @@ fn place_of<'a>(
 ) -> Result<Option<Place<'a>>> {
     let dir = args.dir.as_deref().map(Path::new);
     match (args.file.as_ref(), dir, downloads) {
-        (Some(_), Some(_), _) => Err(not_value(COMMAND, "dir", "left out with a file")),
-        (Some(_), None, _) if count > 1 => {
-            Err(not_value(COMMAND, "file", "left out with several objects"))
+        (Some(_), _, _) if count > 1 => {
+            Err(InputError::NotForSeveralObjects { flag: Flag::File }.into())
         }
-        (Some(file), None, _) if file.0 == Path::new("-") => Ok(None),
-        (Some(file), None, _) => Ok(Some(Place::File(&file.0))),
+        (Some(file), _, _) if file.0 == Path::new("-") => Ok(None),
+        (Some(file), _, _) => Ok(Some(Place::File(&file.0))),
         (None, Some(dir), _) | (None, None, Some(dir)) => {
             Ok(Some(Place::Numbered(dir, stem.to_owned())))
         }
-        (None, None, None) => Err(not_value(
-            COMMAND,
-            "file",
-            "given: there is no home directory to find ~/Downloads in",
-        )),
+        (None, None, None) => {
+            Err(InputError::NoHomeDirectory { flag: Flag::File }.into())
+        }
     }
 }
 
@@ -390,7 +407,7 @@ mod tests {
                 .map(|error| error.to_string());
         assert_eq!(
             refused.as_deref(),
-            Some("file of `object get` must be left out with several objects")
+            Some("`--file` cannot be used with several objects")
         );
         Ok(())
     }
@@ -402,10 +419,20 @@ mod tests {
             .map(|error| error.to_string());
         assert_eq!(
             refused.as_deref(),
-            Some(
-                "file of `object get` must be given: there is no home directory to find ~/Downloads in"
-            )
+            Some("there is no home directory: give `--file`")
         );
         Ok(())
+    }
+    #[test]
+    fn parse_refuses_a_directory_beside_a_file() {
+        let error = arguments::<crate::command::object::GetArgs>(
+            json!({"object": [IMAGE], "dir": "d", "file": "f.png"}),
+        );
+        assert!(matches!(
+            error,
+            Err(Error::Input(
+                crate::error::input::InputError::Conflict { .. }
+            ))
+        ));
     }
 }

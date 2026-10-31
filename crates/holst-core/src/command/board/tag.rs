@@ -13,7 +13,7 @@ use crate::{
         board_load::CacheUse,
         board_write::{BoardWrite, change_board},
         change::{ChangeReport as Settled, Outcome, gate},
-        table::{Confirmation, not_value},
+        table::{Confirmation, Validate},
     },
     domain::{
         change::{
@@ -30,11 +30,11 @@ use crate::{
     error::{
         Result,
         confirmation::{ChangeRisk, Unconfirmed},
+        flag::Flag,
+        input::InputError,
     },
     remote::client::Client,
 };
-
-const TAG: &str = "board tag";
 
 /// What was asked of the tag, told by its title.
 #[derive(Debug, Serialize)]
@@ -121,17 +121,31 @@ pub async fn tag(
     .await
 }
 
-/// What `args` ask of the tag: a removal stands alone.
+/// A removal stands alone.
+impl Validate for TagArgs {
+    fn validate(&self) -> std::result::Result<(), InputError> {
+        let others = [
+            (Flag::Name, self.name.is_some()),
+            (Flag::Color, self.color.is_some()),
+        ];
+        match others.into_iter().find(|(_, given)| self.remove && *given) {
+            Some((other, _)) => Err(InputError::Conflict {
+                flag: Flag::Remove,
+                other,
+            }),
+            None => Ok(()),
+        }
+    }
+}
+
+/// What `args` ask of the tag.
 fn asked(args: &TagArgs) -> Result<TagChange> {
     let color = args.color.as_deref().map(str::parse::<Color>).transpose()?;
-    match (args.remove, args.name.is_some() || color.is_some()) {
-        (true, true) => Err(not_value(TAG, "remove", "left out with name and color")),
-        (true, false) | (false, _) => Ok(TagChange {
-            name: args.name.clone(),
-            color,
-            remove: args.remove,
-        }),
-    }
+    Ok(TagChange {
+        name: args.name.clone(),
+        color,
+        remove: args.remove,
+    })
 }
 
 async fn tagged(
@@ -221,7 +235,7 @@ mod tests {
             fixture::{STICKER, arguments, board_tagged_of, objects, over},
         },
         domain::change::receipt::Delivery,
-        error::{Error, input::InputError},
+        error::{Error, flag::Flag, input::InputError},
         remote::socket::fake::signed_in,
     };
 
@@ -323,13 +337,13 @@ mod tests {
         assert!(matches!(
             (named, colored),
             (
-                Err(Error::Input(InputError::NotArgumentValue {
-                    name: "remove",
-                    ..
+                Err(Error::Input(InputError::Conflict {
+                    flag: Flag::Remove,
+                    other: Flag::Name,
                 })),
-                Err(Error::Input(InputError::NotArgumentValue {
-                    name: "remove",
-                    ..
+                Err(Error::Input(InputError::Conflict {
+                    flag: Flag::Remove,
+                    other: Flag::Color,
                 }))
             )
         ));

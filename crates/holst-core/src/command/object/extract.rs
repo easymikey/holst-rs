@@ -16,7 +16,7 @@ use crate::{
             EditFields,
             change::{Removed, load_board_read, named, settled},
         },
-        table::{ArgumentGroup as _, not_value},
+        table::ArgumentGroup as _,
     },
     domain::{
         area::scene::{Scene, drawn_scale},
@@ -31,7 +31,13 @@ use crate::{
         response::PagesInfo,
     },
     effect::{board_write::WriteMode, confirmation::ALWAYS},
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{
+        Error,
+        Result,
+        board_change::BoardChangeError,
+        flag::Flag,
+        input::InputError,
+    },
     protocol::document::{FILE_NAME, POSITION},
     remote::{
         api::files::{convert_pages, page_count as page_count_of},
@@ -135,19 +141,23 @@ pub(super) async fn extracted(
 }
 
 /// What `--extract` cannot stand beside: `--items`, a picture, any other field.
-fn refuse_beside(args: &EditArgs) -> Result<()> {
+fn refuse_beside(args: &EditArgs) -> std::result::Result<(), InputError> {
     let others = EditFields {
         extract: None,
         ..args.edit.clone()
+    };
+    let beside = |flag| InputError::Conflict {
+        flag,
+        other: Flag::Extract,
     };
     match (
         args.items.0.is_empty(),
         args.path.is_some(),
         others.first_given(),
     ) {
-        (false, _, _) => Err(not_value(EDIT, "items", "left out with --extract")),
-        (_, true, _) => Err(not_value(EDIT, "path", "left out with --extract")),
-        (_, _, Some(name)) => Err(not_value(EDIT, name, "left out with --extract")),
+        (false, _, _) => Err(beside(Flag::Items)),
+        (_, true, _) => Err(beside(Flag::Path)),
+        (_, _, Some(flag)) => Err(beside(flag)),
         (true, false, None) => Ok(()),
     }
 }
@@ -155,7 +165,7 @@ fn refuse_beside(args: &EditArgs) -> Result<()> {
 fn one_object(args: &EditArgs) -> Result<String> {
     match named(&args.board, &args.object, EDIT)?.as_slice() {
         [one] => Ok(one.clone()),
-        _ => Err(not_value(EDIT, "object", "one file with --extract")),
+        _ => Err(Error::from(InputError::OneValue { flag: Flag::Object })),
     }
 }
 
@@ -174,11 +184,10 @@ fn source<'a>(
         })
     })?;
     let none_counted = || {
-        not_value(
-            EDIT,
-            "extract",
-            &format!("a file with pages: {id} has none counted"),
-        )
+        Error::from(InputError::NoPagesCounted {
+            flag: Flag::Extract,
+            id: id.clone(),
+        })
     };
     match (
         &file.kind,
@@ -190,11 +199,11 @@ fn source<'a>(
             _ => Err(none_counted()),
         },
         (ObjectKind::File, None) => Err(none_counted()),
-        (kind, _) => Err(not_value(
-            EDIT,
-            "extract",
-            &format!("a file with pages: {id} is {}", kind.short_name()),
-        )),
+        (kind, _) => Err(Error::from(InputError::NotAPageFile {
+            flag: Flag::Extract,
+            id,
+            kind: kind.clone(),
+        })),
     }
 }
 
@@ -207,20 +216,17 @@ async fn counted_by_service(client: &Client, name: &str) -> Result<PagesInfo> {
     if info.valid && info.count > 0 {
         Ok(info)
     } else {
-        Err(not_value(
-            EDIT,
-            "extract",
-            &format!("a file with pages: {name} has no valid pages"),
-        ))
+        Err(Error::from(InputError::NoValidPages {
+            flag: Flag::Extract,
+            name: name.to_owned(),
+        }))
     }
 }
 
 fn unreadable() -> Error {
-    not_value(
-        EDIT,
-        "extract",
-        "all, or pages and ranges such as 1-3,5, from page 1",
-    )
+    Error::from(InputError::NotPages {
+        flag: Flag::Extract,
+    })
 }
 
 /// Pages `list` names: `all`, or commas of pages and ranges, each held to
@@ -247,9 +253,10 @@ pub(super) fn parse_pages(list: &str, count: u32) -> Result<Vec<u32>> {
     };
     match pages.len() {
         0 => Err(unreadable()),
-        taken if taken > MOST_PAGES => {
-            Err(not_value(EDIT, "extract", "at most 50 pages"))
-        }
+        taken if taken > MOST_PAGES => Err(Error::from(InputError::TooManyPages {
+            flag: Flag::Extract,
+            most: MOST_PAGES,
+        })),
         _ => Ok(pages),
     }
 }
@@ -286,9 +293,11 @@ fn copies(
     pages: &[u32],
     counted: Option<PagesInfo>,
 ) -> Result<Vec<Object>> {
-    let own = scene
-        .rectangle_of(file)
-        .ok_or_else(|| not_value(EDIT, "extract", "a file with a box on the board"))?;
+    let own = scene.rectangle_of(file).ok_or_else(|| {
+        Error::from(InputError::FileHasNoBox {
+            flag: Flag::Extract,
+        })
+    })?;
     let gap = GAP * drawn_scale(file);
     let fields = file.fields.as_object().cloned().unwrap_or_default();
     Ok(pages
@@ -362,7 +371,7 @@ mod tests {
         assert_eq!(
             refused
                 .as_deref()
-                .map(|text| text.ends_with("must be at most 50 pages")),
+                .map(|text| text.ends_with("takes at most 50 pages")),
             Some(true),
             "{refused:?}"
         );

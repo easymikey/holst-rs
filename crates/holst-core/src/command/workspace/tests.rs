@@ -586,7 +586,7 @@ fn a_query_is_an_object_of_text_or_numbers() {
             .err()
             .map(|error| error.to_string())
     };
-    let words = "param of `workspace log` must be an object of text or number values";
+    let words = "`--param` must be an object of text or number values";
     assert_eq!(
         (
             wrong(&json!(["limit=50"])).as_deref(),

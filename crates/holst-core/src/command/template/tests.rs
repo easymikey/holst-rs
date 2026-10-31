@@ -10,10 +10,10 @@ use crate::{
             Changed,
             CreateArgs,
             EditArgs,
+            LsArgs,
             ShowArgs,
             create::created,
             edit,
-            ls,
             rm,
             show,
         },
@@ -144,23 +144,13 @@ async fn make(client: &Client, socket: &Scripted, given: &Value) -> Result<Chang
     created(client, socket, &arguments::<CreateArgs>(given.clone())?).await
 }
 
-#[tokio::test]
-async fn a_category_outside_the_standard_view_is_refused() -> Result<()> {
-    let (fake, client) = client([])?;
-    let error = ls(&client, &arguments(json!({ "category": "retro" }))?)
-        .await
-        .err();
+#[test]
+fn a_category_outside_the_standard_view_is_refused() {
+    let error = arguments::<LsArgs>(json!({ "category": "retro" })).err();
     assert_eq!(
-        (error.map(|error| error.to_string()), asked(&fake).len()),
-        (
-            Some(
-                "category of `template ls` must be left out unless --view is standard"
-                    .to_owned()
-            ),
-            0
-        )
+        error.map(|error| error.to_string()).as_deref(),
+        Some("a category is listed in the standard view only")
     );
-    Ok(())
 }
 
 #[tokio::test]
@@ -498,7 +488,7 @@ async fn an_empty_board_or_a_blank_name_makes_no_template() -> Result<()> {
         ),
         (
             Some("the board is empty: there is no area to show".to_owned()),
-            Some("name of `template create` must be text that is not blank".to_owned()),
+            Some("`--name` is empty: give a visible value".to_owned()),
             1
         )
     );

@@ -28,7 +28,6 @@ use crate::{
         board_load::{self, RemoteBoard},
         board_text,
         stored_file::{self, Images},
-        table::not_value,
     },
     domain::{
         area::{Area, ListedArea, listed_area, scene::Scene},
@@ -41,7 +40,13 @@ use crate::{
         text::file_part,
     },
     effect::settings::CacheSettings,
-    error::{Error, Result, stored_file::StoredFileError},
+    error::{
+        Error,
+        Result,
+        flag::Flag,
+        input::InputError,
+        stored_file::StoredFileError,
+    },
     remote::client::Client,
     storage::file::{
         PartialDir,
@@ -52,9 +57,6 @@ use crate::{
         write_numbered,
     },
 };
-
-const SNAP: &str = "board snap";
-const SAVE: &str = "board save";
 
 /// A picture of a board, and where it went.
 #[derive(Debug, Serialize)]
@@ -116,7 +118,7 @@ pub async fn snap(
     downloads: Option<&Path>,
     args: &SnapArgs,
 ) -> Result<Snapped> {
-    let cache_use = cache_use(&args.caching, SNAP)?;
+    let cache_use = cache_use(&args.caching);
     through_cache(client, cache, cache_use, async |loading| {
         snapped(client, loading, downloads, args).await
     })
@@ -136,7 +138,7 @@ pub async fn save(
     downloads: Option<&Path>,
     args: &SaveArgs,
 ) -> Result<Saved> {
-    let cache_use = cache_use(&args.caching, SAVE)?;
+    let cache_use = cache_use(&args.caching);
     through_cache(client, cache, cache_use, async |loading| {
         saved(client, loading, downloads, args).await
     })
@@ -316,11 +318,7 @@ async fn png(svg: &str, images: &Images) -> Result<Vec<u8>> {
 
 #[cfg(not(feature = "png"))]
 fn png(_: &str, _: &Images) -> impl Future<Output = Result<Vec<u8>>> {
-    std::future::ready(Err(not_value(
-        SNAP,
-        "picture-format",
-        "svg: this build draws no PNG",
-    )))
+    std::future::ready(Err(InputError::NoPng.into()))
 }
 
 /// As asked, else by the file's extension, else PNG.
@@ -335,14 +333,10 @@ fn picture_format(
             .find(|format| extension.eq_ignore_ascii_case(format.extension()))
     });
     match (asked, by_extension, extension) {
-        (Some(asked), Some(found), _) if asked != found => Err(not_value(
-            SNAP,
-            "picture-format",
-            &format!("{}, as the file's name says", found.extension()),
-        )),
-        (None, None, Some(_)) => {
-            Err(not_value(SNAP, "file", "a name that ends in .svg or .png"))
+        (Some(asked), Some(found), _) if asked != found => {
+            Err(InputError::PictureFormatNotName { found }.into())
         }
+        (None, None, Some(_)) => Err(InputError::FileNotPictureName.into()),
         (asked, found, _) => Ok(asked.or(found).unwrap_or(PictureFormat::Png)),
     }
 }
@@ -442,13 +436,7 @@ async fn saved(
         .as_deref()
         .map(Path::new)
         .or(downloads)
-        .ok_or_else(|| {
-            not_value(
-                SAVE,
-                "dir",
-                "given: there is no home directory to find ~/Downloads in",
-            )
-        })?;
+        .ok_or(InputError::NoHomeDirectory { flag: Flag::Dir })?;
     let board = Drawing::of(
         client,
         loading,

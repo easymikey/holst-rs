@@ -26,9 +26,16 @@ use crate::{
     error::{
         Result,
         confirmation::{ChangeRisk, Unconfirmed},
+        flag::Flag,
         http::{HttpError, ReplyBody},
-        input::InputError,
-        lookup::{Candidate, Candidates},
+        lookup::{
+            Candidate,
+            Candidates,
+            LookupError,
+            LookupKind,
+            LookupMiss,
+            SkippedWorkspaces,
+        },
     },
     protocol::workspace::{
         CurrentUser,
@@ -461,7 +468,7 @@ fn joinable_rows(reply: Value) -> Result<Vec<WorkspaceRow>> {
 ///
 /// # Errors
 /// Errors of the workspace lookup, of the `workspace get` request, and
-/// [`InputError::NotArgumentValue`] for a `user` that is not one member.
+/// [`LookupError`] for a `user` that is not one member.
 pub async fn show(client: &Client, args: &ShowArgs) -> Result<WorkspaceBrief> {
     let workspace = lookup::workspace(client, args.workspace.as_deref()).await?;
     let reply: WorkspaceReply =
@@ -471,7 +478,7 @@ pub async fn show(client: &Client, args: &ShowArgs) -> Result<WorkspaceBrief> {
     let who = args
         .user
         .as_deref()
-        .map(|reference| find_member(&roster, reference, "workspace show"))
+        .map(|reference| find_member(&roster, reference))
         .transpose()?;
     let wanted: BTreeSet<ShowPart> = args.with.iter().copied().collect();
     let fetched = join_all(
@@ -562,12 +569,13 @@ fn members_in(reply: &WorkspaceReply) -> Vec<Member> {
 }
 
 /// The one member `reference` names: a user id (or its start), a name or an
-/// email (any part, any case). A miss is worded as an argument `user` of
-/// `command`.
+/// email (any part, any case).
+///
+/// # Errors
+/// [`LookupError`] of kind [`LookupKind::Member`]: none fits, or several do.
 pub(crate) fn find_member<'a>(
     members: &'a [Member],
     reference: &str,
-    command: &str,
 ) -> Result<&'a Member> {
     let wanted = reference.trim().to_lowercase();
     let fits = |member: &&Member| {
@@ -589,16 +597,16 @@ pub(crate) fn find_member<'a>(
     match (exact, matching.as_slice()) {
         (Some(member), _) => Ok(member),
         (None, [member]) => Ok(*member),
-        (None, []) => Err(not_one_member(
-            command,
-            format!("a member of the workspace: {}", listed(members.iter())),
+        (None, []) => Err(no_member(
+            reference,
+            LookupMiss::NotFound {
+                unread: SkippedWorkspaces::default(),
+                available: listed(members.iter()),
+            },
         )),
-        (None, many) => Err(not_one_member(
-            command,
-            format!(
-                "one member, but \"{reference}\" fits {}",
-                listed(many.iter().copied())
-            ),
+        (None, many) => Err(no_member(
+            reference,
+            LookupMiss::ambiguous(listed(many.iter().copied())),
         )),
     }
 }
@@ -614,11 +622,11 @@ fn listed<'a>(members: impl Iterator<Item = &'a Member>) -> Candidates {
     )
 }
 
-fn not_one_member(command: &str, expected: String) -> crate::Error {
-    InputError::NotArgumentValue {
-        command: command.to_owned(),
-        name: "user",
-        expected,
+fn no_member(reference: &str, miss: LookupMiss) -> crate::Error {
+    LookupError {
+        kind: LookupKind::Member,
+        reference: reference.to_owned(),
+        miss,
     }
     .into()
 }
@@ -712,9 +720,10 @@ fn only_of(reply: Value, who: Option<&Member>) -> Value {
 /// Creates a workspace; with `dry_run` only the plan.
 ///
 /// # Errors
-/// [`InputError::NotArgumentValue`] for a blank name; errors of the request.
+/// [`crate::error::input::InputError::Blank`] for a blank name; errors of the
+/// request.
 pub async fn create(client: &Client, args: &CreateArgs) -> Result<WorkspaceChange> {
-    let name = visible("workspace create", "name", &args.name)?;
+    let name = visible(Flag::Name, &args.name)?;
     let (report, reply) = settle(
         client,
         api::workspace::create_request(&api::workspace::WorkspaceName {
@@ -743,10 +752,10 @@ pub async fn create(client: &Client, args: &CreateArgs) -> Result<WorkspaceChang
 /// and the change is [`ChangeReport::Held`]; `dry_run` only plans.
 ///
 /// # Errors
-/// [`InputError::NotArgumentValue`] for a blank name; errors of the workspace
-/// lookup and of the request.
+/// [`crate::error::input::InputError::Blank`] for a blank name; errors of the
+/// workspace lookup and of the request.
 pub async fn rename(client: &Client, args: &RenameArgs) -> Result<WorkspaceChange> {
-    let name = visible("workspace rename", "name", &args.name)?;
+    let name = visible(Flag::Name, &args.name)?;
     let workspace = lookup::workspace(client, Some(args.workspace.as_str())).await?;
     let unconfirmed = Unconfirmed::new(
         format!("renaming {} to {name}", workspace.name),

@@ -149,8 +149,7 @@ async fn a_dash_returns_the_document_and_writes_nothing() -> Result<()> {
             Some(true),
             PathBuf::from("-"),
             Some(
-                "object_list of `board export` must be left out when the file is -"
-                    .to_owned()
+                "an object list is saved beside a file: give a file, not -".to_owned()
             )
         )
     );
@@ -181,7 +180,7 @@ async fn the_default_name_ends_in_gz_only_when_compressed() -> Result<()> {
     let none = export(&given, None, 0).await.err();
     assert_eq!(
         none.map(|error| error.to_string()),
-        Some("file of `board export` must be given: there is no home directory to find ~/Downloads in".to_owned())
+        Some("there is no home directory: give `--file`".to_owned())
     );
     Ok(())
 }
@@ -282,20 +281,19 @@ async fn only_into_takes_merge_and_only_a_new_board_takes_a_name() -> Result<()>
     let refused = |given: Value| async move {
         let (_, client) = client([])?;
         let socket = empty();
-        let error = imported(&client, over(&socket), &arguments(given)?)
-            .await
-            .err();
+        let error = match arguments(given) {
+            Ok(args) => imported(&client, over(&socket), &args).await.err(),
+            Err(error) => Some(error),
+        };
         Ok::<_, crate::Error>(error.map(|error| error.to_string()))
     };
     assert_eq!(
         refused(json!({ "path": file, "merge": true })).await?,
-        Some(
-            "merge of `board import` must be left out unless into is given".to_owned()
-        )
+        Some("`--merge` needs `--into`".to_owned())
     );
     assert_eq!(
         refused(json!({ "path": file, "into": BOARD, "name": "X" })).await?,
-        Some("name of `board import` must be left out with into".to_owned())
+        Some("`--name` cannot be used with `--into`".to_owned())
     );
     Ok(())
 }

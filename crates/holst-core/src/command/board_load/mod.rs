@@ -15,7 +15,7 @@ use yrs::{
 
 use crate::{
     domain::{
-        board::{BoardContent, EditRight, LoadedBoard},
+        board::{BoardContent, EditRight, LoadedBoard, role::BoardRole},
         board_file::document,
         board_text::index::BoardIndex,
     },
@@ -156,27 +156,19 @@ pub async fn whole_file(client: &Client, board: &str) -> Result<()> {
     format(client, board).await?.whole_file()
 }
 
-/// The roles of the web client's scale, the lowest first.
-const SCALE: [&str; 5] = ["viewer", "commentator", "editor", "co_owner", "owner"];
-
 /// The role each permit gives, the top one first; a user with none is a viewer.
-const BY_PERMIT: [(&str, &str); 3] = [
-    ("set_permits", "co_owner"),
-    ("write", "editor"),
-    ("write_comments", "commentator"),
+const BY_PERMIT: [(&str, BoardRole); 3] = [
+    ("set_permits", BoardRole::CoOwner),
+    ("write", BoardRole::Editor),
+    ("write_comments", BoardRole::Commentator),
 ];
-
-fn rank(role: &str) -> Option<usize> {
-    SCALE.iter().position(|known| *known == role)
-}
-
 /// The role the board asks for in its `who_can_*` field `setting` and the
 /// role the caller's permits give there, when the first stands above the
 /// second, as the web client compares them.
 pub(crate) fn withheld(
     channel: &Value,
     setting: &str,
-) -> Option<(String, &'static str)> {
+) -> Option<(BoardRole, BoardRole)> {
     let held = BY_PERMIT
         .iter()
         .find(|(permit, _)| {
@@ -187,12 +179,13 @@ pub(crate) fn withheld(
                     permits.iter().any(|held| held.as_str() == Some(permit))
                 })
         })
-        .map_or("viewer", |(_, role)| *role);
+        .map_or(BoardRole::Viewer, |(_, role)| *role);
     channel
         .get(setting)
         .and_then(Value::as_str)
-        .filter(|needs| rank(needs) > rank(held))
-        .map(|needs| (needs.to_owned(), held))
+        .and_then(|needs| needs.parse::<BoardRole>().ok())
+        .filter(|needs| *needs > held)
+        .map(|needs| (needs, held))
 }
 
 /// The board loaded into `seed`, if any; a seed ahead of the server goes and
