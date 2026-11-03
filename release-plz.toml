@@ -1,0 +1,20 @@
+[workspace]
+semver_check = false
+changelog_update = true
+git_tag_enable = true
+git_tag_name = "{{ package }}-v{{ version }}"
+git_release_enable = true
+
+[changelog]
+protect_breaking_commits = true
+commit_parsers = [
+    { message = "^(chore|ci|test|style|build|docs)", skip = true },
+    { message = "^feat", group = "Added" },
+    { message = "^fix", group = "Fixed" },
+    { message = "^(refactor|perf|revert)", group = "Changed" },
+    { message = "^.*", group = "Changed" },
+]
+
+[[package]]
+name = "holst-scenarios"
+release = false

@@ -1,37 +1,75 @@
 nightly := "nightly-2026-10-30"
+zig := "0.17.0"
 size_holst := "11400000"
 size_holst_mcp := "12400000"
 startup_ms_holst := "50"
 startup_ms_holst_mcp := "50"
 
-[private]
-default:
-    @{{ just_executable() }} --list
+default: lint check deps features budget
 
-# Format the code.
+lint: fmt-check spell clippy
+check: test doctest doc
+deps: deny machete
+
 fmt:
     cargo +{{ nightly }} fmt --all
 
-# CI job `lint`: formatting and spelling.
-lint:
+fmt-check:
     cargo +{{ nightly }} fmt --all --check
+
+spell:
     cargo bin cargo-spellcheck check -m 1
 
-# CI job `check`: clippy, tests and doctests.
-check:
+clippy:
     cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-    cargo bin cargo-nextest run --workspace --all-features --locked --profile ci
+
+test:
+    cargo bin cargo-nextest run --workspace --all-features --locked
+
+doctest:
     cargo test --workspace --all-features --locked --doc
 
-# CI job `deps`: licences and advisories, unused dependencies, each feature on its own.
-deps:
+doc:
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked
+
+deny:
     cargo bin cargo-deny --config .config/deny.toml check
+
+machete:
     cargo bin cargo-machete
+
+commits range="origin/main..HEAD":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    git log --no-merges --format=%s "{{ range }}" | {
+        status=0
+        while IFS= read -r subject; do
+            printf '%s\n' "$subject" | .githooks/commit-msg /dev/stdin || status=1
+        done
+        exit "$status"
+    }
+ci-setup:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rustup toolchain install {{ nightly }} --profile minimal --component rustfmt
+    sudo apt-get update
+    sudo apt-get install -y --no-install-recommends libclang-dev
+    name=zig-$(uname -m)-linux-{{ zig }}
+    curl -fsSL "https://ziglang.org/download/{{ zig }}/$name.tar.xz" | tar -xJ -C "$RUNNER_TEMP"
+    echo "$RUNNER_TEMP/$name" >> "$GITHUB_PATH"
+
+hooks:
+    git config core.hooksPath .githooks
+
+release:
+    cargo bin release-plz update
+
+publish:
+    cargo bin release-plz release --git-token "${GITHUB_TOKEN:?set GITHUB_TOKEN}"
+
+features:
     cargo bin cargo-hack check --workspace --each-feature --locked
 
-# Every CI job.
-ci: lint deps check
-# CI job `budget`: release binary sizes and `--version` startup against the limits at the top.
 budget:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -62,17 +100,134 @@ budget:
     check holst-mcp {{ size_holst_mcp }} {{ startup_ms_holst_mcp }}
     exit $failed
 
-# CI job `deps`: every commit subject in the range is a Conventional Commit and names no version.
-commits range="origin/main..HEAD":
+dist target:
     #!/usr/bin/env bash
     set -euo pipefail
-    pattern='^(feat|fix|perf|refactor|style|test|docs|build|ci|chore|revert)(\([a-z0-9-]+\))?!?: [a-z]'
-    version='(^|[^0-9.])v?0\.[0-9]+\.[0-9]+'
-    bad=$(git log --no-merges --format='%h %s' "{{ range }}" | while read -r hash subject; do
-        if ! [[ $subject =~ $pattern ]] || [[ $subject =~ $version ]]; then echo "  $hash $subject"; fi
-    done)
-    if [ -n "$bad" ]; then
-        echo "commit subjects that are not 'type(scope): lower-case text' or that name a version:" >&2
-        echo "$bad" >&2
-        exit 1
+    target={{ target }}
+    out=${CARGO_TARGET_DIR:-target}/$target/release
+    ext=""
+    case "$target" in
+        *-linux-musl) build=(cargo bin cargo-zigbuild) ;;
+        *-windows-msvc)
+            ext=".exe"
+            if [[ ${OSTYPE:-} == msys* ]]; then build=(cargo build); else build=(cargo bin cargo-xwin build); fi
+            ;;
+        *) build=(cargo build) ;;
+    esac
+    rustup target add "$target"
+    "${build[@]}" --release --locked -p holst-cli -p holst-mcp --target "$target"
+    if [[ $target == *-linux-musl ]]; then
+        for bin in holst holst-mcp; do
+            info=$(file "$out/$bin")
+            echo "$info"
+            case "$info" in
+                *"statically linked"* | *"static-pie linked"*) ;;
+                *) echo "$bin is not statically linked" >&2; exit 1 ;;
+            esac
+        done
+    fi
+    if [ "$target" = x86_64-unknown-linux-musl ] && [ "$(uname -sm)" = "Linux x86_64" ]; then
+        "$out/holst" --version
+        "$out/holst-mcp" --version
+    fi
+    sum() { if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
+    pack() {
+        local package=$1 binary=$2 stage=dist/stage/$1 archive
+        mkdir -p "$stage"
+        cp "$out/$binary$ext" LICENSE-MIT LICENSE-APACHE readme.md "$stage/"
+        if [ -n "$ext" ]; then
+            archive=$package-$target.zip
+            if command -v zip >/dev/null; then
+                (cd "$stage" && zip -q -X "../../$archive" "$binary$ext" LICENSE-MIT LICENSE-APACHE readme.md)
+            else
+                (cd "$stage" && pwsh -NoProfile -Command "Compress-Archive -Path * -DestinationPath ../../$archive")
+            fi
+        else
+            archive=$package-$target.tar.gz
+            COPYFILE_DISABLE=1 tar -czf "dist/$archive" -C "$stage" "$binary" LICENSE-MIT LICENSE-APACHE readme.md
+        fi
+        (cd dist && sum "$archive" > "$archive.sha256")
+    }
+    rm -rf dist
+    mkdir -p dist
+    pack holst-cli holst
+    pack holst-mcp holst-mcp
+    rm -rf dist/stage
+    ls dist
+
+homebrew tag:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tag={{ tag }}
+    package=${tag%-v*}
+    version=${tag##*-v}
+    case "$package" in
+        holst-cli) class=HolstCli; desc="Command line for Holst whiteboards"; binary=holst ;;
+        holst-mcp) class=HolstMcp; desc="MCP server for Holst whiteboards"; binary=holst-mcp ;;
+        *) echo "$tag is not a holst-cli or holst-mcp tag" >&2; exit 1 ;;
+    esac
+    base=https://github.com/easymikey/holst-rs/releases/download/$tag
+    sha() { curl -fsSL "$base/$package-$1.tar.gz.sha256" | awk '{ print $1 }'; }
+    arm_mac_sha=$(sha aarch64-apple-darwin)
+    intel_mac_sha=$(sha x86_64-apple-darwin)
+    arm_linux_sha=$(sha aarch64-unknown-linux-musl)
+    intel_linux_sha=$(sha x86_64-unknown-linux-musl)
+    if [ -n "${TAP_DEPLOY_KEY:-}" ]; then
+        mkdir -p ~/.ssh
+        ssh-keyscan github.com >> ~/.ssh/known_hosts
+        eval "$(ssh-agent -s)"
+        printf '%s\n' "$TAP_DEPLOY_KEY" | tr -d '\r' | ssh-add -
+    fi
+    tap=$(mktemp -d)
+    git clone git@github.com:easymikey/homebrew-holst.git "$tap"
+    mkdir -p "$tap/Formula"
+    cat > "$tap/Formula/$package.rb" <<EOF
+    class $class < Formula
+      desc "$desc"
+      homepage "https://github.com/easymikey/holst-rs"
+      version "$version"
+      license any_of: ["MIT", "Apache-2.0"]
+
+      on_macos do
+        on_arm do
+          url "$base/$package-aarch64-apple-darwin.tar.gz"
+          sha256 "$arm_mac_sha"
+        end
+
+        on_intel do
+          url "$base/$package-x86_64-apple-darwin.tar.gz"
+          sha256 "$intel_mac_sha"
+        end
+      end
+
+      on_linux do
+        on_arm do
+          url "$base/$package-aarch64-unknown-linux-musl.tar.gz"
+          sha256 "$arm_linux_sha"
+        end
+
+        on_intel do
+          url "$base/$package-x86_64-unknown-linux-musl.tar.gz"
+          sha256 "$intel_linux_sha"
+        end
+      end
+
+      def install
+        bin.install "$binary"
+      end
+
+      test do
+        assert_match version.to_s, shell_output("#{bin}/$binary --version")
+      end
+    end
+    EOF
+    cd "$tap"
+    git config user.name "github-actions[bot]"
+    git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+    git add "Formula/$package.rb"
+    if git diff --cached --quiet; then
+        echo "formula already up to date"
+    else
+        git commit -m "$package $version"
+        git push origin HEAD:main
     fi

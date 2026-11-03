@@ -1,0 +1,2 @@
+#!/bin/sh
+exec cargo bin just fmt-check clippy

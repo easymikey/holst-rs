@@ -1,11 +1,10 @@
 [package]
 name = "holst-form"
-version.workspace = true
+version = "0.4.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-homepage.workspace = true
 readme.workspace = true
 authors.workspace = true
 keywords = ["holst", "terminal", "form", "prompt"]

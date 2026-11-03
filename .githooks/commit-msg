@@ -1,0 +1,12 @@
+#!/bin/sh
+subject=$(head -n 1 "$1")
+case "$subject" in
+    "Merge "* | 'Revert "'*) exit 0 ;;
+esac
+pattern='^(feat|fix|perf|refactor|style|test|docs|build|ci|chore|revert)(\([a-z0-9-]+\))?!?: [a-z]'
+version='(^|[^0-9.])v?0\.[0-9]+\.[0-9]+'
+if printf '%s\n' "$subject" | grep -Eq "$pattern" && ! printf '%s\n' "$subject" | grep -Eq "$version"; then
+    exit 0
+fi
+echo "commit-msg: not 'type(scope): lower-case text', or names a version: $subject" >&2
+exit 1

@@ -3,12 +3,10 @@ resolver = "3"
 members = ["crates/*", "tasks/*"]
 
 [workspace.package]
-version = "0.4.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/easymikey/holst-rs"
-homepage = "https://github.com/easymikey/holst-rs"
 readme = "readme.md"
 authors = ["Mikhail Avdeev"]
 
@@ -145,5 +143,6 @@ cargo-hack = { version = "0.6.45", locked = true }
 cargo-machete = { version = "0.9.2", locked = true }
 cargo-nextest = { version = "0.9.150", locked = true }
 cargo-spellcheck = { version = "0.15.7", locked = true }
+release-plz = { version = "0.4.3", locked = true }
 cargo-xwin = { version = "0.23.1", locked = true }
 cargo-zigbuild = { version = "0.24.0", locked = true }

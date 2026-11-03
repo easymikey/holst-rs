@@ -17,9 +17,10 @@ cargo install --locked cargo-run-bin
 rustup toolchain install nightly-2026-10-30 -c rustfmt --profile minimal
 ```
 
-The commands live in `justfile`, one recipe per CI job (`.github/workflows/ci.yml` runs the same recipes):
+The commands live in `justfile`: one recipe per step (`fmt`, `clippy`, `test`, `doctest`, `spell`, `deny`, `machete`, `features`), and one per CI job built from them (`.github/workflows/ci.yml` runs the same recipes):
 
 ```sh
+cargo bin just          # format, clippy and tests: the everyday loop
 cargo bin just fmt      # format the code
 cargo bin just lint     # formatting and spelling
 cargo bin just deps     # licences and advisories, unused dependencies, each feature on its own
@@ -30,7 +31,7 @@ cargo bin just budget   # release binary sizes and startup against the limits in
 
 Commit subjects follow Conventional Commits, in lower case and without a version, e.g. `fix(workspace): say a guest cannot see the members` or `ci: raise the startup limits`; CI job `deps` runs `cargo bin just commits <range>` on them.
 
-`cargo bin just` lists the recipes. The recipes call each tool as `cargo bin cargo-<tool>`, not through cargo aliases, which would shadow a copy installed globally.
+`cargo bin just --list` lists the recipes. The recipes call each tool as `cargo bin cargo-<tool>`, not through cargo aliases, which would shadow a copy installed globally.
 
 `cargo spellcheck` needs `libclang` to build: on macOS `brew install llvm` and set `LIBCLANG_PATH=$(brew --prefix llvm)/lib` the first time. New words go into `spellcheck.dic`, one per line, and the count on its first line is updated. Nextest retries a failed test twice, because loopback connects to the fakes can stall on a busy machine; a test that passes on a retry is reported as flaky.
 
