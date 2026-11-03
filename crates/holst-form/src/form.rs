@@ -256,6 +256,7 @@ impl<T: Terminal> Form<T> {
                 Err(error) => ControlFlow::Break(Err(FormError::Terminal(error))),
                 Ok(keystroke) => {
                     let (decoder, key) = decoder.feed(keystroke);
+                    let standing = prompt.standing();
                     match prompt.press(key) {
                         Step::Editing(prompt) => {
                             let rows = frame(&prompt);
@@ -272,7 +273,9 @@ impl<T: Terminal> Form<T> {
                         Step::Quit(quit) => ControlFlow::Break(
                             self.write(&draw::repaint(drawn, &[]))
                                 .and_then(|()| {
-                                    self.write(&draw::cancelled(self.color, label, ""))
+                                    self.write(&draw::cancelled(
+                                        self.color, label, &standing,
+                                    ))
                                 })
                                 .and(Err(stopped_by(quit))),
                         ),
@@ -719,6 +722,59 @@ mod tests {
         let err = form(script)?.ask("Email", field, &email).err();
         let text = err.as_ref().map(ToString::to_string).unwrap_or_default();
         assert!(text.starts_with(message), "{err:?}");
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::confirm_yes(vec![], "│  Yes\n")]
+    #[case::confirm_no(vec![Keystroke::Left], "│  No\n")]
+    fn cancelled_confirm_keeps_the_highlight(
+        #[case] keys: Vec<Keystroke>,
+        #[case] row: &str,
+    ) -> Result<()> {
+        let strokes = keys.into_iter().chain([Keystroke::Cancel]);
+        let form = form(Script::new(TerminalKind::Live, strokes, []))?;
+        assert!(form.confirm("Go?", true).is_err());
+        let shown = screen(&form.terminal().written());
+        assert!(shown.ends_with(&format!("■  Go?\n{row}│")), "{shown}");
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::two_ticked(vec![Keystroke::Char(' '), Keystroke::Down, Keystroke::Down, Keystroke::Char(' ')], "■  Pick\n│  A, C\n│")]
+    #[case::none_ticked(vec![], "■  Pick\n│")]
+    fn cancelled_multiselect_lists_the_ticked(
+        #[case] keys: Vec<Keystroke>,
+        #[case] tail: &str,
+    ) -> Result<()> {
+        let strokes = keys.into_iter().chain([Keystroke::Cancel]);
+        let form = form(Script::new(TerminalKind::Live, strokes, []))?;
+        let options = ["A", "B", "C"]
+            .map(|label| Choice {
+                label: label.to_owned(),
+                hint: None,
+            })
+            .to_vec();
+        assert!(
+            form.multiselect("Pick", options, vec![false; 3], false)
+                .is_err()
+        );
+        let shown = screen(&form.terminal().written());
+        assert!(shown.ends_with(tail), "{shown}");
+        Ok(())
+    }
+
+    #[test]
+    fn cancelled_secret_shows_only_the_mask() -> Result<()> {
+        let strokes = chars("739").chain([Keystroke::Cancel]);
+        let form = form(Script::new(TerminalKind::Live, strokes, []))?;
+        assert!(
+            form.ask("Code", QuestionKind::LoginCode, &not_empty)
+                .is_err()
+        );
+        let raw = form.terminal().written();
+        assert!(!raw.contains("739"), "{raw:?}");
+        assert!(screen(&raw).ends_with("■  Code\n│  ▪▪▪\n│"), "{raw:?}");
         Ok(())
     }
 

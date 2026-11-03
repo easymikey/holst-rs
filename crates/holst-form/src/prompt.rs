@@ -26,6 +26,10 @@ pub trait Prompt: Sized {
     /// The text of the line that stays once the prompt is submitted.
     #[must_use]
     fn summary(&self) -> String;
+    /// What the answer is now, for the row of a cancelled question.
+    fn standing(&self) -> String {
+        self.summary()
+    }
 
     /// Rows a keyless terminal shows under the label; none for a yes or no.
     #[must_use]
@@ -447,6 +451,13 @@ impl Prompt for MultiSelect {
 
     fn summary(&self) -> String {
         self.labelled(&self.places())
+    }
+
+    fn standing(&self) -> String {
+        match self.places().as_slice() {
+            [] => String::new(),
+            places => self.labelled(places),
+        }
     }
 
     fn listing(&self) -> Vec<String> {

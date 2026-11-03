@@ -241,6 +241,7 @@ impl Screen {
         let (line_index, col) = (self.line_index, self.column);
         match seq.strip_prefix('[') {
             Some("2K") => self.clear_line(),
+            Some("J") => self.clear_below(),
             Some(rest) if rest.ends_with('A') => {
                 let up = count(rest.trim_end_matches('A'));
                 self.at(line_index.saturating_sub(up), col)
@@ -267,6 +268,12 @@ impl Screen {
         }
     }
 
+    fn clear_below(self) -> Self {
+        let (at, col) = (self.line_index, self.column);
+        let mut lines = edited(self.lines, at, |line| line.truncate(col));
+        lines.truncate(at + 1);
+        Self { lines, ..self }
+    }
     fn clear_line(self) -> Self {
         let lines = edited(self.lines, self.line_index, Vec::clear);
         Self { lines, ..self }
