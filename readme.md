@@ -1,13 +1,15 @@
-# holst-rs
+<h1 align="center"><img src="assets/logo.svg" alt="holst-rs" width="640"></h1>
 
-```text
- ⠀⠀⣤⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
- ⠀⠀⣿⡇⠀⣀⣀⠀⠀⠀⠀⢀⣀⣀⡀⠀⠀⠀⣿⡇⠀⠀⢀⣀⣀⡀⠀⠀⢀⣿⣿⣀⡀⠀⠀⠀⠀⠀⢀⣀⠀⣀⡀⠀⠀⢀⣀⣀⡀⠀    CLI and MCP server for Holst boards.
- ⠀⠀⣿⣷⠟⠛⢿⣷⡀⢀⣾⡿⠛⠛⢿⣷⡀⠀⣿⡇⠀⣼⣿⠛⠛⢿⣧⠀⠙⣿⣿⠛⠁⠀⠀⠀⠀⠀⢸⣿⡾⠛⠛⠃⣼⣿⠛⠛⢿⣧
- ⠀⠀⣿⡏⠀⠀⢸⣿⡇⢸⣿⡇⠀⠀⢈⣿⡇⠀⣿⡇⠀⠈⠛⠿⠶⣶⣤⠀⠀⣿⣿⠀⠀⠸⠿⠿⠿⠀⢸⣿⠃⠀⠀⠀⠈⠛⠿⠶⣶⣤    brew install easymikey/holst/holst-cli
- ⠀⠀⣿⡇⠀⠀⢸⣿⡇⠈⠿⣷⣤⣤⣾⡿⠁⠀⣿⡇⠀⢻⣷⣤⣤⣾⡿⠀⠀⢹⣿⣤⣤⠀⠀⠀⠀⠀⢸⣿⠀⠀⠀⠀⢻⣷⣤⣤⣾⡿    brew install easymikey/holst/holst-mcp
- ⠀⠀⠉⠁⠀⠀⠀⠉⠀⠀⠀⠈⠉⠉⠁⠀⠀⠀⠉⠁⠀⠀⠈⠉⠉⠁⠀⠀⠀⠀⠉⠉⠁⠀⠀⠀⠀⠀⠈⠉⠀⠀⠀⠀⠀⠈⠉⠉⠁⠀
-```
+<p align="center"><a href="#cli">CLI</a> · <a href="#mcp">MCP</a> · <a href="#docker">Docker</a> · <a href="#for-coding-agents">For coding agents</a></p>
+
+<div align="center">
+
+[![holst-cli](https://img.shields.io/crates/v/holst-cli.svg?label=holst-cli)](https://crates.io/crates/holst-cli)
+[![holst-mcp](https://img.shields.io/crates/v/holst-mcp.svg?label=holst-mcp)](https://crates.io/crates/holst-mcp)
+[![build](https://github.com/easymikey/holst-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/easymikey/holst-rs/actions/workflows/ci.yml)
+[![license](https://img.shields.io/crates/l/holst-cli)](#license)
+
+</div>
 
 An unofficial command line and MCP server for [Holst](https://app.holst.so) boards, written in Rust. `holst` is for the terminal and scripts; `holst-mcp` gives AI agents such as Claude Code and Codex the same commands as 10 tools. Install either one; both use the same login.
 
