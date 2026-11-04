@@ -1,4 +1,4 @@
-name: CI
+name: ci
 
 on:
   push:
@@ -11,78 +11,42 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
+  NEXTEST_PROFILE: ci
 
 defaults:
   run:
     shell: bash
 
 jobs:
-  lint:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: libclang
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libclang-dev
-
-      - uses: ./.github/actions/tools
-        with:
-          components: rustfmt
-
-      - run: cargo bin just lint
-
-  deps:
-    runs-on: ubuntu-22.04
+  ci:
+    name: ci (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            recipes: lint check deps features
+            full: "true"
+          - os: ubuntu-22.04-arm
+            recipes: clippy check
+          - os: macos-15-intel
+            recipes: clippy check
+          - os: windows-latest
+            recipes: clippy check
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      - uses: ./.github/actions/tools
-
-      - uses: Swatinem/rust-cache@v2
-
-      - run: cargo bin just deps
-
-      - if: github.event_name == 'pull_request'
+      - uses: ./.github/actions/setup
+        with:
+          full: ${{ matrix.full || 'false' }}
+      - run: cargo bin just ${{ matrix.recipes }}
+      - if: runner.os == 'Linux' && runner.arch == 'X64' && github.event_name == 'pull_request'
         run: cargo bin just commits ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
-
-      - if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+      - if: runner.os == 'Linux' && runner.arch == 'X64' && github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
         run: cargo bin just commits ${{ github.event.before }}..${{ github.sha }}
-
-  check:
-    needs: lint
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - macos-latest
-          - ubuntu-22.04
-          - ubuntu-22.04-arm
-          - windows-latest
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: ./.github/actions/tools
-
-      - uses: Swatinem/rust-cache@v2
-
-      - run: cargo bin just check
-
-  budget:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: ./.github/actions/tools
-
-      - uses: Swatinem/rust-cache@v2
-
-      - run: cargo bin just budget

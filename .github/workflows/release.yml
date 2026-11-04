@@ -1,344 +1,116 @@
-name: Release
+name: release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Tag to release, v plus the Cargo version"
-        required: true
-        type: string
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
-  TAG: ${{ inputs.tag || github.ref_name }}
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        shell: bash
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            archive: tar.gz
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            archive: tar.gz
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-            archive: tar.gz
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest
-            archive: tar.gz
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            archive: zip
-    env:
-      TARGET: ${{ matrix.target }}
-      ARCHIVE_SUFFIX: ${{ matrix.target }}.${{ matrix.archive }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.tag || github.ref }}
-
-      - name: rustup
-        run: |
-          if ! command -v rustup >/dev/null; then
-            curl --proto '=https' -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
-            echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
-          fi
-
-      - name: toolchain
-        run: |
-          rustup toolchain install
-          rustup target add "$TARGET"
-
-      - name: check the tag against the Cargo version
-        run: |
-          pkgid=$(cargo pkgid -p holst-cli)
-          version="${pkgid##*[#@]}"
-          if [ "$TAG" != "v$version" ]; then
-            echo "::error::tag $TAG does not match the Cargo version $version"
-            exit 1
-          fi
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
-
-      - name: install Zig
-        if: runner.os == 'Linux'
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.17.0
-
-      - name: install cargo-run-bin
-        if: runner.os == 'Linux'
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-binstall,cargo-run-bin
-
-      - name: build
-        if: runner.os != 'Linux'
-        run: cargo build --release --locked -p holst-cli -p holst-mcp --target "$TARGET"
-
-      - name: build (static musl)
-        if: runner.os == 'Linux'
-        run: cargo bin cargo-zigbuild --release --locked -p holst-cli -p holst-mcp --target "$TARGET"
-
-      # one stage directory and one archive per program
-      - name: stage
-        run: |
-          ext=""
-          if [ "${{ runner.os }}" = Windows ]; then ext=".exe"; fi
-          stage() {
-            mkdir -p "stage/$1"
-            cp "target/$TARGET/release/$2$ext" "stage/$1/$2$ext"
-            cp LICENSE-MIT LICENSE-APACHE readme.md "stage/$1/"
-          }
-          stage holst-cli holst
-          stage holst-mcp holst-mcp
-
-      - name: check the Linux binaries are static
-        if: runner.os == 'Linux'
-        run: |
-          for bin in holst holst-mcp; do
-            info=$(file "target/$TARGET/release/$bin")
-            echo "$info"
-            case "$info" in
-              *"statically linked"* | *"static-pie linked"*) ;;
-              *) echo "::error::$bin is not statically linked"; exit 1 ;;
-            esac
-          done
-
-      - name: run the binaries
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: |
-          ./stage/holst-cli/holst --version
-          ./stage/holst-mcp/holst-mcp --version
-
-      - name: pack
-        if: runner.os != 'Windows'
-        run: |
-          pack() { tar -czf "$1-$ARCHIVE_SUFFIX" -C "stage/$1" "$2" LICENSE-MIT LICENSE-APACHE readme.md; }
-          pack holst-cli holst
-          pack holst-mcp holst-mcp
-
-      - name: pack
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          foreach ($package in 'holst-cli', 'holst-mcp') {
-            Compress-Archive -Path "stage/$package/*" -DestinationPath "$package-$env:ARCHIVE_SUFFIX"
-          }
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: dist-${{ matrix.target }}
-          path: |
-            holst-cli-${{ env.ARCHIVE_SUFFIX }}
-            holst-mcp-${{ env.ARCHIVE_SUFFIX }}
-          if-no-files-found: error
-
-  release:
-    needs: build
+  publish:
+    if: >-
+      github.repository_owner == 'easymikey' && (
+        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+        (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' &&
+          startsWith(github.event.workflow_run.head_commit.message, 'chore: release')))
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.tag || github.ref }}
-          fetch-depth: 0
-
-      - uses: actions/download-artifact@v8
-        with:
-          path: dist
-          merge-multiple: true
-
-      - name: checksums
-        working-directory: dist
-        run: sha256sum holst-cli-*.tar.gz holst-cli-*.zip holst-mcp-*.tar.gz holst-mcp-*.zip > checksums.txt
-
-      - name: release notes
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-        run: |
-          prev=$(git tag --merged "$TAG^" --sort=-version:refname | grep -E '^v[0-9]' | head -n 1 || true)
-          if [ -n "$prev" ]; then
-            range="$prev..$TAG"
-          else
-            range="$TAG"
-          fi
-          {
-            echo "## What's Changed"
-            echo
-            while IFS='|' read -r hash title author || [ -n "$hash" ]; do
-              login=$(gh api "repos/$REPO/commits/$hash" --jq '.author.login // empty' 2>/dev/null || true)
-              if [ -n "$login" ]; then
-                who="$author ([@$login](https://github.com/$login))"
-              else
-                who="$author"
-              fi
-              echo "- $title by $who ([\`${hash:0:7}\`](https://github.com/$REPO/commit/$hash))"
-            done < <(git log "$range" --pretty=format:'%H|%s|%an')
-            echo
-            echo "## Checksums (SHA256)"
-            echo
-            echo '```'
-            cat dist/checksums.txt
-            echo '```'
-            if [ -n "$prev" ]; then
-              echo
-              echo "**Full Changelog**: https://github.com/$REPO/compare/$prev...$TAG"
-            fi
-          } > release-notes.md
-          cat release-notes.md
-
-      - name: publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          gh release create "$TAG" dist/holst-cli-*.tar.gz dist/holst-cli-*.zip \
-            dist/holst-mcp-*.tar.gz dist/holst-mcp-*.zip dist/checksums.txt \
-            --verify-tag --title "$TAG" --notes-file release-notes.md --latest
-
-  crates:
-    needs: release
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash
+    outputs:
+      sha: ${{ steps.released.outputs.sha }}
+      binaries: ${{ steps.released.outputs.binaries }}
     env:
+      GITHUB_TOKEN: ${{ github.token }}
       CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.tag || github.ref }}
-
-      - name: rustup
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+      - if: github.event_name == 'workflow_dispatch'
         run: |
-          if ! command -v rustup >/dev/null; then
-            curl --proto '=https' -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
-            echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
-          fi
-
-      - name: toolchain
-        run: rustup toolchain install
-
-      - name: publish to crates.io
-        run: |
-          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
-            echo "::notice::CARGO_REGISTRY_TOKEN is not set, skipping the crates.io publish"
+          cargo bin just release
+          if git diff --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+            echo "nothing to release"
             exit 0
           fi
-          pkgid=$(cargo pkgid -p holst-cli)
-          version="${pkgid##*[#@]}"
-          for name in holst-macros holst-form holst-core holst-cli holst-mcp; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' -A "holst-release-workflow" \
-              "https://crates.io/api/v1/crates/$name/$version")
-            case "$code" in
-              200) echo "$name $version is already on crates.io; skipping" ;;
-              404) cargo publish -p "$name" --locked ;;
-              *) echo "::error::crates.io answered $code for $name $version"; exit 1 ;;
-            esac
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          git commit -m "chore: release"
+          git push origin HEAD:main
+      - run: cargo bin just publish
+      - id: released
+        run: |
+          git fetch --tags --force
+          tags=$(git tag --points-at HEAD | grep -E '^holst-(cli|mcp)-v[0-9]' || true)
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "binaries=$(printf '%s\n' "$tags" | jq -cRn '[inputs | select(length > 0)]')" >> "$GITHUB_OUTPUT"
+
+  dist:
+    needs: publish
+    if: needs.publish.outputs.binaries != '[]'
+    name: dist (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-15-intel
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            full: "true"
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            full: "true"
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.publish.outputs.sha }}
+      - uses: ./.github/actions/setup
+        with:
+          full: ${{ matrix.full || 'false' }}
+          key: ${{ matrix.target }}
+      - run: cargo bin just dist ${{ matrix.target }}
+      - run: |
+          for tag in ${{ join(fromJSON(needs.publish.outputs.binaries), ' ') }}; do
+            gh release upload "$tag" dist/"${tag%-v*}"-${{ matrix.target }}.* --clobber
           done
 
   homebrew:
-    needs: release
+    needs: [publish, dist]
+    name: homebrew (${{ matrix.tag }})
     runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      matrix:
+        tag: ${{ fromJSON(needs.publish.outputs.binaries) }}
+    env:
+      TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@v7
         with:
-          path: dist
-          merge-multiple: true
-
-      - name: update the tap
-        env:
-          TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
-        run: |
-          version="${TAG#v}"
-          base="https://github.com/easymikey/holst-rs/releases/download/$TAG"
-          sha() { sha256sum "dist/$1-$2.tar.gz" | awk '{ print $1 }'; }
-
-          mkdir -p ~/.ssh
-          ssh-keyscan github.com >> ~/.ssh/known_hosts
-          eval "$(ssh-agent -s)"
-          printf '%s\n' "$TAP_DEPLOY_KEY" | tr -d '\r' | ssh-add -
-
-          git clone git@github.com:easymikey/homebrew-holst.git tap
-          mkdir -p tap/Formula
-
-          # formula CLASS DESC PACKAGE BINARY: the archives are holst-cli-<target> and holst-mcp-<target>
-          formula() {
-            arm_mac_sha=$(sha "$3" aarch64-apple-darwin)
-            intel_mac_sha=$(sha "$3" x86_64-apple-darwin)
-            arm_linux_sha=$(sha "$3" aarch64-unknown-linux-musl)
-            intel_linux_sha=$(sha "$3" x86_64-unknown-linux-musl)
-            cat <<EOF
-          class $1 < Formula
-            desc "$2"
-            homepage "https://github.com/easymikey/holst-rs"
-            version "$version"
-            license any_of: ["MIT", "Apache-2.0"]
-
-            on_macos do
-              on_arm do
-                url "$base/$3-aarch64-apple-darwin.tar.gz"
-                sha256 "$arm_mac_sha"
-              end
-
-              on_intel do
-                url "$base/$3-x86_64-apple-darwin.tar.gz"
-                sha256 "$intel_mac_sha"
-              end
-            end
-
-            on_linux do
-              on_arm do
-                url "$base/$3-aarch64-unknown-linux-musl.tar.gz"
-                sha256 "$arm_linux_sha"
-              end
-
-              on_intel do
-                url "$base/$3-x86_64-unknown-linux-musl.tar.gz"
-                sha256 "$intel_linux_sha"
-              end
-            end
-
-            def install
-              bin.install "$4"
-            end
-
-            test do
-              assert_match version.to_s, shell_output("#{bin}/$4 --version")
-            end
-          end
-          EOF
-          }
-
-          formula HolstCli "Command line for Holst whiteboards" holst-cli holst > tap/Formula/holst-cli.rb
-          formula HolstMcp "MCP server for Holst whiteboards" holst-mcp holst-mcp > tap/Formula/holst-mcp.rb
-
-          cd tap
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/holst-cli.rb Formula/holst-mcp.rb
-          if git diff --cached --quiet; then
-            echo "formulas already up to date"
-          else
-            git commit -m "holst $version"
-            git push origin HEAD:main
-          fi
+          ref: ${{ needs.publish.outputs.sha }}
+      - uses: ./.github/actions/setup
+      - run: cargo bin just homebrew ${{ matrix.tag }}

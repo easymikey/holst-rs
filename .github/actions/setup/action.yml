@@ -1,0 +1,29 @@
+name: setup
+inputs:
+  full:
+    default: "false"
+  key:
+    default: ""
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: rustup toolchain install
+    - uses: actions/cache@v6
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ~/.cargo/bin/cargo-bin*
+          ~/.cargo/bin/cargo-binstall*
+          .bin
+          target
+        key: ${{ runner.os }}-${{ runner.arch }}-${{ github.workflow }}-${{ github.job }}-${{ inputs.key }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
+        restore-keys: ${{ runner.os }}-${{ runner.arch }}-${{ github.workflow }}-${{ github.job }}-${{ inputs.key }}-
+    - shell: bash
+      run: |
+        command -v cargo-binstall || curl -fsSL https://raw.githubusercontent.com/cargo-bins/cargo-binstall/v1.26.2/install-from-binstall-release.sh | BINSTALL_VERSION=1.26.2 bash
+        command -v cargo-bin || cargo install cargo-run-bin --locked
+    - if: inputs.full == 'true'
+      shell: bash
+      run: cargo bin just ci-setup
