@@ -8,6 +8,15 @@ fn exposed(secret: &SecretString) -> &str {
     secret.expose_secret()
 }
 
+use clacky::{
+    NoteLine,
+    NoteTone,
+    core::settings::Settings,
+    fake::{Script, screen},
+    prelude::{Key, Session as Ui},
+    render::color::ColorChoice,
+    terminal::TerminalKind,
+};
 use holst_core::{
     command::{auth::SaveLogin, login::ReplacedLogin},
     domain::{
@@ -18,25 +27,30 @@ use holst_core::{
     remote::client::Client,
     storage::session_store::{LoginSaveReport, SessionStoreKind},
 };
-use holst_form::error::Reason;
 use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
 use crate::{
     commands::{
-        auth::login::{Done, conclude, finish, log_in_by_email, parse_secret},
+        auth::login::{Done, check_secret, conclude, finish, log_in_by_email},
         fake::FakeServer,
     },
-    error::{Error, Result, SecretKind},
-    form::{
-        Form,
-        draw::NoteTone,
-        fake::{Script, screen},
-        line::Keystroke,
-        terminal::TerminalKind,
-    },
+    error::{Error, Reason, Result, SecretKind},
 };
+
+fn intro(script: Script) -> Result<Ui<Script>> {
+    let ui = Ui::new(script, Settings::new(ColorChoice::Plain));
+    ui.intro("holst login")?;
+    Ok(ui)
+}
+
+fn note(tone: NoteTone, text: &str) -> NoteLine {
+    NoteLine {
+        tone,
+        text: text.to_owned(),
+    }
+}
 
 fn client(server: &std::sync::Arc<FakeServer>) -> Result<Client> {
     let base: BaseUrl = "https://app.holst.so".parse()?;
@@ -53,8 +67,8 @@ fn you() -> Result<Email> {
     Ok("you@example.com".parse()?)
 }
 
-fn chars(text: &'static str) -> impl Iterator<Item = Keystroke> {
-    text.chars().map(Keystroke::Char).chain([Keystroke::Enter])
+fn chars(text: &'static str) -> impl Iterator<Item = Key> {
+    text.chars().map(Key::Char).chain([Key::Enter])
 }
 
 const OPTIONS: &str = "/gapi/login/get_public_options";
@@ -75,8 +89,7 @@ async fn email_login_goes_through_every_step() -> Result<()> {
         (ME, 200, json!({ "id": "u1", "name": "Mock User" })),
     ]);
     let strokes = chars("you@example.com").chain(chars("123456"));
-    let form =
-        Form::intro(Script::new(TerminalKind::Live, strokes, []), "holst login")?;
+    let form = intro(Script::new(TerminalKind::Live, strokes, []))?;
     let granted = log_in_by_email(&form, client(&server)?, None).await?;
     let (done, _) = conclude(granted, None, SaveLogin::Skip, async |_| {
         Ok(LoginSaveReport {
@@ -89,8 +102,8 @@ async fn email_login_goes_through_every_step() -> Result<()> {
     assert_eq!(
         done.lines(ReplacedLogin::Nothing, None),
         [
-            (NoteTone::Plain, "Mock User".to_owned()),
-            (NoteTone::Faint, "not saved (--no-save)".to_owned())
+            note(NoteTone::Plain, "Mock User"),
+            note(NoteTone::Faint, "not saved (--no-save)")
         ]
     );
     assert_eq!(
@@ -121,12 +134,11 @@ async fn wrong_code_is_asked_again() -> Result<()> {
         (LOGIN, 200, json!({ "token": "csrf-1" })),
     ]);
     let strokes = chars("111111").chain(chars("123456"));
-    let form =
-        Form::intro(Script::new(TerminalKind::Live, strokes, []), "holst login")?;
+    let form = intro(Script::new(TerminalKind::Live, strokes, []))?;
     let granted = log_in_by_email(&form, client(&server)?, Some(you()?)).await?;
     assert_eq!(granted.status(), SessionStatus::Active);
     let raw = form.terminal().written();
-    assert!(raw.contains("▲ that code did not match"), "{raw:?}");
+    assert!(raw.contains("that code did not match"), "{raw:?}");
     Ok(())
 }
 
@@ -138,8 +150,7 @@ async fn an_email_padded_with_spaces_is_trimmed() -> Result<()> {
         (LOGIN, 200, json!({ "token": "csrf-1" })),
     ]);
     let strokes = chars("  you@example.com  ").chain(chars("123456"));
-    let form =
-        Form::intro(Script::new(TerminalKind::Live, strokes, []), "holst login")?;
+    let form = intro(Script::new(TerminalKind::Live, strokes, []))?;
     let granted = log_in_by_email(&form, client(&server)?, None).await?;
     assert_eq!(granted.status(), SessionStatus::Active);
     let raw = form.terminal().written();
@@ -154,10 +165,7 @@ async fn piped_wrong_code_is_an_error() -> Result<()> {
         (SEND, 200, json!({})),
         (LOGIN, 400, json!({})),
     ]);
-    let form = Form::intro(
-        Script::new(TerminalKind::Redirected, [], ["000000"]),
-        "holst login",
-    )?;
+    let form = intro(Script::new(TerminalKind::Redirected, [], ["000000"]))?;
     let err = log_in_by_email(&form, client(&server)?, Some(you()?))
         .await
         .err();
@@ -183,8 +191,7 @@ async fn no_way_in_stops_before_any_code(
     #[case] message: &str,
 ) -> Result<()> {
     let server = FakeServer::responding(&[(OPTIONS, 200, offered)]);
-    let form =
-        Form::intro(Script::new(TerminalKind::Redirected, [], []), "holst login")?;
+    let form = intro(Script::new(TerminalKind::Redirected, [], []))?;
     let err = log_in_by_email(&form, client(&server)?, Some(you()?))
         .await
         .err();
@@ -238,8 +245,7 @@ async fn saved_session_goes_to_the_store_with_its_account() -> Result<()> {
 
 #[test]
 fn login_closes_with_a_boxed_note() -> Result<()> {
-    let form =
-        Form::intro(Script::new(TerminalKind::Redirected, [], []), "holst login")?;
+    let form = intro(Script::new(TerminalKind::Redirected, [], []))?;
     let done = Done {
         name: "A".into(),
         store: Some(SessionStoreKind::Keychain),
@@ -324,15 +330,9 @@ fn closing_lines_name_the_store_and_the_previous_session() {
     assert_eq!(
         lines,
         [
-            (NoteTone::Plain, "A".to_owned()),
-            (
-                NoteTone::Faint,
-                "saved to /tmp/h/session · 1 cookie".to_owned()
-            ),
-            (
-                NoteTone::Warn,
-                "could not terminate the previous session".to_owned()
-            ),
+            note(NoteTone::Plain, "A"),
+            note(NoteTone::Faint, "saved to /tmp/h/session · 1 cookie"),
+            note(NoteTone::Warn, "could not terminate the previous session"),
         ]
     );
 }
@@ -348,15 +348,12 @@ fn closing_lines_warn_about_an_older_login() {
     let lines = done.lines(ReplacedLogin::Nothing, Some("/h/token"));
     assert_eq!(
         lines.get(2),
-        Some(&(NoteTone::Warn, "an older login may be left".to_owned()))
+        Some(&note(NoteTone::Warn, "an older login may be left"))
     );
 }
 
 #[test]
 fn empty_secret_is_not_an_answer() {
-    assert_eq!(parse_secret("").err(), Some(Reason::Empty));
-    assert_eq!(
-        parse_secret("919426").ok().as_ref().map(exposed),
-        Some("919426")
-    );
+    assert_eq!(check_secret(""), Err(Reason::Empty));
+    assert_eq!(check_secret("919426"), Ok(()));
 }

@@ -11,7 +11,6 @@ use holst_core::{
         input::JsonSpot,
     },
 };
-use holst_form::error::{FormError, Reason};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
@@ -21,8 +20,8 @@ pub(crate) enum Error {
     #[error("could not read the input")]
     ReadInput(#[source] io::Error),
 
-    #[error("no input: stdin ended before {what} was given")]
-    NoInput { what: &'static str },
+    #[error("no input: stdin ended before {question} was given")]
+    NoInput { question: String },
 
     #[error("stdout was closed by the reader")]
     StdoutClosed,
@@ -75,10 +74,7 @@ pub(crate) enum Error {
     Shown(Box<Error>),
 
     #[error("{question}: {reason}")]
-    InvalidAnswer {
-        question: &'static str,
-        reason: Reason,
-    },
+    InvalidAnswer { question: String, reason: String },
 
     #[error("there is no account for {email}")]
     NoAccount { email: Email },
@@ -133,20 +129,43 @@ pub(crate) enum Error {
 
 pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
 
-impl From<FormError> for Error {
-    fn from(error: FormError) -> Self {
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "clacky's error is non-exhaustive; the rest are mistakes of the program, not of the person"
+)]
+impl From<clacky::Error> for Error {
+    fn from(error: clacky::Error) -> Self {
         match error {
-            FormError::Interrupted => Error::Interrupted,
-            FormError::Cancelled => Error::Cancelled,
-            FormError::Terminal(error) => Error::Terminal(error),
-            FormError::ReadInput(error) => Error::ReadInput(error),
-            FormError::NoInput { what } => Error::NoInput { what },
-            FormError::EchoNotHidden(error) => Error::EchoNotHidden(error),
-            FormError::InvalidAnswer { question, reason } => {
+            clacky::Error::Interrupted => Error::Interrupted,
+            clacky::Error::Cancelled => Error::Cancelled,
+            // Only the signal watcher ends a question from outside.
+            clacky::Error::Aborted => crate::terminal::signals::heard()
+                .map_or(Error::Interrupted, Error::from),
+            clacky::Error::Terminal(error) => Error::Terminal(error),
+            clacky::Error::EchoNotHidden(error) => Error::EchoNotHidden(error),
+            clacky::Error::NoInput { question } => Error::NoInput { question },
+            clacky::Error::NoChoices => Error::NoInput {
+                question: "a choice".to_owned(),
+            },
+            clacky::Error::Refused { question, reason } => {
                 Error::InvalidAnswer { question, reason }
             }
+            other => Error::Terminal(io::Error::other(other.to_string())),
         }
     }
+}
+
+/// Why an answer was refused, in words for the person typing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
+pub(crate) enum Reason {
+    #[display("this cannot be empty")]
+    Empty,
+    #[display("enter an address like you@example.com")]
+    NotEmail,
+    #[display("that code did not match — check the latest email and type it again")]
+    WrongCode,
+    #[display("that password did not match — try again")]
+    WrongPassword,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
@@ -251,10 +270,9 @@ mod tests {
         },
         fake::candidates,
     };
-    use holst_form::error::Reason;
     use rstest::rstest;
 
-    use crate::error::{Error, SecretKind};
+    use crate::error::{Error, Reason, SecretKind};
 
     #[test]
     fn not_forgotten_names_the_store() {

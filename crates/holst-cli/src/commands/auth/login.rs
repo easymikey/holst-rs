@@ -2,6 +2,16 @@
 
 #[cfg(test)] mod tests;
 
+use std::num::NonZeroU8;
+
+use clacky::{
+    CharFilter,
+    NoteLine,
+    NoteTone,
+    Password,
+    prelude::{Peek as _, Prefill as _, Session as Ui, password, text},
+    terminal::Terminal,
+};
 use holst_core::{
     command::{
         auth::{LoginArgs, SaveLogin},
@@ -21,19 +31,11 @@ use holst_core::{
     remote::client::Client,
     storage::session_store::{LoginSaveReport, SessionStoreKind},
 };
-use holst_form::error::Reason;
 use secrecy::SecretString;
 use serde_json::json;
 
 use crate::{
-    error::{Error, Result, SecretKind},
-    form::{
-        Form,
-        Question,
-        draw::NoteTone,
-        line::QuestionKind,
-        terminal::{Console, Terminal},
-    },
+    error::{Error, Reason, Result, SecretKind},
     output,
     output::{
         OutputFormat,
@@ -41,6 +43,7 @@ use crate::{
         view::{self, display_name},
     },
     run::RunSettings,
+    terminal::signals,
 };
 
 pub(crate) async fn login(
@@ -48,18 +51,18 @@ pub(crate) async fn login(
     run: &RunSettings,
     format: OutputFormat,
 ) -> Result<()> {
-    // The form quiets the terminal first: Ctrl-C works from here on.
-    let form = Form::intro(Console::detect(run.terminal_type()), "holst auth login")?;
-    match log_in(&form, login, run).await {
+    let ui = Ui::detect()?.abort(signals::abort());
+    ui.intro("holst auth login")?;
+    match log_in(&ui, login, run).await {
         Ok((done, replaced)) => {
-            finish(&form, &done, replaced, where_saved(&done, run).as_deref())?;
+            finish(&ui, &done, replaced, where_saved(&done, run).as_deref())?;
             logged_in(format, &done, replaced)
         }
-        Err(err) => cancel(&form, &err).and(Err(err.shown())),
+        Err(err) => cancel(&ui, &err).and(Err(err.shown())),
     }
 }
 
-fn cancel<T: Terminal>(form: &Form<T>, error: &Error) -> Result<()> {
+fn cancel<T: Terminal>(ui: &Ui<T>, error: &Error) -> Result<()> {
     let (message, causes) = Some(error)
         .filter(|error| !matches!(error, Error::Interrupted | Error::Cancelled))
         .map_or_else(
@@ -70,12 +73,12 @@ fn cancel<T: Terminal>(form: &Form<T>, error: &Error) -> Result<()> {
                         .into_owned(),
                     view::form_cause_lines(
                         error,
-                        ColorChoice::colored_if(form.terminal().has_color()),
+                        ColorChoice::colored_if(ui.terminal().has_color()),
                     ),
                 )
             },
         );
-    form.cancel(&message, &causes).map_err(Error::from)
+    ui.cancel_with(message, causes).map_err(Error::from)
 }
 
 fn logged_in(format: OutputFormat, done: &Done, replaced: ReplacedLogin) -> Result<()> {
@@ -94,13 +97,13 @@ fn logged_in(format: OutputFormat, done: &Done, replaced: ReplacedLogin) -> Resu
 }
 
 async fn log_in<T: Terminal>(
-    form: &Form<T>,
+    ui: &Ui<T>,
     login: LoginArgs,
     run: &RunSettings,
 ) -> Result<(Done, ReplacedLogin)> {
     // Read only to end it later; an unreadable one is no reason to stop.
     let previous = match login.no_save {
-        SaveLogin::Keep => form
+        SaveLogin::Keep => ui
             .wait("Reading the saved login", async {
                 Ok::<_, Error>(run.load().await.ok().flatten())
             })
@@ -110,8 +113,8 @@ async fn log_in<T: Terminal>(
     };
     // One saved for another server is not sent there to be ended.
     let previous = previous.and_then(|session| run.client(Some(session)).ok());
-    let client = log_in_by_email(form, run.client(None)?, login.email).await?;
-    form.wait(
+    let client = log_in_by_email(ui, run.client(None)?, login.email).await?;
+    ui.wait(
         "Checking the login",
         conclude(client, previous, login.no_save, async |session| {
             run.save(session).await
@@ -121,13 +124,13 @@ async fn log_in<T: Terminal>(
 }
 
 fn finish<T: Terminal>(
-    form: &Form<T>,
+    ui: &Ui<T>,
     done: &Done,
     replaced: ReplacedLogin,
     saved_to: Option<&str>,
 ) -> Result<()> {
-    form.write_box("Logged in", &done.lines(replaced, saved_to))?;
-    Ok(form.outro("Done")?)
+    ui.note("Logged in", &done.lines(replaced, saved_to))?;
+    Ok(ui.outro("Done")?)
 }
 
 fn where_saved(done: &Done, run: &RunSettings) -> Option<String> {
@@ -148,17 +151,17 @@ struct Done {
     cookies: usize,
 }
 
-const ATTEMPTS: u8 = 3;
+const ATTEMPTS: NonZeroU8 = NonZeroU8::MIN.saturating_add(2);
 
-async fn prepare<T: Terminal>(login: EmailLogin, form: &Form<T>) -> Result<Awaiting> {
-    let methods = form.wait("Checking the address", login.methods()).await??;
+async fn prepare<T: Terminal>(login: EmailLogin, ui: &Ui<T>) -> Result<Awaiting> {
+    let methods = ui.wait("Checking the address", login.methods()).await??;
     let email = login.email().clone();
     match methods.route() {
         LoginRoute::NoAccount => Err(Error::NoAccount { email }),
         LoginRoute::SingleSignOn => Err(Error::SsoOnly { email }),
         LoginRoute::Password => Ok(login.with_password()),
         LoginRoute::Code => {
-            Ok(form.wait("Sending the code", login.send_code()).await??)
+            Ok(ui.wait("Sending the code", login.send_code()).await??)
         }
     }
 }
@@ -172,15 +175,19 @@ const fn secret_kind(awaiting: &Awaiting) -> SecretKind {
 
 async fn ask_and_log_in<T: Terminal>(
     awaiting: &Awaiting,
-    form: &Form<T>,
+    ui: &Ui<T>,
 ) -> Result<Client> {
     let secret = secret_kind(awaiting);
-    let logged_in = form
+    let logged_in = ui
         .ask_until(
-            question(secret),
-            &parse_secret,
-            async |typed: &SecretString| awaiting.log_in(typed).await,
-            |error| error.is_wrong_secret().then_some(secret.wrong_answer()),
+            || secret_prompt(secret).validate(check_secret),
+            "Signing in",
+            async |typed| awaiting.log_in(&SecretString::from(typed.as_str())).await,
+            |error| {
+                error
+                    .is_wrong_secret()
+                    .then(|| secret.wrong_answer().to_string())
+            },
             ATTEMPTS,
         )
         .await?;
@@ -231,11 +238,7 @@ impl Done {
         }
     }
 
-    fn lines(
-        &self,
-        replaced: ReplacedLogin,
-        saved_to: Option<&str>,
-    ) -> Vec<(NoteTone, String)> {
+    fn lines(&self, replaced: ReplacedLogin, saved_to: Option<&str>) -> Vec<NoteLine> {
         let cookies = match self.cookies {
             1 => "1 cookie".to_owned(),
             count => format!("{count} cookies"),
@@ -246,18 +249,28 @@ impl Done {
         );
         let previous = match replaced {
             ReplacedLogin::Nothing => None,
-            ReplacedLogin::Terminated => {
-                Some((NoteTone::Faint, "previous session terminated".to_owned()))
-            }
-            ReplacedLogin::Kept => Some((
-                NoteTone::Warn,
-                "could not terminate the previous session".to_owned(),
-            )),
+            ReplacedLogin::Terminated => Some(NoteLine {
+                tone: NoteTone::Faint,
+                text: "previous session terminated".to_owned(),
+            }),
+            ReplacedLogin::Kept => Some(NoteLine {
+                tone: NoteTone::Warn,
+                text: "could not terminate the previous session".to_owned(),
+            }),
         };
-        let stale = self.stale.clone().map(|stale| (NoteTone::Warn, stale));
+        let stale = self.stale.clone().map(|text| NoteLine {
+            tone: NoteTone::Warn,
+            text,
+        });
         [
-            (NoteTone::Plain, self.name.clone()),
-            (NoteTone::Faint, saved),
+            NoteLine {
+                tone: NoteTone::Plain,
+                text: self.name.clone(),
+            },
+            NoteLine {
+                tone: NoteTone::Faint,
+                text: saved,
+            },
         ]
         .into_iter()
         .chain(stale)
@@ -266,40 +279,54 @@ impl Done {
     }
 }
 
-const fn question(secret: SecretKind) -> Question {
+const fn label_of(secret: SecretKind) -> &'static str {
     match secret {
-        SecretKind::Code => Question {
-            label: "Code",
-            kind: QuestionKind::LoginCode,
-        },
-        SecretKind::Password => Question {
-            label: "Password",
-            kind: QuestionKind::Password,
-        },
+        SecretKind::Code => "Code",
+        SecretKind::Password => "Password",
+    }
+}
+
+fn secret_prompt(secret: SecretKind) -> Password {
+    match secret {
+        SecretKind::Code => password(label_of(secret))
+            .placeholder("sent to your email")
+            .accept(CharFilter::NoSpaces),
+        SecretKind::Password => password(label_of(secret))
+            .placeholder("type the password — it stays hidden"),
     }
 }
 
 async fn log_in_by_email<T: Terminal>(
-    form: &Form<T>,
+    ui: &Ui<T>,
     client: Client,
     given: Option<Email>,
 ) -> Result<Client> {
-    let email = given.map_or_else(
-        || form.ask("Email", QuestionKind::Text, &parse_email),
-        |email| form.step("Email", email.as_str()).map(|()| email),
+    let typed = ui.ask(
+        text("Email")
+            .placeholder("you@example.com")
+            .validate(check_email)
+            .given(given.map(|email| email.as_str().to_owned())),
     )?;
-    let awaiting = prepare(EmailLogin::new(client, email), form).await?;
-    ask_and_log_in(&awaiting, form).await
+    let email = email_of(&typed).map_err(|reason| Error::InvalidAnswer {
+        question: "Email".to_owned(),
+        reason: reason.to_string(),
+    })?;
+    let awaiting = prepare(EmailLogin::new(client, email), ui).await?;
+    ask_and_log_in(&awaiting, ui).await
 }
 
-fn parse_email(text: &str) -> Result<Email, Reason> {
+fn email_of(text: &str) -> Result<Email, Reason> {
     text.parse().map_err(|_| Reason::NotEmail)
 }
 
-fn parse_secret(text: &str) -> Result<SecretString, Reason> {
+fn check_email(text: &str) -> Result<(), Reason> {
+    email_of(text).map(drop)
+}
+
+fn check_secret(text: &str) -> Result<(), Reason> {
     if text.is_empty() {
         Err(Reason::Empty)
     } else {
-        Ok(SecretString::from(text))
+        Ok(())
     }
 }

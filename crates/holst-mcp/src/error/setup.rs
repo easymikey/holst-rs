@@ -1,7 +1,5 @@
 //! What can go wrong in `holst-mcp setup`.
 
-use holst_form::error::FormError;
-
 use crate::setup::{ATTEMPTS, Secret};
 
 #[derive(Debug, thiserror::Error)]
@@ -29,7 +27,7 @@ pub(crate) enum SetupError {
     UnknownClient(String),
 
     #[error(transparent)]
-    Form(#[from] FormError),
+    Prompt(#[from] clacky::Error),
 
     #[error("could not log in")]
     Holst(#[from] holst_core::Error),

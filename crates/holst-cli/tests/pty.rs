@@ -492,7 +492,7 @@ fn held_removal(base: &str) -> Result<Form, TestError> {
         base,
         &home,
     ))?;
-    form.wait_for("cannot be undone? (y/N)")?;
+    form.wait_for("cannot be undone?")?;
     Ok(form)
 }
 
@@ -596,7 +596,7 @@ fn a_folder_picked_by_id_is_then_confirmed_and_removed() -> TestResult {
     form.wait_for("is \"Plans\"?")?;
     form.press("\x1b[B")?;
     form.press("\r")?;
-    form.wait_for("cannot be undone? (y/N)")?;
+    form.wait_for("cannot be undone?")?;
     form.press("y")?;
     let (code, seen) = form.finish()?;
     let shown = printed(&seen);

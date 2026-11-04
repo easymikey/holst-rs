@@ -5,7 +5,6 @@ mod cli;
 mod commands;
 mod error;
 mod exit;
-mod form;
 mod help;
 mod output;
 mod run;
@@ -45,8 +44,6 @@ fn main() -> ExitCode {
     reason = "main.rs is the one place that reads the process arguments"
 )]
 async fn start() -> ExitCode {
-    // First of all: from here on a Ctrl-C is counted, not fatal.
-    terminal::signals::note_arrivals();
     match Cli::parse_from_args(std::env::args_os()) {
         Ok(cli) => run(cli).await,
         Err(err) => exit::usage(&err),
@@ -85,7 +82,7 @@ async fn run(cli: Cli) -> ExitCode {
                 disabled,
                 cli.output,
             );
-            let env = RunSettings::new(settings, home, term_type, prompting);
+            let env = RunSettings::new(settings, home, prompting);
             // Boxed: every command group's future in one is large on the stack.
             let work = Box::pin(cli::run(cli.table, cli.output, &env));
             terminal::signals::or_stopped(work, terminal::signals::stopped_fallback())

@@ -1,5 +1,16 @@
 //! `holst-mcp setup`: log in from a terminal and connect the MCP clients.
 
+use std::num::NonZeroU8;
+
+use clacky::{
+    CharFilter,
+    NoteLine,
+    NoteTone,
+    Password,
+    Tone,
+    prelude::{Ask as _, Peek as _, Reply, Session, confirm, password, text},
+    terminal::{Terminal, TerminalKind},
+};
 use holst_core::{
     command::{
         account::SessionCheck,
@@ -13,14 +24,6 @@ use holst_core::{
     error::hint::Surface,
     remote::client::Client,
 };
-use holst_form::{
-    draw::NoteTone,
-    error::Reason,
-    form::{Form, Question},
-    line::QuestionKind,
-    terminal::{Terminal, TerminalKind},
-};
-use secrecy::SecretString;
 
 use crate::{
     error::SetupError,
@@ -31,7 +34,7 @@ mod connect;
 pub(crate) use connect::{Clients, Program, SERVER, System, stable_binary};
 
 /// Tries for the code or password, as the CLI allows.
-pub(crate) const ATTEMPTS: u8 = 3;
+pub(crate) const ATTEMPTS: NonZeroU8 = NonZeroU8::MIN.saturating_add(2);
 
 /// What the second step asks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,23 +51,23 @@ impl Secret {
         }
     }
 
-    const fn question(self) -> Question {
+    fn question(self) -> Password {
         match self {
-            Secret::Code => Question {
-                label: "Code",
-                kind: QuestionKind::LoginCode,
-            },
-            Secret::Password => Question {
-                label: "Password",
-                kind: QuestionKind::Password,
-            },
+            Secret::Code => password("Code")
+                .placeholder("sent to your email")
+                .accept(CharFilter::NoSpaces),
+            Secret::Password => {
+                password("Password").placeholder("type the password — it stays hidden")
+            }
         }
     }
 
-    const fn wrong(self) -> Reason {
+    const fn wrong(self) -> &'static str {
         match self {
-            Secret::Code => Reason::WrongCode,
-            Secret::Password => Reason::WrongPassword,
+            Secret::Code => {
+                "that code did not match — check the latest email and type it again"
+            }
+            Secret::Password => "that password did not match — try again",
         }
     }
 }
@@ -92,16 +95,31 @@ impl Steps {
     }
 }
 
+/// A line on the rail: what happened, and under it what came of it when
+/// there is anything to say.
+fn say<T: Terminal>(
+    ui: &Session<T>,
+    tone: Tone,
+    label: &str,
+    detail: &str,
+) -> clacky::Result<()> {
+    if detail.is_empty() {
+        ui.log(tone, label)
+    } else {
+        ui.log(tone, format_args!("{label}\n{detail}"))
+    }
+}
+
 /// The steps in order: the login, then the connection of the `clients`.
 pub(crate) async fn set_up<T: Terminal>(
     backend: &SystemBackend,
-    form: &Form<T>,
+    ui: &Session<T>,
     programs: &impl Program,
     binary: &str,
     steps: Steps,
     clients: &Clients,
 ) -> Result<(), SetupError> {
-    let piped = form.terminal().kind() == TerminalKind::Redirected;
+    let piped = ui.terminal().kind() == TerminalKind::Redirected;
     match (steps, clients) {
         (Steps::Both | Steps::ConnectOnly, Clients::Named(_)) if piped => {
             backend
@@ -109,29 +127,29 @@ pub(crate) async fn set_up<T: Terminal>(
                 .ok()
                 .flatten()
                 .ok_or(SetupError::NoTerminal)?;
-            connect::connect(programs, form, binary, clients)
+            connect::connect(programs, ui, binary, clients)
         }
         (Steps::Both, _) => {
-            run(backend, form).await?;
-            connect::connect(programs, form, binary, clients)
+            run(backend, ui).await?;
+            connect::connect(programs, ui, binary, clients)
         }
-        (Steps::LoginOnly, _) => run(backend, form).await,
-        (Steps::ConnectOnly, _) => connect::connect(programs, form, binary, clients),
+        (Steps::LoginOnly, _) => run(backend, ui).await,
+        (Steps::ConnectOnly, _) => connect::connect(programs, ui, binary, clients),
     }?;
-    Ok(form.outro("Done")?)
+    Ok(ui.outro("Done")?)
 }
 
 /// Logs in and saves the login for the server; asks first when one is saved.
 pub(crate) async fn run<T: Terminal>(
     backend: &SystemBackend,
-    form: &Form<T>,
+    ui: &Session<T>,
 ) -> Result<(), SetupError> {
-    match saved_login(backend, form).await? {
+    match saved_login(backend, ui).await? {
         Saved::Keep => Ok(()),
         Saved::Replace(old) => {
-            let (email, awaiting) = begin(backend, form).await?;
-            let client = ask_until_accepted(&awaiting, form).await?;
-            keep(backend, client, old, &email, form).await
+            let (email, awaiting) = begin(backend, ui).await?;
+            let client = ask_until_accepted(&awaiting, ui).await?;
+            keep(backend, client, old, &email, ui).await
         }
     }
 }
@@ -145,12 +163,12 @@ enum Saved {
 
 async fn saved_login<T: Terminal>(
     backend: &SystemBackend,
-    form: &Form<T>,
+    ui: &Session<T>,
 ) -> Result<Saved, SetupError> {
     match backend.load() {
         Ok(Some((session, _))) => {
             let client = backend.connect(session)?;
-            let check = form
+            let check = ui
                 .wait(
                     "Checking the saved login",
                     holst_core::command::account::check(&client),
@@ -162,14 +180,19 @@ async fn saved_login<T: Terminal>(
                         || "Logged in already.".to_owned(),
                         |name| format!("Logged in as {name} already."),
                     );
-                    replace(form, &known, client)
+                    replace(ui, &known, client)
                 }
                 SessionCheck::Revoked(_) => {
-                    form.step("The saved login is not accepted any more", "")?;
+                    say(
+                        ui,
+                        Tone::Warn,
+                        "The saved login is not accepted any more",
+                        "",
+                    )?;
                     Ok(Saved::Replace(None))
                 }
                 SessionCheck::Unknown(err) => replace(
-                    form,
+                    ui,
                     &format!(
                         "A login is saved already (Holst could not check it: {}).",
                         holst_core::error::chained(&err)
@@ -180,7 +203,9 @@ async fn saved_login<T: Terminal>(
         }
         Ok(None) => Ok(Saved::Replace(None)),
         Err(err) => {
-            form.step(
+            say(
+                ui,
+                Tone::Warn,
                 "The saved login could not be read",
                 &holst_core::error::chained(&err).to_string(),
             )?;
@@ -190,28 +215,34 @@ async fn saved_login<T: Terminal>(
 }
 
 fn replace<T: Terminal>(
-    form: &Form<T>,
+    ui: &Session<T>,
     known: &str,
     old: Client,
 ) -> Result<Saved, SetupError> {
-    Ok(form
-        .confirm(&format!("{known} Log in again?"), false)?
+    Ok(ui
+        .ask(confirm(format!("{known} Log in again?")).default(Reply::No))?
         .then_some(old)
         .map_or(Saved::Keep, |old| Saved::Replace(Some(old))))
 }
 
 async fn begin<T: Terminal>(
     backend: &SystemBackend,
-    form: &Form<T>,
+    ui: &Session<T>,
 ) -> Result<(Email, Awaiting), SetupError> {
-    let email = form.ask("Email", QuestionKind::Text, &parse_email)?;
+    let email: Email = ui
+        .ask(
+            text("Email")
+                .placeholder("you@example.com")
+                .validate(check_email),
+        )?
+        .parse()?;
     let start = EmailLogin::new(backend.anonymous()?, email.clone());
-    let methods = form.wait("Checking the address", start.methods()).await??;
+    let methods = ui.wait("Checking the address", start.methods()).await??;
     match methods.route() {
         LoginRoute::NoAccount => Err(SetupError::NoAccount),
         LoginRoute::Code => {
-            let sent = form.wait("Sending the code", start.send_code()).await??;
-            form.step("A code was sent to", email.as_str())?;
+            let sent = ui.wait("Sending the code", start.send_code()).await??;
+            say(ui, Tone::Success, "A code was sent to", email.as_str())?;
             Ok(sent)
         }
         LoginRoute::Password => Ok(start.with_password()),
@@ -220,28 +251,35 @@ async fn begin<T: Terminal>(
     .map(|awaiting| (email, awaiting))
 }
 
-fn parse_email(text: &str) -> Result<Email, Reason> {
-    text.trim().parse().map_err(|_| Reason::NotEmail)
+fn check_email(typed: &str) -> Result<(), &'static str> {
+    typed
+        .parse::<Email>()
+        .map(drop)
+        .map_err(|_| "enter an address like you@example.com")
 }
 
-fn parse_secret(text: &str) -> Result<SecretString, Reason> {
-    (!text.is_empty())
-        .then(|| SecretString::from(text))
-        .ok_or(Reason::Empty)
+fn check_secret(typed: &str) -> Result<(), &'static str> {
+    if typed.is_empty() {
+        Err("this cannot be empty")
+    } else {
+        Ok(())
+    }
 }
 
 /// Asks for a code or password until Holst takes it, `ATTEMPTS` times at most.
 async fn ask_until_accepted<T: Terminal>(
     awaiting: &Awaiting,
-    form: &Form<T>,
+    ui: &Session<T>,
 ) -> Result<Client, SetupError> {
     let secret = secret_of(awaiting);
-    let logged_in = form
+    let logged_in = ui
         .ask_until(
-            secret.question(),
-            &parse_secret,
-            async |typed: &SecretString| awaiting.log_in(typed).await,
-            |err| err.is_wrong_secret().then_some(secret.wrong()),
+            || secret.question().validate(check_secret).secret(),
+            "Signing in",
+            async |typed: &_| awaiting.log_in(typed).await,
+            |err: &holst_core::Error| {
+                err.is_wrong_secret().then(|| secret.wrong().to_owned())
+            },
             ATTEMPTS,
         )
         .await?;
@@ -257,9 +295,9 @@ async fn keep<T: Terminal>(
     client: Client,
     old: Option<Client>,
     email: &Email,
-    form: &Form<T>,
+    ui: &Session<T>,
 ) -> Result<(), SetupError> {
-    let done = form
+    let done = ui
         .wait(
             "Checking the login",
             login::finish(client, old, async |session| backend.save_new(&session)),
@@ -268,22 +306,24 @@ async fn keep<T: Terminal>(
         .map_err(|stopped| match stopped {
             Stopped::Check(err) | Stopped::Save(err) => err,
         })?;
-    let stale = done
-        .saved
-        .stale
-        .as_ref()
-        .map(|stale| (NoteTone::Warn, stale_warning(stale)));
+    let stale = done.saved.stale.as_ref().map(|stale| NoteLine {
+        tone: NoteTone::Warn,
+        text: stale_warning(stale),
+    });
     let lines: Vec<_> = [
-        (NoteTone::Plain, email.as_str().to_owned()),
-        (
-            NoteTone::Faint,
-            "The MCP server picks the login up on its next call.".to_owned(),
-        ),
+        NoteLine {
+            tone: NoteTone::Plain,
+            text: email.as_str().to_owned(),
+        },
+        NoteLine {
+            tone: NoteTone::Faint,
+            text: "The MCP server picks the login up on its next call.".to_owned(),
+        },
     ]
     .into_iter()
     .chain(stale)
     .collect();
-    Ok(form.write_box("Logged in", &lines)?)
+    Ok(ui.note("Logged in", &lines)?)
 }
 
 /// An older login that the server still reads first, with what to do.

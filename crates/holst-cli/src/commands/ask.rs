@@ -1,5 +1,9 @@
 //! What a held run asks, and how the answer goes back into its arguments.
 
+use clacky::{
+    prelude::{Reply, Session, confirm, select},
+    terminal::Terminal,
+};
 use holst_core::error::{
     confirmation::Unconfirmed,
     input::InputError,
@@ -7,10 +11,14 @@ use holst_core::error::{
 };
 use serde_json::{Map, Value};
 
-use crate::{
-    error::{Error, Result},
-    form::{Form, prompt::Choice, terminal::Terminal},
-};
+use crate::error::{Error, Result};
+
+/// An option of a choice: what is shown and, dim after it, a hint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Choice {
+    pub(crate) label: String,
+    pub(crate) hint: Option<String>,
+}
 
 /// The argument an answer replaces: `key`, or element `at` of it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -184,36 +192,43 @@ pub(crate) fn answered(
 }
 
 /// Shows the question and reads the answer; a No is the shown refusal.
-pub(crate) fn put<T: Terminal>(form: &Form<T>, question: Question) -> Result<Answer> {
+pub(crate) fn put<T: Terminal>(ui: &Session<T>, question: Question) -> Result<Answer> {
     match question {
-        Question::Confirm(needs) => form
-            .confirm(&format!("{needs}? (y/N)"), false)
-            .map_err(Error::from)
-            .and_then(|yes| {
-                yes.then_some(Answer::Confirmed)
-                    .ok_or_else(|| Error::Unconfirmed(needs).shown())
-            }),
+        Question::Confirm(needs) => {
+            let yes = ui.ask(confirm(format!("{needs}?")).default(Reply::No))?;
+            yes.then_some(Answer::Confirmed)
+                .ok_or_else(|| Error::Unconfirmed(needs).shown())
+        }
         Question::Choose {
             slot,
             label,
             options,
         } => {
-            let (ids, choices): (Vec<String>, Vec<Choice>) =
-                options.into_iter().unzip();
-            form.select(&label, choices)
-                .map_err(Error::from)
-                .and_then(|at| {
-                    ids.into_iter()
-                        .nth(at)
-                        .map(|id| Answer::Chosen(slot, id))
-                        .ok_or(Error::Cancelled)
-                })
+            let choices =
+                options
+                    .into_iter()
+                    .map(|(id, Choice { label: shown, hint })| {
+                        let choice = clacky::Choice::new(id, shown);
+                        match hint {
+                            Some(hint) => choice.hint(hint),
+                            None => choice,
+                        }
+                    });
+            let id = ui.ask(select(label).items(choices))?;
+            Ok(Answer::Chosen(slot, id))
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use clacky::{
+        core::settings::Settings,
+        fake::Script,
+        prelude::{Key, Session},
+        render::color::ColorChoice,
+        terminal::TerminalKind,
+    };
     use holst_core::error::{
         confirmation::{ChangeRisk, Unconfirmed},
         input::InputError,
@@ -230,16 +245,13 @@ mod tests {
     use serde_json::{Map, Value, json};
 
     use crate::{
-        commands::ask::{Answer, Question, Slot, answered, put, question},
+        commands::ask::{Answer, Choice, Question, Slot, answered, put, question},
         error::{Error, Result},
-        form::{
-            Form,
-            fake::Script,
-            line::Keystroke,
-            prompt::Choice,
-            terminal::TerminalKind,
-        },
     };
+
+    fn session(script: Script) -> Session<Script> {
+        Session::new(script, Settings::new(ColorChoice::Plain))
+    }
 
     fn needs() -> Unconfirmed {
         Unconfirmed::new("deleting a board", ChangeRisk::Irreversible)
@@ -493,85 +505,80 @@ mod tests {
     }
 
     #[rstest]
-    #[case::y_key(TerminalKind::Live, vec![Keystroke::Char('y')], &[], confirm(), "yes")]
-    #[case::n_key(TerminalKind::Live, vec![Keystroke::Char('n')], &[], confirm(), "no")]
-    #[case::enter_defaults_to_no(TerminalKind::Live, vec![Keystroke::Enter], &[], confirm(), "no")]
+    #[case::y_key(TerminalKind::Live, vec![Key::Char('y')], &[], confirm(), "yes")]
+    #[case::n_key(TerminalKind::Live, vec![Key::Char('n')], &[], confirm(), "no")]
+    #[case::enter_defaults_to_no(TerminalKind::Live, vec![Key::Enter], &[], confirm(), "no")]
     #[case::tab_then_enter(
         TerminalKind::Live,
-        vec![Keystroke::Tab, Keystroke::Enter],
+        vec![Key::Tab, Key::Enter],
         &[],
         confirm(),
         "yes"
     )]
-    #[case::ctrl_c(TerminalKind::Live, vec![Keystroke::Interrupt], &[], confirm(), "interrupted")]
-    #[case::escape(TerminalKind::Live, vec![Keystroke::Cancel], &[], confirm(), "cancelled")]
-    #[case::ctrl_d(TerminalKind::Live, vec![Keystroke::EndOfInput], &[], confirm(), "cancelled")]
+    #[case::ctrl_c(TerminalKind::Live, vec![Key::Interrupt], &[], confirm(), "interrupted")]
+    #[case::escape(TerminalKind::Live, vec![Key::Cancel], &[], confirm(), "cancelled")]
+    #[case::ctrl_d(TerminalKind::Live, vec![Key::EndOfInput], &[], confirm(), "cancelled")]
     #[case::line_yes(TerminalKind::Dumb, vec![], &["yes"], confirm(), "yes")]
     #[case::line_no(TerminalKind::Dumb, vec![], &["No"], confirm(), "no")]
-    #[case::line_maybe(TerminalKind::Dumb, vec![], &["maybe"], confirm(), "no")]
+    // Not a yes or a no: asked again, and the input has ended.
+    #[case::line_maybe(TerminalKind::Dumb, vec![], &["maybe"], confirm(), "cancelled")]
     #[case::line_empty(TerminalKind::Dumb, vec![], &[""], confirm(), "no")]
     #[case::line_end_of_input(TerminalKind::Dumb, vec![], &[], confirm(), "cancelled")]
     #[case::piped(TerminalKind::Redirected, vec![], &["y"], confirm(), "other")]
-    #[case::first_board(TerminalKind::Live, vec![Keystroke::Enter], &[], boards_asked("board"), "chose b1")]
+    #[case::first_board(TerminalKind::Live, vec![Key::Enter], &[], boards_asked("board"), "chose b1")]
     #[case::second_board(
         TerminalKind::Live,
-        vec![Keystroke::Down, Keystroke::Enter],
+        vec![Key::Down, Key::Enter],
         &[],
         boards_asked("board"),
         "chose b2"
     )]
-    #[case::choice_escape(TerminalKind::Live, vec![Keystroke::Cancel], &[], boards_asked("board"), "cancelled")]
-    #[case::choice_ctrl_c(TerminalKind::Live, vec![Keystroke::Interrupt], &[], boards_asked("board"), "interrupted")]
+    #[case::choice_escape(TerminalKind::Live, vec![Key::Cancel], &[], boards_asked("board"), "cancelled")]
+    #[case::choice_ctrl_c(TerminalKind::Live, vec![Key::Interrupt], &[], boards_asked("board"), "interrupted")]
     #[case::numbered_line(TerminalKind::Dumb, vec![], &["2"], boards_asked("board"), "chose b2")]
     #[case::number_out_of_range(TerminalKind::Dumb, vec![], &["3"], boards_asked("board"), "cancelled")]
     #[case::choice_piped(TerminalKind::Redirected, vec![], &["2"], boards_asked("board"), "other")]
     fn the_answer_is_the_exit(
         #[case] kind: TerminalKind,
-        #[case] strokes: Vec<Keystroke>,
+        #[case] strokes: Vec<Key>,
         #[case] lines: &'static [&'static str],
         #[case] asked: Question,
         #[case] expected: &str,
     ) {
-        let form = Form::bare(Script::new(kind, strokes, lines.iter().copied()));
-        let result = put(&form, asked);
+        let ui = session(Script::new(kind, strokes, lines.iter().copied()));
+        let result = put(&ui, asked);
         assert_eq!(outcome(&result), expected, "{result:?}");
     }
 
     #[test]
     fn the_question_names_the_change_and_the_answer_stays() {
-        let form =
-            Form::bare(Script::new(TerminalKind::Live, [Keystroke::Char('y')], []));
-        let result = put(&form, confirm());
-        let written = form.terminal().written();
+        let ui = session(Script::new(TerminalKind::Live, [Key::Char('y')], []));
+        let result = put(&ui, confirm());
+        let written = ui.terminal().written();
         assert!(result.is_ok(), "{result:?}");
         assert!(
-            written.contains("◆  deleting a board cannot be undone? (y/N)\n"),
+            written.contains("◆  deleting a board cannot be undone?\n"),
             "{written:?}"
         );
         assert!(
-            written
-                .ends_with("◇  deleting a board cannot be undone? (y/N)\n│  Yes\n│\n"),
+            written.contains("◇  deleting a board cannot be undone?\n│  Yes\n│\n"),
             "{written:?}"
         );
     }
 
     #[test]
     fn the_choice_shows_the_places_and_keeps_the_pick() {
-        let form = Form::bare(Script::new(
-            TerminalKind::Live,
-            [Keystroke::Down, Keystroke::Enter],
-            [],
-        ));
-        let result = put(&form, boards_asked("board"));
-        let written = form.terminal().written();
+        let ui = session(Script::new(TerminalKind::Live, [Key::Down, Key::Enter], []));
+        let result = put(&ui, boards_asked("board"));
+        let written = ui.terminal().written();
         assert_eq!(outcome(&result), "chose b2");
         assert!(
             written.contains("◆  Which board is \"Plans\"?\n"),
             "{written:?}"
         );
-        assert!(written.contains("○ easy/Q4/Plans (b2)"), "{written:?}");
+        assert!(written.contains("● easy/Q4/Plans (b2)"), "{written:?}");
         assert!(
-            written.ends_with("◇  Which board is \"Plans\"?\n│  easy/Q4/Plans\n│\n"),
+            written.contains("◇  Which board is \"Plans\"?\n│  easy/Q4/Plans\n│\n"),
             "{written:?}"
         );
     }

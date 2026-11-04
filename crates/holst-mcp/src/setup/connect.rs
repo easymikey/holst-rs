@@ -6,10 +6,14 @@ use std::{
     process::{Command, Stdio},
 };
 
-use holst_form::{error::FormError, form::Form, prompt::Choice, terminal::Terminal};
+use clacky::{
+    Tone,
+    prelude::{Session, multiselect},
+    terminal::Terminal,
+};
 use serde_json::json;
 
-use super::SetupError;
+use super::{SetupError, say};
 
 /// The name the server is registered under in every client.
 pub(crate) const SERVER: &str = "holst-rs";
@@ -141,24 +145,22 @@ impl Clients {
 /// Connects clients asked for without an entry; prints the others' entries.
 pub(super) fn connect<T: Terminal>(
     programs: &impl Program,
-    form: &Form<T>,
+    ui: &Session<T>,
     binary: &str,
     clients: &Clients,
 ) -> Result<(), SetupError> {
-    let without = without_entry(programs, form, binary, clients)?;
-    chosen(form, clients, &without)?
+    let without = without_entry(programs, ui, binary, clients)?;
+    chosen(ui, clients, &without)?
         .into_iter()
-        .try_for_each(|cli| add(programs, form, binary, cli))?;
-    form.terminal()
-        .write(&format!("{}\n", snippets(binary)))
-        .map_err(|err| SetupError::Form(FormError::Terminal(err)))
+        .try_for_each(|cli| add(programs, ui, binary, cli))?;
+    ui.print(snippets(binary)).map_err(SetupError::Prompt)
 }
 
 /// Wanted clients that can take an entry; a named client off `PATH` stays
 /// so its failure is told; another binary's entry is replaced.
 fn without_entry<T: Terminal>(
     programs: &impl Program,
-    form: &Form<T>,
+    ui: &Session<T>,
     binary: &str,
     clients: &Clients,
 ) -> Result<Vec<Cli>, SetupError> {
@@ -168,14 +170,15 @@ fn without_entry<T: Terminal>(
         .map(
             |cli| match programs.run(cli.program(), &["mcp", "get", SERVER]) {
                 Err(_) if *clients == Clients::Ask => Ok(None),
-                Ok(ran) if ran.success && points_at(&ran.stdout, binary) => Ok(form
-                    .step(
-                        &format!("{} has a {SERVER} entry already; kept.", cli.label()),
-                        "",
-                    )
-                    .map(|()| None)?),
+                Ok(ran) if ran.success && points_at(&ran.stdout, binary) => Ok(say(
+                    ui,
+                    Tone::Info,
+                    &format!("{} has a {SERVER} entry already; kept.", cli.label()),
+                    "",
+                )
+                .map(|()| None)?),
                 Ok(ran) if ran.success => {
-                    replace(programs, form, binary, cli).map(|()| None)
+                    replace(programs, ui, binary, cli).map(|()| None)
                 }
                 _ => Ok(Some(cli)),
             },
@@ -192,18 +195,22 @@ fn points_at(printed: &str, binary: &str) -> bool {
 /// Removes the entry that runs another binary and adds the current one.
 fn replace<T: Terminal>(
     programs: &impl Program,
-    form: &Form<T>,
+    ui: &Session<T>,
     binary: &str,
     cli: Cli,
 ) -> Result<(), SetupError> {
     let (label, program) = (cli.label(), cli.program());
     match programs.run(program, &cli.remove()) {
-        Ok(ran) if ran.success => add(programs, form, binary, cli),
-        Ok(ran) => Ok(form.step(
+        Ok(ran) if ran.success => add(programs, ui, binary, cli),
+        Ok(ran) => Ok(say(
+            ui,
+            Tone::Warn,
             &format!("Could not replace the {SERVER} entry of {label}"),
             ran.stderr.trim(),
         )?),
-        Err(err) => Ok(form.step(
+        Err(err) => Ok(say(
+            ui,
+            Tone::Warn,
             &format!("Could not run {program}"),
             &holst_core::error::chained(&err).to_string(),
         )?),
@@ -212,45 +219,41 @@ fn replace<T: Terminal>(
 
 /// All of `without` when named, else the ones the person leaves picked.
 fn chosen<T: Terminal>(
-    form: &Form<T>,
+    ui: &Session<T>,
     clients: &Clients,
     without: &[Cli],
 ) -> Result<Vec<Cli>, SetupError> {
     match (clients, without) {
         (Clients::Named(_), _) | (Clients::Ask, []) => Ok(without.to_vec()),
-        (Clients::Ask, _) => {
-            let options = without
-                .iter()
-                .map(|cli| Choice {
-                    label: cli.label().to_owned(),
-                    hint: None,
-                })
-                .collect();
-            let places = form.multiselect(
-                "Connect which clients?",
-                options,
-                vec![true; without.len()],
-                false,
-            )?;
-            Ok(places
-                .into_iter()
-                .filter_map(|place| without.get(place).copied())
-                .collect())
-        }
+        (Clients::Ask, _) => Ok(ui.ask(
+            multiselect("Connect which clients?")
+                .items(without.iter().map(|cli| (*cli, cli.label())))
+                .picked(0..without.len())
+                .optional(),
+        )?),
     }
 }
 
 fn add<T: Terminal>(
     programs: &impl Program,
-    form: &Form<T>,
+    ui: &Session<T>,
     binary: &str,
     cli: Cli,
 ) -> Result<(), SetupError> {
     let (label, program) = (cli.label(), cli.program());
     Ok(match programs.run(program, &cli.add(binary)) {
-        Ok(ran) if ran.success => form.step(&format!("Connected {label}."), ""),
-        Ok(ran) => form.step(&format!("Could not connect {label}"), ran.stderr.trim()),
-        Err(err) => form.step(
+        Ok(ran) if ran.success => {
+            say(ui, Tone::Success, &format!("Connected {label}."), "")
+        }
+        Ok(ran) => say(
+            ui,
+            Tone::Warn,
+            &format!("Could not connect {label}"),
+            ran.stderr.trim(),
+        ),
+        Err(err) => say(
+            ui,
+            Tone::Warn,
             &format!("Could not run {program}"),
             &holst_core::error::chained(&err).to_string(),
         ),

@@ -16,8 +16,8 @@ use std::{
     process::ExitCode,
 };
 
+use clacky::prelude::Session;
 use holst_core::effect::settings::Settings;
-use holst_form::{detect::TerminalType, form::Form, terminal::Console};
 use rmcp::{ServiceExt as _, transport::stdio};
 
 use crate::error::{HttpError, StartError};
@@ -228,14 +228,10 @@ async fn set_up(flags: &[String]) -> Result<(), StartError> {
         })
         .transpose()?
         .unwrap_or_default();
-    let dumb = std::env::var("TERM").is_ok_and(|name| name == "dumb");
-    holst_form::detect::mute_color_when(TerminalType::dumb_if(dumb));
-    let form = Form::intro(
-        Console::detect(TerminalType::dumb_if(dumb)),
-        "holst-mcp setup",
-    )
-    .map_err(|err| StartError::Setup(err.into()))?;
-    setup::set_up(&backend, &form, &setup::System, &binary, steps, &clients)
+    let ui = Session::detect().map_err(|err| StartError::Setup(err.into()))?;
+    ui.intro("holst-mcp setup")
+        .map_err(|err| StartError::Setup(err.into()))?;
+    setup::set_up(&backend, &ui, &setup::System, &binary, steps, &clients)
         .await
         .map_err(StartError::Setup)
 }

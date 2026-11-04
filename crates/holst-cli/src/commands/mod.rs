@@ -14,6 +14,7 @@ pub(crate) mod workspace;
 
 use std::io::Read;
 
+use clacky::prelude::Session;
 use holst_core::{
     command::{
         change::Outcome,
@@ -26,9 +27,9 @@ use serde_json::{Map, Value};
 
 use crate::{
     error::{Error, Result},
-    form::{Form, terminal::Console},
     output::OutputFormat,
     run::{Prompting, RunSettings, run_signed_in},
+    terminal::signals,
 };
 
 /// How many times a run may be repeated after an answer.
@@ -79,7 +80,7 @@ async fn rounds(
     format: OutputFormat,
     left: usize,
 ) -> Result<()> {
-    match group(name, arguments.clone(), run, format).await {
+    match Box::pin(group(name, arguments.clone(), run, format)).await {
         Err(error) if left > 0 => match asked(&error, &arguments, run)? {
             Some(next) => {
                 Box::pin(rounds(name, next, run, format, left.saturating_sub(1))).await
@@ -98,8 +99,8 @@ fn asked(
 ) -> Result<Option<Map<String, Value>>> {
     match (run.prompting(), ask::question(error, arguments)) {
         (Prompting::Keys | Prompting::Lines, Some(question)) => {
-            let form = Form::bare(Console::detect(run.terminal_type()));
-            ask::put(&form, question)
+            let ui = Session::detect()?.abort(signals::abort());
+            ask::put(&ui, question)
                 .map(|answer| Some(ask::answered(arguments.clone(), answer)))
         }
         (Prompting::Off, _) | (_, None) => Ok(None),

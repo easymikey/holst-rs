@@ -12,19 +12,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use clacky::{fake::Script, prelude::Key, terminal::TerminalKind};
 use holst_core::{
     command::account::SessionCheck,
     domain::session::Session,
     effect::settings::Settings,
     error::hint::Surface,
     fake::{Fake, Fixture},
-};
-use holst_form::{
-    error::FormError,
-    fake::Script,
-    form::Form,
-    line::Keystroke,
-    terminal::TerminalKind,
 };
 
 use crate::{
@@ -34,7 +28,7 @@ use crate::{
         Secret,
         SetupError,
         Steps,
-        connect::tests::Machine,
+        connect::tests::{Machine, session},
         set_up,
         stale_warning,
     },
@@ -110,18 +104,18 @@ impl Rig {
         steps: Steps,
         clients: &Clients,
     ) -> Outcome {
-        let form = Form::bare(script);
+        let ui = session(script);
         let machine = Machine::with(&[]);
         let outcome = set_up(
             &self.backend,
-            &form,
+            &ui,
             &machine,
             "/opt/holst-mcp",
             steps,
             clients,
         )
         .await;
-        (outcome, form.terminal().written(), machine.calls.take())
+        (outcome, ui.terminal().written(), machine.calls.take())
     }
 
     /// Runs the steps on answers typed as lines (a terminal without keys).
@@ -248,7 +242,7 @@ async fn the_end_of_input_stops_the_dialog() -> Result<(), Trouble> {
     let (outcome, _) = rig.setup(&[EMAIL]).await;
     assert!(matches!(
         outcome,
-        Err(SetupError::Form(FormError::Cancelled))
+        Err(SetupError::Prompt(clacky::Error::Cancelled))
     ));
     assert_eq!(rig.saved()?, None);
     Ok(())
@@ -259,7 +253,7 @@ async fn typed_keys_never_show_the_code() -> Result<(), Trouble> {
     let rig = rig("keys").await?;
     let keys = [EMAIL, "123456"]
         .into_iter()
-        .flat_map(|text| text.chars().map(Keystroke::Char).chain([Keystroke::Enter]));
+        .flat_map(|text| text.chars().map(Key::Char).chain([Key::Enter]));
     let (outcome, shown, _) = rig
         .steps_on(Script::new(TerminalKind::Live, keys, []), Steps::LoginOnly)
         .await;

@@ -4,7 +4,13 @@
 
 use std::{cell::RefCell, io, path::Path};
 
-use holst_form::{fake::Script, form::Form, line::Keystroke, terminal::TerminalKind};
+use clacky::{
+    core::settings::Settings,
+    fake::Script,
+    prelude::{Key, Session},
+    render::color::ColorChoice,
+    terminal::TerminalKind,
+};
 
 use crate::setup::{
     SetupError,
@@ -57,6 +63,11 @@ impl Program for Machine {
     }
 }
 
+/// A session on `script` without color.
+pub(in crate::setup) fn session(script: Script) -> Session<Script> {
+    Session::new(script, Settings::new(ColorChoice::Plain))
+}
+
 /// Runs the step on `script`; returns the terminal text and the command lines
 /// run.
 fn connected_on(
@@ -64,9 +75,9 @@ fn connected_on(
     script: Script,
     clients: &Clients,
 ) -> Result<(String, Vec<String>), SetupError> {
-    let form = Form::bare(script);
-    connect(machine, &form, BINARY, clients)?;
-    Ok((form.terminal().written(), machine.calls.take()))
+    let ui = session(script);
+    connect(machine, &ui, BINARY, clients)?;
+    Ok((ui.terminal().written(), machine.calls.take()))
 }
 
 /// Asks which clients, answering the lines `typed`.
@@ -146,7 +157,7 @@ fn a_number_picks_only_that_client() -> Result<(), SetupError> {
 
 #[test]
 fn picking_none_runs_nothing_but_the_checks() -> Result<(), SetupError> {
-    let keys = [Keystroke::Char('i'), Keystroke::Enter];
+    let keys = [Key::Char('i'), Key::Enter];
     let script = Script::new(TerminalKind::Live, keys, []);
     let (shown, calls) = connected_on(&Machine::with(CLAUDE), script, &Clients::Ask)?;
     assert!(!shown.contains("Connected"), "{shown}");

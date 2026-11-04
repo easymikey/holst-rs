@@ -29,7 +29,6 @@ use crate::{
     },
     error::Error,
     run::{RunSettings, local_data::forget_cache},
-    terminal::detect::TerminalType,
 };
 
 fn file(name: &str, bytes: u64, role: PlaceRole) -> FilePlace {
@@ -144,7 +143,6 @@ fn env_without_cache(dir: &std::path::Path) -> holst_core::Result<RunSettings> {
             cache,
         },
         None,
-        TerminalType::Capable,
         crate::run::Prompting::Off,
     ))
 }

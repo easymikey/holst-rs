@@ -11,6 +11,7 @@ readme = "readme.md"
 authors = ["Mikhail Avdeev"]
 
 [workspace.dependencies]
+clacky = "0.2"
 itertools = "0.15"
 holst-macros = { path = "crates/holst-macros", version = "0.4.0" }
 proc-macro2 = "1"

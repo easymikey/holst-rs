@@ -73,7 +73,6 @@ impl Prompting {
 pub(crate) struct RunSettings {
     settings: Settings,
     home: Option<PathBuf>,
-    terminal_type: TerminalType,
     prompting: Prompting,
     risk: CommandRisk,
 }
@@ -82,13 +81,11 @@ impl RunSettings {
     pub(crate) const fn new(
         settings: Settings,
         home: Option<PathBuf>,
-        terminal_type: TerminalType,
         prompting: Prompting,
     ) -> Self {
         Self {
             settings,
             home,
-            terminal_type,
             prompting,
             risk: CommandRisk::Read,
         }
@@ -114,10 +111,6 @@ impl RunSettings {
         let dir = self.downloads_dir().ok_or(Error::NoDownloads)?;
         holst_core::storage::file::create_dir_all(&dir)?;
         Ok(dir)
-    }
-
-    pub(crate) const fn terminal_type(&self) -> TerminalType {
-        self.terminal_type
     }
 
     pub(crate) const fn prompting(&self) -> Prompting {
@@ -513,7 +506,6 @@ mod tests {
                 cache: holst_core::effect::settings::CacheSettings::default(),
             },
             None,
-            TerminalType::Capable,
             Prompting::Off,
         )
         .for_risk(risk);

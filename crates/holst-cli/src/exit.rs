@@ -570,14 +570,14 @@ mod tests {
     #[case::terminated(Error::Terminated, 143)]
     #[case::hung_up(Error::HungUp, 129)]
     #[case::no_token_shown(shown_core(LoginError::NoSavedLogin), 77)]
-    #[case::no_input_shown(Error::NoInput { what: "a code" }.shown(), 66)]
+    #[case::no_input_shown(Error::NoInput { question: "a code".to_owned() }.shown(), 66)]
     #[case::terminal_binary(Error::BinaryToTerminal, 64)]
     #[case::unknown_kind(core(InputError::NotNodeKind { raw: "x".into() }), 64)]
     #[case::ambiguous(missing(LookupMiss::ambiguous(candidates(&["a", "b"]))), 64)]
     #[case::not_email(core(LoginError::NotEmail { raw: "x".into() }), 65)]
     #[case::bad_request(status(400), 65)]
     #[case::index_corrupt(core(LocalDataError::IndexCorrupt { error: None }), 65)]
-    #[case::no_input(Error::NoInput { what: "a code" }, 66)]
+    #[case::no_input(Error::NoInput { question: "a code".to_owned() }, 66)]
     #[case::not_found(missing(LookupMiss::not_found()), 66)]
     #[case::not_cached(core(LocalDataError::NotCached { board: "x".into() }), 66)]
     #[case::html_instead_of_json(core(HttpError::HtmlInsteadOfJson { status: 200 }), 69)]
@@ -634,10 +634,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case::ctrl_c(holst_form::error::FormError::Interrupted, 130)]
-    #[case::escape(holst_form::error::FormError::Cancelled, 75)]
+    #[case::ctrl_c(clacky::Error::Interrupted, 130)]
+    #[case::escape(clacky::Error::Cancelled, 75)]
     fn a_form_stop_keeps_its_exit_code(
-        #[case] stop: holst_form::error::FormError,
+        #[case] stop: clacky::Error,
         #[case] expected: u8,
     ) {
         assert_eq!(code(&Error::from(stop).shown()), expected);

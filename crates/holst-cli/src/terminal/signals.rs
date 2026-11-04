@@ -1,14 +1,119 @@
 //! Ctrl-C, SIGTERM and SIGHUP: for awaited work and blocked questions.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{
+    OnceLock,
+    atomic::{AtomicBool, Ordering},
+};
 
-use holst_form::signals::{Listeners, leave};
-pub(crate) use holst_form::signals::{Signal, note_arrivals};
+use clacky::{Abort, Stop};
 
 use crate::{
     error::{Error, Result},
     terminal::awaiting::optional,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
+pub(crate) enum Signal {
+    #[display("interrupted")]
+    Interrupt,
+    #[display("terminated")]
+    Terminate,
+    #[display("the terminal hung up")]
+    HangUp,
+}
+
+impl Signal {
+    #[must_use]
+    pub(crate) const fn exit_code(self) -> u8 {
+        match self {
+            Signal::Interrupt => 130,
+            Signal::Terminate => 143,
+            Signal::HangUp => 129,
+        }
+    }
+}
+
+#[cfg(unix)]
+mod listening {
+    use std::future::{pending, ready};
+
+    use tokio::signal::unix::{Signal, SignalKind, signal};
+
+    /// Listens for Ctrl-C, SIGTERM and SIGHUP.
+    #[derive(Debug)]
+    pub(super) struct Listeners {
+        interrupt: Option<Signal>,
+        terminate: Option<Signal>,
+        hangup: Option<Signal>,
+    }
+
+    impl Default for Listeners {
+        fn default() -> Self {
+            Self {
+                interrupt: signal(SignalKind::interrupt()).ok(),
+                terminate: signal(SignalKind::terminate()).ok(),
+                hangup: signal(SignalKind::hangup()).ok(),
+            }
+        }
+    }
+
+    impl Listeners {
+        pub(super) async fn next(&mut self) -> super::Signal {
+            tokio::select! {
+                () = heard(self.interrupt.as_mut()) => super::Signal::Interrupt,
+                () = heard(self.terminate.as_mut()) => super::Signal::Terminate,
+                () = heard(self.hangup.as_mut()) => super::Signal::HangUp,
+            }
+        }
+    }
+
+    async fn heard(listener: Option<&mut Signal>) {
+        let got = match listener {
+            Some(listener) => listener.recv().await,
+            None => None,
+        };
+        match got {
+            Some(()) => ready(()).await,
+            None => pending().await,
+        }
+    }
+}
+
+#[cfg(not(unix))]
+mod listening {
+    use std::future::pending;
+
+    use tokio::signal::windows::{CtrlC, ctrl_c};
+
+    /// Listens for Ctrl-C, the one signal Windows has.
+    #[derive(Debug)]
+    pub(super) struct Listeners {
+        interrupt: Option<CtrlC>,
+    }
+
+    impl Default for Listeners {
+        fn default() -> Self {
+            Self {
+                interrupt: ctrl_c().ok(),
+            }
+        }
+    }
+
+    impl Listeners {
+        pub(super) async fn next(&mut self) -> super::Signal {
+            let got = match self.interrupt.as_mut() {
+                Some(listener) => listener.recv().await,
+                None => None,
+            };
+            match got {
+                Some(()) => super::Signal::Interrupt,
+                None => pending().await,
+            }
+        }
+    }
+}
+
+use listening::Listeners;
 
 impl From<Signal> for Error {
     fn from(signal: Signal) -> Self {
@@ -17,13 +122,6 @@ impl From<Signal> for Error {
             Signal::Terminate => Error::Terminated,
             Signal::HangUp => Error::HungUp,
         }
-    }
-}
-
-fn farewell(signal: Signal) -> String {
-    match signal {
-        Signal::Interrupt => Error::Cancelled.to_string(),
-        signal @ (Signal::Terminate | Signal::HangUp) => signal.to_string(),
     }
 }
 
@@ -61,6 +159,26 @@ async fn deferred<S, Again: Future<Output = S>>(
         .unwrap_or(heard)
 }
 
+/// The first signal the watcher heard.
+static HEARD: OnceLock<Signal> = OnceLock::new();
+
+/// What ends the questions of a run when a signal arrives.
+static ENDING: OnceLock<(Abort, Stop)> = OnceLock::new();
+
+fn ending() -> &'static (Abort, Stop) {
+    ENDING.get_or_init(Abort::new)
+}
+
+/// Ends a question the moment a signal arrives, also while it blocks.
+pub(crate) fn abort() -> Abort {
+    ending().0.clone()
+}
+
+/// The signal that ended the questions, if one did.
+pub(crate) fn heard() -> Option<Signal> {
+    HEARD.get().copied()
+}
+
 /// Watch signals on their own thread: the runtime thread blocks on questions.
 ///
 /// # Errors
@@ -74,18 +192,11 @@ pub(crate) fn watch_apart() -> std::io::Result<()> {
 }
 
 async fn watch() {
-    let signal = first_ending(&mut Listeners::default()).await;
-    match leave(&farewell(signal), signal.exit_code()) {}
-}
-
-async fn first_ending(listeners: &mut Listeners) -> Signal {
-    let signal = listeners.next().await;
-    // A working command stops itself, so it can save a refreshed login.
-    if holst_form::signals::is_answering() {
-        signal
-    } else {
-        Box::pin(first_ending(listeners)).await
-    }
+    let signal = Listeners::default().next().await;
+    // A working command stops itself, so it can save a refreshed login: the
+    // signal only ends the questions, blocked or later.
+    HEARD.set(signal).unwrap_or_default();
+    ending().1.stop();
 }
 
 /// Ends the work with the signal as an error, so the normal exit path still
@@ -116,16 +227,9 @@ mod tests {
         sync::atomic::AtomicBool,
     };
 
-    use holst_form::signals::or_interrupted;
     use rstest::rstest;
 
-    use crate::terminal::signals::{
-        INNER_GRACE,
-        Signal,
-        deferred,
-        farewell,
-        or_stopped,
-    };
+    use crate::terminal::signals::{INNER_GRACE, Signal, deferred, or_stopped};
 
     #[rstest]
     #[case::interrupt(Signal::Interrupt, 130)]
@@ -141,12 +245,6 @@ mod tests {
         assert_eq!(outcome.map_err(|err| crate::exit::code(&err)), Err(code));
     }
 
-    #[test]
-    fn farewell_names_the_signal() {
-        assert_eq!(farewell(Signal::Interrupt), "login cancelled");
-        assert_eq!(farewell(Signal::HangUp), "the terminal hung up");
-    }
-
     #[tokio::test(start_paused = true)]
     async fn fallback_lets_the_inner_listener_finish_first() {
         let inner = async {
@@ -155,7 +253,11 @@ mod tests {
         };
         let idle = AtomicBool::new(false);
         let fallback = deferred(ready(()), pending::<()>, INNER_GRACE, &idle);
-        let out = or_interrupted(inner, fallback, || "cut short").await;
+        let out = tokio::select! {
+            biased;
+            out = inner => out,
+            () = fallback => "cut short",
+        };
         assert_eq!(out, "closed by the form");
     }
 
