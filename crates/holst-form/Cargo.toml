@@ -1,15 +1,15 @@
 [package]
 name = "holst-form"
-version = "0.4.0"
+version = "0.4.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-readme.workspace = true
+readme = "README.md"
 authors.workspace = true
 keywords = ["holst", "terminal", "form", "prompt"]
 categories = ["command-line-interface"]
-description = "Terminal pieces of the Holst command-line tools: tty settings, detection, color and the signal counter"
+description = "Deprecated: use clacky. Terminal pieces of the old Holst command-line tools"
 
 [dependencies]
 thiserror.workspace = true

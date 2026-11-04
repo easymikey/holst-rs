@@ -1,3 +1,5 @@
+//! Deprecated: use [clacky](https://crates.io/crates/clacky). holst-cli and holst-mcp moved to it, and this crate gets no more releases.
+//!
 //! Terminal pieces shared by the Holst command-line tools.
 
 pub mod color_choice;
