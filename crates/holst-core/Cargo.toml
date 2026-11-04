@@ -26,7 +26,7 @@ tracing.workspace = true
 uuid.workspace = true
 memchr = "2"
 # The no-op IDNA backend of `url`: ASCII hosts only; 1.2 changes how Unicode hosts parse.
-idna_adapter = "=1.0.0"
+idna_adapter = "=1.2.2"
 url = "2.5"
 pulldown-cmark = { version = "0.13", default-features = false }
 icu_normalizer = { version = "2", default-features = false, features = ["compiled_data"] }
