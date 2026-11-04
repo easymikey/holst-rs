@@ -1,39 +1,47 @@
 # Contributing
 
-## Building
+## Setup
 
 ```sh
-cargo build
+cargo install cargo-run-bin --locked
+rustup toolchain install
+rustup toolchain install "$(cargo bin just --evaluate nightly)" --profile minimal --component rustfmt
+cargo bin just hooks
 ```
 
-The toolchain is pinned in `rust-toolchain.toml` (Rust 1.99.1). Clippy runs on that stable toolchain; the nightly named in `justfile` is used only for formatting.
+- `rust-toolchain.toml` pins the stable toolchain, and `rustup toolchain install` installs it. The nightly named in `justfile` is used only for formatting.
+- Every other tool, `just` included, is pinned in `Cargo.toml` and runs as `cargo bin <tool>`. It builds into `.bin/` on first use, or comes prebuilt when [`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall) is installed.
+- `cargo bin just hooks` points git at `.githooks/`: `pre-commit` runs `fmt-check` and `clippy`, `commit-msg` checks the subject.
+- The spell check builds `cargo-spellcheck` against libclang. On Linux install `libclang-dev`. On macOS the Xcode command line tools have it; build it once with `RUSTFLAGS="-C link-arg=-Wl,-rpath,/Library/Developer/CommandLineTools/usr/lib" cargo bin cargo-spellcheck --version`.
 
-## Tools and checks
+## Checks
 
-Every tool is pinned in `[workspace.metadata.bin]` of `Cargo.toml` and run through [cargo-run-bin](https://github.com/dustinblackman/cargo-run-bin), so you and CI use the same versions. Install it once; each tool is built into `.bin/` on first use.
+- `cargo bin just` runs `default`, which runs every group. Run it before a pull request.
+- Each recipe runs one tool, and a group only lists recipes. `cargo bin just --list` shows both; `cargo bin just clippy` or `cargo bin just lint` runs one.
+- `cargo bin just fmt` formats the code.
+- Recipes call each tool as `cargo bin cargo-<tool>`, not through a cargo alias, which would shadow a copy installed globally.
+- CI (`.github/workflows/ci.yml`) runs the same recipes after the shared setup action `.github/actions/setup`. Each runner in its matrix names its recipes. On Linux CI also checks every commit subject in the push or pull request with `cargo bin just commits <range>`.
+- A real word the spell check flags goes into `spellcheck.dic`, one per line, and the count on its first line goes up by one.
 
-```sh
-cargo install --locked cargo-run-bin
-rustup toolchain install nightly-2026-10-30 -c rustfmt --profile minimal
-```
+## Commit messages
 
-The commands live in `justfile`: one recipe per step (`fmt`, `clippy`, `test`, `doctest`, `spell`, `deny`, `machete`, `features`), and one per CI job built from them (`.github/workflows/ci.yml` runs the same recipes):
+[Conventional Commits](https://www.conventionalcommits.org/): `type(scope): subject`, the subject in lower case and without a version number. The `commit-msg` hook refuses anything else, and `cargo bin just commits` checks a range (`origin/main..HEAD` by default). Scopes are listed in the project section below.
 
-```sh
-cargo bin just          # format, clippy and tests: the everyday loop
-cargo bin just fmt      # format the code
-cargo bin just lint     # formatting and spelling
-cargo bin just deps     # licences and advisories, unused dependencies, each feature on its own
-cargo bin just check    # clippy, tests and doctests
-cargo bin just ci       # all of the above: run it before you push
-cargo bin just budget   # release binary sizes and startup against the limits in `justfile` (CI job `budget`; slow, not part of `ci`)
-```
+- `feat` goes into the changelog under "Added".
+- `fix` goes under "Fixed".
+- `refactor`, `perf` and `revert` go under "Changed".
+- `docs`, `test`, `build`, `ci`, `chore` and `style` stay out of the changelog.
+- A breaking change takes `!` after the type (`feat!: ...`) or a `BREAKING CHANGE:` footer, and always reaches the changelog.
+- While a crate is at 0.x, `feat` and `fix` bump the patch version and a breaking change bumps the minor version.
 
-Commit subjects follow Conventional Commits, in lower case and without a version, e.g. `fix(workspace): say a guest cannot see the members` or `ci: raise the startup limits`; CI job `deps` runs `cargo bin just commits <range>` on them.
+## Releases
 
-`cargo bin just --list` lists the recipes. The recipes call each tool as `cargo bin cargo-<tool>`, not through cargo aliases, which would shadow a copy installed globally.
-
-`cargo spellcheck` needs `libclang` to build: on macOS `brew install llvm` and set `LIBCLANG_PATH=$(brew --prefix llvm)/lib` the first time. New words go into `spellcheck.dic`, one per line, and the count on its first line is updated. Nextest retries a failed test twice, because loopback connects to the fakes can stall on a busy machine; a test that passes on a retry is reported as flaky.
+- Each crate has its own version, a `CHANGELOG.md` in its directory, a tag `<crate>-v<version>` and a GitHub release. [release-plz](https://release-plz.dev) (`release-plz.toml`) picks each changed crate's bump from the commits.
+- A push to `main` runs CI and publishes nothing, unless its last commit is `chore: release` and CI passes.
+- To release from GitHub, run the `release` workflow on `main` from the Actions tab. It runs `cargo bin just release`, commits `chore: release`, pushes it and runs `cargo bin just publish`.
+- To release locally, run `cargo bin just release`, review the diff, commit it as `chore: release` and push. Once CI on `main` passes, the `release` workflow runs `cargo bin just publish`.
+- `cargo bin just publish` needs `GITHUB_TOKEN` and `CARGO_REGISTRY_TOKEN`. It publishes each crate version crates.io lacks, tags it and creates its GitHub release; with nothing new it does nothing.
+- The `release` workflow runs only in the `easymikey` repository, so a fork never publishes.
 
 ## Layout
 
@@ -46,27 +54,23 @@ crates/
   holst-macros/  derive macros for commands and endpoints
 tasks/
   scenarios/     end to end scenarios and the `holst-eval` harness
-scripts/         release.zig
 ```
 
-## Tests
+## Holst
 
-No test reaches the network. `holst_core::fake` is a local server that answers the Holst API and logs every request it gets, and tests point the base URL at it. No test touches the real keychain: each one sets a temporary `HOLST_HOME` (the login is then stored there, not in the keychain) and a temporary `HOLST_CACHE_DIR`. Never print tokens, cookies or codes in a test.
-
-## Releases
-
-When CI passes on a push to `main`, `.github/workflows/tag.yml` reads the `holst-cli` version and creates the tag `v<version>` if it does not exist. It then starts `.github/workflows/release.yml`. That workflow checks the tag against the Cargo version, builds the five targets (Linux as static musl through `cargo-zigbuild`), writes `checksums.txt`, creates the GitHub release, publishes the crates to `crates.io` when `CARGO_REGISTRY_TOKEN` is set, and updates the `homebrew-holst` tap. To release, raise the version in `Cargo.toml`, add a section to `CHANGELOG.md`, and merge.
-
-## Releasing without GitHub runners
-
-The release pipeline (`.github/workflows/release.yml`) is the main path. When the runners are down, `scripts/release.zig` builds the same ten archives and `checksums.txt` on one Mac into `dist/`: `holst-cli-<target>` and `holst-mcp-<target>` for each of the five targets. The Linux targets are static musl builds made with `cargo-zigbuild` (they run on any distribution, no glibc requirement; the script checks that `file` reports both binaries as statically linked), Windows uses `cargo-xwin`.
-
-Needs Zig 0.17.0 exactly (the script stops on any other version), `cargo-run-bin` (it runs the `cargo-zigbuild` and `cargo-xwin` pinned in `Cargo.toml`), `llvm` (for `clang-cl`) on `PATH`, and the five `rustup` targets. The script prints what is missing and installs nothing. With the Homebrew package `llvm@22`, `clang-cl` is not on `PATH` by default, so run the script as `PATH=/opt/homebrew/opt/llvm@22/bin:$PATH zig run ...`.
-
-```sh
-git tag v0.3.0              # local tag; the Cargo version must match
-PATH=/opt/homebrew/opt/llvm@22/bin:$PATH zig run scripts/release.zig -- v0.3.0
-PATH=/opt/homebrew/opt/llvm@22/bin:$PATH zig run scripts/release.zig -- v0.3.0 --publish   # after pushing the tag; runs the same gh release create
-```
-
-Publishing to `crates.io` and updating `homebrew-holst` are not done by the script; it prints what to run by hand.
+- Scopes: a crate name without `holst-` (`cli`, `mcp`, `core`, `form`) or a module (`workspace`, `storage`, `error`).
+- Groups: `lint` (`fmt-check`, `spell`, `clippy`), `check` (`test`, `doctest`, `doc`), `deps` (`deny`, `machete`), plus the recipes `features` and `budget`.
+- `features` checks each feature on its own with `cargo-hack`.
+- `budget` builds the release binaries and checks the size and median startup of `holst` and `holst-mcp` against the limits at the top of `justfile`. The limits are for an Apple silicon Mac, so CI skips it. It is slow.
+- CI runs `lint check deps features` on Linux x64, and `clippy check` on Linux arm, macOS and Windows. With `full: true` the setup action also installs libclang and Zig.
+- `clippy.toml` denies direct file I/O, environment reads, stdout and stderr, clock calls and process spawning outside the modules that own them. Each lint message names the module to go through.
+- No test reaches the network: `holst_core::fake` is a local server that answers the Holst API and logs every request, and tests point the base URL at it.
+- No test touches the keychain: each sets a temporary `HOLST_HOME` (the login is stored there) and a temporary `HOLST_CACHE_DIR`.
+- Never print tokens, cookies or codes in a test.
+- Nextest retries a failed test twice, because loopback connects to the fakes can stall on a busy machine. A test that passes on a retry is reported as flaky.
+- release-plz runs without semver checks, so the bump comes from the commits alone. `holst-scenarios` is never released.
+- The root `CHANGELOG.md` is the history up to 0.4.0 and stays as it is; the per-crate changelogs continue it.
+- After `holst-cli` or `holst-mcp` is released, the `release` workflow builds its archives for five targets with `cargo bin just dist <target>`, attaches them with their `.sha256` files to that crate's GitHub release, then updates the `homebrew-holst` tap with `cargo bin just homebrew <tag>`. The tap push needs the `TAP_DEPLOY_KEY` secret in CI, or SSH push access to `easymikey/homebrew-holst` locally.
+- The Linux targets are static musl builds made with `cargo-zigbuild`. The recipe fails unless `file` reports both binaries as statically linked.
+- Without GitHub runners, run by hand: `cargo bin just release`, `cargo bin just publish`, `cargo bin just dist <target>` for each target, `gh release upload <tag> dist/<crate>-<target>.* --clobber`, then `cargo bin just homebrew <tag>`.
+- The Windows target cross-builds with `cargo-xwin`, which needs `clang-cl` on `PATH`. With the Homebrew `llvm@22` that is `PATH=/opt/homebrew/opt/llvm@22/bin:$PATH`.

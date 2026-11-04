@@ -1,5 +1,14 @@
 # holst-rs
 
+```text
+ ⠀⠀⣤⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+ ⠀⠀⣿⡇⠀⣀⣀⠀⠀⠀⠀⢀⣀⣀⡀⠀⠀⠀⣿⡇⠀⠀⢀⣀⣀⡀⠀⠀⢀⣿⣿⣀⡀⠀⠀⠀⠀⠀⢀⣀⠀⣀⡀⠀⠀⢀⣀⣀⡀⠀    CLI and MCP server for Holst boards.
+ ⠀⠀⣿⣷⠟⠛⢿⣷⡀⢀⣾⡿⠛⠛⢿⣷⡀⠀⣿⡇⠀⣼⣿⠛⠛⢿⣧⠀⠙⣿⣿⠛⠁⠀⠀⠀⠀⠀⢸⣿⡾⠛⠛⠃⣼⣿⠛⠛⢿⣧
+ ⠀⠀⣿⡏⠀⠀⢸⣿⡇⢸⣿⡇⠀⠀⢈⣿⡇⠀⣿⡇⠀⠈⠛⠿⠶⣶⣤⠀⠀⣿⣿⠀⠀⠸⠿⠿⠿⠀⢸⣿⠃⠀⠀⠀⠈⠛⠿⠶⣶⣤    brew install easymikey/holst/holst-cli
+ ⠀⠀⣿⡇⠀⠀⢸⣿⡇⠈⠿⣷⣤⣤⣾⡿⠁⠀⣿⡇⠀⢻⣷⣤⣤⣾⡿⠀⠀⢹⣿⣤⣤⠀⠀⠀⠀⠀⢸⣿⠀⠀⠀⠀⢻⣷⣤⣤⣾⡿    brew install easymikey/holst/holst-mcp
+ ⠀⠀⠉⠁⠀⠀⠀⠉⠀⠀⠀⠈⠉⠉⠁⠀⠀⠀⠉⠁⠀⠀⠈⠉⠉⠁⠀⠀⠀⠀⠉⠉⠁⠀⠀⠀⠀⠀⠈⠉⠀⠀⠀⠀⠀⠈⠉⠉⠁⠀
+```
+
 An unofficial command line and MCP server for [Holst](https://app.holst.so) boards, written in Rust. `holst` is for the terminal and scripts; `holst-mcp` gives AI agents such as Claude Code and Codex the same commands as 10 tools. Install either one; both use the same login.
 
 Holst has no public API, so holst-rs logs in as you and uses the web client's own channels: the REST API and the live board sync. They were worked out from the web client's traffic and may change without notice. The project is not affiliated with Holst.
@@ -109,7 +118,7 @@ Never ask the user for the one-time code. Tell them to run `holst auth login` or
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 
