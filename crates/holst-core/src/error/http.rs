@@ -303,11 +303,13 @@ pub(super) mod tests {
         url
     }
 
-    async fn failure(url: &str) -> Option<HttpError> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_millis(300))
-            .build()
-            .ok()?;
+    const QUICK: Duration = Duration::from_millis(300);
+
+    /// Windows retries a refused connect for about 2 s before it reports it.
+    const WINDOWS_RETRY: Duration = Duration::from_secs(5);
+
+    async fn failure(url: &str, timeout: Duration) -> Option<HttpError> {
+        let client = reqwest::Client::builder().timeout(timeout).build().ok()?;
         match client.get(url).send().await {
             Ok(reply) => reply.bytes().await.err().map(HttpError::from),
             Err(error) => Some(error.into()),
@@ -316,7 +318,7 @@ pub(super) mod tests {
 
     #[tokio::test]
     async fn a_silent_server_is_a_timeout() {
-        let err = failure(&serve(b"", false).await).await;
+        let err = failure(&serve(b"", false).await, QUICK).await;
         assert!(matches!(err, Some(HttpError::Timeout(_))), "{err:?}");
     }
 
@@ -327,7 +329,7 @@ pub(super) mod tests {
             .and_then(|listener| listener.local_addr().ok())
             .map(|address| format!("http://{address}/"))
             .unwrap_or_default();
-        let err = failure(&gone).await;
+        let err = failure(&gone, WINDOWS_RETRY).await;
         assert!(matches!(err, Some(HttpError::Connect(_))), "{err:?}");
     }
 
@@ -335,7 +337,7 @@ pub(super) mod tests {
     async fn a_body_cut_short_is_a_cut_off_reply() {
         let url =
             serve(b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nabc", true).await;
-        let err = failure(&url).await;
+        let err = failure(&url, QUICK).await;
         assert!(matches!(err, Some(HttpError::CutOff(_))), "{err:?}");
     }
 
