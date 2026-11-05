@@ -30,7 +30,7 @@ use crate::{
     error::{
         Error,
         Result,
-        confirmation::{ChangeRisk, Unconfirmed},
+        confirmation::{RiskyChange, Unconfirmed},
         input::{InputError, JsonSpot},
     },
     remote::{api, client::Client, socket::write::connector},
@@ -409,13 +409,9 @@ pub async fn edit(client: &Client, args: &EditArgs) -> Result<Changed> {
         })?;
     let (id, current) = lookup::found(client, &args.template).await?;
     let template = Template::try_from(body)?;
-    let unconfirmed = Unconfirmed::new(
-        format!(
-            "replacing the body of template {}",
-            current.name.as_deref().unwrap_or(&id)
-        ),
-        ChangeRisk::Irreversible,
-    );
+    let unconfirmed = Unconfirmed::from(RiskyChange::ReplaceTemplateBody {
+        template: current.name.as_deref().unwrap_or(&id).to_owned(),
+    });
     carry(
         client,
         Plan {
@@ -436,13 +432,9 @@ pub async fn edit(client: &Client, args: &EditArgs) -> Result<Changed> {
 /// requests.
 pub async fn rm(client: &Client, args: &RemoveArgs) -> Result<Changed> {
     let (id, current) = lookup::found(client, &args.template).await?;
-    let unconfirmed = Unconfirmed::new(
-        format!(
-            "deleting template {} for good",
-            current.name.as_deref().unwrap_or(&id)
-        ),
-        ChangeRisk::Irreversible,
-    );
+    let unconfirmed = Unconfirmed::from(RiskyChange::DeleteTemplate {
+        template: current.name.as_deref().unwrap_or(&id).to_owned(),
+    });
     carry(
         client,
         Plan {

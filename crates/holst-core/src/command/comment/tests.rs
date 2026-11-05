@@ -390,8 +390,9 @@ mod thread_removal {
         )?;
         let args = args_of::<RemoveArgs>(&json!({ "board": "Plans", "thread": "t1" }))?;
         let report = super::super::rm(&client, &args).await?;
-        let ChangeReport::Held { needs, .. } = report.outcome else {
-            panic!("the deletion was not held back");
+        let needs = match report.outcome {
+            ChangeReport::Held { needs, .. } => needs,
+            ChangeReport::Sent | ChangeReport::DryRun { .. } => String::new(),
         };
         assert!(needs.contains("with 1 reply"), "{needs}");
         assert!(!needs.contains("1 replies"), "{needs}");

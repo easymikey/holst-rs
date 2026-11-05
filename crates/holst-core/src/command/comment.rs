@@ -1,6 +1,6 @@
 //! The `comment` group: the threads of a board over its socket room.
 
-use std::{borrow::Cow, collections::HashSet, time::Duration};
+use std::{collections::HashSet, time::Duration};
 
 use futures_util::future;
 use holst_macros::CommandArgs;
@@ -37,7 +37,7 @@ use crate::{
         Error,
         Result,
         board_change::BoardChangeError,
-        confirmation::{ChangeRisk, Unconfirmed},
+        confirmation::{RiskyChange, Unconfirmed},
         flag::Flag,
         input::InputError,
         lookup::{
@@ -711,15 +711,11 @@ async fn removed_thread(
         .first()
         .and_then(|message| message.text.lines().next())
         .unwrap_or_default();
-    let change_text: Cow<'static, str> = match found.messages.len() {
-        0 | 1 => format!("deleting the thread {thread} \"{first}\"").into(),
-        more => format!(
-            "deleting the thread {thread} \"{first}\" with {} replies",
-            more - 1
-        )
-        .into(),
-    };
-    let unconfirmed = Unconfirmed::new(change_text, ChangeRisk::Irreversible);
+    let unconfirmed = Unconfirmed::from(RiskyChange::DeleteThread {
+        thread: thread.clone(),
+        first: first.to_owned(),
+        replies: found.messages.len().saturating_sub(1),
+    });
     let change = CommentChange::Delete {
         thread: thread.clone(),
     };
@@ -745,12 +741,11 @@ async fn removed_reply(
         .then_some(())
         .ok_or_else(|| Error::from(InputError::OthersReply))?;
     let first = reply.text.lines().next().unwrap_or_default();
-    let change_text: Cow<'static, str> = format!(
-        "deleting the reply {} \"{first}\" of thread {}",
-        reply.id, found.id
-    )
-    .into();
-    let unconfirmed = Unconfirmed::new(change_text, ChangeRisk::Irreversible);
+    let unconfirmed = Unconfirmed::from(RiskyChange::DeleteReply {
+        reply: reply.id.clone(),
+        first: first.to_owned(),
+        thread: found.id.clone(),
+    });
     let change = CommentChange::DeleteReply {
         thread: found.id.clone(),
         reply: reply.id.clone(),

@@ -25,7 +25,7 @@ use crate::{
     effect::{board_write::WriteMode, request::QueryParameter},
     error::{
         Result,
-        confirmation::{ChangeRisk, Unconfirmed},
+        confirmation::{RiskyChange, Unconfirmed},
         flag::Flag,
         http::{HttpError, ReplyBody},
         lookup::{
@@ -757,10 +757,10 @@ pub async fn create(client: &Client, args: &CreateArgs) -> Result<WorkspaceChang
 pub async fn rename(client: &Client, args: &RenameArgs) -> Result<WorkspaceChange> {
     let name = visible(Flag::Name, &args.name)?;
     let workspace = lookup::workspace(client, Some(args.workspace.as_str())).await?;
-    let unconfirmed = Unconfirmed::new(
-        format!("renaming {} to {name}", workspace.name),
-        ChangeRisk::Everyone,
-    );
+    let unconfirmed = Unconfirmed::from(RiskyChange::RenameWorkspace {
+        from: workspace.name.clone(),
+        to: name.clone(),
+    });
     let (report, _) = settle(
         client,
         api::workspace::rename_request(

@@ -34,7 +34,7 @@ use crate::{
         Result,
         board_change::BoardChangeError,
         board_socket::BoardSocketError,
-        confirmation::{ChangeRisk, Unconfirmed},
+        confirmation::{RiskyChange, Unconfirmed},
         flag::Flag,
         http::{HttpError, ReplyBody},
         input::InputError,
@@ -359,10 +359,7 @@ async fn restored(
     let snapshot = fetch(client, &args.key, provider).await?;
     let state = compression::uncompressed(snapshot.as_bytes())?;
     document::saved_objects(&state)?;
-    let unconfirmed = Unconfirmed::new(
-        "replacing the objects of a board with a backup",
-        ChangeRisk::Irreversible,
-    );
+    let unconfirmed = Unconfirmed::from(RiskyChange::RestoreBackup);
     let gated = gate(Some(unconfirmed), (args.dry_run, args.confirm), || None);
     let done = board_file::replace_with(
         client,
