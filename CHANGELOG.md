@@ -26,6 +26,13 @@
 - The form's answer errors (empty, not an email, wrong code, wrong password) read the same in the CLI and MCP setup; the code error says "that code did not match - check ...".
 - MCP: `-` as a path says "`-` is for the command line: give a path".
 - Errors with causes print the cause chain on one line without repeats; MCP `auth` tools now show it too.
+- Checks that need no server run before any request, on the CLI and MCP alike, and name flags as `--flag`: "`--offline` cannot be used with `--refresh`", "`--direction` needs `--parent`", "give one of `--cover`, `--note`, `--note-template`".
+- An empty value says so: "`--name` is empty: give a visible value".
+- `--items` checks all items before the first is read, and its errors end with ", in item N".
+- Ranges and formats name the flag: "`--opacity` must be a number 0.1 to 1", "`--start` must be a day as YYYY-MM-DD, e.g. 2026-11-06".
+- A value of the wrong type says what it must be: "`--name` must be text".
+- An unknown member lists the choices: `workspace member "Zed" not found; available: A, B`.
+- The messages of `search`, `board edit`, `board snap`, `board import`, `comment` and `template ls` use plain words, for example "the file must be named with .svg or .png".
 
 ## 0.4.0
 
