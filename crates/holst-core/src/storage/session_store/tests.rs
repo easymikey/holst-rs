@@ -448,8 +448,13 @@ fn secret_service_failures_are_told_apart() {
         "{other:?}"
     );
     assert_eq!(
-        other.to_string(),
-        "Secret Service failed: Crypto error: bad key"
+        (
+            other.to_string().as_str(),
+            crate::error::chained(&other)
+                .to_string()
+                .contains("bad key"),
+        ),
+        ("the Secret Service failed", true)
     );
     assert_eq!(other.hint(), Some(crate::error::hint::Hint::UseHome));
 }
@@ -470,8 +475,13 @@ fn a_store_that_failed_to_open_keeps_its_cause() {
     );
     let other = opening(secret_service::Error::Crypto("bad key"));
     assert_eq!(
-        other.to_string(),
-        "Secret Service failed: Crypto error: bad key"
+        (
+            other.to_string().as_str(),
+            crate::error::chained(&other)
+                .to_string()
+                .contains("bad key"),
+        ),
+        ("the Secret Service failed", true)
     );
 }
 
