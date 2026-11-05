@@ -67,6 +67,15 @@ impl McpServer {
             arguments.insert("max_side".to_owned(), Value::from(side));
         }
         self.parsed(arguments, async |args: SnapArgs| {
+            let place = args
+                .file
+                .as_ref()
+                .map(|file| file.0.to_string_lossy().into_owned());
+            if let Some(Err(err)) =
+                place.as_deref().map(|file| self.named_place(Some(file)))
+            {
+                return self.fail(&err);
+            }
             self.run_blocks(async |client| {
                 let snapped = picture::snap(&client, &self.cache, None, &args).await?;
                 Ok(snapped_blocks(snapped))
@@ -339,9 +348,11 @@ fn snapped_blocks(snapped: Snapped) -> Vec<ContentBlock> {
         (Delivery::Inline { bytes }, PictureFormat::Svg) => {
             ContentBlock::text(inline_svg(String::from_utf8_lossy(&bytes).into_owned()))
         }
-        (Delivery::Written { file, .. }, _) => {
-            ContentBlock::text(format!("saved to {}", file.display()))
-        }
+        (Delivery::Written { file, bytes }, _) => ContentBlock::text(format!(
+            "saved to {} ({})",
+            file.display(),
+            size_text(bytes)
+        )),
     };
     vec![picture, ContentBlock::text(about)]
 }

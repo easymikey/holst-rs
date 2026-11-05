@@ -137,6 +137,9 @@ expression: "*holst.tools"
         "embed": {
           "type": "boolean"
         },
+        "file": {
+          "type": "string"
+        },
         "folder": {
           "type": "string"
         },

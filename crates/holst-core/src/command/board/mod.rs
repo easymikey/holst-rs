@@ -318,8 +318,7 @@ pub struct SnapArgs {
     #[argument(
         positional,
         value_name = "file",
-        help = "A new .png or .svg file, never overwritten, - for stdout; ~/Downloads/<name>-<id>.png by default",
-        surfaces = [Cli]
+        help = "A new .png or .svg file, never overwritten, - for stdout; ~/Downloads/<name>-<id>.png by default"
     )]
     pub file: Option<NewFile>,
     #[argument(

@@ -958,9 +958,11 @@ async fn embed_gives_the_picture_inline() -> holst_core::Result<()> {
 }
 
 #[tokio::test]
-async fn snap_with_a_file_writes_the_png_and_names_the_path() -> holst_core::Result<()> {
+async fn snap_with_a_file_writes_the_png_and_names_the_path() -> holst_core::Result<()>
+{
     let (_fake, holst, _) = on_fake().await?;
-    let dir = std::env::temp_dir().join(format!("holst-mcp-snap-{}", std::process::id()));
+    let dir =
+        std::env::temp_dir().join(format!("holst-mcp-snap-{}", std::process::id()));
     std::fs::create_dir_all(&dir)?;
     let file = dir.join("plans.png");
     let call = serde_json::json!({
@@ -969,10 +971,14 @@ async fn snap_with_a_file_writes_the_png_and_names_the_path() -> holst_core::Res
     let (failed, text) = table_call(&holst, "board", call).await;
     let written = std::fs::read(&file);
     std::fs::remove_dir_all(&dir)?;
+    let written = written?;
     assert!(!failed, "{text}");
-    assert!(text.contains(&*file.to_string_lossy()), "{text}");
-    assert!(text.contains(" B"), "the size: {text}");
-    assert!(written?.starts_with(b"\x89PNG\r\n\x1a\n"));
+    let size = holst_core::domain::text::size_text(written.len());
+    assert!(
+        text.contains(&format!("saved to {} ({size})", file.display())),
+        "{text}"
+    );
+    assert!(written.starts_with(b"\x89PNG\r\n\x1a\n"));
     Ok(())
 }
 
