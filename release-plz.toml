@@ -1,6 +1,8 @@
 [workspace]
 semver_check = false
-changelog_update = true
+# The root CHANGELOG.md is written by hand: most changes land in holst-core,
+# so per-crate changelogs from commits would leave holst-cli and holst-mcp empty.
+changelog_update = false
 git_tag_enable = true
 git_tag_name = "{{ package }}-v{{ version }}"
 git_release_enable = true
