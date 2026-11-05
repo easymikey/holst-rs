@@ -77,7 +77,7 @@ fn an_object_is_named_by_its_handle_from_the_last_listing() -> TestResult {
     }
     let listing = holst_in(base, &dir, &["object", "ls", "Plans"], "")?;
     let shown = String::from_utf8_lossy(&listing.stdout).into_owned();
-    let row = |at: usize| shown.lines().filter(|line| line.starts_with("@")).nth(at);
+    let row = |at: usize| shown.lines().filter(|line| line.starts_with('@')).nth(at);
     let second = row(1).unwrap_or_default();
     assert!(second.starts_with("@2 "), "{shown}");
     let edit = holst_in(

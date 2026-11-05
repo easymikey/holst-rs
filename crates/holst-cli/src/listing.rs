@@ -72,11 +72,15 @@ fn expand(
         .try_for_each(|(kind, value)| {
             let given = match value {
                 Value::Array(items) => items.iter_mut().collect(),
-                one => vec![one],
+                Value::Null
+                | Value::Bool(_)
+                | Value::Number(_)
+                | Value::String(_)
+                | Value::Object(_) => vec![value],
             };
             given
                 .into_iter()
-                .filter_map(|value| match value {
+                .filter_map(|each| match each {
                     Value::String(text) => Some(text),
                     Value::Null
                     | Value::Bool(_)
