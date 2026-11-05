@@ -48,6 +48,8 @@ pub struct Cache {
     clock: Arc<dyn Clock>,
     #[cfg(test)]
     scans: Arc<std::sync::atomic::AtomicUsize>,
+    #[cfg(test)]
+    before_gzip: Arc<dyn Fn() + Send + Sync>,
 }
 
 impl fmt::Debug for Cache {
@@ -96,6 +98,8 @@ impl Cache {
             clock,
             #[cfg(test)]
             scans: Arc::default(),
+            #[cfg(test)]
+            before_gzip: Arc::new(|| {}),
         })
     }
 
@@ -182,6 +186,16 @@ impl Cache {
     pub fn with_lock_wait(self, lock_wait_ms: u64) -> Self {
         Self {
             lock_wait_millis: lock_wait_ms,
+            ..self
+        }
+    }
+
+    /// The same cache running `probe` when a store is about to gzip.
+    #[cfg(test)]
+    #[must_use]
+    pub fn with_gzip_probe(self, probe: impl Fn() + Send + Sync + 'static) -> Self {
+        Self {
+            before_gzip: Arc::new(probe),
             ..self
         }
     }

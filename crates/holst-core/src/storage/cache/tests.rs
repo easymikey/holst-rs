@@ -5,7 +5,10 @@ use std::{
     fs::OpenOptions,
     io,
     path::PathBuf,
-    sync::atomic::Ordering,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -27,7 +30,7 @@ use crate::{
     storage::{
         cache::{ASSETS_DIR, BOARDS_DIR, Cache, INDEX_FILE, META_FILE, STATE_FILE},
         file::name_of,
-        lock::LOCK_FILE,
+        lock::{LOCK_FILE, lock_waiting},
     },
 };
 
@@ -438,29 +441,20 @@ fn a_store_leaves_the_entry_of_another_format_to_the_writer() -> Result<()> {
 }
 
 #[test]
-fn parallel_stores_do_not_wait_for_each_others_gzip() -> Result<()> {
-    let root = Root::new("parallel")?;
-    let cache = root.cache(ALICE, 1 << 30, 1)?;
-    let states: Vec<Vec<u8>> = (1..=4).map(|seed| noise(3 << 20, seed)).collect();
-    let stored: Vec<Result<()>> = std::thread::scope(|scope| {
-        let workers: Vec<_> = (1..=4u32)
-            .zip(&states)
-            .map(|(number, state)| {
-                let handle = cache.clone();
-                scope.spawn(move || handle.store(&board(number), &record(state)))
-            })
-            .collect();
-        workers
-            .into_iter()
-            .map(|worker| {
-                worker
-                    .join()
-                    .unwrap_or_else(|_| Err(Error::LocalData(LocalDataError::NoHome)))
-            })
-            .collect()
+fn a_store_gzips_before_it_takes_the_lock() -> Result<()> {
+    let root = Root::new("gzip-unlocked")?;
+    let cache = root.cache(ALICE, 1 << 20, 1)?;
+    cache.store(&board(1), &record(b"first"))?;
+    let lock_path = cache.dir().join(LOCK_FILE);
+    let free = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::clone(&free);
+    let probing = cache.with_gzip_probe(move || {
+        if matches!(lock_waiting(&lock_path, 0), Ok(Some(_))) {
+            seen.fetch_add(1, Ordering::Relaxed);
+        }
     });
-    assert!(stored.iter().all(Result::is_ok), "{stored:?}");
-    assert_eq!(cache.usage().boards, 4);
+    probing.store(&board(2), &record(&noise(1 << 10, 2)))?;
+    assert_eq!(free.load(Ordering::Relaxed), 1);
     Ok(())
 }
 
@@ -574,8 +568,8 @@ fn accounts_and_servers_are_isolated() -> Result<()> {
         "another server's copy was read"
     );
     elsewhere.store(&board(1), &record(b"staging"))?;
-    let clock: std::sync::Arc<dyn crate::effect::clock::Clock> =
-        std::sync::Arc::new(FixedClock { unix_millis: 1 });
+    let clock: Arc<dyn crate::effect::clock::Clock> =
+        Arc::new(FixedClock { unix_millis: 1 });
     let found: Vec<(String, String)> = itertools::Itertools::sorted(
         Cache::accounts(&root.settings(1 << 20), &clock)
             .iter()

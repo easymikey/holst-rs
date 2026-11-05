@@ -342,6 +342,8 @@ impl CachePort for Cache {
     fn store(&self, board: &str, record: &CacheRecord<'_>) -> Result<()> {
         self.board_dir(board).map_or(Ok(()), |dir| {
             // Gzip runs before the lock: it is the slow step and needs no file.
+            #[cfg(test)]
+            (self.before_gzip)();
             let state = compression::compressed(record.document, Compression::Gzip)?;
             let _lock = self.locked()?;
             self.store_locked(&dir, record, &state)
