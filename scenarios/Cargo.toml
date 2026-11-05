@@ -9,7 +9,7 @@ description = "Behaviour scenarios run through the holst and holst-mcp binaries 
 autotests = false
 
 [dependencies]
-holst-core = { path = "../../crates/holst-core", features = ["fake"] }
+holst-core = { path = "../crates/holst-core", features = ["fake"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

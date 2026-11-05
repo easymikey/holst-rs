@@ -43,8 +43,7 @@ crates/
   holst-cli/     the `holst` binary
   holst-mcp/     the `holst-mcp` server and its setup
   holst-macros/  derive macros for commands and endpoints
-tasks/
-  scenarios/     end to end scenarios and the `holst-eval` harness
+scenarios/     end to end scenarios and the `holst-eval` harness
 ```
 
 ## Holst
