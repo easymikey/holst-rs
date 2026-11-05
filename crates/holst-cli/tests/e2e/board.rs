@@ -66,6 +66,58 @@ fn a_board_is_named_by_its_handle_from_the_last_listing() -> TestResult {
 }
 
 #[test]
+fn an_object_is_named_by_its_handle_from_the_last_listing() -> TestResult {
+    let fake = fake::start()?;
+    let base = fake.base_url();
+    let dir = signed_home(base)?;
+    for text in ["first", "second"] {
+        let add =
+            holst_in(base, &dir, &["object", "add", "sticker", "Plans", text], "")?;
+        assert_eq!(add.status.code(), Some(0), "{}", stderr(&add));
+    }
+    let listing = holst_in(base, &dir, &["object", "ls", "Plans"], "")?;
+    let shown = String::from_utf8_lossy(&listing.stdout).into_owned();
+    let row = |at: usize| shown.lines().filter(|line| line.starts_with("@")).nth(at);
+    let second = row(1).unwrap_or_default();
+    assert!(second.starts_with("@2 "), "{shown}");
+    let edit = holst_in(
+        base,
+        &dir,
+        &[
+            "object", "edit", "Plans", "--object", "@2", "--text", "changed",
+        ],
+        "",
+    )?;
+    assert_eq!(edit.status.code(), Some(0), "{}", stderr(&edit));
+    let after = holst_in(base, &dir, &["object", "ls", "Plans"], "")?;
+    let text = String::from_utf8_lossy(&after.stdout).into_owned();
+    let changed: Vec<_> = text
+        .lines()
+        .filter(|line| line.contains("changed"))
+        .collect();
+    assert_eq!(changed.len(), 1, "{text}");
+    assert!(
+        text.lines().any(|line| line.contains("first")),
+        "the first object changed:\n{text}"
+    );
+    let board = holst_in(base, &dir, &["board", "ls"], "")?;
+    assert_eq!(board.status.code(), Some(0), "{}", stderr(&board));
+    let wrong = holst_in(
+        base,
+        &dir,
+        &["object", "edit", "Plans", "--object", "@2", "--text", "x"],
+        "",
+    )?;
+    assert_eq!(wrong.status.code(), Some(64), "{}", stderr(&wrong));
+    assert!(
+        stderr(&wrong).contains("@2 names a board, not an object"),
+        "{}",
+        stderr(&wrong)
+    );
+    Ok(())
+}
+
+#[test]
 fn tree_with_trash_shows_the_trash() -> TestResult {
     let fake = fake::start()?;
     let base = fake.base_url();
