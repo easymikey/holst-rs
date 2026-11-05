@@ -138,9 +138,10 @@ mod tests {
             Some(Hint::LoginAgain)
         );
         assert_eq!(Error::NoStdout.hint(), None);
-        let unconfirmed = Error::Unconfirmed(Unconfirmed::from(RiskyChange::ChangeSharing {
-            board: "@2".to_owned(),
-        }));
+        let unconfirmed =
+            Error::Unconfirmed(Unconfirmed::from(RiskyChange::ChangeSharing {
+                board: "@2".to_owned(),
+            }));
         assert_eq!(unconfirmed.hint(), Some(Hint::ConfirmFirst));
         assert_eq!(
             unconfirmed.to_string(),
