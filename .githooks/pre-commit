@@ -1,2 +1,3 @@
 #!/bin/sh
-exec cargo bin just fmt-check clippy
+# Format and spelling before every commit, in seconds. Enable once with `just hooks`.
+exec cargo bin just fmt-check spell

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Lint before every push. Enable once with `just hooks`.
+exec cargo bin just clippy

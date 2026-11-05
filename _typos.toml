@@ -1,0 +1,3 @@
+[default.extend-words]
+# Test data: the prefix of "cafe" with a combining accent.
+caf = "caf"
