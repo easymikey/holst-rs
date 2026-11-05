@@ -619,6 +619,14 @@ mod tests {
         Error::Unconfirmed(RiskyChange::DeleteNode { node: "board Plans".into() }.into()),
         77
     )]
+    #[case::import_board_left(
+        core(InputError::ImportBoardLeft { board: "x".into(), failed: Box::new(refused(403)) }),
+        69
+    )]
+    #[case::import_board_left_retry(
+        core(InputError::ImportBoardLeft { board: "x".into(), failed: Box::new(refused(503)) }),
+        75
+    )]
     #[case::cache_dir_relative(core(InputError::CacheDirRelative { value: "x".into() }), 78)]
     #[case::no_downloads(Error::NoDownloads, 78)]
     #[case::several_takes_the_first(
