@@ -213,13 +213,6 @@ pub enum InputError {
     #[error("{name} is required by `{command}`")]
     NoArgument { command: String, name: &'static str },
 
-    #[error("{name} of `{command}` must be {expected}")]
-    NotArgumentValue {
-        command: String,
-        name: &'static str,
-        expected: String,
-    },
-
     #[error("{name} of `{command}` must be a JSON object")]
     NotJsonObject {
         command: String,
@@ -660,11 +653,6 @@ pub(super) mod tests {
             InputError::NoArgument {
                 command: text(),
                 name: "x",
-            },
-            InputError::NotArgumentValue {
-                command: text(),
-                name: "x",
-                expected: text(),
             },
             InputError::NotJsonObject {
                 command: text(),

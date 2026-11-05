@@ -263,7 +263,6 @@ fn input_code(error: &InputError) -> u8 {
         | InputError::WorkspaceNotChosen { .. }
         | InputError::NotArgument { .. }
         | InputError::NoArgument { .. }
-        | InputError::NotArgumentValue { .. }
         | InputError::NotJsonObject { .. }
         | InputError::ReplyNotFound { .. }
         | InputError::NotCommandArguments(_)
