@@ -1,6 +1,6 @@
 ---
 source: crates/holst-cli/src/table.rs
-expression: help_of(line)
+expression: "help_of(&format!(\"{line} -h\"))"
 ---
 Move a board or a folder into a folder; / is the root. A folder takes its boards along.
 Moving one board needs no -y. Moving a folder with boards reaches everyone who sees them, so it needs -y; without it only the dry run is shown.
@@ -9,7 +9,7 @@ USAGE
   holst board mv <board> <folder> [flags]
 
 ARGUMENTS
-  board    The board or folder to move
+  board    The board or folder to move; `@N` from the last listing
   folder   The folder to move into: a folder id, link or part of its name; / is the root
 
 FLAGS

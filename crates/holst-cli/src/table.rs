@@ -199,7 +199,7 @@ fn leaf_command(
 
 fn flag(argument: &Argument) -> Arg {
     let base = Arg::new(argument.name)
-        .help(argument.help)
+        .help(help::described(argument))
         .value_name(argument.value_name)
         .required(argument.required);
     let lettered = match (argument.positional, argument.letter) {

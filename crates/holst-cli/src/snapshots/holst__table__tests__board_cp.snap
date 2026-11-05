@@ -1,6 +1,6 @@
 ---
 source: crates/holst-cli/src/table.rs
-expression: help_of(line)
+expression: "help_of(&format!(\"{line} -h\"))"
 ---
 Copy a board; it prints the copy with its link.
 The copy keeps the objects; its rights are not copied unless --rights is given.
@@ -9,7 +9,7 @@ USAGE
   holst board cp <board> [flags]
 
 ARGUMENTS
-  board   The board to copy
+  board   The board to copy; `@N` from the last listing
 
 FLAGS
   -w, --workspace ws    The workspace a new thing goes to: id or part of its name; needed when you have several

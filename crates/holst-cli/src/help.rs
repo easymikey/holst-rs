@@ -1,5 +1,7 @@
 //! The help of the table's groups and commands, in the style of `gh`.
 
+use std::borrow::Cow;
+
 use holst_core::{
     command::table::{
         Argument,
@@ -12,6 +14,8 @@ use holst_core::{
     },
     error::hint::Surface,
 };
+
+use crate::listing;
 
 /// How wide the `name:` column of a group's command list is.
 const NAME_COLUMN: usize = 13;
@@ -102,20 +106,20 @@ pub(crate) fn root(groups: &[CommandGroup], root: &clap::Command) -> String {
             letter: *letter,
             long: (*long).to_owned(),
             value: value.as_deref(),
-            help,
+            help: Cow::Borrowed(help),
         })
         .chain([
             FlagLine {
                 letter: Some('V'),
                 long: String::from("version"),
                 value: None,
-                help: "Show the version",
+                help: Cow::Borrowed("Show the version"),
             },
             FlagLine {
                 letter: Some('h'),
                 long: String::from("help"),
                 value: None,
-                help: "Show help for a command",
+                help: Cow::Borrowed("Show help for a command"),
             },
         ]);
     ["Work with Holst boards from the command line.".to_owned()]
@@ -336,11 +340,26 @@ pub(crate) fn usage(command: &Command, kind: Option<&'static str>) -> String {
         .join(" ")
 }
 
+/// Returns the help of an argument as the command line shows it: an argument
+/// that takes a row of the last listing says so. Core texts also serve the MCP
+/// tools, where `@N` is another thing.
+pub(crate) fn described(argument: &Argument) -> Cow<'static, str> {
+    const HANDLE: &str = "`@N` from the last listing";
+    let help = argument.help;
+    if listing::wanted(argument.name).is_none() {
+        Cow::Borrowed(help)
+    } else if help.contains("@N") {
+        Cow::Owned(help.replace("@N", HANDLE))
+    } else {
+        Cow::Owned(format!("{help}; {HANDLE}"))
+    }
+}
+
 fn positionals_section(arguments: &[&Argument]) -> Option<String> {
-    let rows: Vec<(&str, &str)> = arguments
+    let rows: Vec<(&str, Cow<'static, str>)> = arguments
         .iter()
         .filter(|argument| argument.positional)
-        .map(|argument| (argument.value_name, argument.help))
+        .map(|argument| (argument.value_name, described(argument)))
         .collect();
     let width = rows.iter().map(|(name, _)| name.chars().count()).max()?;
     Some(section(
@@ -415,7 +434,7 @@ struct FlagLine<'a> {
     letter: Option<char>,
     long: String,
     value: Option<&'a str>,
-    help: &'a str,
+    help: Cow<'a, str>,
 }
 
 impl FlagLine<'_> {
@@ -450,7 +469,7 @@ fn flag_line_of_argument(argument: &Argument) -> FlagLine<'_> {
             | ValueKind::Items
             | ValueKind::QueryParameter => Some(argument.value_name),
         },
-        help: argument.help,
+        help: described(argument),
     }
 }
 
@@ -459,7 +478,7 @@ fn flag_line_of_group(flag: &GroupFlag) -> FlagLine<'_> {
         letter: flag.letter,
         long: kebab(flag.name),
         value: Some(flag.value_name).filter(|value| !value.is_empty()),
-        help: flag.help,
+        help: Cow::Borrowed(flag.help),
     }
 }
 
@@ -497,6 +516,31 @@ mod tests {
             .map(|help| help.to_string())
             .unwrap_or_default();
         insta::assert_snapshot!("root", shown);
+    }
+
+    #[test]
+    fn a_board_and_an_object_say_that_a_listing_names_them() {
+        let page = |line: &str| {
+            command()
+                .try_get_matches_from(line.split(' '))
+                .err()
+                .map(|help| help.to_string())
+                .unwrap_or_default()
+        };
+        let shown = page("holst o rm -h");
+        assert!(
+            shown.contains(
+                "The board: id, link or part of its name; `@N` from the last listing"
+            ),
+            "{shown}"
+        );
+        assert!(
+            shown.contains(
+                "id, link, `@N` from the last listing or the first 8 characters"
+            ),
+            "{shown}"
+        );
+        assert!(!shown.contains(" @N "), "{shown}");
     }
 
     /// The words of a command line, a quoted text being one word.

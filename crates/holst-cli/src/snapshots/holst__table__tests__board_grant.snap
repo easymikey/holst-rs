@@ -9,7 +9,7 @@ USAGE
   holst board grant <board> <user> <right> [flags]
 
 ARGUMENTS
-  board   The board to give the right on
+  board   The board to give the right on; `@N` from the last listing
   user    A user: user id or part of a member's name (see `holst ws show --with members`)
   right   The board right: viewer, commentator, editor or full
 

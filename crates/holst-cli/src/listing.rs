@@ -54,7 +54,7 @@ pub(crate) fn name_rows(
 }
 
 /// What a row of the listing must be for the argument `name` to take it.
-fn wanted(name: &str) -> Option<ListedKind> {
+pub(crate) fn wanted(name: &str) -> Option<ListedKind> {
     match name {
         "board" => Some(ListedKind::Board),
         "object" | "frame" | "from" | "to" | "parent" => Some(ListedKind::Object),

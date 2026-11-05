@@ -9,7 +9,7 @@ USAGE
   holst board tag <board> <tag> [flags]
 
 ARGUMENTS
-  board   The board whose tag to change
+  board   The board whose tag to change; `@N` from the last listing
   tag     The tag: its title or id
 
 FLAGS

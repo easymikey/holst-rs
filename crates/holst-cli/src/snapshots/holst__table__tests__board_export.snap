@@ -9,7 +9,7 @@ USAGE
   holst board export <board> [<file>] [flags]
 
 ARGUMENTS
-  board   The board to save
+  board   The board to save; `@N` from the last listing
   file    A new file, never overwritten and named as given, - for stdout; ~/Downloads/<name>-<id>.ydoc.gz by default
 
 FLAGS

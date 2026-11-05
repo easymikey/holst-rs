@@ -407,7 +407,7 @@ const OBJECT: GroupHelp = GroupHelp {
     }],
     arguments: Some(
         "The board is given as in `holst b -h`. Objects are given with --object: an id, a link,\n\
-         an @N from a listing, or the first 8 characters of the id; a link to an object\n\
+         an `@N` from the last listing, or the first 8 characters of the id; a link to an object\n\
          as the board names that object too.",
     ),
     examples: &[

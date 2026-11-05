@@ -10,10 +10,10 @@ USAGE
   holst object edit <board> [flags]
 
 ARGUMENTS
-  board   The board: id, link or part of its name
+  board   The board: id, link or part of its name; `@N` from the last listing
 
 FLAGS
-      --object object           An object, repeat for several: id, link, @N or the first 8 characters of its id
+      --object object           An object, repeat for several: id, link, `@N` from the last listing or the first 8 characters of its id
   -w, --workspace ws            Where names are looked up and new things go: a workspace id or part of its name; all of yours by default
       --text-format format      How the new text is read: plain, or markdown for headings, lists, checkboxes, links and bold, italic, strike marks; plain by default
       --path file               The picture that replaces an image's file: it covers the image's box keeping its proportions and the mask; one image per call, not with --crop, --name or --items; unchanged by default
@@ -44,14 +44,14 @@ FLAGS
       --line line               An arrow's line: straight, elbow or curved; unchanged by default
       --heads start,end         An arrow's heads, e.g. none,triangle-filled: none, figma, miro, arc, triangle-filled, triangle, circle-filled, circle, rhombus-filled, rhombus, stick, stick-stick, triadius, triadius-stick, triadius-circle, stick-circle or slash; an empty side keeps that end; unchanged by default
       --bend x,y                Bend an arrow: x,y for a straight or curved one, x, or ,y for an elbow, whose middle run sits there; unchanged by default
-      --from end                Move an arrow's start: object:side (top, right, bottom or left) or x,y; unchanged by default
-      --to end                  Move an arrow's end: object:side (top, right, bottom or left) or x,y; unchanged by default
+      --from end                Move an arrow's start: object:side (top, right, bottom or left) or x,y; unchanged by default; `@N` from the last listing
+      --to end                  Move an arrow's end: object:side (top, right, bottom or left) or x,y; unchanged by default; `@N` from the last listing
       --label text[@pos]        An arrow's labels, repeat for several; they replace the ones it has; text@0.25 puts one a quarter of the way from the start, in the middle by default; unchanged by default
       --ratio ratio             A frame's ratio: 16:9, 4:3, 1:1, a4 or a4-landscape; the area is kept; unchanged by default
       --background style        A frame's background: fill, border or outline; unchanged by default
       --hide-content            Hide the content of a frame; needs the board's right to hide frame content
       --show-content            Show the content of a frame again
-      --frame frame|none        Move it into this frame: id, link, title or part of a title; none takes it out onto the board. It keeps its place relative to the frame, or goes to a free spot in it when that would put it outside, and goes to the front there; unchanged by default
+      --frame frame|none        Move it into this frame: id, link, title or part of a title; none takes it out onto the board. It keeps its place relative to the frame, or goes to a free spot in it when that would put it outside, and goes to the front there; unchanged by default; `@N` from the last listing
       --rotate deg              Turn to this angle in clockwise degrees, any number taken modulo 360; the corner moves so that the object turns about its centre; not for a frame, a table, a table cell, a group or an arrow; unchanged by default
       --scale factor            Scale a link, drawing, code, file, kanban, flipcard, dice, wheel or task to this factor above 0, or a sticker, text or sticker stack text to it; the corner stays; not with --size; unchanged by default
       --link-to link            What the object opens on click: a web address (http:// is added without a scheme), another object of the board by id, or none to take the link away; unchanged by default

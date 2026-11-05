@@ -1,6 +1,6 @@
 ---
 source: crates/holst-cli/src/table.rs
-expression: help_of(line)
+expression: "help_of(&format!(\"{line} -h\"))"
 ---
 Rename a board or a folder.
 It prints the old and the new name.
@@ -9,7 +9,7 @@ USAGE
   holst board rename <board> <name> [flags]
 
 ARGUMENTS
-  board   The board or folder to rename
+  board   The board or folder to rename; `@N` from the last listing
   name    The new name
 
 FLAGS

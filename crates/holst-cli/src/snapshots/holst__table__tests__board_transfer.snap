@@ -1,6 +1,6 @@
 ---
 source: crates/holst-cli/src/table.rs
-expression: help_of(line)
+expression: "help_of(&format!(\"{line} -h\"))"
 ---
 Make another user the owner of a board or a folder; you are no longer the owner.
 It cannot be undone by you, so it needs -y; without it only the dry run is shown.
@@ -9,7 +9,7 @@ USAGE
   holst board transfer <board> <user> [flags]
 
 ARGUMENTS
-  board   The board or folder to hand over
+  board   The board or folder to hand over; `@N` from the last listing
   user    The new owner: user id or part of a member's name (see `holst ws show --with members`)
 
 FLAGS

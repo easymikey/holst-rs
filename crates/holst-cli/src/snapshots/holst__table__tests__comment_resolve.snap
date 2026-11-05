@@ -1,6 +1,6 @@
 ---
 source: crates/holst-cli/src/table.rs
-expression: help_of(line)
+expression: "help_of(&format!(\"{line} -h\"))"
 ---
 Resolve a comment thread, or with --reopen open it again.
 It prints the thread and its new state.
@@ -9,7 +9,7 @@ USAGE
   holst comment resolve <board> <thread> [flags]
 
 ARGUMENTS
-  board    The board
+  board    The board; `@N` from the last listing
   thread   The thread: its thread id, e.g. weVza, or @N from `holst comment ls`
 
 FLAGS

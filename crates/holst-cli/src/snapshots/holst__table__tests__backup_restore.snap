@@ -9,7 +9,7 @@ USAGE
   holst backup restore <board> <key> [flags]
 
 ARGUMENTS
-  board   The board to write the backup into
+  board   The board to write the backup into; `@N` from the last listing
   key     The backup's key from `holst backup ls`
 
 FLAGS
