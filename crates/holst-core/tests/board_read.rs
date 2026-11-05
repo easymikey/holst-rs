@@ -1,9 +1,11 @@
 //! Reading boards and searching their text against the fake Holst server.
+use std::path::Path;
 
 use holst_core::{
     command::{
         board::{picture, show},
         login::connect,
+        object::get,
         search,
         table::{self, CommandArgs},
         template,
@@ -180,5 +182,84 @@ async fn a_template_for_me_reads_the_channel_once() -> holst_core::Result<()> {
         args::<template::CreateArgs>(&json!({ "board": "Plans", "name": "Mine" }))?;
     template::create(&client, &given).await?;
     assert_eq!(channel_reads(&fake, &plans_id(&fake)?), 1);
+    Ok(())
+}
+
+/// A board "Plans" with one image, and a client that names its account.
+async fn with_image() -> holst_core::Result<(Fake, Client)> {
+    let seed = Fixture::default().workspace("Team").board_with_objects(
+        "Plans",
+        "Team",
+        vec![FixtureObject::Image("cat.png".into())],
+    );
+    let fake = Fake::start(seed).await?;
+    let session = Session::with_cookies(
+        SecretString::from(ACCEPTED_TOKEN),
+        ACCEPTED_COOKIES.parse().unwrap_or_default(),
+    )
+    .with_account_id("00000000-0000-4000-8000-000000000000");
+    let client = connect(
+        Some(session),
+        fake.base_url().parse()?,
+        SystemClock,
+        RandomIds,
+    )?;
+    Ok((fake, client))
+}
+
+fn get_args(
+    fake: &Fake,
+    offline: bool,
+) -> holst_core::Result<holst_core::command::object::GetArgs> {
+    let board = plans_id(fake)?;
+    let object = fake.object_id("Plans", 1).unwrap_or_default();
+    args(&json!({ "board": board, "object": [object], "offline": offline }))
+}
+
+#[tokio::test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test removes its temp directory"
+)]
+async fn an_offline_get_reads_the_board_from_the_cache() -> holst_core::Result<()> {
+    let (fake, client) = with_image().await?;
+    let cache = warm_cache("get");
+    let dir =
+        std::env::temp_dir().join(format!("holst-read-get-{}", std::process::id()));
+    std::fs::create_dir_all(&dir)?;
+    let downloads = Some(dir.as_path());
+    get::get(&client, &cache, downloads, &get_args(&fake, false)?).await?;
+    let before = channel_reads(&fake, &plans_id(&fake)?);
+    let got = get::get(&client, &cache, downloads, &get_args(&fake, true)?).await;
+    let after = channel_reads(&fake, &plans_id(&fake)?);
+    std::fs::remove_dir_all(&dir)?;
+    cache
+        .root
+        .iter()
+        .for_each(|root| drop(std::fs::remove_dir_all(root)));
+    assert_eq!(got?.objects.len(), 1);
+    assert_eq!(after, before);
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_offline_get_without_a_cached_board_says_so() -> holst_core::Result<()> {
+    let (fake, client) = with_image().await?;
+    let cache = warm_cache("get-miss");
+    let refused = get::get(
+        &client,
+        &cache,
+        Some(Path::new("/nowhere")),
+        &get_args(&fake, true)?,
+    )
+    .await
+    .err()
+    .map(|error| error.to_string());
+    assert_eq!(
+        refused.as_deref(),
+        Some(
+            "board 00000000-0000-4000-8000-00000000a000 is not in the cache, and --offline allows no network"
+        )
+    );
     Ok(())
 }

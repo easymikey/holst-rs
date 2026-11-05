@@ -933,6 +933,7 @@ fn instructions_say_objects_and_threads_have_no_name_lookup() {
 #[case::board_show("board", serde_json::json!({ "action": "show", "board": "X", "offline": true }))]
 #[case::board_snap("board", serde_json::json!({ "action": "snap", "board": "X", "offline": true }))]
 #[case::object("object", serde_json::json!({ "board": "X", "offline": true }))]
+#[case::object_get("object_write", serde_json::json!({ "action": "get", "board": "X", "object": ["@1"], "offline": true }))]
 #[tokio::test]
 async fn offline_reads_only_the_cache(
     #[case] tool: &str,
