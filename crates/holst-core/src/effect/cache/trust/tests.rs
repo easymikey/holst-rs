@@ -1,5 +1,10 @@
 #![expect(clippy::panic_in_result_fn, reason = "asserting is what a test does")]
 
+use std::{
+    fs::{self, OpenOptions},
+    time::{Duration, Instant},
+};
+
 use yrs::{
     Any,
     Doc,
@@ -19,10 +24,13 @@ use crate::{
             trust::{CachedCopy, StaleCopy, Trusted},
         },
         clock::FixedClock,
-        settings::DEFAULT_CACHE_TRUST_MILLIS,
+        settings::{CacheSettings, DEFAULT_CACHE_TRUST_MILLIS},
     },
     error::{Error, Result, local_data::LocalDataError},
-    storage::cache::memory::MemoryCache,
+    storage::{
+        cache::{Cache, memory::MemoryCache},
+        lock::LOCK_FILE,
+    },
 };
 
 pub(crate) const BOARD: &str = "0000000a-1111-4000-8000-000000000000";
@@ -173,5 +181,53 @@ fn a_corrupt_document_in_memory_is_dropped() -> Result<()> {
         CachedCopy::read(&memory, BOARD).is_none(),
         "the corrupt copy stayed"
     );
+    Ok(())
+}
+
+#[test]
+fn a_corrupt_document_on_disk_is_dropped_without_waiting_for_the_lock() -> Result<()> {
+    let root = std::env::temp_dir()
+        .join(format!("holst-trust-discard-{}", std::process::id()));
+    let settings = CacheSettings {
+        root: Some(root.clone()),
+        roots: vec![root.clone()],
+        host: "app.holst.so".into(),
+        max_bytes: 1 << 20,
+        trust_millis: DEFAULT_CACHE_TRUST_MILLIS,
+    };
+    let wait = Duration::from_secs(3);
+    let cache = Cache::from_settings(&settings, BOARD, FixedClock { unix_millis: 1 })
+        .ok_or(Error::LocalData(LocalDataError::NoHome))?
+        .with_lock_wait(3_000);
+    cache.store(
+        BOARD,
+        &CacheRecord {
+            document: b"not a yjs update",
+            state_vector: &[0],
+            index: None,
+            right: EditRight::Editable,
+            downloaded: true,
+            verified: true,
+        },
+    )?;
+    let other = OpenOptions::new()
+        .write(true)
+        .open(cache.dir().join(LOCK_FILE))?;
+    other.lock()?;
+    let copy = CachedCopy::read(&cache, BOARD)
+        .ok_or(Error::LocalData(LocalDataError::NoHome))?;
+    let started = Instant::now();
+    let restored = copy.offline().with_document(&cache, document::decoded);
+    let took = started.elapsed();
+    other.unlock()?;
+    fs::remove_dir_all(&root).or_else(|err| {
+        if err.kind() == std::io::ErrorKind::NotFound {
+            Ok(())
+        } else {
+            Err(err)
+        }
+    })?;
+    assert_eq!(restored.err(), Some(StaleCopy::Corrupt));
+    assert!(took < wait, "the reader waited {took:?} for the lock");
     Ok(())
 }
