@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.0 (2026-11-05)
+
 ### Added
 - In coloured terminal output, flags and commands in errors and hints are cyan and bold, and quoted values are yellow.
 - A JSON argument that does not parse (`template edit` body, `object` items) shows the line and a `^` under the column where it breaks; on MCP the message ends with `, at line L, column C`.

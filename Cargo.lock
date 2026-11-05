@@ -1167,7 +1167,7 @@ dependencies = [
 
 [[package]]
 name = "holst-cli"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "clacky",
  "clap",
@@ -1188,7 +1188,7 @@ dependencies = [
 
 [[package]]
 name = "holst-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "base64 0.23.1",
  "derive_more",
@@ -1230,7 +1230,7 @@ dependencies = [
 
 [[package]]
 name = "holst-macros"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1240,7 +1240,7 @@ dependencies = [
 
 [[package]]
 name = "holst-mcp"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "arc-swap",
  "base64 0.23.1",
