@@ -103,6 +103,9 @@ pub(crate) fn report(error: &Error) -> ExitCode {
         | Error::SvgToTerminal
         | Error::NoDownloads
         | Error::McpAlias { .. }
+        | Error::NoListing { .. }
+        | Error::PastListing { .. }
+        | Error::NotBoard { .. }
         | Error::Interrupted
         | Error::Terminated
         | Error::HungUp
@@ -143,6 +146,9 @@ pub(crate) fn code(error: &Error) -> u8 {
         Error::BinaryToTerminal
         | Error::SvgToTerminal
         | Error::McpAlias { .. }
+        | Error::NoListing { .. }
+        | Error::PastListing { .. }
+        | Error::NotBoard { .. }
         | Error::QueryNoEquals { .. } => EX_USAGE,
         Error::Render(_) | Error::InvalidAnswer { .. } | Error::ItemsNotJson { .. } => {
             EX_DATAERR

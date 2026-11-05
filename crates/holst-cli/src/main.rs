@@ -6,6 +6,7 @@ mod commands;
 mod error;
 mod exit;
 mod help;
+mod listing;
 mod output;
 mod run;
 mod table;

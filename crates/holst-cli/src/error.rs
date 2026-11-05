@@ -55,6 +55,12 @@ pub(crate) enum Error {
         "\"{reference}\" is a reference from the MCP server; give an id, a link or a name instead"
     )]
     McpAlias { reference: String },
+    #[error("no listing to take `@{number}` from")]
+    NoListing { number: usize },
+    #[error("@{number} is past the last listing ({rows} rows)")]
+    PastListing { number: usize, rows: usize },
+    #[error("@{number} names an object, not a board")]
+    NotBoard { number: usize },
 
     #[error("interrupted")]
     Interrupted,
@@ -204,6 +210,8 @@ pub(crate) enum CommandLineHint {
     UseOut,
     #[display(r#"pipe the code instead: `printf '%s\n' "$CODE" | {LOGIN}`"#)]
     PipeSecret,
+    #[display("run `holst b ls` first")]
+    ListBoards,
 }
 
 impl Error {
@@ -239,12 +247,15 @@ impl Error {
                 Some(CommandLineHint::UseOut)
             }
             Error::EchoNotHidden(_) => Some(CommandLineHint::PipeSecret),
+            Error::NoListing { .. } => Some(CommandLineHint::ListBoards),
             Error::ReadInput(_)
             | Error::StdoutClosed
             | Error::WriteStdout(_)
             | Error::Terminal(_)
             | Error::Render(_)
             | Error::McpAlias { .. }
+            | Error::PastListing { .. }
+            | Error::NotBoard { .. }
             | Error::Interrupted
             | Error::Terminated
             | Error::HungUp

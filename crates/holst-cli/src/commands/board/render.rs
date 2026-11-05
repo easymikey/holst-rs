@@ -60,19 +60,27 @@ fn listing_text(listing: &Listing, link: impl Fn(&str) -> String) -> String {
 }
 
 fn page_text(listing: &Listing, link: &impl Fn(&str) -> String) -> String {
-    let lines = listing.sections().flat_map(|(heading, node)| {
-        let heading = heading.map(|workspace| {
-            format!("{} ({})", printable(&workspace.name), workspace.id)
+    let lines = listing
+        .sections()
+        .zip(1..)
+        .flat_map(|((heading, node), number)| {
+            let heading = heading.map(|workspace| {
+                format!("{} ({})", printable(&workspace.name), workspace.id)
+            });
+            heading.into_iter().chain([node_line(node, number, link)])
         });
-        heading.into_iter().chain([node_line(node, link)])
-    });
     let more = listing.cursor.as_deref().map(|cursor| {
         format!("… {cursor} of {}; next: --cursor {cursor}", listing.total)
     });
     joined(lines.chain(more), "\n").to_string()
 }
 
-fn node_line(node: &ListedNode, link: &impl Fn(&str) -> String) -> String {
+/// The line of a node; `number` is its `@N` in the listing.
+fn node_line(
+    node: &ListedNode,
+    number: usize,
+    link: &impl Fn(&str) -> String,
+) -> String {
     let name = if node.name.is_empty() {
         "(no name)".into()
     } else {
@@ -85,7 +93,7 @@ fn node_line(node: &ListedNode, link: &impl Fn(&str) -> String) -> String {
     };
     let trash = if node.in_trash { "  [in trash]" } else { "" };
     format!(
-        "{:indent$}{name}{slash}  {place}{trash}",
+        "{:indent$}{name}{slash}  @{number}  {place}{trash}",
         "",
         indent = node.depth.saturating_mul(2)
     )
@@ -191,7 +199,7 @@ mod tests {
         );
         assert_eq!(
             listing_text(&page, link),
-            "Work/  id-Work\n  Plan  https://holst/id-Plan\n(no name)  https://holst/id-"
+            "Work/  @1  id-Work\n  Plan  @2  https://holst/id-Plan\n(no name)  @3  https://holst/id-"
         );
     }
 
@@ -207,7 +215,7 @@ mod tests {
         );
         assert_eq!(
             listing_text(&page, link),
-            "TEAM (team)\nA  https://holst/id-A\nOPS (ops)\nB  https://holst/id-B\n… 2 of 2; next: --cursor 2"
+            "TEAM (team)\nA  @1  https://holst/id-A\nOPS (ops)\nB  @2  https://holst/id-B\n… 2 of 2; next: --cursor 2"
         );
         assert_eq!(
             listing_text(&listing(&["team"], vec![], None), link),

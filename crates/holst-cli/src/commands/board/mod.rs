@@ -12,6 +12,7 @@ use serde_json::{Map, Value};
 use crate::{
     commands::change,
     error::Result,
+    listing::{ListedKind, save},
     output::{OutputFormat, report},
     run::{RunSettings, run_signed_in},
 };
@@ -27,6 +28,13 @@ pub(crate) async fn run(
             let args = table::parse(arguments)?;
             run_signed_in(run, async |client| {
                 let listing = tree::ls(client, &args).await?;
+                match format {
+                    OutputFormat::Text => {
+                        let ids = listing.nodes.iter().map(|node| node.id.clone());
+                        save(run, ListedKind::Board, ids.collect())?;
+                    }
+                    OutputFormat::Pretty | OutputFormat::Json => {}
+                }
                 render::listing(format, &listing, |id| client.board_link(id))
             })
             .await

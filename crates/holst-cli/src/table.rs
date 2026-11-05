@@ -272,8 +272,7 @@ fn pair_value(text: &str) -> Value {
 }
 
 /// The arguments that name a thing, where an MCP alias (`@3`) is refused.
-const REFERENCES: [&str; 8] = [
-    "board",
+const REFERENCES: [&str; 7] = [
     "workspace",
     "object",
     "user",
@@ -724,7 +723,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case::board("holst b restore @3", "@3")]
     #[case::workspace("holst b ls -w @2", "@2")]
     #[case::object("holst o edit Plans --object @2", "@2")]
     #[case::second_object("holst o rm Plans --object a1 --object @4 -y", "@4")]
@@ -734,6 +732,12 @@ mod tests {
         #[case] reference: &str,
     ) {
         assert_eq!(refused(line).as_deref(), Some(reference));
+    }
+
+    #[test]
+    fn a_board_handle_is_left_for_the_last_listing() {
+        assert_eq!(refused("holst b restore @3"), None);
+        assert_eq!(parsed("holst b restore @3"), Some(json!({ "board": "@3" })));
     }
 
     #[test]
