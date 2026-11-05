@@ -61,6 +61,8 @@ pub(crate) enum Error {
     PastListing { number: usize, rows: usize },
     #[error("@{number} names an object, not a board")]
     NotBoard { number: usize },
+    #[error("@{number} names a board, not an object")]
+    NotObject { number: usize },
 
     #[error("interrupted")]
     Interrupted,
@@ -210,8 +212,8 @@ pub(crate) enum CommandLineHint {
     UseOut,
     #[display(r#"pipe the code instead: `printf '%s\n' "$CODE" | {LOGIN}`"#)]
     PipeSecret,
-    #[display("run `holst b ls` first")]
-    ListBoards,
+    #[display("run `holst b ls` or `holst o ls` first")]
+    ListFirst,
 }
 
 impl Error {
@@ -247,7 +249,7 @@ impl Error {
                 Some(CommandLineHint::UseOut)
             }
             Error::EchoNotHidden(_) => Some(CommandLineHint::PipeSecret),
-            Error::NoListing { .. } => Some(CommandLineHint::ListBoards),
+            Error::NoListing { .. } => Some(CommandLineHint::ListFirst),
             Error::ReadInput(_)
             | Error::StdoutClosed
             | Error::WriteStdout(_)
@@ -256,6 +258,7 @@ impl Error {
             | Error::McpAlias { .. }
             | Error::PastListing { .. }
             | Error::NotBoard { .. }
+            | Error::NotObject { .. }
             | Error::Interrupted
             | Error::Terminated
             | Error::HungUp

@@ -44,39 +44,52 @@ pub(crate) fn save(
     })
 }
 
-/// Replaces each `@N` given as a `board` with the id of row N of the last
-/// listing.
-pub(crate) fn name_boards(
+/// Replaces each `@N` given as a board or an object with the id of row N of
+/// the last listing.
+pub(crate) fn name_rows(
     arguments: &mut Map<String, Value>,
     run: &RunSettings,
 ) -> Result<()> {
     expand(arguments, || load(run))
 }
 
+/// What a row of the listing must be for the argument `name` to take it.
+fn wanted(name: &str) -> Option<ListedKind> {
+    match name {
+        "board" => Some(ListedKind::Board),
+        "object" | "frame" | "from" | "to" | "parent" => Some(ListedKind::Object),
+        _ => None,
+    }
+}
+
 fn expand(
     arguments: &mut Map<String, Value>,
     saved: impl Fn() -> Option<Saved>,
 ) -> Result<()> {
-    let given = match arguments.get_mut("board") {
-        Some(Value::Array(items)) => items.iter_mut().collect(),
-        Some(one) => vec![one],
-        None => Vec::new(),
-    };
-    given
-        .into_iter()
-        .filter_map(|value| match value {
-            Value::String(text) => Some(text),
-            Value::Null
-            | Value::Bool(_)
-            | Value::Number(_)
-            | Value::Array(_)
-            | Value::Object(_) => None,
-        })
-        .try_for_each(|text| {
-            number(text).map_or(Ok(()), |number| {
-                *text = board_id(saved().as_ref(), number)?;
-                Ok(())
-            })
+    arguments
+        .iter_mut()
+        .filter_map(|(name, value)| wanted(name).map(|kind| (kind, value)))
+        .try_for_each(|(kind, value)| {
+            let given = match value {
+                Value::Array(items) => items.iter_mut().collect(),
+                one => vec![one],
+            };
+            given
+                .into_iter()
+                .filter_map(|value| match value {
+                    Value::String(text) => Some(text),
+                    Value::Null
+                    | Value::Bool(_)
+                    | Value::Number(_)
+                    | Value::Array(_)
+                    | Value::Object(_) => None,
+                })
+                .try_for_each(|text| {
+                    number(text).map_or(Ok(()), |number| {
+                        *text = row_id(saved().as_ref(), kind, number)?;
+                        Ok(())
+                    })
+                })
         })
 }
 
@@ -87,10 +100,13 @@ fn number(text: &str) -> Option<usize> {
         .flatten()
 }
 
-fn board_id(saved: Option<&Saved>, number: usize) -> Result<String> {
+fn row_id(saved: Option<&Saved>, kind: ListedKind, number: usize) -> Result<String> {
     let saved = saved.ok_or(Error::NoListing { number })?;
-    match saved.kind {
-        ListedKind::Board => number
+    match (saved.kind, kind) {
+        (ListedKind::Object, ListedKind::Board) => Err(Error::NotBoard { number }),
+        (ListedKind::Board, ListedKind::Object) => Err(Error::NotObject { number }),
+        (ListedKind::Board, ListedKind::Board)
+        | (ListedKind::Object, ListedKind::Object) => number
             .checked_sub(1)
             .and_then(|row| saved.ids.get(row))
             .cloned()
@@ -98,7 +114,6 @@ fn board_id(saved: Option<&Saved>, number: usize) -> Result<String> {
                 number,
                 rows: saved.ids.len(),
             }),
-        ListedKind::Object => Err(Error::NotBoard { number }),
     }
 }
 
@@ -132,11 +147,15 @@ mod tests {
         }
     }
 
-    fn boards(given: Value, saved: Option<&Saved>) -> Result<Value, Error> {
+    fn named(name: &str, given: Value, saved: Option<&Saved>) -> Result<Value, Error> {
         let mut arguments = Map::new();
-        arguments.insert("board".to_owned(), given);
+        arguments.insert(name.to_owned(), given);
         expand(&mut arguments, || saved.cloned())?;
-        Ok(arguments.remove("board").unwrap_or_default())
+        Ok(arguments.remove(name).unwrap_or_default())
+    }
+
+    fn boards(given: Value, saved: Option<&Saved>) -> Result<Value, Error> {
+        named("board", given, saved)
     }
 
     #[test]
@@ -186,6 +205,36 @@ mod tests {
         assert_eq!(
             error.map(|error| error.to_string()).as_deref(),
             Some("@1 names an object, not a board")
+        );
+    }
+
+    #[test]
+    fn an_object_handle_names_a_row_of_an_object_listing() {
+        let listing = saved(ListedKind::Object);
+        for name in ["object", "frame", "from", "to", "parent"] {
+            assert_eq!(
+                named(name, json!(["@2", "a1"]), Some(&listing)).ok(),
+                Some(json!(["b2", "a1"])),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            named("workspace", json!("@2"), Some(&listing)).ok(),
+            Some(json!("@2"))
+        );
+        let error = named("object", json!("@3"), Some(&listing)).err();
+        assert_eq!(
+            error.map(|error| error.to_string()).as_deref(),
+            Some("@3 is past the last listing (2 rows)")
+        );
+    }
+
+    #[test]
+    fn a_handle_of_a_board_listing_is_no_object() {
+        let error = named("object", json!("@1"), Some(&saved(ListedKind::Board))).err();
+        assert_eq!(
+            error.map(|error| error.to_string()).as_deref(),
+            Some("@1 names a board, not an object")
         );
     }
 }

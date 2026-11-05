@@ -68,7 +68,7 @@ pub(crate) async fn run(
     format: OutputFormat,
 ) -> Result<()> {
     read_files(name, &mut arguments, std::io::stdin().lock())?;
-    crate::listing::name_boards(&mut arguments, run)?;
+    crate::listing::name_rows(&mut arguments, run)?;
     let run = run.clone().for_risk(name.command().risk);
     rounds(name, arguments, &run, format, ROUNDS).await
 }

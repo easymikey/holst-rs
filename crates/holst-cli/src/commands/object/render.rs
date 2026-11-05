@@ -1,5 +1,7 @@
 //! What the object commands print.
 
+use std::collections::HashMap;
+
 use holst_core::{
     command::{
         board::picture::Delivery,
@@ -19,8 +21,17 @@ pub(super) fn listing_text(listing: &Listing) -> String {
         counted(listing.matched, "object"),
         listing.edit_right.as_str()
     );
+    let rows: HashMap<&str, usize> = listing
+        .objects
+        .iter()
+        .zip(1..)
+        .map(|(listed, row)| (listed.object.id.as_str(), row))
+        .collect();
+    let name = |id: &str| {
+        rows.get(id)
+            .map_or_else(|| format!("@{}", short_id(id)), |row| format!("@{row}"))
+    };
     let lines = listing.objects.iter().map(|listed| {
-        let name = |id: &str| format!("@{}", short_id(id));
         format!("{}  {}", listed.line(name, TEXT_MAX_CHARS), listed.link)
     });
     let more = listing.next.map(|next| {
@@ -178,22 +189,22 @@ mod tests {
             shown,
             format!(
                 "5 objects · editable\n\
-                 @a1b2c3d4 sticker 100,50 192×192  yellow4  \"{text}\"  L/a1b2c3d4e5f6\n\
+                 @1 sticker 100,50 192×192  yellow4  \"{text}\"  L/a1b2c3d4e5f6\n\
                  … 1–1 of 5; next: --offset 1"
             )
         );
     }
 
     #[test]
-    fn an_arrow_shows_its_ends_and_a_child_its_frame() {
+    fn an_arrow_shows_its_ends_and_a_child_its_frame_by_row_or_short_id() {
         let arrow = Object {
             kind: ObjectKind::Arrow,
             width: None,
             height: None,
             color: None,
             ends: Some(ArrowEnds {
-                start: Some("s1111111222".into()),
-                end: None,
+                start: Some("s2".into()),
+                end: Some("s1111111222".into()),
                 drawn: None,
             }),
             ..sticker("a1", "")
@@ -210,11 +221,11 @@ mod tests {
                 .collect();
         assert_eq!(
             lines.get(1).map(String::as_str),
-            Some("@a1 arrow 100,50  @s1111111 → ·  L/a1")
+            Some("@1 arrow 100,50  @2 → @s1111111  L/a1")
         );
         assert_eq!(
             lines.get(2).map(String::as_str),
-            Some("@s2 sticker 100,50 192×192 in @f1111111  \"hi\"  L/s2")
+            Some("@2 sticker 100,50 192×192 in @f1111111  \"hi\"  L/s2")
         );
     }
 

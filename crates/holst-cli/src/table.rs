@@ -271,16 +271,9 @@ fn pair_value(text: &str) -> Value {
         .map_or_else(|| Value::String(text.to_owned()), Value::from)
 }
 
-/// The arguments that name a thing, where an MCP alias (`@3`) is refused.
-const REFERENCES: [&str; 7] = [
-    "workspace",
-    "object",
-    "user",
-    "frame",
-    "template",
-    "from",
-    "to",
-];
+/// The arguments that name a thing no listing saves, where an MCP alias (`@3`)
+/// is refused.
+const REFERENCES: [&str; 3] = ["workspace", "user", "template"];
 
 /// Refuses a reference that is only an MCP alias; text is not touched.
 fn refuse_alias(name: &str, value: &Value) -> Result<()> {
@@ -724,9 +717,7 @@ mod tests {
 
     #[rstest]
     #[case::workspace("holst b ls -w @2", "@2")]
-    #[case::object("holst o edit Plans --object @2", "@2")]
-    #[case::second_object("holst o rm Plans --object a1 --object @4 -y", "@4")]
-    #[case::from("holst o add arrow Plans --from @1 --to #2", "@1")]
+    #[case::template("holst tpl show @4", "@4")]
     fn a_reference_that_is_an_mcp_alias_is_refused(
         #[case] line: &str,
         #[case] reference: &str,
@@ -735,9 +726,11 @@ mod tests {
     }
 
     #[test]
-    fn a_board_handle_is_left_for_the_last_listing() {
+    fn a_board_or_object_handle_is_left_for_the_last_listing() {
         assert_eq!(refused("holst b restore @3"), None);
         assert_eq!(parsed("holst b restore @3"), Some(json!({ "board": "@3" })));
+        assert_eq!(refused("holst o rm Plans --object a1 --object @4 -y"), None);
+        assert_eq!(refused("holst o add arrow Plans --from @1 --to #2"), None);
     }
 
     #[test]
