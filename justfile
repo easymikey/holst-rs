@@ -18,7 +18,7 @@ fmt-check:
     cargo +{{ nightly }} fmt --all --check
 
 spell:
-    cargo bin cargo-spellcheck check -m 1
+    cargo bin typos
 
 clippy:
     cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
@@ -52,8 +52,6 @@ ci-setup:
     #!/usr/bin/env bash
     set -euo pipefail
     rustup toolchain install {{ nightly }} --profile minimal --component rustfmt
-    sudo apt-get update
-    sudo apt-get install -y --no-install-recommends libclang-dev
     name=zig-$(uname -m)-linux-{{ zig }}
     curl -fsSL "https://ziglang.org/download/{{ zig }}/$name.tar.xz" | tar -xJ -C "$RUNNER_TEMP"
     echo "$RUNNER_TEMP/$name" >> "$GITHUB_PATH"
@@ -61,11 +59,33 @@ ci-setup:
 hooks:
     git config core.hooksPath .githooks
 
-release:
-    cargo bin release-plz update
+# Checks, the semver check, then a dry run of the release. Pass `execute` to do it. holst-form stays out, see CONTRIBUTING.md.
+ship level execute="":
+    cargo bin just default
+    cargo bin cargo-semver-checks check-release --workspace
+    cargo bin cargo-release {{ level }} --workspace --exclude holst-form {{ if execute == "execute" { "--execute" } else { "" } }}
 
-publish:
-    cargo bin release-plz release --git-token "${GITHUB_TOKEN:?set GITHUB_TOKEN}"
+# Print the changelog section of a tag such as holst-cli-v0.5.0.
+release-notes tag:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tag="{{ tag }}"
+    crate="${tag%-v*}"
+    version="${tag##*-v}"
+    if [ "$crate" = "$tag" ] || [ -z "$crate" ] || [ -z "$version" ]; then
+        echo "release-notes: '$tag' is not <crate>-v<version>" >&2
+        exit 1
+    fi
+    file=CHANGELOG.md
+    notes="$(awk -v head="## $version (" '
+        /^## / { if (found) exit; found = index($0, head) == 1; next }
+        found { print }
+    ' "$file")"
+    if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
+        echo "release-notes: no notes for $version in $file" >&2
+        exit 1
+    fi
+    printf '%s\n' "$notes" | awk 'NF { started = 1 } started'
 
 features:
     cargo bin cargo-hack check --workspace --each-feature --locked
@@ -154,6 +174,13 @@ dist target:
     pack holst-mcp holst-mcp
     rm -rf dist/stage
     ls dist
+
+# Attach the archives `dist` built for a target to the GitHub release of a holst-cli or holst-mcp tag.
+upload tag target:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tag={{ tag }}
+    gh release upload "$tag" dist/"${tag%-v*}"-{{ target }}.* --clobber
 
 homebrew tag:
     #!/usr/bin/env bash

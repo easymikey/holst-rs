@@ -1,0 +1,7 @@
+# cargo-release config. Run it through `just ship <level>`, see CONTRIBUTING.md.
+# Tag per crate: holst-cli-v0.5.0, holst-core-v0.5.0.
+tag-name = "{{crate_name}}-v{{version}}"
+allow-branch = ["main"]
+sign-commit = false
+sign-tag = false
+pre-release-commit-message = "chore: release"

@@ -1,69 +1,43 @@
 name: release
 
 on:
-  workflow_run:
-    workflows: [ci]
-    types: [completed]
-    branches: [main]
-  workflow_dispatch:
+  push:
+    tags: ["holst-*-v*"]
 
 permissions:
   contents: write
 
-concurrency:
-  group: release
-  cancel-in-progress: false
-
 env:
   CARGO_TERM_COLOR: always
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+  TAG: ${{ github.ref_name }}
 
 defaults:
   run:
     shell: bash
 
 jobs:
-  publish:
-    if: >-
-      github.repository_owner == 'easymikey' && (
-        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-        (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' &&
-          startsWith(github.event.workflow_run.head_commit.message, 'chore: release')))
+  draft:
+    if: github.repository_owner == 'easymikey'
     runs-on: ubuntu-latest
     outputs:
-      sha: ${{ steps.released.outputs.sha }}
-      binaries: ${{ steps.released.outputs.binaries }}
-    env:
-      GITHUB_TOKEN: ${{ github.token }}
-      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      binaries: ${{ steps.kind.outputs.binaries }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-          fetch-depth: 0
       - uses: ./.github/actions/setup
-      - if: github.event_name == 'workflow_dispatch'
+      - run: cargo bin just release-notes "$TAG" > notes.md
+      - run: gh release create "$TAG" --verify-tag --draft --title "$TAG" --notes-file notes.md
+      - id: kind
         run: |
-          cargo bin just release
-          if git diff --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
-            echo "nothing to release"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add --all
-          git commit -m "chore: release"
-          git push origin HEAD:main
-      - run: cargo bin just publish
-      - id: released
-        run: |
-          git fetch --tags --force
-          tags=$(git tag --points-at HEAD | grep -E '^holst-(cli|mcp)-v[0-9]' || true)
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          echo "binaries=$(printf '%s\n' "$tags" | jq -cRn '[inputs | select(length > 0)]')" >> "$GITHUB_OUTPUT"
+          case "$TAG" in
+            holst-cli-v* | holst-mcp-v*) echo "binaries=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "binaries=false" >> "$GITHUB_OUTPUT" ;;
+          esac
 
   dist:
-    needs: publish
-    if: needs.publish.outputs.binaries != '[]'
+    needs: draft
+    if: needs.draft.outputs.binaries == 'true'
     name: dist (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -82,35 +56,32 @@ jobs:
             full: "true"
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-    env:
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.publish.outputs.sha }}
       - uses: ./.github/actions/setup
         with:
           full: ${{ matrix.full || 'false' }}
           key: ${{ matrix.target }}
       - run: cargo bin just dist ${{ matrix.target }}
-      - run: |
-          for tag in ${{ join(fromJSON(needs.publish.outputs.binaries), ' ') }}; do
-            gh release upload "$tag" dist/"${tag%-v*}"-${{ matrix.target }}.* --clobber
-          done
+      - run: cargo bin just upload "$TAG" ${{ matrix.target }}
 
   homebrew:
-    needs: [publish, dist]
-    name: homebrew (${{ matrix.tag }})
+    needs: [draft, dist]
     runs-on: ubuntu-latest
-    strategy:
-      max-parallel: 1
-      matrix:
-        tag: ${{ fromJSON(needs.publish.outputs.binaries) }}
+    # The cli and mcp tags are pushed together; their tap pushes must not race.
+    concurrency:
+      group: homebrew
+      cancel-in-progress: false
     env:
       TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.publish.outputs.sha }}
       - uses: ./.github/actions/setup
-      - run: cargo bin just homebrew ${{ matrix.tag }}
+      - run: cargo bin just homebrew "$TAG"
+
+  publish:
+    needs: [draft, dist, homebrew]
+    if: ${{ !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh release edit "$TAG" --draft=false

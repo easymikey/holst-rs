@@ -25,3 +25,6 @@ path = "tests/main.rs"
 
 [lints]
 workspace = true
+
+[package.metadata.release]
+release = false
