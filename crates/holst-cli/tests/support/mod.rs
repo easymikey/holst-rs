@@ -40,6 +40,8 @@ pub(crate) fn isolated_from(
         .env("HOME", holst_home.with_extension("home"))
         .env("USERPROFILE", holst_home.with_extension("home"))
         .env("HOLST_HOME", holst_home)
+        // Windows draws the unicode form only for a modern terminal host.
+        .env("WT_SESSION", "1")
         .env("HOLST_CACHE_DIR", holst_home.with_extension("cache"));
     command
 }
