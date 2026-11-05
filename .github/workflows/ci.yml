@@ -29,10 +29,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             recipes: lint check deps features
             full: "true"
-          - os: ubuntu-22.04-arm
+          - os: ubuntu-24.04-arm
             recipes: clippy check
           - os: macos-15-intel
             recipes: clippy check
