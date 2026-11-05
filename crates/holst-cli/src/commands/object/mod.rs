@@ -23,7 +23,7 @@ use serde_json::{Map, Value};
 use crate::{
     commands,
     error::Result,
-    listing::{ListedKind, save},
+    listing::{ListedBoard, ListedKind, save},
     output::{self, OutputFormat, OutputTarget},
     run::{RunSettings, run_signed_in},
 };
@@ -45,7 +45,11 @@ pub(crate) async fn run(
                     OutputFormat::Text => {
                         let ids =
                             listing.objects.iter().map(|each| each.object.id.clone());
-                        save(run, ListedKind::Object, ids.collect())?;
+                        let board = ListedBoard {
+                            id: listing.board.clone(),
+                            asked: args.board.clone(),
+                        };
+                        save(run, ListedKind::Object, ids.collect(), Some(board))?;
                     }
                     OutputFormat::Pretty | OutputFormat::Json => {}
                 }

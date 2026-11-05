@@ -63,6 +63,12 @@ pub(crate) enum Error {
     NotBoard { number: usize },
     #[error("@{number} names a board, not an object")]
     NotObject { number: usize },
+    #[error("@{number} is from the listing of board \"{listed}\", not \"{given}\"")]
+    OtherBoard {
+        number: usize,
+        listed: String,
+        given: String,
+    },
 
     #[error("interrupted")]
     Interrupted,
@@ -194,7 +200,7 @@ impl SecretKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
+#[derive(Debug, Clone, PartialEq, Eq, derive_more::Display)]
 pub(crate) enum CommandLineHint {
     #[display("{_0}")]
     Core(&'static str),
@@ -214,6 +220,8 @@ pub(crate) enum CommandLineHint {
     PipeSecret,
     #[display("run `holst b ls` or `holst o ls` first")]
     ListFirst,
+    #[display("run `holst o ls {_0}` first")]
+    ListBoardFirst(String),
 }
 
 impl Error {
@@ -250,6 +258,9 @@ impl Error {
             }
             Error::EchoNotHidden(_) => Some(CommandLineHint::PipeSecret),
             Error::NoListing { .. } => Some(CommandLineHint::ListFirst),
+            Error::OtherBoard { given, .. } => {
+                Some(CommandLineHint::ListBoardFirst(given.clone()))
+            }
             Error::ReadInput(_)
             | Error::StdoutClosed
             | Error::WriteStdout(_)

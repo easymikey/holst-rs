@@ -31,7 +31,7 @@ pub(crate) async fn run(
                 match format {
                     OutputFormat::Text => {
                         let ids = listing.nodes.iter().map(|node| node.id.clone());
-                        save(run, ListedKind::Board, ids.collect())?;
+                        save(run, ListedKind::Board, ids.collect(), None)?;
                     }
                     OutputFormat::Pretty | OutputFormat::Json => {}
                 }

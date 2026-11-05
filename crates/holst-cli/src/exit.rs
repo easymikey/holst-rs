@@ -107,6 +107,7 @@ pub(crate) fn report(error: &Error) -> ExitCode {
         | Error::PastListing { .. }
         | Error::NotBoard { .. }
         | Error::NotObject { .. }
+        | Error::OtherBoard { .. }
         | Error::Interrupted
         | Error::Terminated
         | Error::HungUp
@@ -151,6 +152,7 @@ pub(crate) fn code(error: &Error) -> u8 {
         | Error::PastListing { .. }
         | Error::NotBoard { .. }
         | Error::NotObject { .. }
+        | Error::OtherBoard { .. }
         | Error::QueryNoEquals { .. } => EX_USAGE,
         Error::Render(_) | Error::InvalidAnswer { .. } | Error::ItemsNotJson { .. } => {
             EX_DATAERR

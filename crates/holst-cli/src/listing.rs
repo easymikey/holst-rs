@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use holst_core::{
-    domain::lookup::rules::is_alias,
+    domain::{id::uuid_spans, lookup::rules::is_alias},
     effect::settings::SessionLocation,
     storage::{file, local_data::CONFIG_DIR},
 };
@@ -29,6 +29,17 @@ pub(crate) enum ListedKind {
 struct Saved {
     kind: ListedKind,
     ids: Vec<String>,
+    /// The board an object listing is of; an old file has none.
+    #[serde(default)]
+    board: Option<ListedBoard>,
+}
+
+/// The board an object listing was taken from.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ListedBoard {
+    pub(crate) id: String,
+    /// The text the user named it by.
+    pub(crate) asked: String,
 }
 
 /// Keeps `ids`, in row order, as the listing `@N` takes its row from.
@@ -36,9 +47,11 @@ pub(crate) fn save(
     run: &RunSettings,
     kind: ListedKind,
     ids: Vec<String>,
+    board: Option<ListedBoard>,
 ) -> Result<()> {
     path(run).map_or(Ok(()), |path| {
-        let bytes = serde_json::to_vec(&Saved { kind, ids }).map_err(Error::Render)?;
+        let saved = Saved { kind, ids, board };
+        let bytes = serde_json::to_vec(&saved).map_err(Error::Render)?;
         path.parent().map_or(Ok(()), file::create_dir_all)?;
         Ok(file::replace_private(&path, &[&bytes])?)
     })
@@ -66,6 +79,10 @@ fn expand(
     arguments: &mut Map<String, Value>,
     saved: impl Fn() -> Option<Saved>,
 ) -> Result<()> {
+    let board = arguments
+        .get("board")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
     arguments
         .iter_mut()
         .filter_map(|(name, value)| wanted(name).map(|kind| (kind, value)))
@@ -90,7 +107,8 @@ fn expand(
                 })
                 .try_for_each(|text| {
                     number(text).map_or(Ok(()), |number| {
-                        *text = row_id(saved().as_ref(), kind, number)?;
+                        *text =
+                            row_id(saved().as_ref(), kind, number, board.as_deref())?;
                         Ok(())
                     })
                 })
@@ -104,21 +122,62 @@ fn number(text: &str) -> Option<usize> {
         .flatten()
 }
 
-fn row_id(saved: Option<&Saved>, kind: ListedKind, number: usize) -> Result<String> {
+fn row_id(
+    saved: Option<&Saved>,
+    kind: ListedKind,
+    number: usize,
+    board: Option<&str>,
+) -> Result<String> {
     let saved = saved.ok_or(Error::NoListing { number })?;
     match (saved.kind, kind) {
-        (ListedKind::Object, ListedKind::Board) => Err(Error::NotBoard { number }),
-        (ListedKind::Board, ListedKind::Object) => Err(Error::NotObject { number }),
-        (ListedKind::Board, ListedKind::Board)
-        | (ListedKind::Object, ListedKind::Object) => number
-            .checked_sub(1)
-            .and_then(|row| saved.ids.get(row))
-            .cloned()
-            .ok_or(Error::PastListing {
-                number,
-                rows: saved.ids.len(),
-            }),
+        (ListedKind::Object, ListedKind::Board) => {
+            return Err(Error::NotBoard { number });
+        }
+        (ListedKind::Board, ListedKind::Object) => {
+            return Err(Error::NotObject { number });
+        }
+        (ListedKind::Object, ListedKind::Object) => {
+            let listed = saved.board.as_ref().ok_or(Error::NoListing { number })?;
+            if let Some(given) = board.filter(|given| other_board(listed, given)) {
+                return Err(Error::OtherBoard {
+                    number,
+                    listed: listed.asked.clone(),
+                    given: given.to_owned(),
+                });
+            }
+        }
+        (ListedKind::Board, ListedKind::Board) => {}
     }
+    number
+        .checked_sub(1)
+        .and_then(|row| saved.ids.get(row))
+        .cloned()
+        .ok_or(Error::PastListing {
+            number,
+            rows: saved.ids.len(),
+        })
+}
+
+/// Whether `given` surely names another board than the listed one; an id
+/// against a name cannot be told apart, so it is not.
+fn other_board(listed: &ListedBoard, given: &str) -> bool {
+    let given = given.trim().to_lowercase();
+    let id = listed.id.to_lowercase();
+    let asked = listed.asked.trim().to_lowercase();
+    let given_is_id = id_like(&given);
+    if given.contains(&id) || (given_is_id && id.starts_with(&given)) {
+        return false;
+    }
+    if given_is_id != id_like(&asked) {
+        return false;
+    }
+    given_is_id || !(asked.contains(&given) || given.contains(&asked))
+}
+
+/// A uuid, a link with one, or the first characters of one.
+fn id_like(text: &str) -> bool {
+    uuid_spans(text).next().is_some()
+        || (text.len() >= 8 && text.chars().all(|each| each.is_ascii_hexdigit()))
 }
 
 fn load(run: &RunSettings) -> Option<Saved> {
@@ -141,13 +200,17 @@ mod tests {
 
     use crate::{
         error::Error,
-        listing::{ListedKind, Saved, expand},
+        listing::{ListedBoard, ListedKind, Saved, expand},
     };
 
     fn saved(kind: ListedKind) -> Saved {
         Saved {
             kind,
             ids: vec!["b1".to_owned(), "b2".to_owned()],
+            board: Some(ListedBoard {
+                id: "0123456789abcdef".to_owned(),
+                asked: "A".to_owned(),
+            }),
         }
     }
 
@@ -240,5 +303,43 @@ mod tests {
             error.map(|error| error.to_string()).as_deref(),
             Some("@1 names a board, not an object")
         );
+    }
+
+    #[test]
+    fn an_object_handle_of_another_board_says_which_board_it_is_from() {
+        let listing = saved(ListedKind::Object);
+        let error = named_on("@2", "B", &listing).err();
+        assert_eq!(
+            error.map(|error| error.to_string()).as_deref(),
+            Some(r#"@2 is from the listing of board "A", not "B""#)
+        );
+        ["A", " a ", "0123456789abcdef", "01234567"]
+            .iter()
+            .for_each(|same| {
+                assert_eq!(
+                    named_on("@2", same, &listing).ok(),
+                    Some(json!("b2")),
+                    "{same}"
+                );
+            });
+    }
+
+    #[test]
+    fn an_object_handle_of_a_listing_without_a_board_is_refused() {
+        let mut listing = saved(ListedKind::Object);
+        listing.board = None;
+        let error = named_on("@1", "A", &listing).err();
+        assert!(
+            matches!(error, Some(Error::NoListing { number: 1 })),
+            "{error:?}"
+        );
+    }
+
+    fn named_on(handle: &str, board: &str, listing: &Saved) -> Result<Value, Error> {
+        let mut arguments = Map::new();
+        arguments.insert("board".to_owned(), json!(board));
+        arguments.insert("object".to_owned(), json!(handle));
+        expand(&mut arguments, || Some(listing.clone()))?;
+        Ok(arguments.remove("object").unwrap_or_default())
     }
 }
