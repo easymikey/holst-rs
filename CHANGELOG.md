@@ -1,16 +1,14 @@
 # Changelog
 
-## 0.5.0
+## Unreleased
 
 ### Added
-
 - In coloured terminal output, flags and commands in errors and hints are cyan and bold, and quoted values are yellow.
 - A JSON argument that does not parse (`template edit` body, `object` items) shows the line and a `^` under the column where it breaks; on MCP the message ends with `, at line L, column C`.
 - On MCP, the hint of an error arrives as a separate `hint:` line.
 - New hints: how to name an object, how to shrink a picture too large to draw, how to import into a non-empty board, and what to change when `--no-compress` meets a `.gz` name.
 
 ### Changed
-
 - Error messages say the fact alone and the how-to moves to the hint line; both surfaces now use the same message, and only the hint names `--flag` (CLI) or `argument` (MCP).
 - A target board that already has objects: "the target board already has N objects: only an empty board takes an import; nothing was changed", with the hint to import into an empty board or merge.
 - An object that cannot be found: "\"R\" does not name an object", with the hint on full ids, `objectId=` links and the first 8 characters.
@@ -34,10 +32,9 @@
 - An unknown member lists the choices: `workspace member "Zed" not found; available: A, B`.
 - The messages of `search`, `board edit`, `board snap`, `board import`, `comment` and `template ls` use plain words, for example "the file must be named with .svg or .png".
 
-## 0.4.0
+## 0.4.0 (2026-10-30)
 
 ### Added
-
 - `auth status --with sessions`: your signed-in sessions with device, system, place and last activity; the current one is marked.
 - `auth status --with tokens` lists personal access tokens as rows (name, prefix, scope, expiry, last use), never the secret.
 - `workspace show --with requests`: pending requests to join the workspace.
@@ -45,53 +42,13 @@
 - `workspace show --with plan` reads the plan by name, period and price; a free workspace shows `plan: Free`, and without admin rights `plan: needs admin rights`.
 
 ### Changed
-
 - Built with Rust 1.99.1; the minimum supported Rust version is 1.99.
 
-## 0.3.0
+## 0.3.0 (2026-10-30)
 
-### Breaking
-
-Flags and MCP keys renamed (the MCP key is the flag name with underscores):
-
-- `board snap --format` is now `--picture-format` (`picture_format`)
-- `object cp --to` is now `--into` (`into`)
-- `object align --to` is now `--side` (`side`)
-- `--size WxH` is now `--size w,h`
-- `object edit --stroke` is now `--stroke-color`
-- `object edit --text-bg` is now `--text-background`
-- `object add link --no-embed` is now `--no-preview`
-- `--uncompressed` is now `--no-compress` (`backup get`, `board export`)
-- `-q, --query` is now `-p, --param` (`workspace log`)
-- `template create --name <name>` is now positional `<name>`
-- `board import <file>` is now `<path>` (the MCP key `file` is now `path`)
-- `board grant --right <right>` is now positional `<right>`
-- `template edit --body <body>` is now positional `<body>`
-- MCP `mark` is now an array of values, not a comma string
-- Kind words are kebab-case on the command line and in MCP (`sticker-stack`)
-
-Removed:
-
-- `holst api` and the MCP `api` tool. The MCP server has 10 tools.
-- The `HOLST_MCP_RAW_WRITE` environment variable.
-- MCP `refresh` and `offline` arguments. They stay on the command line.
-
-Changed output:
-
-- Board writes report one `status`: `sent`, `dry_run` or `held`, not `dry_run` and `accepted`.
-- `object ls` JSON names the board key `board`, not `id`.
-- Change reports show `@N` and the short id.
-- A saved login records its base URL. A different `HOLST_BASE_URL` is refused.
-- A socket internal error exits 75 (a retry may help).
-- `object ls` lines show the corner as `x,y` and drop the kind padding, so MCP replies are shorter.
-
-Releases:
-
-- Each release has two archives per target: `holst-cli-<target>` and `holst-mcp-<target>`.
-- Linux archives are static musl builds (`x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`). The `-linux-gnu` archives are gone.
+Breaking: many flags and MCP keys were renamed, `holst api` and the MCP `api` tool are removed, and some output changed; rename the flags and MCP keys in your scripts and calls as listed under Changed, stop using the removed items, and read the new output as listed there. Release archives are renamed and Linux ones are static musl builds, so update download scripts.
 
 ### Added
-
 Object kinds and edits, by kind:
 
 - Table: `object add table` with `--rows` and `--columns`. Edit cell text, insert and delete rows and columns, merge cells, split them again, clear, set a cell color.
@@ -125,6 +82,39 @@ Other:
 - `scripts/release.zig` builds the release archives on one Mac when the GitHub runners are down.
 
 ### Changed
+Flags and MCP keys renamed (the MCP key is the flag name with underscores):
+
+- `board snap --format` is now `--picture-format` (`picture_format`)
+- `object cp --to` is now `--into` (`into`)
+- `object align --to` is now `--side` (`side`)
+- `--size WxH` is now `--size w,h`
+- `object edit --stroke` is now `--stroke-color`
+- `object edit --text-bg` is now `--text-background`
+- `object add link --no-embed` is now `--no-preview`
+- `--uncompressed` is now `--no-compress` (`backup get`, `board export`)
+- `-q, --query` is now `-p, --param` (`workspace log`)
+- `template create --name <name>` is now positional `<name>`
+- `board import <file>` is now `<path>` (the MCP key `file` is now `path`)
+- `board grant --right <right>` is now positional `<right>`
+- `template edit --body <body>` is now positional `<body>`
+- MCP `mark` is now an array of values, not a comma string
+- Kind words are kebab-case on the command line and in MCP (`sticker-stack`)
+
+Changed output:
+
+- Board writes report one `status`: `sent`, `dry_run` or `held`, not `dry_run` and `accepted`.
+- `object ls` JSON names the board key `board`, not `id`.
+- Change reports show `@N` and the short id.
+- A saved login records its base URL. A different `HOLST_BASE_URL` is refused.
+- A socket internal error exits 75 (a retry may help).
+- `object ls` lines show the corner as `x,y` and drop the kind padding, so MCP replies are shorter.
+
+Releases:
+
+- Each release has two archives per target: `holst-cli-<target>` and `holst-mcp-<target>`.
+- Linux archives are static musl builds (`x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`). The `-linux-gnu` archives are gone.
+
+Other:
 
 - The account's workspace list and board trees are kept on disk until logout. A miss, a 403, a 404, `ls` and `--refresh` read them again. Commands send fewer requests: a write reads its board once, and `board show`, `object add` and `object cp` reuse the reply of their load.
 - `keyring` is version 4 on Windows and Linux/BSD (`secret-service` 5, `zbus` 5). Saved logins keep their service and account names.
@@ -138,8 +128,12 @@ Other:
 - A new object no longer copies the board, and `object edit --path` and `--extract` read the board once.
 - `board snap` draws table grids with merged blocks, kanban columns with their cards, and mind-map connectors.
 
-### Fixed
+### Removed
+- `holst api` and the MCP `api` tool. The MCP server has 10 tools.
+- The `HOLST_MCP_RAW_WRITE` environment variable.
+- MCP `refresh` and `offline` arguments. They stay on the command line.
 
+### Fixed
 - A new group got the wrong corner, and JPEG sizes were read wrong.
 - A call is repeated after a 401 only when no request of it landed.
 - `logout` clears only the stores that still hold the login it ended.
@@ -160,10 +154,10 @@ Other:
 - A kept board tree is read again on a miss and after a sent change, never after a dry run, and an older tree no longer overwrites a newer one.
 - MCP write actions that hold nothing accept `confirm`, and a mixed-up key names the right one.
 
-## 0.2.0
+## 0.2.0 (2026-10-29)
 
 See the [0.2.0 release](https://github.com/easymikey/holst-rs/releases/tag/v0.2.0).
 
-## 0.1.0
+## 0.1.0 (2026-10-28)
 
 See the [0.1.0 release](https://github.com/easymikey/holst-rs/releases/tag/v0.1.0).
