@@ -49,18 +49,20 @@ impl McpServer {
     ) -> CallToolResult {
         match verb {
             TemplateVerb::Ls => {
-                self.parsed(arguments, async |args: LsArgs| {
+                self.parsed_output(arguments, async |output, args: LsArgs| {
                     self.run(async |client| {
-                        Ok(self.template_listing_text(&ls(&client, &args).await?))
+                        let found = ls(&client, &args).await?;
+                        output.reply(&found, || self.template_listing_text(&found))
                     })
                     .await
                 })
                 .await
             }
             TemplateVerb::Show => {
-                self.parsed(arguments, async |args: ShowArgs| {
+                self.parsed_output(arguments, async |output, args: ShowArgs| {
                     self.run(async |client| {
-                        Ok(self.template_shown_text(&show(&client, &args).await?))
+                        let shown = show(&client, &args).await?;
+                        output.reply(&shown, || self.template_shown_text(&shown))
                     })
                     .await
                 })

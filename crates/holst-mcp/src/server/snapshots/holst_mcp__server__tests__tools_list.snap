@@ -53,6 +53,13 @@ expression: "*holst.tools"
         "name": {
           "type": "string"
         },
+        "output": {
+          "enum": [
+            "text",
+            "json"
+          ],
+          "type": "string"
+        },
         "param": {
           "additionalProperties": {
             "type": [
@@ -467,6 +474,13 @@ expression: "*holst.tools"
         "object": {
           "type": "string"
         },
+        "output": {
+          "enum": [
+            "text",
+            "json"
+          ],
+          "type": "string"
+        },
         "reopen": {
           "type": "boolean"
         },
@@ -553,6 +567,13 @@ expression: "*holst.tools"
           },
           "type": "array"
         },
+        "output": {
+          "enum": [
+            "text",
+            "json"
+          ],
+          "type": "string"
+        },
         "template": {
           "type": "string"
         },
@@ -610,6 +631,13 @@ expression: "*holst.tools"
         },
         "no_compress": {
           "type": "boolean"
+        },
+        "output": {
+          "enum": [
+            "text",
+            "json"
+          ],
+          "type": "string"
         },
         "provider": {
           "type": "string"

@@ -74,8 +74,8 @@ object or thread needs @N or id (object: or link). Several matches: listed, \
 not guessed. A frame or object link, or \"x,y,width,height\" in board units, \
 selects part of a board. Rights: none, viewer, commentator, editor, full. \
 confirm: true only once the user agreed; a risky action without it only says \
-what it would do. dry_run: true sends nothing. output: json (board, object only) gives \
-full JSON. No login: run `holst-mcp setup`.";
+what it would do. dry_run: true sends nothing. output: json (reads, not auth) \
+gives full JSON. No login: run `holst-mcp setup`.";
 
 /// Refuses an argument the command does not take on MCP, such as `offline` or
 /// the file a picture is written to.

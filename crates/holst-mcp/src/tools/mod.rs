@@ -92,6 +92,20 @@ impl McpServer {
         }
     }
 
+    /// Like `parsed`, with the `output` argument taken out first.
+    pub(super) async fn parsed_output<A: CommandArgs>(
+        &self,
+        mut arguments: Map<String, Value>,
+        then: impl AsyncFnOnce(output::Output, A) -> CallToolResult,
+    ) -> CallToolResult {
+        let read = output::take(&mut arguments)
+            .and_then(|output| Ok((output, parse::<A>(arguments)?)));
+        match read {
+            Ok((output, args)) => then(output, args).await,
+            Err(err) => self.fail(&err),
+        }
+    }
+
     pub(crate) async fn command(
         &self,
         name: CommandName,

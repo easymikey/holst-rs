@@ -29,13 +29,15 @@ impl McpServer {
     ) -> CallToolResult {
         match verb {
             CommentVerb::Ls => {
-                self.parsed(arguments, async |args: LsArgs| {
+                self.parsed_output(arguments, async |output, args: LsArgs| {
                     self.run(async |client| {
                         let list = comment::ls(&client, &args).await?;
-                        Ok(if list.threads.is_empty() {
-                            format!("{EMPTY}\n")
-                        } else {
-                            list.lines().join("\n") + "\n"
+                        output.reply(&list, || {
+                            if list.threads.is_empty() {
+                                format!("{EMPTY}\n")
+                            } else {
+                                list.lines().join("\n") + "\n"
+                            }
                         })
                     })
                     .await

@@ -904,7 +904,7 @@ fn instructions_explain_the_tools_and_the_login() {
         "x,y,width,height",
         "holst-mcp setup",
         "@N",
-        "output: json (board, object only)",
+        "output: json (reads, not auth)",
     ];
     assert!(
         wanted.iter().all(|word| instructions.contains(word)),
@@ -1044,6 +1044,62 @@ async fn board_ls_json_is_what_the_command_line_prints() -> holst_core::Result<(
     let (failed, text) = table_call(&holst, "board", call).await;
     assert!(!failed, "{text}");
     assert_eq!(text, printed(&tree)?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn workspace_json_is_what_the_command_line_prints() -> holst_core::Result<()> {
+    use holst_core::command::{table::parse, workspace};
+    let (_fake, holst, client) = on_fake().await?;
+    let args = parse::<workspace::ListArgs>(given(serde_json::json!({})))?;
+    let rows = workspace::list(&client, &args).await?;
+    let call = serde_json::json!({ "action": "ls", "output": "json" });
+    let (failed, text) = table_call(&holst, "workspace", call).await;
+    assert!(!failed, "{text}");
+    assert_eq!(text, printed(&rows)?);
+    assert!(rows.iter().all(|row| text.contains(&row.id)), "{text}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn template_json_is_what_the_command_line_prints() -> holst_core::Result<()> {
+    use holst_core::command::{table::parse, template};
+    let (_fake, holst, client) = on_fake().await?;
+    let args = parse::<template::LsArgs>(given(serde_json::json!({})))?;
+    let listing = template::ls(&client, &args).await?;
+    let call = serde_json::json!({ "action": "ls", "output": "json" });
+    let (failed, text) = table_call(&holst, "template", call).await;
+    assert!(!failed, "{text}");
+    assert_eq!(text, printed(&listing)?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn comment_json_is_what_the_command_line_prints() -> holst_core::Result<()> {
+    use holst_core::command::{comment, table::parse};
+    let (_fake, holst, client) = on_fake().await?;
+    let args =
+        parse::<comment::LsArgs>(given(serde_json::json!({ "board": "Plans" })))?;
+    let list = comment::ls(&client, &args).await?;
+    let call =
+        serde_json::json!({ "action": "ls", "board": "Plans", "output": "json" });
+    let (failed, text) = table_call(&holst, "comment", call).await;
+    assert!(!failed, "{text}");
+    assert_eq!(text, printed(&list)?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn backup_json_is_what_the_command_line_prints() -> holst_core::Result<()> {
+    use holst_core::command::{backup, table::parse};
+    let (_fake, holst, client) = on_fake().await?;
+    let args = parse::<backup::LsArgs>(given(serde_json::json!({ "board": "Plans" })))?;
+    let found = backup::ls(&client, &args).await?;
+    let call =
+        serde_json::json!({ "action": "ls", "board": "Plans", "output": "json" });
+    let (failed, text) = table_call(&holst, "backup", call).await;
+    assert!(!failed, "{text}");
+    assert_eq!(text, printed(&found.as_slice())?);
     Ok(())
 }
 

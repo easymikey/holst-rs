@@ -1,7 +1,15 @@
 //! The `output` argument: which commands take it, and what it asks for.
 
 use holst_core::{
-    command::{board::BoardVerb, object::ObjectVerb, table::CommandName},
+    command::{
+        backup::BackupVerb,
+        board::BoardVerb,
+        comment::CommentVerb,
+        object::ObjectVerb,
+        table::CommandName,
+        template::TemplateVerb,
+        workspace::WorkspaceVerb,
+    },
     error::input::InputError,
 };
 use serde_json::{Map, Value};
@@ -37,6 +45,12 @@ pub(crate) fn on(name: CommandName) -> bool {
         name,
         CommandName::Board(BoardVerb::Ls | BoardVerb::Show)
             | CommandName::Object(ObjectVerb::Ls)
+            | CommandName::Workspace(
+                WorkspaceVerb::Ls | WorkspaceVerb::Show | WorkspaceVerb::Log
+            )
+            | CommandName::Template(TemplateVerb::Ls | TemplateVerb::Show)
+            | CommandName::Comment(CommentVerb::Ls)
+            | CommandName::Backup(BackupVerb::Ls)
     )
 }
 

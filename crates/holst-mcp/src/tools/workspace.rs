@@ -43,18 +43,20 @@ impl McpServer {
     ) -> CallToolResult {
         match verb {
             WorkspaceVerb::Ls => {
-                self.parsed(arguments, async |args: ListArgs| {
+                self.parsed_output(arguments, async |output, args: ListArgs| {
                     self.run(async |client| {
-                        Ok(self.listing_text(&list(&client, &args).await?))
+                        let rows = list(&client, &args).await?;
+                        output.reply(&rows, || self.listing_text(&rows))
                     })
                     .await
                 })
                 .await
             }
             WorkspaceVerb::Show => {
-                self.parsed(arguments, async |args: ShowArgs| {
+                self.parsed_output(arguments, async |output, args: ShowArgs| {
                     self.run(async |client| {
-                        Ok(self.shown_text(&show(&client, &args).await?))
+                        let shown = show(&client, &args).await?;
+                        output.reply(&shown, || self.shown_text(&shown))
                     })
                     .await
                 })
@@ -69,9 +71,10 @@ impl McpServer {
                     .await
             }
             WorkspaceVerb::Log => {
-                self.parsed(arguments, async |args: LogArgs| {
+                self.parsed_output(arguments, async |output, args: LogArgs| {
                     self.run(async |client| {
-                        Ok(self.log_text(&log(&client, &args).await?))
+                        let events = log(&client, &args).await?;
+                        output.reply(&events, || self.log_text(&events))
                     })
                     .await
                 })

@@ -41,9 +41,10 @@ impl McpServer {
     ) -> CallToolResult {
         match verb {
             BackupVerb::Ls => {
-                self.parsed(arguments, async |args: LsArgs| {
+                self.parsed_output(arguments, async |output, args: LsArgs| {
                     self.run(async |client| {
-                        Ok(listing_text(&backup::ls(&client, &args).await?))
+                        let found = backup::ls(&client, &args).await?;
+                        output.reply(&found.as_slice(), || listing_text(&found))
                     })
                     .await
                 })
