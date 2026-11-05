@@ -5,7 +5,18 @@ use serde_json::{Value, json};
 use crate::{
     Result,
     command::{
-        fixture::{arguments, channel, channel_with, client, json_reply, status_of},
+        fixture::{
+            FRAME,
+            STICKER,
+            arguments,
+            board_of,
+            channel,
+            channel_with,
+            client,
+            json_reply,
+            objects,
+            status_of,
+        },
         template::{
             Changed,
             CreateArgs,
@@ -517,6 +528,60 @@ async fn a_part_of_a_board_is_made_a_template_by_object() -> Result<()> {
             Some(1),
             Some("give one of an area, a frame or objects, not several".to_owned())
         )
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_template_from_a_frame_link_holds_the_frame_and_what_it_holds() -> Result<()>
+{
+    let (fake, client) = client([
+        board_workspace(),
+        json_reply(&account()),
+        json_reply(&json!({ "name": "thumb.png" })),
+        json_reply(&json!({ "id": "t9", "name": "Retro" })),
+    ])?;
+    make(
+        &client,
+        &board_of(&objects()),
+        &json!({
+            "board": format!("https://app.holst.so/board/{BOARD}?objectId={FRAME}"),
+            "name": "Retro",
+        }),
+    )
+    .await?;
+    let sent: Vec<Value> = bodies(&fake)
+        .pop()
+        .and_then(|body| body.pointer("/data/data").cloned())
+        .and_then(|data| serde_json::from_str(data.as_str()?).ok())
+        .unwrap_or_default();
+    let mut ids: Vec<&str> = sent
+        .iter()
+        .filter_map(|object| object.get("id").and_then(Value::as_str))
+        .collect();
+    ids.sort_unstable();
+    assert_eq!(ids, vec![FRAME, STICKER]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_frame_link_with_an_object_flag_is_several_areas() -> Result<()> {
+    let (_, client) = client([board_workspace(), channel()])?;
+    let error = make(
+        &client,
+        &board_of(&objects()),
+        &json!({
+            "board": format!("https://app.holst.so/board/{BOARD}?objectId={FRAME}"),
+            "name": "Retro",
+            "object": [STICKER],
+            "dry_run": true,
+        }),
+    )
+    .await
+    .err();
+    assert_eq!(
+        error.map(|error| error.to_string()),
+        Some("give one of an area, a frame or objects, not several".to_owned())
     );
     Ok(())
 }
