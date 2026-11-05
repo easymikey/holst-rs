@@ -1,7 +1,5 @@
 //! A change that needs its confirmation first, and what it guards against.
 
-use std::borrow::Cow;
-
 use crate::{
     command::board::rights::Right,
     domain::{board::ObjectKind, text::counted},
@@ -132,20 +130,16 @@ fn with_replies(replies: usize) -> String {
 /// );
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{change} {risk}")]
+#[error("{change} {}", change.risk())]
 pub struct Unconfirmed {
-    pub change: Cow<'static, str>,
-    pub risk: ChangeRisk,
+    pub change: RiskyChange,
 }
 
 impl Unconfirmed {
-    /// A refusal of `change`, which carries `risk`.
+    /// What the refused change puts at risk.
     #[must_use]
-    pub fn new(change: impl Into<Cow<'static, str>>, risk: ChangeRisk) -> Self {
-        Self {
-            change: change.into(),
-            risk,
-        }
+    pub const fn risk(&self) -> ChangeRisk {
+        self.change.risk()
     }
 
     /// Advice for every unconfirmed action.
@@ -157,8 +151,7 @@ impl Unconfirmed {
 
 impl From<RiskyChange> for Unconfirmed {
     fn from(change: RiskyChange) -> Self {
-        let risk = change.risk();
-        Self::new(change.to_string(), risk)
+        Self { change }
     }
 }
 
@@ -313,27 +306,21 @@ mod tests {
     ) {
         assert_eq!(change.risk(), risk);
         let refusal = Unconfirmed::from(change);
-        assert_eq!(refusal.risk, risk);
+        assert_eq!(refusal.risk(), risk);
         assert_eq!(refusal.to_string(), said);
     }
 
     #[test]
     fn every_refusal_hints_to_confirm() {
-        let err = Unconfirmed::new("deleting permanently", ChangeRisk::Irreversible);
+        let err = Unconfirmed::from(RiskyChange::RestoreBackup);
         assert_eq!(err.hint(), Some(Hint::ConfirmFirst));
     }
 
     #[test]
     fn each_risk_has_its_words() {
-        let said: Vec<String> = ChangeRisk::iter()
-            .map(|risk| Unconfirmed::new("granting a right", risk).to_string())
-            .collect();
+        let said: Vec<String> =
+            ChangeRisk::iter().map(|risk| risk.to_string()).collect();
         let undone = said.iter().filter(|text| text.contains("cannot be undone"));
         assert_eq!(undone.count(), 1, "{said:?}");
-        assert!(
-            said.iter()
-                .all(|text| text.starts_with("granting a right ")),
-            "{said:?}"
-        );
     }
 }

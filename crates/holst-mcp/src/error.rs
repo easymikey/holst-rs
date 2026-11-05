@@ -121,7 +121,7 @@ mod tests {
     use holst_core::{
         command::storage::StorageVerb,
         error::{
-            confirmation::{ChangeRisk, Unconfirmed},
+            confirmation::{RiskyChange, Unconfirmed},
             hint::Hint,
         },
     };
@@ -138,14 +138,13 @@ mod tests {
             Some(Hint::LoginAgain)
         );
         assert_eq!(Error::NoStdout.hint(), None);
-        let unconfirmed = Error::Unconfirmed(Unconfirmed::new(
-            "granting a right",
-            ChangeRisk::Sharing,
-        ));
+        let unconfirmed = Error::Unconfirmed(Unconfirmed::from(RiskyChange::ChangeSharing {
+            board: "@2".to_owned(),
+        }));
         assert_eq!(unconfirmed.hint(), Some(Hint::ConfirmFirst));
         assert_eq!(
             unconfirmed.to_string(),
-            "granting a right changes who can open or edit it"
+            "changing the sharing settings of @2 changes who can open or edit it"
         );
     }
 

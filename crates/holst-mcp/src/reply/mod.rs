@@ -253,9 +253,10 @@ mod tests {
             .map(|(_, err)| err)
             .chain([401, 403, 404, 429, 500, 503].map(status_error))
             .chain([Error::Unconfirmed(
-                holst_core::error::confirmation::Unconfirmed::new(
-                    "deleting a template",
-                    holst_core::error::confirmation::ChangeRisk::Irreversible,
+                holst_core::error::confirmation::Unconfirmed::from(
+                    holst_core::error::confirmation::RiskyChange::DeleteTemplate {
+                        template: "@7".to_owned(),
+                    },
                 ),
             )]);
         let hints: Vec<String> = errors

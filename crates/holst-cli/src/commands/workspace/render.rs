@@ -210,7 +210,7 @@ mod tests {
                 WorkspaceRow,
             },
         },
-        error::confirmation::{ChangeRisk, Unconfirmed},
+        error::confirmation::{RiskyChange, Unconfirmed},
     };
     use rstest::rstest;
 
@@ -239,7 +239,10 @@ mod tests {
         ChangeReport::Held {
             request: planned(),
             needs: String::new(),
-            refusal: Unconfirmed::new("renaming", ChangeRisk::Everyone),
+            refusal: Unconfirmed::from(RiskyChange::RenameWorkspace {
+                from: "Old".to_owned(),
+                to: "New".to_owned(),
+            }),
         }
     }
 
