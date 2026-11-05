@@ -2,6 +2,39 @@
 
 use holst_macros::Hint;
 
+/// A picture option with a range of values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
+pub enum PictureSetting {
+    #[display("scale")]
+    Scale,
+    #[display("max side")]
+    MaxSide,
+    #[display("padding")]
+    Padding,
+}
+
+impl PictureSetting {
+    /// Returns whether `value` is in the setting's range.
+    #[must_use]
+    pub fn allows(self, value: f64) -> bool {
+        match self {
+            Self::Scale => value > 0.0 && value <= 100.0,
+            Self::MaxSide => (16.0..=16_384.0).contains(&value),
+            Self::Padding => (0.0..=100_000.0).contains(&value),
+        }
+    }
+
+    /// Returns the range in words.
+    #[must_use]
+    pub const fn range(self) -> &'static str {
+        match self {
+            Self::Scale => "above 0, at most 100 pixels per board unit",
+            Self::MaxSide => "16 to 16384 pixels",
+            Self::Padding => "0 to 100000 board units",
+        }
+    }
+}
+
 /// An area that cannot be chosen, or a picture that cannot be drawn.
 #[derive(Debug, thiserror::Error, Hint)]
 #[cfg_attr(test, derive(strum::EnumDiscriminants))]
@@ -21,12 +54,8 @@ pub enum PictureError {
     )]
     EmptyArea { reference: String },
 
-    #[error("{name} {value:?} is out of range: expected {expected}")]
-    OutOfRange {
-        name: &'static str,
-        value: f64,
-        expected: &'static str,
-    },
+    #[error("{setting} {value:?} is out of range: expected {}", .setting.range())]
+    OutOfRange { setting: PictureSetting, value: f64 },
 
     #[cfg(feature = "png")]
     #[error("the picture could not be drawn as PNG")]
@@ -44,7 +73,7 @@ pub enum PictureError {
 pub(super) mod tests {
     use crate::error::{
         hint::decided::assert_all_listed,
-        picture::{PictureError, PictureErrorDiscriminants},
+        picture::{PictureError, PictureErrorDiscriminants, PictureSetting},
     };
 
     pub(in crate::error) fn samples() -> Vec<PictureError> {
@@ -56,9 +85,8 @@ pub(super) mod tests {
                 reference: "g".into(),
             },
             PictureError::OutOfRange {
-                name: "scale",
+                setting: PictureSetting::Scale,
                 value: 0.0,
-                expected: "0.05..=8",
             },
             PictureError::TooLarge {
                 width: 0,

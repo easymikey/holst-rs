@@ -1,15 +1,16 @@
 //! The numbers a picture request carries, each in its own unit and in range.
 
-use std::{
-    fmt,
-    ops::{Bound, RangeBounds},
-};
+use std::fmt;
 
 use serde::Serialize;
 
 use crate::{
     domain::geometry::whole_u32,
-    error::{Error, Result, picture::PictureError},
+    error::{
+        Error,
+        Result,
+        picture::{PictureError, PictureSetting},
+    },
 };
 
 /// The longest side a picture may have, in pixels.
@@ -24,24 +25,11 @@ pub const MAX_SIDE_FILE: PixelSide = PixelSide(8192.0);
 /// The longest side of a picture shown to a model.
 pub const MAX_SIDE_MODEL: PixelSide = PixelSide(1568.0);
 
-const MIN_SIDE: f64 = 16.0;
-const MAX_SCALE: f64 = 100.0;
-const MAX_PADDING: f64 = 100_000.0;
-
-fn within(
-    name: &'static str,
-    value: f64,
-    range: impl RangeBounds<f64>,
-    expected: &'static str,
-) -> Result<f64> {
-    range
-        .contains(&value)
+fn within(setting: PictureSetting, value: f64) -> Result<f64> {
+    setting
+        .allows(value)
         .then_some(value)
-        .ok_or(Error::Picture(PictureError::OutOfRange {
-            name,
-            value,
-            expected,
-        }))
+        .ok_or(Error::Picture(PictureError::OutOfRange { setting, value }))
 }
 
 /// Pixels drawn for one board unit: above 0, at most 100.
@@ -56,15 +44,9 @@ impl PixelsPerUnit {
     /// Returns `value` when it is above 0 and at most 100.
     ///
     /// # Errors
-    /// [`PictureError::OutOfRange`] naming the scale.
+    /// [`PictureError::OutOfRange`] naming the scale setting.
     pub fn new(value: f64) -> Result<Self> {
-        within(
-            "scale",
-            value,
-            (Bound::Excluded(0.0), Bound::Included(MAX_SCALE)),
-            "above 0, at most 100 pixels per board unit",
-        )
-        .map(Self)
+        within(PictureSetting::Scale, value).map(Self)
     }
 
     /// Returns the number of pixels.
@@ -107,7 +89,7 @@ impl PixelSide {
     /// # Errors
     /// [`PictureError::OutOfRange`] naming the max side.
     pub fn new(value: f64) -> Result<Self> {
-        within("max side", value, MIN_SIDE..=MAX_SIDE, "16 to 16384 pixels").map(Self)
+        within(PictureSetting::MaxSide, value).map(Self)
     }
 
     /// Returns the number of pixels.
@@ -127,13 +109,7 @@ impl BoardLength {
     /// # Errors
     /// [`PictureError::OutOfRange`] naming the padding.
     pub fn new(value: f64) -> Result<Self> {
-        within(
-            "padding",
-            value,
-            0.0..=MAX_PADDING,
-            "0 to 100000 board units",
-        )
-        .map(Self)
+        within(PictureSetting::Padding, value).map(Self)
     }
 
     /// Returns the margin when given; `None` stays the selection's default.
@@ -157,7 +133,10 @@ mod tests {
 
     use crate::{
         domain::picture::units::{BoardLength, PixelSide, PixelsPerUnit},
-        error::{Error, picture::PictureError},
+        error::{
+            Error,
+            picture::{PictureError, PictureSetting},
+        },
     };
 
     #[rstest]
@@ -170,7 +149,7 @@ mod tests {
         assert!(matches!(
             PixelsPerUnit::new(value),
             Err(Error::Picture(PictureError::OutOfRange {
-                name: "scale",
+                setting: PictureSetting::Scale,
                 ..
             }))
         ));
@@ -195,7 +174,7 @@ mod tests {
         assert!(matches!(
             PixelSide::new(value),
             Err(Error::Picture(PictureError::OutOfRange {
-                name: "max side",
+                setting: PictureSetting::MaxSide,
                 ..
             }))
         ));
@@ -218,7 +197,7 @@ mod tests {
         assert!(matches!(
             BoardLength::new(value),
             Err(Error::Picture(PictureError::OutOfRange {
-                name: "padding",
+                setting: PictureSetting::Padding,
                 ..
             }))
         ));
@@ -253,5 +232,26 @@ mod tests {
         assert_eq!(scale.pixels(0.2), 1);
         assert_eq!(scale.pixels(99.6), 100);
         assert_eq!(scale.pixels(1e9), 16_384);
+    }
+
+    #[rstest]
+    #[case(
+        PictureSetting::Scale,
+        0.0,
+        "scale 0.0 is out of range: expected above 0, at most 100 pixels per board unit"
+    )]
+    #[case(
+        PictureSetting::MaxSide,
+        15.0,
+        "max side 15.0 is out of range: expected 16 to 16384 pixels"
+    )]
+    #[case(PictureSetting::Padding, -1.0, "padding -1.0 is out of range: expected 0 to 100000 board units")]
+    fn an_out_of_range_option_names_its_range(
+        #[case] setting: PictureSetting,
+        #[case] value: f64,
+        #[case] text: &str,
+    ) {
+        let error = PictureError::OutOfRange { setting, value };
+        assert_eq!(error.to_string(), text);
     }
 }
