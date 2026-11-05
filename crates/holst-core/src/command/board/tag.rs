@@ -21,7 +21,7 @@ use crate::{
             value::{BoardChange, ObjectChangeKind, TagChange},
         },
         palette::Color,
-        text::{counted, joined},
+        text::joined,
     },
     effect::{
         confirmation::{ALWAYS, NEVER},
@@ -29,7 +29,7 @@ use crate::{
     },
     error::{
         Result,
-        confirmation::{ChangeRisk, Unconfirmed},
+        confirmation::{RiskyChange, Unconfirmed},
         flag::Flag,
         input::InputError,
     },
@@ -203,14 +203,10 @@ async fn tagged(
     // the domain reports the tag first, then the objects it was taken off
     report.objects = report.objects.into_iter().skip(1).collect();
     let unconfirmed = remove.then(|| {
-        Unconfirmed::new(
-            format!(
-                "removing the tag \"{}\" from {}",
-                line.title,
-                counted(report.objects.len(), "object")
-            ),
-            ChangeRisk::Irreversible,
-        )
+        Unconfirmed::from(RiskyChange::RemoveTag {
+            tag: line.title.clone(),
+            objects: report.objects.len(),
+        })
     });
     let outcome = gate(unconfirmed, (args.dry_run, args.confirm), || ())
         .err()

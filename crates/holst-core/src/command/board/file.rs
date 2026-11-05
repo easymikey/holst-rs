@@ -35,7 +35,7 @@ use crate::{
     error::{
         Error,
         Result,
-        confirmation::{ChangeRisk, Unconfirmed},
+        confirmation::{RiskyChange, Unconfirmed},
         flag::Flag,
         input::InputError,
     },
@@ -275,8 +275,7 @@ async fn into_board(
     args: &ImportArgs,
 ) -> Result<Imported> {
     let target = lookup::exact_board(client, into, args.workspace.as_deref()).await?;
-    let unconfirmed =
-        Unconfirmed::new("writing a board file into a board", ChangeRisk::Everyone);
+    let unconfirmed = Unconfirmed::from(RiskyChange::ImportIntoBoard);
     let gated = gate(Some(unconfirmed), (args.dry_run, args.confirm), || None);
     let done = board_file::import_with(
         client,

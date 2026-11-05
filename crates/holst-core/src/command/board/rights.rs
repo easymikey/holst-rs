@@ -17,7 +17,7 @@ use crate::{
     effect::request::ApiRequest,
     error::{
         Result,
-        confirmation::{ChangeRisk, Unconfirmed},
+        confirmation::{RiskyChange, Unconfirmed},
         flag::Flag,
         input::InputError,
     },
@@ -431,11 +431,11 @@ pub async fn grant(client: &Client, args: &GrantArgs) -> Result<Shared> {
         &user.id,
         right.wire(),
     ))?;
-    let unconfirmed = unconfirmed(format!(
-        "giving {} the right {right} on {}",
-        user.shown(),
-        board.shown()
-    ));
+    let unconfirmed = Unconfirmed::from(RiskyChange::GrantRight {
+        user: user.shown().to_owned(),
+        right,
+        board: board.shown().to_owned(),
+    });
     let (outcome, _) = settle(
         client,
         request,
@@ -463,11 +463,10 @@ pub async fn revoke(client: &Client, args: &RevokeArgs) -> Result<Shared> {
         let request = api::access::set_member_right_request(&role_grant(
             &board.id, &user.id, None,
         ))?;
-        let unconfirmed = unconfirmed(format!(
-            "taking away the right of {} on {}",
-            user.shown(),
-            board.shown()
-        ));
+        let unconfirmed = Unconfirmed::from(RiskyChange::RevokeRight {
+            user: user.shown().to_owned(),
+            board: board.shown().to_owned(),
+        });
         let (outcome, _) = settle(
             client,
             request,
@@ -507,15 +506,10 @@ pub async fn transfer(client: &Client, args: &TransferArgs) -> Result<Shared> {
         transfer_owned_subtree: subtree.is_transferred(),
     };
     let request = api::access::transfer_ownership_request(&board.id, &transfer)?;
-    let unconfirmed = Unconfirmed {
-        change: format!(
-            "transferring ownership of {} to {}",
-            board.shown(),
-            user.shown()
-        )
-        .into(),
-        risk: ChangeRisk::Irreversible,
-    };
+    let unconfirmed = Unconfirmed::from(RiskyChange::TransferOwnership {
+        board: board.shown().to_owned(),
+        user: user.shown().to_owned(),
+    });
     let (outcome, _) = settle(
         client,
         request,
@@ -554,10 +548,9 @@ pub async fn share(client: &Client, args: &ShareArgs) -> Result<Shared> {
             &patch.checked()?,
         )?);
     }
-    let unconfirmed = unconfirmed(format!(
-        "changing the sharing settings of {}",
-        board.shown()
-    ));
+    let unconfirmed = Unconfirmed::from(RiskyChange::ChangeSharing {
+        board: board.shown().to_owned(),
+    });
     let mode = (args.dry_run, args.confirm);
     let mut reports = stream::iter(requests.into_iter().map(Ok))
         .and_then(|request| settle(client, request, Some(unconfirmed.clone()), mode))
@@ -788,14 +781,6 @@ async fn roster(client: &Client, board: &Board) -> Result<Value> {
 async fn user(client: &Client, board: &Board, reference: &str) -> Result<BoardMember> {
     let roster = members_of(roster(client, board).await?)?;
     find_member(&roster, reference).map(BoardMember::of)
-}
-
-/// A change that needs its confirmation; the shell words how to give it.
-fn unconfirmed(change: String) -> Unconfirmed {
-    Unconfirmed {
-        change: change.into(),
-        risk: ChangeRisk::Sharing,
-    }
 }
 
 #[cfg(test)] mod tests;

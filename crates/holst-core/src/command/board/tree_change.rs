@@ -29,7 +29,7 @@ use crate::{
     effect::{board_write::WriteMode, request::ApiRequest},
     error::{
         Result,
-        confirmation::{ChangeRisk, Unconfirmed},
+        confirmation::{RiskyChange, Unconfirmed},
         lookup::{LookupError, LookupKind, LookupMiss},
     },
     protocol::json::changed_node,
@@ -440,10 +440,9 @@ fn forever(
     (left_behind, left_in): (Vec<LeftBehind>, Option<String>),
 ) -> Result<Plan> {
     let shown = if name.is_empty() { id } else { name };
-    let unconfirmed = Unconfirmed {
-        change: format!("deleting {shown} for good").into(),
-        risk: ChangeRisk::Irreversible,
-    };
+    let unconfirmed = Unconfirmed::from(RiskyChange::DeleteNode {
+        node: shown.to_owned(),
+    });
     let node = ChangedNode {
         name: Some(name.to_owned()).filter(|name| !name.is_empty()),
         left_behind,
