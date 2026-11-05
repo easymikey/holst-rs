@@ -313,15 +313,13 @@ mod tests {
             error.map(|error| error.to_string()).as_deref(),
             Some(r#"@2 is from the listing of board "A", not "B""#)
         );
-        ["A", " a ", "0123456789abcdef", "01234567"]
-            .iter()
-            .for_each(|same| {
-                assert_eq!(
-                    named_on("@2", same, &listing).ok(),
-                    Some(json!("b2")),
-                    "{same}"
-                );
-            });
+        for same in ["A", " a ", "0123456789abcdef", "01234567"] {
+            assert_eq!(
+                named_on("@2", same, &listing).ok(),
+                Some(json!("b2")),
+                "{same}"
+            );
+        }
     }
 
     #[test]
