@@ -7,6 +7,7 @@ use crate::{
     command::{
         account::account_id,
         board_load::{self, CacheUse, RemoteBoard},
+        loading::chosen_area,
         lookup,
         node::missing_field,
         table::{Confirmation, Validate},
@@ -16,6 +17,7 @@ use crate::{
         account::Workspace,
         area::{Area, listed_area},
         board::Object,
+        id,
         image::ImageFormat,
         lookup::choice,
         node::NodeBrief,
@@ -83,10 +85,14 @@ pub(super) async fn created(
         CacheUse::Use,
     )
     .await?;
-    let area = Area::of(
-        None,
-        args.frame.clone().filter(|frame| !frame.trim().is_empty()),
-        args.object.clone(),
+    let area = chosen_area(
+        &Area::of(
+            None,
+            args.frame.clone().filter(|frame| !frame.trim().is_empty()),
+            args.object.clone(),
+        )?,
+        id::object_in(&args.board),
+        &content.objects,
     )?;
     let listed = listed_area(&content.objects, &area, None)?;
     let frame = listed

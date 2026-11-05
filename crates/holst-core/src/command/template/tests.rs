@@ -6,6 +6,7 @@ use crate::{
     Result,
     command::{
         fixture::{
+            ARROW,
             FRAME,
             STICKER,
             arguments,
@@ -560,7 +561,7 @@ async fn a_template_from_a_frame_link_holds_the_frame_and_what_it_holds() -> Res
         .filter_map(|object| object.get("id").and_then(Value::as_str))
         .collect();
     ids.sort_unstable();
-    assert_eq!(ids, vec![FRAME, STICKER]);
+    assert_eq!(ids, vec![ARROW, FRAME, STICKER]);
     Ok(())
 }
 
