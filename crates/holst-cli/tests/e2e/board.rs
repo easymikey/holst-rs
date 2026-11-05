@@ -49,6 +49,23 @@ fn permanent_delete_needs_the_whole_name() -> TestResult {
 }
 
 #[test]
+fn a_board_is_named_by_its_handle_from_the_last_listing() -> TestResult {
+    let fake = fake::start()?;
+    let base = fake.base_url();
+    let dir = signed_home(base)?;
+    let listing = holst_in(base, &dir, &["board", "ls"], "")?;
+    let shown = String::from_utf8_lossy(&listing.stdout).into_owned();
+    let second = shown.lines().nth(1).unwrap_or_default().trim_start();
+    let name = second.split("  ").next().unwrap_or_default();
+    assert!(second.contains("  @2  "), "{shown}");
+    let show = holst_in(base, &dir, &["board", "show", "@2"], "")?;
+    let text = String::from_utf8_lossy(&show.stdout).into_owned();
+    assert_eq!(show.status.code(), Some(0), "{}", stderr(&show));
+    assert!(text.contains(name), "{name:?} not in:\n{text}");
+    Ok(())
+}
+
+#[test]
 fn tree_with_trash_shows_the_trash() -> TestResult {
     let fake = fake::start()?;
     let base = fake.base_url();
