@@ -63,7 +63,13 @@ hooks:
 ship level execute="":
     cargo bin just default
     cargo bin cargo-semver-checks check-release --workspace --release-type {{ if level == "patch" { "patch" } else { "major" } }}
-    cargo bin cargo-release {{ level }} --workspace {{ if execute == "execute" { "--execute" } else { "--no-verify" } }}
+    cargo bin cargo-release {{ level }} --workspace {{ if execute == "execute" { "--execute --no-confirm --no-push" } else { "--no-verify" } }}
+    {{ if execute == "execute" { "cargo bin just push-release" } else { "" } }}
+
+# GitHub starts no workflow for more than three tags in one push: push main, then each tag of HEAD alone.
+push-release:
+    git push origin main
+    for tag in $(git tag --points-at HEAD); do git push origin "refs/tags/$tag"; done
 
 # Print the changelog section of a tag such as holst-cli-v0.5.0.
 release-notes tag:
