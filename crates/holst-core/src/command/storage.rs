@@ -17,10 +17,7 @@ use crate::{
         clock::Clock,
         settings::CacheSettings,
     },
-    error::{
-        Error,
-        confirmation::{ChangeRisk, Unconfirmed},
-    },
+    error::{Error, confirmation::RiskyChange},
     storage::{
         cache::Cache,
         local_data::{self, CleanMode, DataPlace, DataRoots, FilePlace},
@@ -184,12 +181,8 @@ pub fn clean(
         (false, true) => CleanMode::Cache,
         (false, false) => CleanMode::Leftovers,
     };
-    let unconfirmed = (scope == CleanMode::All).then(|| {
-        Unconfirmed::new(
-            "removing the saved login and the board cache",
-            ChangeRisk::Irreversible,
-        )
-    });
+    let unconfirmed =
+        (scope == CleanMode::All).then(|| RiskyChange::ForgetLocalData.into());
     let gated = gate(unconfirmed, (args.dry_run, args.confirm), || ());
     let removing = gated.is_ok();
     let places = local_data::places(roots);

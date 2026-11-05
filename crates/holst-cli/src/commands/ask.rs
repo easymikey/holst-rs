@@ -230,7 +230,7 @@ mod tests {
         terminal::TerminalKind,
     };
     use holst_core::error::{
-        confirmation::{ChangeRisk, Unconfirmed},
+        confirmation::{RiskyChange, Unconfirmed},
         input::InputError,
         lookup::{
             Candidate,
@@ -254,7 +254,10 @@ mod tests {
     }
 
     fn needs() -> Unconfirmed {
-        Unconfirmed::new("deleting a board", ChangeRisk::Irreversible)
+        RiskyChange::DeleteNode {
+            node: "board Plans".into(),
+        }
+        .into()
     }
 
     fn arguments(value: &Value) -> Map<String, Value> {
@@ -557,11 +560,13 @@ mod tests {
         let written = ui.terminal().written();
         assert!(result.is_ok(), "{result:?}");
         assert!(
-            written.contains("◆  deleting a board cannot be undone?\n"),
+            written.contains("◆  deleting board Plans for good cannot be undone?\n"),
             "{written:?}"
         );
         assert!(
-            written.contains("◇  deleting a board cannot be undone?\n│  Yes\n│\n"),
+            written.contains(
+                "◇  deleting board Plans for good cannot be undone?\n│  Yes\n│\n"
+            ),
             "{written:?}"
         );
     }

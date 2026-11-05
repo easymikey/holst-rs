@@ -265,7 +265,7 @@ mod tests {
     use holst_core::{
         domain::session::SessionStoreKind,
         error::{
-            confirmation::Unconfirmed,
+            confirmation::RiskyChange,
             lookup::{LookupError, LookupKind, LookupMiss},
         },
         fake::candidates,
@@ -322,10 +322,7 @@ mod tests {
         Some("one of the ids")
     )]
     #[case::unconfirmed(
-        Error::Unconfirmed(Unconfirmed::new(
-            "deleting a template",
-            holst_core::error::confirmation::ChangeRisk::Irreversible
-        )),
+        Error::Unconfirmed(RiskyChange::DeleteTemplate { template: "Retro".into() }.into()),
         Some("`--yes`")
     )]
     #[case::closed_stdout(Error::StdoutClosed, None)]

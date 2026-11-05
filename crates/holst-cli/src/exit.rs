@@ -524,7 +524,7 @@ mod tests {
         error::{
             board_change::BoardChangeError,
             board_socket::{BoardSocketError, SocketErrorCode},
-            confirmation::{ChangeRisk, Unconfirmed},
+            confirmation::RiskyChange,
             http::HttpError,
             input::InputError,
             local_data::{KeychainError, LocalDataError},
@@ -610,10 +610,7 @@ mod tests {
     #[case::unauthorized(status(401), 77)]
     #[case::not_yours(core(BoardChangeError::NotYours { reference: "x".into() }), 77)]
     #[case::unconfirmed(
-        Error::Unconfirmed(Unconfirmed::new(
-            "deleting a board",
-            ChangeRisk::Irreversible
-        )),
+        Error::Unconfirmed(RiskyChange::DeleteNode { node: "board Plans".into() }.into()),
         77
     )]
     #[case::cache_dir_relative(core(InputError::CacheDirRelative { value: "x".into() }), 78)]
