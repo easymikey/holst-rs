@@ -59,11 +59,11 @@ ci-setup:
 hooks:
     git config core.hooksPath .githooks
 
-# Checks, the semver check, then a dry run of the release. Pass `execute` to do it. holst-form stays out, see CONTRIBUTING.md. Below 1.0 only a patch level may not break the API.
+# Checks, the semver check, then a dry run of the release. Pass `execute` to do it. Below 1.0 only a patch level may not break the API.
 ship level execute="":
     cargo bin just default
-    cargo bin cargo-semver-checks check-release --workspace --exclude holst-form --release-type {{ if level == "patch" { "patch" } else { "major" } }}
-    cargo bin cargo-release {{ level }} --workspace --exclude holst-form {{ if execute == "execute" { "--execute" } else { "" } }}
+    cargo bin cargo-semver-checks check-release --workspace --release-type {{ if level == "patch" { "patch" } else { "major" } }}
+    cargo bin cargo-release {{ level }} --workspace {{ if execute == "execute" { "--execute" } else { "" } }}
 
 # Print the changelog section of a tag such as holst-cli-v0.5.0.
 release-notes tag:

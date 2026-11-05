@@ -42,7 +42,6 @@ crates/
   holst-core/    commands, domain, remote, storage, the fake server
   holst-cli/     the `holst` binary
   holst-mcp/     the `holst-mcp` server and its setup
-  holst-form/    terminal prompts shared by both binaries
   holst-macros/  derive macros for commands and endpoints
 tasks/
   scenarios/     end to end scenarios and the `holst-eval` harness
@@ -62,7 +61,7 @@ tasks/
 - Nextest retries a failed test twice, because loopback connects to the fakes can stall on a busy machine. A test that passes on a retry is reported as flaky.
 - Tags are `holst-cli-vX.Y.Z`, `holst-mcp-vX.Y.Z`, `holst-core-vX.Y.Z` and `holst-macros-vX.Y.Z`. `cargo-release` applies one level to the whole workspace, so `ship` bumps all four together; the root changelog heading is renamed by the `[package.metadata.release]` of `holst-cli`, the one crate every release includes.
 - `ship` runs `cargo-semver-checks` (pinned like the other tools) before the release step; an API break it finds needs a higher level.
-- `holst-scenarios` is never released. `holst-form` is deprecated and `ship` leaves it out: its 0.4.1 goes out once with `cargo bin cargo-release release -p holst-form --execute`, and it is never yanked.
+- `holst-scenarios` is never released. `holst-form` (replaced by clacky) is no longer in the tree; its last version 0.4.1 is never yanked.
 - After a `holst-cli` or `holst-mcp` tag is pushed, the `release` workflow builds its archives for five targets with `cargo bin just dist <target>`, attaches them with their `.sha256` files to the draft release with `cargo bin just upload <tag> <target>`, updates the `homebrew-holst` tap with `cargo bin just homebrew <tag>`, then publishes the draft. The tap push needs the `TAP_DEPLOY_KEY` secret in CI, or SSH push access to `easymikey/homebrew-holst` locally.
 - The Linux targets are static musl builds made with `cargo-zigbuild`. The recipe fails unless `file` reports both binaries as statically linked.
 - Without GitHub runners, run by hand: `cargo bin just release-notes <tag> > notes.md`, `gh release create <tag> --verify-tag --draft --title <tag> --notes-file notes.md`, `cargo bin just dist <target>` and `cargo bin just upload <tag> <target>` for each target, `cargo bin just homebrew <tag>`, then `gh release edit <tag> --draft=false`.
