@@ -44,6 +44,7 @@ use crate::{
         Error,
         Result,
         board_change::{
+            ArrowLook,
             BoardChangeError,
             GivenPoint,
             GivenRectangle,
@@ -1419,7 +1420,7 @@ fn arrow_fits(
             .ok_or_else(|| {
                 Error::BoardChange(BoardChangeError::NotArrowLook {
                     raw: object.clone(),
-                    expected: "a box to attach an arrow to",
+                    expected: ArrowLook::AttachBox,
                 })
             })
         }
@@ -1853,7 +1854,7 @@ fn stroke_width_fits(kind: &ObjectKind, width: f64) -> Result<()> {
         (true, true, _) | (false, _, true) => Ok(()),
         (true, false, _) => Err(Error::BoardChange(BoardChangeError::NotArrowLook {
             raw: raw.clone(),
-            expected: "an arrow stroke width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17",
+            expected: ArrowLook::StrokeWidth,
         })),
         (false, _, false) => {
             Err(refused("shape stroke width", "a whole number 0 to 10"))

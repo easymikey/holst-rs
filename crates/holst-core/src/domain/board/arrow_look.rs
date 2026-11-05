@@ -6,7 +6,11 @@ use serde::Deserialize;
 
 use crate::{
     domain::geometry::Point,
-    error::{Error, Result, board_change::BoardChangeError},
+    error::{
+        Error,
+        Result,
+        board_change::{ArrowLook, BoardChangeError},
+    },
     protocol::document::{ELBOW_MIDWAY_CONTROLS, MIDWAY_CONTROLS},
 };
 
@@ -75,10 +79,6 @@ const HEADS: [&str; 17] = [
     "slash",
 ];
 
-const HEADS_EXPECTED: &str = "start,end heads, an empty one keeps that end: none, figma, miro, arc, triangle-filled, triangle, \
-     circle-filled, circle, rhombus-filled, rhombus, stick, stick-stick, triadius, \
-     triadius-stick, triadius-circle, stick-circle or slash";
-
 /// One of the arrowheads the web client draws.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ArrowHead(&'static str);
@@ -105,7 +105,7 @@ impl FromStr for ArrowHeads {
         let bad = || {
             Error::BoardChange(BoardChangeError::NotArrowLook {
                 raw: raw.into(),
-                expected: HEADS_EXPECTED,
+                expected: ArrowLook::Heads,
             })
         };
         let side = |name: &str| match name.trim() {
@@ -126,12 +126,6 @@ impl FromStr for ArrowHeads {
             .ok_or_else(bad)
     }
 }
-
-const BEND_EXPECTED: &str =
-    "a bend: x,y for a straight or curved arrow, x, or ,y for an elbow";
-
-const END_EXPECTED: &str =
-    "an arrow end: object:side (top, right, bottom or left) or x,y";
 
 /// Where an arrow bends: a point, or for an elbow one axis.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -155,7 +149,7 @@ impl Bend {
         let raw = format!("{self}");
         Error::BoardChange(BoardChangeError::NotArrowLook {
             raw,
-            expected: BEND_EXPECTED,
+            expected: ArrowLook::Bend,
         })
     }
 }
@@ -179,7 +173,7 @@ impl FromStr for Bend {
         let bad = || {
             Error::BoardChange(BoardChangeError::NotArrowLook {
                 raw: raw.into(),
-                expected: BEND_EXPECTED,
+                expected: ArrowLook::Bend,
             })
         };
         let axis = |text: &str| match text.trim() {
@@ -202,9 +196,6 @@ impl FromStr for Bend {
     }
 }
 
-const LABEL_EXPECTED: &str =
-    "a label: text, or text@0.5 to place it from 0 (start) to 1 (end)";
-
 /// A text on an arrow and where along the arrow it sits.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Label {
@@ -219,7 +210,7 @@ impl FromStr for Label {
         let bad = || {
             Error::BoardChange(BoardChangeError::NotArrowLook {
                 raw: raw.into(),
-                expected: LABEL_EXPECTED,
+                expected: ArrowLook::Label,
             })
         };
         // BUNDLE: no position means the middle (main.a33651a4.js 166325).
@@ -300,7 +291,7 @@ impl FromStr for ArrowEndEdit {
         let bad = || {
             Error::BoardChange(BoardChangeError::NotArrowLook {
                 raw: raw.into(),
-                expected: END_EXPECTED,
+                expected: ArrowLook::End,
             })
         };
         match raw.rsplit_once(':') {

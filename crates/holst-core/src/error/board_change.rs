@@ -85,6 +85,26 @@ fn short(number: f64) -> impl fmt::Display {
     })
 }
 
+/// What an arrow look should have been when it does not parse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
+pub enum ArrowLook {
+    #[display(
+        "start,end heads, an empty one keeps that end: none, figma, miro, arc, triangle-filled, triangle, \
+         circle-filled, circle, rhombus-filled, rhombus, stick, stick-stick, triadius, \
+         triadius-stick, triadius-circle, stick-circle or slash"
+    )]
+    Heads,
+    #[display("a bend: x,y for a straight or curved arrow, x, or ,y for an elbow")]
+    Bend,
+    #[display("an arrow end: object:side (top, right, bottom or left) or x,y")]
+    End,
+    #[display("a label: text, or text@0.5 to place it from 0 (start) to 1 (end)")]
+    Label,
+    #[display("a box to attach an arrow to")]
+    AttachBox,
+    #[display("an arrow stroke width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17")]
+    StrokeWidth,
+}
 /// Why an object cannot go into a group, as the web client's menu refuses it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
 pub enum GroupRefusal {
@@ -380,7 +400,7 @@ pub enum BoardChangeError {
     NotShade { raw: String, family: &'static str },
 
     #[error("\"{raw}\" is not {expected}")]
-    NotArrowLook { raw: String, expected: &'static str },
+    NotArrowLook { raw: String, expected: ArrowLook },
     #[error("\"{raw}\" is not a valid {field}: expected {expected}")]
     BadValue {
         field: &'static str,
@@ -504,6 +524,7 @@ pub(super) mod tests {
         error::{
             Error,
             board_change::{
+                ArrowLook,
                 BoardChangeError,
                 BoardChangeErrorDiscriminants,
                 FileState,
@@ -590,7 +611,7 @@ pub(super) mod tests {
             },
             BoardChangeError::NotArrowLook {
                 raw: text(),
-                expected: "x",
+                expected: ArrowLook::Heads,
             },
             BoardChangeError::BadValue {
                 field: "x",
@@ -681,6 +702,39 @@ pub(super) mod tests {
         #[case] said: &str,
     ) {
         assert_eq!(refusal.to_string(), said);
+    }
+
+    #[rstest]
+    #[case::heads(
+        ArrowLook::Heads,
+        "start,end heads, an empty one keeps that end: none, figma, miro, arc, triangle-filled, triangle, circle-filled, circle, rhombus-filled, rhombus, stick, stick-stick, triadius, triadius-stick, triadius-circle, stick-circle or slash"
+    )]
+    #[case::bend(
+        ArrowLook::Bend,
+        "a bend: x,y for a straight or curved arrow, x, or ,y for an elbow"
+    )]
+    #[case::end(
+        ArrowLook::End,
+        "an arrow end: object:side (top, right, bottom or left) or x,y"
+    )]
+    #[case::label(
+        ArrowLook::Label,
+        "a label: text, or text@0.5 to place it from 0 (start) to 1 (end)"
+    )]
+    #[case::attach_box(ArrowLook::AttachBox, "a box to attach an arrow to")]
+    #[case::stroke_width(
+        ArrowLook::StrokeWidth,
+        "an arrow stroke width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17"
+    )]
+    fn an_arrow_look_says_what_it_expected(
+        #[case] expected: ArrowLook,
+        #[case] said: &str,
+    ) {
+        let error = BoardChangeError::NotArrowLook {
+            raw: "x".into(),
+            expected,
+        };
+        assert_eq!(error.to_string(), format!("\"x\" is not {said}"));
     }
 
     #[rstest]
