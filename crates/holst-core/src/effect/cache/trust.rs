@@ -140,7 +140,8 @@ impl<Trust> CachedCopy<Trust> {
     /// Returns the copy with its document built by `restore`.
     ///
     /// # Errors
-    /// [`StaleCopy::Corrupt`] for a missing or broken state; broken is dropped.
+    /// [`StaleCopy::Corrupt`] for a missing or broken state; broken is dropped,
+    /// not waiting for the lock.
     pub fn with_document(
         self,
         cache: &dyn CachePort,
@@ -154,12 +155,7 @@ impl<Trust> CachedCopy<Trust> {
                     err = %crate::error::chained(err),
                     "dropped a cached board that does not decode"
                 );
-                cache
-                    .discard(&self.board)
-                    .inspect_err(
-                        |discard_error| tracing::debug!(%discard_error, "board cache: not updated"),
-                    )
-                    .unwrap_or_default();
+                cache.discard_later(&self.board);
             })
             .map_err(|_| StaleCopy::Corrupt)?;
         Ok(self.holding(document))

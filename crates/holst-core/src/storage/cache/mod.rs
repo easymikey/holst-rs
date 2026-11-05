@@ -4,6 +4,7 @@ pub mod account;
 pub mod disk;
 pub mod files;
 #[cfg(test)] pub(crate) mod memory;
+#[cfg(test)] mod reader_tests;
 #[cfg(test)] pub(crate) mod tests;
 
 use std::{

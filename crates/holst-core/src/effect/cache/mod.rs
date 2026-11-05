@@ -71,6 +71,15 @@ pub trait CachePort: Send + Sync {
     /// # Errors
     /// [`crate::error::local_data::LocalDataError::FileRemove`].
     fn discard(&self, board: &str) -> Result<()>;
+    /// [`CachePort::discard`] for a reader's thread: it never waits for the
+    /// lock. A cache whose `discard` does not wait keeps this default.
+    fn discard_later(&self, board: &str) {
+        self.discard(board)
+            .inspect_err(
+                |err| tracing::debug!(err = %crate::error::chained(err), "board cache: a bad board not dropped"),
+            )
+            .unwrap_or_default();
+    }
     /// Remove what is unused for a month or over the limit; what went.
     ///
     /// # Errors

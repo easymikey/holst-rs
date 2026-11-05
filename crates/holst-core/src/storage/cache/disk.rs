@@ -313,22 +313,7 @@ impl CachePort for Cache {
         let state = compression::uncompressed(&packed).map(Cow::into_owned).ok();
         if state.is_none() {
             tracing::debug!(board, "dropped a cached board that does not unpack");
-            // The drop may wait for the lock: not on the caller's thread.
-            let (cache, board) = (self.clone(), board.to_owned());
-            std::thread::Builder::new()
-                .spawn(move || {
-                    cache
-                        .discard(&board)
-                        .inspect_err(
-                            |err| tracing::debug!(err = %crate::error::chained(err), "board cache: a bad board not dropped"),
-                        )
-                        .unwrap_or_default();
-                })
-                .inspect_err(
-                    |err| tracing::debug!(%err, "board cache: a bad board not dropped"),
-                )
-                .map(drop)
-                .unwrap_or_default();
+            self.discard_later(board);
         }
         state
     }
@@ -370,6 +355,24 @@ impl CachePort for Cache {
             let _lock = self.locked()?;
             remove_dir(&dir)
         })
+    }
+
+    fn discard_later(&self, board: &str) {
+        let (cache, board) = (self.clone(), board.to_owned());
+        std::thread::Builder::new()
+            .spawn(move || {
+                cache
+                    .discard(&board)
+                    .inspect_err(
+                        |err| tracing::debug!(err = %crate::error::chained(err), "board cache: a bad board not dropped"),
+                    )
+                    .unwrap_or_default();
+            })
+            .inspect_err(
+                |err| tracing::debug!(%err, "board cache: a bad board not dropped"),
+            )
+            .map(drop)
+            .unwrap_or_default();
     }
 
     fn evict(&self) -> Result<CacheUsage> {
