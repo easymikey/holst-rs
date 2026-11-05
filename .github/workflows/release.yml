@@ -65,8 +65,17 @@ jobs:
       - run: cargo bin just dist ${{ matrix.target }}
       - run: cargo bin just upload "$TAG" ${{ matrix.target }}
 
-  homebrew:
+  publish:
     needs: [draft, dist]
+    if: ${{ !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh release edit "$TAG" --draft=false
+
+  # After publish: the formula reads the archive checksums, and a draft's assets are not public.
+  homebrew:
+    needs: [draft, publish]
+    if: needs.draft.outputs.binaries == 'true'
     runs-on: ubuntu-latest
     # The cli and mcp tags are pushed together; their tap pushes must not race.
     concurrency:
@@ -78,10 +87,3 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - run: cargo bin just homebrew "$TAG"
-
-  publish:
-    needs: [draft, dist, homebrew]
-    if: ${{ !cancelled() && !failure() }}
-    runs-on: ubuntu-latest
-    steps:
-      - run: gh release edit "$TAG" --draft=false
