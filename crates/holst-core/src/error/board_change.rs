@@ -105,6 +105,44 @@ pub enum ArrowLook {
     #[display("an arrow stroke width: 1, 1.5, 2, 4, 5, 6, 9, 13 or 17")]
     StrokeWidth,
 }
+/// The rule a field value breaks, with the field it belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
+pub enum ValueRule {
+    #[display("drawing point count: expected 1 to 10000")]
+    DrawingPointCount,
+    #[display("drawing stroke width: expected 1 to 30")]
+    DrawingStrokeWidthRange,
+    #[display("drawing stroke width: expected a whole number 1 to 30")]
+    DrawingStrokeWidthWhole,
+    #[display("shape stroke width: expected a whole number 0 to 10")]
+    ShapeStrokeWidth,
+    #[display(
+        "color: expected one of white1, gray3, red3, orange3, yellow3, green3, blue3, violet3"
+    )]
+    DocumentColor,
+    #[display(
+        "color: expected one of gray12, gray8, red9, orange9, yellow9, lime9, green9, mint9, blue9, indigo9, violet9, pink9"
+    )]
+    IconColor,
+    #[display(
+        "color: expected one of gray, green, yellow, orange, red, violet, blue, sky, lime, pink"
+    )]
+    TaskColor,
+    #[display("due day: expected on or after the start day")]
+    DueDay,
+    #[display(
+        "task status: expected backlog, to-do, in-progress, done, canceled, or the title of a status of the board"
+    )]
+    TaskStatus,
+    #[display("kanban: expected a kanban")]
+    Kanban,
+    #[display("{_0}: expected a card that is in a kanban")]
+    CardInKanban(ObjectField),
+    #[display("column: expected the title of a column of the kanban")]
+    Column,
+    #[display("swimlane: expected the title of a swimlane of the kanban")]
+    Swimlane,
+}
 /// Why an object cannot go into a group, as the web client's menu refuses it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
 pub enum GroupRefusal {
@@ -401,12 +439,8 @@ pub enum BoardChangeError {
 
     #[error("\"{raw}\" is not {expected}")]
     NotArrowLook { raw: String, expected: ArrowLook },
-    #[error("\"{raw}\" is not a valid {field}: expected {expected}")]
-    BadValue {
-        field: &'static str,
-        raw: String,
-        expected: &'static str,
-    },
+    #[error("\"{raw}\" is not a valid {rule}")]
+    BadValue { raw: String, rule: ValueRule },
 
     #[error("a sticker is square or twice as wide as tall, not {width}×{height}")]
     StickerSize { width: f64, height: f64 },
@@ -536,6 +570,7 @@ pub(super) mod tests {
                 ObjectField,
                 OffBoardValue,
                 TableRefusal,
+                ValueRule,
             },
             hint::{Surface, decided::assert_all_listed},
         },
@@ -614,9 +649,8 @@ pub(super) mod tests {
                 expected: ArrowLook::Heads,
             },
             BoardChangeError::BadValue {
-                field: "x",
                 raw: text(),
-                expected: "x",
+                rule: ValueRule::DueDay,
             },
             BoardChangeError::StickerSize {
                 width: 1.0,
@@ -735,6 +769,61 @@ pub(super) mod tests {
             expected,
         };
         assert_eq!(error.to_string(), format!("\"x\" is not {said}"));
+    }
+
+    #[rstest]
+    #[case::point_count(
+        ValueRule::DrawingPointCount,
+        "drawing point count: expected 1 to 10000"
+    )]
+    #[case::pen_range(
+        ValueRule::DrawingStrokeWidthRange,
+        "drawing stroke width: expected 1 to 30"
+    )]
+    #[case::pen_whole(
+        ValueRule::DrawingStrokeWidthWhole,
+        "drawing stroke width: expected a whole number 1 to 30"
+    )]
+    #[case::shape_width(
+        ValueRule::ShapeStrokeWidth,
+        "shape stroke width: expected a whole number 0 to 10"
+    )]
+    #[case::document_color(
+        ValueRule::DocumentColor,
+        "color: expected one of white1, gray3, red3, orange3, yellow3, green3, blue3, violet3"
+    )]
+    #[case::icon_color(
+        ValueRule::IconColor,
+        "color: expected one of gray12, gray8, red9, orange9, yellow9, lime9, green9, mint9, blue9, indigo9, violet9, pink9"
+    )]
+    #[case::task_color(
+        ValueRule::TaskColor,
+        "color: expected one of gray, green, yellow, orange, red, violet, blue, sky, lime, pink"
+    )]
+    #[case::due_day(ValueRule::DueDay, "due day: expected on or after the start day")]
+    #[case::task_status(
+        ValueRule::TaskStatus,
+        "task status: expected backlog, to-do, in-progress, done, canceled, or the title of a status of the board"
+    )]
+    #[case::kanban(ValueRule::Kanban, "kanban: expected a kanban")]
+    #[case::card_in_kanban(
+        ValueRule::CardInKanban(ObjectField::Column),
+        "column: expected a card that is in a kanban"
+    )]
+    #[case::column(
+        ValueRule::Column,
+        "column: expected the title of a column of the kanban"
+    )]
+    #[case::swimlane(
+        ValueRule::Swimlane,
+        "swimlane: expected the title of a swimlane of the kanban"
+    )]
+    fn a_bad_value_says_its_rule(#[case] rule: ValueRule, #[case] said: &str) {
+        let error = BoardChangeError::BadValue {
+            raw: "x".into(),
+            rule,
+        };
+        assert_eq!(error.to_string(), format!("\"x\" is not a valid {said}"));
     }
 
     #[rstest]

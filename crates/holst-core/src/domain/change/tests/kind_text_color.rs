@@ -10,7 +10,6 @@ use crate::{
     domain::{
         board::text_of,
         change::{
-            check::{DOCUMENT_COLORS, ICON_COLORS, TASK_COLORS},
             kind_edit::{KindEdit, TaskEdit},
             value::ObjectPatch,
         },
@@ -18,7 +17,7 @@ use crate::{
         palette::Color,
         rich_text::TextFormat,
     },
-    error::Result,
+    error::{Result, board_change::ValueRule},
 };
 
 fn applied(stored: &Value, patch: ObjectPatch) -> Result<Doc> {
@@ -229,13 +228,13 @@ fn a_palette_token_is_refused_on_a_task_with_the_names() -> Result<()> {
 
 #[test]
 fn the_sets_a_refusal_names_are_the_sets_the_kinds_offer() {
-    let said = |names: &[&str]| format!("one of {}", names.join(", "));
+    let said = |names: &[&str]| format!("color: expected one of {}", names.join(", "));
     let tasks = task::COLORS.map(|(name, _)| name);
     assert_eq!(
         (
-            DOCUMENT_COLORS.to_owned(),
-            ICON_COLORS.to_owned(),
-            TASK_COLORS.to_owned()
+            ValueRule::DocumentColor.to_string(),
+            ValueRule::IconColor.to_string(),
+            ValueRule::TaskColor.to_string()
         ),
         (said(&document::COLORS), said(&icon::COLORS), said(&tasks))
     );

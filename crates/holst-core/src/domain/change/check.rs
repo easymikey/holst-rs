@@ -54,6 +54,7 @@ use crate::{
             MoveRefusal,
             ObjectField,
             OffBoardValue,
+            ValueRule,
         },
     },
     protocol::document::{
@@ -1288,25 +1289,17 @@ fn drawing_fits(new: &NewObject) -> Result<()> {
 }
 
 fn stroke_fits(points: &[Point], width: f64) -> Result<()> {
-    let refused = |field, raw: String, expected| {
-        Error::BoardChange(BoardChangeError::BadValue {
-            field,
-            raw,
-            expected,
-        })
+    let refused = |raw: String, rule| {
+        Error::BoardChange(BoardChangeError::BadValue { raw, rule })
     };
     (1..=MAX_STROKE_POINTS)
         .contains(&points.len())
         .then_some(())
         .ok_or_else(|| {
-            refused(
-                "drawing point count",
-                points.len().to_string(),
-                "1 to 10000",
-            )
+            refused(points.len().to_string(), ValueRule::DrawingPointCount)
         })?;
     (1.0..=30.0).contains(&width).then_some(()).ok_or_else(|| {
-        refused("drawing stroke width", format!("{width}"), "1 to 30")
+        refused(format!("{width}"), ValueRule::DrawingStrokeWidthRange)
     })?;
     points
         .iter()
@@ -1624,11 +1617,10 @@ fn fits(kind: &ObjectKind, held: Option<&Held>, patch: &ObjectPatch) -> Result<(
                 color: Some(asked), ..
             },
             _,
-        ) if let Some(expected) = outside_picker(kind, asked) => {
+        ) if let Some(rule) = outside_picker(kind, asked) => {
             Err(Error::BoardChange(BoardChangeError::BadValue {
-                field: "color",
                 raw: asked.as_str().to_owned(),
-                expected,
+                rule,
             }))
         }
         (ObjectPatch { width: Some(_), .. }, _) if *kind != ObjectKind::Text => {
@@ -1735,14 +1727,6 @@ fn takes_color(kind: &ObjectKind) -> bool {
         || stored_as(kind, ICON)
 }
 
-/// The colours a document's toolbar offers, as [`document::COLORS`].
-pub(super) const DOCUMENT_COLORS: &str =
-    "one of white1, gray3, red3, orange3, yellow3, green3, blue3, violet3";
-/// The colours an icon's picker offers, as [`icon::COLORS`].
-pub(super) const ICON_COLORS: &str = "one of gray12, gray8, red9, orange9, yellow9, lime9, green9, mint9, blue9, indigo9, violet9, pink9";
-/// The names of a task card's colours; a palette token is none.
-pub(super) const TASK_COLORS: &str =
-    "one of gray, green, yellow, orange, red, violet, blue, sky, lime, pink";
 /// The stored type of an icon.
 const ICON: &str = "phosphor-icon";
 
@@ -1752,15 +1736,15 @@ fn stored_as(kind: &ObjectKind, name: &str) -> bool {
 }
 
 /// What a kind offers instead, when the colour is not one it takes.
-fn outside_picker(kind: &ObjectKind, color: &Color) -> Option<&'static str> {
+fn outside_picker(kind: &ObjectKind, color: &Color) -> Option<ValueRule> {
     let token = color.as_str();
     match kind {
         ObjectKind::Document => {
-            (!document::COLORS.contains(&token)).then_some(DOCUMENT_COLORS)
+            (!document::COLORS.contains(&token)).then_some(ValueRule::DocumentColor)
         }
-        ObjectKind::Task => Some(TASK_COLORS),
+        ObjectKind::Task => Some(ValueRule::TaskColor),
         ObjectKind::Other(name) if name == ICON => {
-            (!icon::COLORS.contains(&token)).then_some(ICON_COLORS)
+            (!icon::COLORS.contains(&token)).then_some(ValueRule::IconColor)
         }
         ObjectKind::Sticker
         | ObjectKind::StickerStack
@@ -1834,11 +1818,10 @@ fn unfit_field(
 /// nine for arrows.
 fn stroke_width_fits(kind: &ObjectKind, width: f64) -> Result<()> {
     let raw = format!("{width}");
-    let refused = |field, expected| {
+    let refused = |rule| {
         Error::BoardChange(BoardChangeError::BadValue {
-            field,
             raw: raw.clone(),
-            expected,
+            rule,
         })
     };
     let whole = width.fract() == 0.0 && (0.0..=10.0).contains(&width);
@@ -1850,15 +1833,13 @@ fn stroke_width_fits(kind: &ObjectKind, width: f64) -> Result<()> {
     ) {
         _ if *kind == ObjectKind::Drawing => pen
             .then_some(())
-            .ok_or_else(|| refused("drawing stroke width", "a whole number 1 to 30")),
+            .ok_or_else(|| refused(ValueRule::DrawingStrokeWidthWhole)),
         (true, true, _) | (false, _, true) => Ok(()),
         (true, false, _) => Err(Error::BoardChange(BoardChangeError::NotArrowLook {
             raw: raw.clone(),
             expected: ArrowLook::StrokeWidth,
         })),
-        (false, _, false) => {
-            Err(refused("shape stroke width", "a whole number 0 to 10"))
-        }
+        (false, _, false) => Err(refused(ValueRule::ShapeStrokeWidth)),
     }
 }
 

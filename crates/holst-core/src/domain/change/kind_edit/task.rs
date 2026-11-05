@@ -38,7 +38,7 @@ use crate::{
     error::{
         Error,
         Result,
-        board_change::{BoardChangeError, ObjectField},
+        board_change::{BoardChangeError, ObjectField, ValueRule},
     },
     protocol::document::{COLOR, TASK_INFO_STORE},
 };
@@ -121,9 +121,8 @@ pub(super) fn check(
         .filter(|(start, due)| edit.schedule_given() && start > due)
         .map_or(Ok(()), |(_, due)| {
             Err(Error::BoardChange(BoardChangeError::BadValue {
-                field: "due day",
                 raw: due.as_str().to_owned(),
-                expected: "on or after the start day",
+                rule: ValueRule::DueDay,
             }))
         })
 }
@@ -141,9 +140,8 @@ fn status_field(
             let id = task::status_id(given, &task::statuses_in(transaction, &store))
                 .ok_or_else(|| {
                     Error::BoardChange(BoardChangeError::BadValue {
-                        field: "task status",
                         raw: given.clone(),
-                        expected: "backlog, to-do, in-progress, done, canceled, or the title of a status of the board",
+                        rule: ValueRule::TaskStatus,
                     })
                 })?;
             task::status_entries()

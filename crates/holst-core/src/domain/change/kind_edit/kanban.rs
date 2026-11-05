@@ -21,14 +21,10 @@ use crate::{
     error::{
         Error,
         Result,
-        board_change::{BoardChangeError, ObjectField},
+        board_change::{BoardChangeError, ObjectField, ValueRule},
     },
     protocol::document::{INDEX, PARENT_ID, POSITION, SCALE, WIDTH, X, Y},
 };
-
-pub(super) const COLUMN: &str = "column";
-const SWIMLANE: &str = "swimlane";
-const KANBAN: &str = "kanban";
 
 /// Where an edit puts a task card.
 #[derive(Debug, Clone, PartialEq)]
@@ -76,12 +72,8 @@ impl CardMove {
     }
 }
 
-fn refused(field: &'static str, raw: String, expected: &'static str) -> Error {
-    Error::BoardChange(BoardChangeError::BadValue {
-        field,
-        raw,
-        expected,
-    })
+fn refused(raw: String, rule: ValueRule) -> Error {
+    Error::BoardChange(BoardChangeError::BadValue { raw, rule })
 }
 
 /// The id of `holder` when it is a kanban.
@@ -102,7 +94,7 @@ fn named(states: &HashMap<String, Value>, reference: &str) -> Result<String> {
     let id = find(states, reference)?;
     kanban_in(states, Some(&id))
         .map(str::to_owned)
-        .ok_or_else(|| refused(KANBAN, reference.to_owned(), "a kanban"))
+        .ok_or_else(|| refused(reference.to_owned(), ValueRule::Kanban))
 }
 
 pub(super) fn check(
@@ -113,13 +105,9 @@ pub(super) fn check(
 ) -> Result<()> {
     only(kind, &ObjectKind::Task, edit.field())?;
     let card = states.get(id).unwrap_or(&Value::Null);
-    let inside = held_by(states, card).map(|_| ()).ok_or_else(|| {
-        refused(
-            edit.field().into(),
-            edit.raw(),
-            "a card that is in a kanban",
-        )
-    });
+    let inside = held_by(states, card)
+        .map(|_| ())
+        .ok_or_else(|| refused(edit.raw(), ValueRule::CardInKanban(edit.field())));
     match edit {
         CardMove::Into {
             kanban: Some(reference),
@@ -131,7 +119,7 @@ pub(super) fn check(
 
 /// Cell `given` titles (ignoring case), else `kept`, else the first.
 fn picked(
-    (name, expected): (&'static str, &'static str),
+    rule: ValueRule,
     given: Option<&str>,
     (kept, cells): (Option<&str>, &[(String, String)]),
 ) -> Result<String> {
@@ -150,7 +138,7 @@ fn picked(
     );
     found
         .map(|(id, _)| id.clone())
-        .ok_or_else(|| refused(name, given.unwrap_or_default().to_owned(), expected))
+        .ok_or_else(|| refused(given.unwrap_or_default().to_owned(), rule))
 }
 
 /// Card put last in `kanban`'s cell: holder, place, card scale and width.
@@ -173,12 +161,12 @@ fn into_fields(
     let own = held_by(states, card) == Some(kanban.as_str());
     let kept = |field: &str| card.get(field).and_then(Value::as_str).filter(|_| own);
     let column = picked(
-        (COLUMN, "the title of a column of the kanban"),
+        ValueRule::Column,
         column.as_deref(),
         (kept(COLUMN_ID), &columns_in(transaction, holder)),
     )?;
     let swimlane = picked(
-        (SWIMLANE, "the title of a swimlane of the kanban"),
+        ValueRule::Swimlane,
         swimlane.as_deref(),
         (kept(SWIMLANE_ID), &swimlanes_in(transaction, holder)),
     )?;
