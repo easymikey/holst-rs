@@ -88,6 +88,8 @@ impl Transport for ReqwestTransport {
         request: &'a HttpRequest,
     ) -> BoxFuture<'a, Result<HttpResponse>> {
         Box::pin(async move {
+            #[cfg(any(test, feature = "fake"))]
+            refuse_remote(&request.url);
             let builder = self
                 .http
                 .request(request.method.as_reqwest(), request.url.clone())
@@ -136,6 +138,22 @@ impl HttpMethod {
             HttpMethod::Delete => reqwest::Method::DELETE,
         }
     }
+}
+
+/// Test builds (unit tests and the `fake` feature, which every test binary
+/// enables) reach only loopback fakes, never the real server.
+#[cfg(any(test, feature = "fake"))]
+fn refuse_remote(url: &reqwest::Url) {
+    let local = match url.host() {
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        Some(url::Host::Domain(name)) => name == "localhost",
+        None => false,
+    };
+    assert!(
+        local,
+        "test build refuses to send to \"{url}\"; give the test a fake base"
+    );
 }
 
 /// How far a failed exchange got.
@@ -195,11 +213,17 @@ fn append_limited(mut body: Vec<u8>, chunk: &[u8], limit: usize) -> Result<Vec<u
 
 #[cfg(test)]
 mod tests {
+    use std::panic::AssertUnwindSafe;
+
+    use futures_util::FutureExt as _;
+    use reqwest::header::HeaderMap;
     use rstest::rstest;
 
-    use super::{Arrival, append_limited, is_unsure_write};
+    use super::{Arrival, ReqwestTransport, append_limited, is_unsure_write};
     use crate::{
-        effect::http::HttpMethod,
+        Result,
+        domain::url::{BaseUrl, DEFAULT_BASE},
+        effect::http::{HttpMethod, HttpRequest, Transport as _},
         error::{Error, http::HttpError},
     };
 
@@ -250,5 +274,28 @@ mod tests {
         #[case] applied: Applied,
     ) {
         assert_eq!(is_unsure_write(method, reach), applied == Applied::Unknown);
+    }
+
+    #[rstest]
+    #[case::default_base(DEFAULT_BASE)]
+    #[case::other_host("https://holst-guard.invalid")]
+    #[tokio::test]
+    async fn test_build_refuses_a_remote_host(#[case] base: &str) -> Result<()> {
+        let request = HttpRequest {
+            method: HttpMethod::Get,
+            url: base.parse::<BaseUrl>()?.url,
+            headers: HeaderMap::new(),
+            body: None,
+        };
+        let transport = ReqwestTransport::new("holst-rs-test")?;
+        let sent = AssertUnwindSafe(transport.send(&request))
+            .catch_unwind()
+            .await;
+        let message = sent.err().and_then(|panic| panic.downcast::<String>().ok());
+        assert!(
+            message.is_some_and(|text| text.contains("test build refuses to send")),
+            "{base} was not refused"
+        );
+        Ok(())
     }
 }
