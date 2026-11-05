@@ -49,7 +49,7 @@ rstest.workspace = true
 insta.workspace = true
 proptest.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "time", "test-util"] }
-holst-core = { workspace = true, features = ["fake"] }
+holst-core = { path = ".", features = ["fake"] }
 
 [[test]]
 name = "main"
