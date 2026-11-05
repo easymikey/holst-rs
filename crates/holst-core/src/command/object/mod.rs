@@ -451,8 +451,9 @@ pub struct GetArgs {
         help = "The local folder it goes into under its own name; ~/Downloads by default"
     )]
     pub dir: Option<String>,
-    #[argument(help = "Ignore the cached copy and download the board again")]
-    pub refresh: bool,
+    #[serde(flatten)]
+    #[argument(flatten)]
+    pub caching: Caching,
 }
 
 #[cfg(test)]

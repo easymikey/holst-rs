@@ -11,7 +11,7 @@ use crate::{
             picture::{Delivery, Place},
             show::{Loading, board_id, through_cache},
         },
-        board_load::CacheUse,
+        loading::cache_use,
         object::{
             GetArgs,
             change::{load_board, named},
@@ -69,11 +69,7 @@ pub async fn get(
     downloads: Option<&Path>,
     args: &GetArgs,
 ) -> Result<Downloaded> {
-    let cache_use = if args.refresh {
-        CacheUse::Refresh
-    } else {
-        CacheUse::Use
-    };
+    let cache_use = cache_use(&args.caching);
     through_cache(client, cache, cache_use, async |loading| {
         downloaded(client, loading, downloads, args).await
     })
@@ -181,6 +177,7 @@ where
 /// A file and a directory are two places for one download.
 impl Validate for GetArgs {
     fn validate(&self) -> std::result::Result<(), InputError> {
+        self.caching.validate()?;
         if self.file.is_some() && self.dir.is_some() {
             Err(InputError::Conflict {
                 flag: Flag::Dir,

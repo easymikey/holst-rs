@@ -1050,6 +1050,9 @@ expression: "*holst.tools"
           },
           "type": "array"
         },
+        "offline": {
+          "type": "boolean"
+        },
         "on": {
           "description": "Target of a reaction stamp.",
           "type": "string"
