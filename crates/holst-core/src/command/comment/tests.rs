@@ -356,3 +356,45 @@ mod object_references {
         }
     }
 }
+
+mod thread_removal {
+    use secrecy::SecretString;
+    use serde_json::json;
+
+    use super::args_of;
+    use crate::{
+        command::{change::ChangeReport, comment::RemoveArgs, login::connect},
+        domain::session::Session,
+        fake::{ACCEPTED_COOKIES, ACCEPTED_TOKEN, Fake, Fixture, FixtureThread},
+        system::{clock::SystemClock, id::RandomIds},
+    };
+
+    #[tokio::test]
+    async fn a_thread_with_one_reply_is_counted_as_1_reply() -> crate::Result<()> {
+        let thread = FixtureThread::new("t1", 1, "Is this final?").reply(2, "Yes");
+        let fake = Fake::start(
+            Fixture::default()
+                .workspace("Team")
+                .board("Plans", "Team", None)
+                .thread("Plans", thread),
+        )
+        .await?;
+        let client = connect(
+            Some(Session::with_cookies(
+                SecretString::from(ACCEPTED_TOKEN),
+                ACCEPTED_COOKIES.parse().unwrap_or_default(),
+            )),
+            fake.base_url().parse()?,
+            SystemClock,
+            RandomIds,
+        )?;
+        let args = args_of::<RemoveArgs>(&json!({ "board": "Plans", "thread": "t1" }))?;
+        let report = super::super::rm(&client, &args).await?;
+        let ChangeReport::Held { needs, .. } = report.outcome else {
+            panic!("the deletion was not held back");
+        };
+        assert!(needs.contains("with 1 reply"), "{needs}");
+        assert!(!needs.contains("1 replies"), "{needs}");
+        Ok(())
+    }
+}
