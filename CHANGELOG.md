@@ -8,6 +8,10 @@
 - On MCP, the hint of an error arrives as a separate `hint:` line.
 - New hints: how to name an object, how to shrink a picture too large to draw, how to import into a non-empty board, and what to change when `--no-compress` meets a `.gz` name.
 
+- On MCP, `output: json` also works on `workspace`, `template`, `comment` and `backup`.
+- On MCP, `board snap` takes `file` to write the picture to disk.
+- `object get --offline` (MCP `offline`) answers from the cached board.
+- `@N` from the last `holst b ls` or `holst o ls` names a board or an object in any later command.
 ### Changed
 - Error messages say the fact alone and the how-to moves to the hint line; both surfaces now use the same message, and only the hint names `--flag` (CLI) or `argument` (MCP).
 - A target board that already has objects: "the target board already has N objects: only an empty board takes an import; nothing was changed", with the hint to import into an empty board or merge.
@@ -32,6 +36,11 @@
 - An unknown member lists the choices: `workspace member "Zed" not found; available: A, B`.
 - The messages of `search`, `board edit`, `board snap`, `board import`, `comment` and `template ls` use plain words, for example "the file must be named with .svg or .png".
 
+- `template create` takes a frame or object link as the board and makes the template from that part.
+### Fixed
+- An import whose new board cannot be cleaned up exits with the code of the failed cleanup request (69 for a refusal, 75 for a retryable failure), not 64.
+- A cached board that does not decode is dropped in the background, so a read never waits for the cache lock.
+- Deleting a comment thread with one reply asks for confirmation with "1 reply", not "1 replies".
 ## 0.4.0 (2026-10-30)
 
 ### Added
