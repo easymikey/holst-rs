@@ -118,6 +118,39 @@ fn an_object_is_named_by_its_handle_from_the_last_listing() -> TestResult {
 }
 
 #[test]
+fn an_object_handle_used_with_another_board_is_refused() -> TestResult {
+    let fake = fake::start()?;
+    let base = fake.base_url();
+    let dir = signed_home(base)?;
+    let add = holst_in(
+        base,
+        &dir,
+        &["object", "add", "sticker", "Plans", "one"],
+        "",
+    )?;
+    assert_eq!(add.status.code(), Some(0), "{}", stderr(&add));
+    let listing = holst_in(base, &dir, &["object", "ls", "Plans"], "")?;
+    assert_eq!(listing.status.code(), Some(0), "{}", stderr(&listing));
+    let wrong = holst_in(
+        base,
+        &dir,
+        &["object", "get", "Old roadmap", "--object", "@1"],
+        "",
+    )?;
+    assert_eq!(wrong.status.code(), Some(64), "{}", stderr(&wrong));
+    let message = stderr(&wrong);
+    assert!(
+        message
+            .contains(r#"@1 is from the listing of board "Plans", not "Old roadmap""#),
+        "{message}"
+    );
+    assert!(
+        message.contains("run `holst o ls Old roadmap` first"),
+        "{message}"
+    );
+    Ok(())
+}
+#[test]
 fn tree_with_trash_shows_the_trash() -> TestResult {
     let fake = fake::start()?;
     let base = fake.base_url();
