@@ -256,12 +256,15 @@ mod tests {
         },
         error::{
             Result,
-            confirmation::{ChangeRisk, Unconfirmed},
+            confirmation::{RiskyChange, Unconfirmed},
         },
     };
 
     fn risky() -> Unconfirmed {
-        Unconfirmed::new("deleting it", ChangeRisk::Irreversible)
+        RiskyChange::DeleteNode {
+            node: "it".to_owned(),
+        }
+        .into()
     }
 
     #[test]
@@ -273,7 +276,7 @@ mod tests {
         );
         assert_eq!(
             serde_json::to_value(stays.err())?,
-            json!({ "status": "held", "needs": "deleting it cannot be undone" })
+            json!({ "status": "held", "needs": "deleting it for good cannot be undone" })
         );
         Ok(())
     }

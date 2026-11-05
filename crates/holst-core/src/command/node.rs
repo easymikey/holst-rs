@@ -28,7 +28,7 @@ use crate::{
     error::{
         Error,
         Result,
-        confirmation::{ChangeRisk, Unconfirmed},
+        confirmation::{RiskyChange, Unconfirmed},
         http::HttpError,
         input::InputError,
         lookup::{LookupError, LookupKind, LookupMiss},
@@ -314,13 +314,7 @@ impl LocatedNode {
     pub fn contents_unconfirmed(&self) -> Option<Unconfirmed> {
         Some(self.boards_along)
             .filter(|&boards| boards > 0)
-            .map(|boards| {
-                let counted = counted(boards);
-                Unconfirmed {
-                    change: format!("moving a folder with {counted}").into(),
-                    risk: ChangeRisk::Contents,
-                }
-            })
+            .map(|boards| RiskyChange::MoveFolder { boards }.into())
     }
 
     /// The request that moves the node to the trash.
@@ -370,13 +364,6 @@ impl LocatedNode {
 
 /// The middle of the client's 12 345 plus 0 to 10 000 above the first sibling.
 const FIRST_STEP: f64 = 17_345.0;
-
-fn counted(boards: usize) -> String {
-    match boards {
-        1 => "1 board".to_owned(),
-        boards => format!("{boards} boards"),
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -512,7 +499,7 @@ mod tests {
         let node = located(&id.parse()?, workspace()?, index()?)?;
         let refusal = node
             .contents_unconfirmed()
-            .map(|unconfirmed| unconfirmed.change.into_owned());
+            .map(|unconfirmed| unconfirmed.change.to_string());
         assert_eq!(refusal.as_deref(), action);
         Ok(())
     }

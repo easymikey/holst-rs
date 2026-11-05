@@ -7,7 +7,7 @@ use crate::{
         kinds::kanban,
     },
     effect::board_write::WriteMode,
-    error::confirmation::{ChangeRisk, Unconfirmed},
+    error::confirmation::{RiskyChange, Unconfirmed},
 };
 
 /// Whether a built change may go out; if not, it stays unsent.
@@ -50,14 +50,14 @@ pub fn unless_confirmed(
 }
 
 /// Kind word and count of removals after a first frame, group or kanban.
-fn frame_content_count(touched: &[ChangedObject]) -> Option<(&str, usize)> {
+fn frame_content_count(touched: &[ChangedObject]) -> Option<(ObjectKind, usize)> {
     let more = touched
         .iter()
         .skip(1)
         .filter(|object| object.change == ObjectChangeKind::Removed)
         .count();
     match (touched.first().map(|object| &object.kind), more) {
-        (Some(kind), 1..) if holds_content(kind) => Some((kind.as_str(), more)),
+        (Some(kind), 1..) if holds_content(kind) => Some((kind.clone(), more)),
         (Some(_) | None, _) => None,
     }
 }
@@ -70,13 +70,8 @@ fn holds_content(kind: &ObjectKind) -> bool {
 /// Refuses a frame, group or kanban removal with objects, unasked; else none.
 #[must_use]
 pub fn frame_content_unconfirmed(touched: &[ChangedObject]) -> Option<Unconfirmed> {
-    frame_content_count(touched).map(|(kind, more)| Unconfirmed {
-        change: match more {
-            1 => format!("removing the {kind} and 1 object with it").into(),
-            more => format!("removing the {kind} and {more} objects with it").into(),
-        },
-        risk: ChangeRisk::Irreversible,
-    })
+    frame_content_count(touched)
+        .map(|(kind, objects)| RiskyChange::RemoveContainer { kind, objects }.into())
 }
 
 /// Refuses cell removal unasked when a cell's fields name `text`; else none.
@@ -91,17 +86,7 @@ pub fn cell_text_unconfirmed(touched: &[ChangedObject]) -> Option<Unconfirmed> {
                     || object.fields.contains(&"text cleared"))
         })
         .count();
-    match cells {
-        0 => None,
-        1 => Some(Unconfirmed::new(
-            "removing 1 table cell with text",
-            ChangeRisk::Contents,
-        )),
-        cells => Some(Unconfirmed::new(
-            format!("removing {cells} table cells with text"),
-            ChangeRisk::Contents,
-        )),
-    }
+    (cells > 0).then(|| RiskyChange::ClearCells { cells }.into())
 }
 
 #[cfg(test)]

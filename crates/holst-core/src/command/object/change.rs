@@ -95,7 +95,7 @@ use crate::{
         Error,
         Result,
         board_change::BoardChangeError,
-        confirmation::{ChangeRisk, Unconfirmed},
+        confirmation::RiskyChange,
         flag::Flag,
         input::InputError,
     },
@@ -1356,10 +1356,7 @@ async fn removed(
     )
     .await?;
     let unconfirmed = match (several, report.receipt.delivery) {
-        (true, _) => Some(Unconfirmed::new(
-            format!("removing {count} objects"),
-            ChangeRisk::Irreversible,
-        )),
+        (true, _) => Some(RiskyChange::RemoveObjects { objects: count }.into()),
         (false, Delivery::Accepted) => None,
         (false, Delivery::Built) => frame_content_unconfirmed(&report.objects),
     };
