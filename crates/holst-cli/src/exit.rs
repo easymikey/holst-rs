@@ -233,6 +233,7 @@ fn input_code(error: &InputError) -> u8 {
             problems.first().map_or(EX_DATAERR, core_code)
         }
         InputError::InItem { error, .. } => input_code(error),
+        InputError::ImportBoardLeft { failed, .. } => core_code(failed),
         InputError::BaseNotOrigin { .. }
         | InputError::BaseNotUrl { .. }
         | InputError::BaseNotHttps { .. }
@@ -272,7 +273,6 @@ fn input_code(error: &InputError) -> u8 {
         | InputError::NotJsonObject { .. }
         | InputError::ReplyNotFound { .. }
         | InputError::NotCommandArguments(_)
-        | InputError::ImportBoardLeft { .. }
         | InputError::CoverChanged
         | InputError::Conflict { .. }
         | InputError::Requires { .. }
@@ -620,7 +620,7 @@ mod tests {
         77
     )]
     #[case::import_board_left(
-        core(InputError::ImportBoardLeft { board: "x".into(), failed: Box::new(refused(403)) }),
+        core(InputError::ImportBoardLeft { board: "x".into(), failed: Box::new(refused(418)) }),
         69
     )]
     #[case::import_board_left_retry(
